@@ -1,0 +1,68 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+  background: #f5f6f8;
+  color: #1a1a1a;
+}
+.wrap { max-width: 760px; margin: 0 auto; padding: 16px; }
+
+/* ログイン */
+.card {
+  background: #fff; border: 1px solid #e3e6ea; border-radius: 12px;
+  padding: 24px; margin-top: 48px;
+}
+.card h1 { font-size: 18px; margin: 0 0 4px; }
+.card p.sub { color: #667; font-size: 13px; margin: 0 0 20px; }
+label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+input, select {
+  width: 100%; padding: 10px 12px; font-size: 15px;
+  border: 1px solid #cdd3da; border-radius: 8px; background: #fff;
+}
+button.primary {
+  width: 100%; margin-top: 20px; padding: 12px; font-size: 15px; font-weight: 700;
+  color: #fff; background: #1f4e78; border: none; border-radius: 8px; cursor: pointer;
+}
+button.primary:disabled { opacity: .5; cursor: default; }
+.err { color: #c0392b; font-size: 13px; margin-top: 12px; }
+
+/* チャット */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #1f4e78; color: #fff; padding: 10px 16px;
+}
+.topbar .who { font-size: 13px; }
+.topbar form { margin: 0; }
+.topbar button {
+  background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.5);
+  border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer;
+}
+.messages { padding: 16px 0 120px; }
+.msg { margin: 12px 0; display: flex; }
+.msg.user { justify-content: flex-end; }
+.bubble {
+  max-width: 88%; padding: 10px 14px; border-radius: 12px; font-size: 15px;
+  line-height: 1.7; white-space: pre-wrap; word-break: break-word;
+}
+.msg.user .bubble { background: #1f4e78; color: #fff; border-bottom-right-radius: 3px; }
+.msg.assistant .bubble { background: #fff; border: 1px solid #e3e6ea; border-bottom-left-radius: 3px; }
+.hint { color: #667; font-size: 13px; text-align: center; margin: 32px 0; }
+.composer {
+  position: fixed; left: 0; right: 0; bottom: 0; background: #f5f6f8;
+  border-top: 1px solid #e3e6ea; padding: 12px;
+}
+.composer .inner { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; }
+.composer textarea {
+  flex: 1; resize: none; height: 46px; padding: 12px; font-size: 15px;
+  border: 1px solid #cdd3da; border-radius: 8px; font-family: inherit;
+}
+.composer button {
+  padding: 0 18px; font-weight: 700; color: #fff; background: #1f4e78;
+  border: none; border-radius: 8px; cursor: pointer;
+}
+.composer button:disabled { opacity: .5; cursor: default; }
+.copybtn {
+  display: inline-block; margin-top: 8px; font-size: 12px; color: #1f4e78;
+  background: #eef3f8; border: 1px solid #cfe0ee; border-radius: 6px;
+  padding: 4px 10px; cursor: pointer;
+}
