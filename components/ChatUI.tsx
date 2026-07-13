@@ -73,16 +73,11 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
     }
   }
 
-  async function logout() {
-    await fetch('/api/logout', { method: 'POST' });
-    window.location.href = '/login';
-  }
-
   return (
     <>
-      <div className="topbar">
-        <div className="who">{campus}／{name} さん</div>
-        <button onClick={logout}>ログアウト</button>
+      <div className="page-head">
+        <h1>💬 AI壁打ち</h1>
+        <p>会議前の報告を、AIとの対話で「報告事項／協議事項／中間」に整理します。</p>
       </div>
 
       <div className="wrap">
