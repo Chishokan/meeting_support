@@ -1,15 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-
-const DEPARTMENTS = ['小中等部', 'RED個別', '高等部', 'その他'];
+import { STAFF } from '@/lib/staff';
 
 export default function LoginPage() {
-  const [name, setName] = useState('');
-  const [dept, setDept] = useState(DEPARTMENTS[0]);
-  const [code, setCode] = useState('');
+  const [campus, setCampus] = useState(STAFF[0].campus);
+  const [name, setName] = useState(STAFF[0].names[0]);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const names = STAFF.find((s) => s.campus === campus)?.names ?? [];
+
+  function onCampus(c: string) {
+    setCampus(c);
+    setName(STAFF.find((s) => s.campus === c)?.names[0] ?? '');
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -19,15 +24,15 @@ export default function LoginPage() {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, campus: dept, code }),
+        body: JSON.stringify({ name, campus }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        setErr(d.error || 'ログインに失敗しました。');
+        setErr(d.error || '開始に失敗しました。');
         setBusy(false);
         return;
       }
-      window.location.href = '/chat';
+      window.location.href = '/dashboard';
     } catch {
       setErr('通信エラーが発生しました。');
       setBusy(false);
@@ -38,28 +43,24 @@ export default function LoginPage() {
     <div className="wrap">
       <form className="card" onSubmit={submit}>
         <h1>智翔館 会議事前準備アシスタント</h1>
-        <p className="sub">テスト版・社内利用専用</p>
-
-        <label>お名前</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="例：安藤" />
+        <p className="sub">テスト運用中：お名前を選んで始めてください</p>
 
         <label>事業部</label>
-        <select value={dept} onChange={(e) => setDept(e.target.value)}>
-          {DEPARTMENTS.map((d) => (
-            <option key={d} value={d}>{d}</option>
+        <select value={campus} onChange={(e) => onCampus(e.target.value)}>
+          {STAFF.map((s) => (
+            <option key={s.campus} value={s.campus}>{s.campus}</option>
           ))}
         </select>
 
-        <label>合言葉</label>
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          type="password"
-          placeholder="社内で共有された合言葉"
-        />
+        <label>お名前</label>
+        <select value={name} onChange={(e) => setName(e.target.value)}>
+          {names.map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
 
         <button className="primary" disabled={busy || !name}>
-          {busy ? '確認中…' : 'はじめる'}
+          {busy ? '準備中…' : 'はじめる'}
         </button>
         {err && <div className="err">{err}</div>}
       </form>
