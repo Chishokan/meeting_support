@@ -119,9 +119,19 @@ button.primary:disabled { opacity: .5; cursor: default; }
 }
 
 /* 共通ページヘッダ */
-.page-head { padding: 20px 24px 14px; border-bottom: 1px solid var(--line); background: #fff; }
+.page-head { position: relative; padding: 20px 24px 14px; border-bottom: 1px solid var(--line); background: #fff; }
 .page-head h1 { font-size: 18px; margin: 0 0 4px; }
 .page-head p { margin: 0; color: #667; font-size: 13px; line-height: 1.6; }
+.reset-chat {
+  position: absolute; top: 18px; right: 24px; font-size: 12px; color: var(--navy);
+  background: #fff; border: 1px solid #cdd8e3; border-radius: 7px; padding: 6px 12px; cursor: pointer;
+}
+.reset-chat:hover { background: #f2f5f9; }
+.reset-chat:disabled { opacity: .5; cursor: default; }
+.resume-note {
+  margin: 4px 0 12px; padding: 8px 12px; font-size: 12px; color: #2e6b4f;
+  background: #eaf6ef; border: 1px solid #cfe8db; border-radius: 8px; text-align: center;
+}
 
 /* チャット: サイドバー分だけ composer をずらす */
 .composer { left: var(--sidebar); }

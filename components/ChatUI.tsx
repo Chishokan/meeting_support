@@ -4,15 +4,59 @@ import { useEffect, useRef, useState } from 'react';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
+const STORE_PREFIX = 'chishokan_chat_v1';
+
 export default function ChatUI({ name, campus }: { name: string; campus: string }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [restored, setRestored] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const loaded = useRef(false);
+  const storeKey = `${STORE_PREFIX}:${campus}/${name}`;
+
+  // 同じ端末・ブラウザで中断→再開できるよう、会話を localStorage に保存する。
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storeKey);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.length) {
+          setMessages(arr);
+          setRestored(true);
+        }
+      }
+    } catch {
+      // 読み込み失敗は無視して新規開始
+    }
+    loaded.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!loaded.current) return;
+    try {
+      if (messages.length) localStorage.setItem(storeKey, JSON.stringify(messages));
+      else localStorage.removeItem(storeKey);
+    } catch {
+      // 保存失敗は本処理を止めない
+    }
+  }, [messages, storeKey]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  function resetChat() {
+    if (busy) return;
+    if (messages.length && !confirm('この壁打ちを最初からやり直しますか？（入力内容は消えます）')) return;
+    setMessages([]);
+    setInput('');
+    setRestored(false);
+    try {
+      localStorage.removeItem(storeKey);
+    } catch {}
+  }
 
   async function sendText(text: string) {
     const t = text.trim();
@@ -70,10 +114,18 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
       <div className="page-head">
         <h1>AI壁打ち</h1>
         <p>会議前の報告を、AIとの対話で「報告事項／協議事項／中間」に整理します。</p>
+        {messages.length > 0 && (
+          <button className="reset-chat" onClick={resetChat} disabled={busy}>
+            最初からやり直す
+          </button>
+        )}
       </div>
 
       <div className="wrap">
         <div className="messages">
+          {restored && messages.length > 0 && (
+            <div className="resume-note">前回の続きから再開しました（この端末に保存されています）。</div>
+          )}
           {messages.length === 0 && (
             <div className="hint">
               事前報告をまとめましょう。<br />
