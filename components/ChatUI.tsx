@@ -9,17 +9,24 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const started = useRef(false);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  async function send() {
-    const text = input.trim();
-    if (!text || busy) return;
-    const next: Msg[] = [...messages, { role: 'user', content: text }];
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void sendText('こんにちは');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function sendText(text: string) {
+    const t = text.trim();
+    if (!t || busy) return;
+    const next: Msg[] = [...messages, { role: 'user', content: t }];
     setMessages([...next, { role: 'assistant', content: '' }]);
-    setInput('');
     setBusy(true);
     try {
       const res = await fetch('/api/chat', {
@@ -52,10 +59,17 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
     }
   }
 
+  function onSend() {
+    const t = input.trim();
+    if (!t) return;
+    setInput('');
+    void sendText(t);
+  }
+
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      send();
+      onSend();
     }
   }
 
@@ -73,12 +87,6 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
 
       <div className="wrap">
         <div className="messages">
-          {messages.length === 0 && (
-            <div className="hint">
-              「こんにちは」と送ると始まります。<br />
-              先週の計画の実行チェック → 課題の抽出 → 今週の計画づくりを手伝います。
-            </div>
-          )}
           {messages.map((m, i) => (
             <div key={i} className={`msg ${m.role}`}>
               <div>
@@ -103,7 +111,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
             onKeyDown={onKeyDown}
             placeholder="メッセージを入力（⌘/Ctrl+Enter で送信）"
           />
-          <button onClick={send} disabled={busy || !input.trim()}>
+          <button onClick={onSend} disabled={busy || !input.trim()}>
             {busy ? '…' : '送信'}
           </button>
         </div>

@@ -27,7 +27,7 @@ export async function POST(req: Request) {
         const stream = client.messages.stream({
           model: MODEL,
           max_tokens: 4000,
-          system: buildSystemPrompt(),
+          system: buildSystemPrompt(session.campus, session.name),
           messages,
         });
         for await (const ev of stream) {
@@ -39,14 +39,16 @@ export async function POST(req: Request) {
       } catch {
         controller.enqueue(encoder.encode('\n[エラーが発生しました。もう一度お試しください。]'));
       } finally {
-        controller.close();
         const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-        logInteraction({
-          user: session.name,
-          campus: session.campus,
-          input: lastUser?.content ?? '',
-          output: full,
-        });
+        try {
+          await logInteraction({
+            user: session.name,
+            campus: session.campus,
+            input: lastUser?.content ?? '',
+            output: full,
+          });
+        } catch {}
+        controller.close();
       }
     },
   });
