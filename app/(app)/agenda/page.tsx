@@ -6,7 +6,7 @@ export default function AgendaPage() {
   return (
     <div className="dash">
       <div className="page-head">
-        <h1>📋 アジェンダ/テンプレート</h1>
+        <h1>アジェンダ/テンプレート</h1>
         <p>定例会議の「智翔館の型」をテンプレ化し、事前報告を集約してアジェンダを自動生成します。</p>
       </div>
       <div className="soon-block">

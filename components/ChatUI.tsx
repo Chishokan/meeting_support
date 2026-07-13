@@ -76,7 +76,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
   return (
     <>
       <div className="page-head">
-        <h1>💬 AI壁打ち</h1>
+        <h1>AI壁打ち</h1>
         <p>会議前の報告を、AIとの対話で「報告事項／協議事項／中間」に整理します。</p>
       </div>
 

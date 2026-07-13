@@ -38,7 +38,7 @@ export default function DashboardUI({ name, campus }: { name: string; campus: st
   return (
     <div className="dash">
       <div className="page-head">
-        <h1>🏠 ダッシュボード</h1>
+        <h1>ダッシュボード</h1>
         <p>{campus}／{name} さん、おつかれさまです。会議準備の状況をまとめます。</p>
       </div>
 
@@ -62,14 +62,12 @@ export default function DashboardUI({ name, campus }: { name: string; campus: st
           <h2>クイックスタート</h2>
           <div className="quick-links">
             <Link href="/chat" className="quick-link">
-              <span className="ql-icon">💬</span>
               <span>
                 <b>AI壁打ちで事前報告をつくる</b>
                 <small>会議前の報告を対話で整理</small>
               </span>
             </Link>
             <Link href="/minutes" className="quick-link">
-              <span className="ql-icon">📝</span>
               <span>
                 <b>議事録を整形する</b>
                 <small>会議メモを決定事項・ToDoに</small>

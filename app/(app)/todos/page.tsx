@@ -6,7 +6,7 @@ export default function TodosPage() {
   return (
     <div className="dash">
       <div className="page-head">
-        <h1>✅ ToDo・宿題</h1>
+        <h1>ToDo・宿題</h1>
         <p>会議で決まったアクション項目を、担当・期限・進捗で追跡します。</p>
       </div>
       <div className="soon-block">

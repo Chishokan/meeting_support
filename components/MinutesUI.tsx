@@ -217,7 +217,7 @@ export default function MinutesUI({ name, campus }: { name: string; campus: stri
 
       <div className="thread-main">
         <div className="page-head">
-          <h1>📝 議事録スレッド</h1>
+          <h1>議事録スレッド</h1>
           <p>会議中・直後のメモや口述を貼り付けると、AIが「決定事項・継続審議・ToDo」に整形します。</p>
         </div>
 
