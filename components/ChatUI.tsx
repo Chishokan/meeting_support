@@ -9,18 +9,10 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
-  const started = useRef(false);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-    void sendText('こんにちは');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   async function sendText(text: string) {
     const t = text.trim();
@@ -82,6 +74,12 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
 
       <div className="wrap">
         <div className="messages">
+          {messages.length === 0 && (
+            <div className="hint">
+              事前報告をまとめましょう。<br />
+              下の入力欄に「会議の報告を始めたい」などと送るか、共有したいことを箇条書きで貼り付けてください。
+            </div>
+          )}
           {messages.map((m, i) => (
             <div key={i} className={`msg ${m.role}`}>
               <div>
