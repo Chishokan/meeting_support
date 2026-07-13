@@ -20,6 +20,22 @@ export async function POST(req: Request) {
 
   const encoder = new TextEncoder();
   let full = '';
+  let cacheLog = '';
+
+  // プロンプトキャッシュ：システムプロンプト（同一セッション内で固定）と直近メッセージに
+  // キャッシュポイントを置き、毎ターンの「システム＋全履歴」再送コストを抑える。
+  const system: Anthropic.TextBlockParam[] = [
+    {
+      type: 'text',
+      text: buildSystemPrompt(session.campus, session.name),
+      cache_control: { type: 'ephemeral' },
+    },
+  ];
+  const cachedMessages: Anthropic.MessageParam[] = messages.map((m, i) =>
+    i === messages.length - 1
+      ? { role: m.role, content: [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }] }
+      : { role: m.role, content: m.content },
+  );
 
   const rs = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -27,11 +43,14 @@ export async function POST(req: Request) {
         const stream = client.messages.stream({
           model: MODEL,
           max_tokens: 4000,
-          system: buildSystemPrompt(session.campus, session.name),
-          messages,
+          system,
+          messages: cachedMessages,
         });
         for await (const ev of stream) {
-          if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
+          if (ev.type === 'message_start') {
+            const u = ev.message.usage;
+            cacheLog = `in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`;
+          } else if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
             full += ev.delta.text;
             controller.enqueue(encoder.encode(ev.delta.text));
           }
@@ -39,6 +58,11 @@ export async function POST(req: Request) {
       } catch {
         controller.enqueue(encoder.encode('\n[エラーが発生しました。もう一度お試しください。]'));
       } finally {
+        if (cacheLog) {
+          try {
+            console.log('[CACHE chat]', cacheLog);
+          } catch {}
+        }
         const lastUser = [...messages].reverse().find((m) => m.role === 'user');
         try {
           await logInteraction({
