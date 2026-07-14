@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
@@ -13,6 +14,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
   const [restored, setRestored] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const loaded = useRef(false);
+  const sendingRef = useRef(false);
   const storeKey = `${STORE_PREFIX}:${campus}/${name}`;
 
   // 同じ端末・ブラウザで中断→再開できるよう、会話を localStorage に保存する。
@@ -21,9 +23,13 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
       const raw = localStorage.getItem(storeKey);
       if (raw) {
         const arr = JSON.parse(raw);
-        if (Array.isArray(arr) && arr.length) {
-          setMessages(arr);
-          setRestored(true);
+        if (Array.isArray(arr)) {
+          // 過去に保存された役割漏れ・空メッセージをここで浄化して復元する。
+          const clean = sanitizeHistory(arr) as Msg[];
+          if (clean.length) {
+            setMessages(clean);
+            setRestored(true);
+          }
         }
       }
     } catch {
@@ -60,7 +66,9 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
 
   async function sendText(text: string) {
     const t = text.trim();
-    if (!t || busy) return;
+    // Ref による同期ロック（busy は state で反映が遅れ、素早い二重送信を取りこぼすため）。
+    if (!t || sendingRef.current) return;
+    sendingRef.current = true;
     const next: Msg[] = [...messages, { role: 'user', content: t }];
     setMessages([...next, { role: 'assistant', content: '' }]);
     setBusy(true);
@@ -84,6 +92,15 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
           return c;
         });
       }
+      // ストリーム完了後、役割漏れ（AIが偽の user/assistant 発話を続ける現象）を除去して確定。
+      setMessages((m) => {
+        const c = [...m];
+        const last = c[c.length - 1];
+        if (last && last.role === 'assistant') {
+          c[c.length - 1] = { role: 'assistant', content: stripRoleBleed(acc) };
+        }
+        return c;
+      });
     } catch {
       setMessages((m) => {
         const c = [...m];
@@ -92,6 +109,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
       });
     } finally {
       setBusy(false);
+      sendingRef.current = false;
     }
   }
 

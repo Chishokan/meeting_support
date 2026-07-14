@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { MODEL } from '@/lib/systemPrompt';
 import { buildMinutesPrompt } from '@/lib/minutesPrompt';
 import { logInteraction } from '@/lib/log';
+import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -16,7 +17,9 @@ export async function POST(req: Request) {
   if (!session) return new Response('unauthorized', { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const messages: Msg[] = Array.isArray(body?.messages) ? body.messages : [];
+  const raw: Msg[] = Array.isArray(body?.messages) ? body.messages : [];
+  // 役割漏れ・空メッセージを除去（自己対話ループの再送を断つ）。
+  const messages = sanitizeHistory(raw) as Msg[];
   if (messages.length === 0) return new Response('messages required', { status: 400 });
 
   const encoder = new TextEncoder();
@@ -70,7 +73,7 @@ export async function POST(req: Request) {
             user: session.name,
             campus: session.campus,
             input: `[議事録] ${lastUser?.content ?? ''}`,
-            output: full,
+            output: stripRoleBleed(full),
           });
         } catch {}
         controller.close();
