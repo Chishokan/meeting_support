@@ -4,6 +4,9 @@ import { buildSystemPrompt, MODEL } from '@/lib/systemPrompt';
 import { logInteraction } from '@/lib/log';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
 
+// モデルが偽の user/assistant ターン（崩れた us/use/usb を含む）を書き始めたら即停止させる。
+const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
+
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
@@ -48,6 +51,7 @@ export async function POST(req: Request) {
           max_tokens: 4000,
           system,
           messages: cachedMessages,
+          stop_sequences: STOP,
         });
         for await (const ev of stream) {
           if (ev.type === 'message_start') {
