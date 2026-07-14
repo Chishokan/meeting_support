@@ -103,19 +103,21 @@ const DEPT_SUPPLEMENTS: Record<string, string> = {
 };
 
 // 数値報告を必須とする部門（社長要望）。管理部門は対象外。
-// ※「英検」は現状ログインの事業部一覧（lib/staff.ts）に未登録。追加されれば自動で適用される。
 const NUMERIC_DEPTS = ['小中等部', '高等部', 'RED個別', 'LEC', '英検'];
+// 売上を数値報告に含めない部門（社長指示：小中等部は売上を入れない）
+const NO_SALES_DEPTS = ['小中等部'];
 
-const NUMBERS_SUPPLEMENT = `
-【数値報告（この部門は必須）】数値の確認・記載では次を必ず含める。無い項目は「未集計」とし、無理に埋めない：
-- 生徒数（在籍・前年比）
-- 売上
-- 成績回収：○/○名（実績/母数）
-- キャンペーン：キャンペーン名 ○/○名（実績/目標）`;
+function numbersSupplement(dept: string): string {
+  const lines = ['- 生徒数（在籍・前年比）'];
+  if (!NO_SALES_DEPTS.includes(dept)) lines.push('- 売上');
+  lines.push('- 成績回収：○/○名（実績/母数）');
+  lines.push('- キャンペーン：キャンペーン名 ○/○名（実績/目標）');
+  return `\n【数値報告（この部門は必須）】数値の確認・記載では次を必ず含める。無い項目は「未集計」とし、無理に埋めない：\n${lines.join('\n')}`;
+}
 
 export function buildSystemPrompt(dept: string, name: string): string {
   const parts: string[] = [];
-  if (NUMERIC_DEPTS.includes(dept)) parts.push(NUMBERS_SUPPLEMENT);
+  if (NUMERIC_DEPTS.includes(dept)) parts.push(numbersSupplement(dept));
   if (DEPT_SUPPLEMENTS[dept]) parts.push(DEPT_SUPPLEMENTS[dept]);
   const supplement = parts.length ? `${parts.join('\n')}\n` : '';
   return ASSISTANT_INSTRUCTIONS
