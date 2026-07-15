@@ -12,6 +12,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [restored, setRestored] = useState(false);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const loaded = useRef(false);
   const sendingRef = useRef(false);
@@ -52,6 +53,14 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  function copyMsg(i: number, content: string) {
+    try {
+      navigator.clipboard?.writeText(content);
+    } catch {}
+    setCopiedIdx(i);
+    setTimeout(() => setCopiedIdx((c) => (c === i ? null : c)), 1800);
+  }
 
   function resetChat() {
     if (busy) return;
@@ -155,8 +164,11 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
               <div>
                 <div className="bubble">{m.content || '…'}</div>
                 {m.role === 'assistant' && m.content && (
-                  <span className="copybtn" onClick={() => navigator.clipboard?.writeText(m.content)}>
-                    この回答をコピー
+                  <span
+                    className={`copybtn ${copiedIdx === i ? 'copied' : ''}`}
+                    onClick={() => copyMsg(i, m.content)}
+                  >
+                    {copiedIdx === i ? '✓ コピーされました' : 'この回答をコピー'}
                   </span>
                 )}
               </div>

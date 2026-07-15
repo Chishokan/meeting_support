@@ -42,7 +42,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
   background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.5);
   border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer;
 }
-.messages { padding: 16px 0 120px; }
+.messages { padding: 16px 0 230px; }
 .msg { margin: 12px 0; display: flex; }
 .msg.user { justify-content: flex-end; }
 .bubble {
@@ -58,12 +58,12 @@ button.primary:disabled { opacity: .5; cursor: default; }
 }
 .composer .inner { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; }
 .composer textarea {
-  flex: 1; resize: none; height: 46px; padding: 12px; font-size: 15px;
-  border: 1px solid #cdd3da; border-radius: 8px; font-family: inherit;
+  flex: 1; resize: vertical; height: 150px; min-height: 100px; padding: 12px; font-size: 15px;
+  border: 1px solid #cdd3da; border-radius: 8px; font-family: inherit; line-height: 1.6;
 }
 .composer button {
-  padding: 0 18px; font-weight: 700; color: #fff; background: #1f4e78;
-  border: none; border-radius: 8px; cursor: pointer;
+  align-self: flex-end; height: 46px; padding: 0 18px; font-weight: 700; color: #fff;
+  background: #1f4e78; border: none; border-radius: 8px; cursor: pointer;
 }
 .composer button:disabled { opacity: .5; cursor: default; }
 .copybtn {
@@ -71,6 +71,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
   background: #eef3f8; border: 1px solid #cfe0ee; border-radius: 6px;
   padding: 4px 10px; cursor: pointer;
 }
+.copybtn.copied { color: #2e6b4f; background: #eaf6ef; border-color: #cfe8db; }
 
 /* ============ サイドメニュー・シェル ============ */
 .shell { display: flex; min-height: 100vh; }
