@@ -9,7 +9,7 @@ export const STAFF: StaffGroup[] = [
   { campus: '高等部', names: ['田﨑幸治', '安田浩晃'] },
   { campus: 'LEC', names: ['大谷朋美'] },
   { campus: '英検', names: ['中山信哉'] },
-  { campus: '管理', names: ['安藤純平', '冨松太一', '直江弘明', '小山英樹'] },
+  { campus: '総務・人事・支援・管理', names: ['安藤純平', '冨松太一', '直江弘明', '小山英樹'] },
 ];
 
 export function isValidStaff(campus: string, name: string): boolean {
