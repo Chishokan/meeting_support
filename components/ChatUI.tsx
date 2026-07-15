@@ -140,7 +140,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
     <>
       <div className="page-head">
         <h1>会議AI</h1>
-        <p>会議前の報告を、AIとの対話で「報告事項／協議事項／中間」に整理します。</p>
+        <p>会議前の報告を、AIとの対話で「協議・報告・決裁」に整理します。</p>
         {messages.length > 0 && (
           <button className="reset-chat" onClick={resetChat} disabled={busy}>
             最初からやり直す
