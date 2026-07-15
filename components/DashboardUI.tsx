@@ -63,7 +63,7 @@ export default function DashboardUI({ name, campus }: { name: string; campus: st
           <div className="quick-links">
             <Link href="/chat" className="quick-link">
               <span>
-                <b>AI壁打ちで事前報告をつくる</b>
+                <b>会議AIで事前報告をつくる</b>
                 <small>会議前の報告を対話で整理</small>
               </span>
             </Link>

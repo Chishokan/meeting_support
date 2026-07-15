@@ -55,7 +55,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
 
   function resetChat() {
     if (busy) return;
-    if (messages.length && !confirm('この壁打ちを最初からやり直しますか？（入力内容は消えます）')) return;
+    if (messages.length && !confirm('この会話を最初からやり直しますか？（入力内容は消えます）')) return;
     setMessages([]);
     setInput('');
     setRestored(false);
@@ -130,7 +130,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
   return (
     <>
       <div className="page-head">
-        <h1>AI壁打ち</h1>
+        <h1>会議AI</h1>
         <p>会議前の報告を、AIとの対話で「報告事項／協議事項／中間」に整理します。</p>
         {messages.length > 0 && (
           <button className="reset-chat" onClick={resetChat} disabled={busy}>
