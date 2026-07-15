@@ -72,6 +72,18 @@ function doGet() {
   return json_({ ok: true, service: 'chishokan-log', ts: nowIso_() });
 }
 
+// 【権限承認用】Apps Script エディタでこの関数を一度「実行」し、
+// Googleドキュメントへのアクセス権限（documents スコープ）を承認する。
+// 実行すると、対象ドキュメントにテスト用の1件が転記される（確認後は消してよい）。
+function testReport() {
+  appendReport_({
+    campus: 'テスト',
+    user: '動作確認',
+    ts: new Date().toISOString(),
+    content: '（テスト転記）権限承認の確認です。この行は削除して構いません。',
+  });
+}
+
 function appendRow_(sheetName, headers, row) {
   var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
