@@ -1,9 +1,10 @@
 /**
  * 智翔館 会議DX — ログ転記用 Apps Script（Web アプリ）
  * -------------------------------------------------------
- * アプリ（Vercel）から送られる以下を Google スプレッドシートへ転記する。
- *   - action:'log'         … AI壁打ち / 議事録の会話ログ → シート「会話ログ」
- *   - action:'saveMinutes' … 議事録スレッドの保存        → シート「議事録」
+ * アプリ（Vercel）から送られる以下を Google へ転記する。
+ *   - action:'log'          … 会議AI / 議事録の会話ログ → スプレッドシート「会話ログ」
+ *   - action:'saveMinutes'  … 議事録スレッドの保存       → スプレッドシート「議事録」
+ *   - action:'appendReport' … 「報告」からの事前報告      → Google ドキュメント（REPORT_DOC_ID）に新セクション追記
  *
  * 【セットアップ手順】
  * 1. 転記先スプレッドシートを開き、拡張機能 → Apps Script でこのコードを貼り付ける
@@ -24,6 +25,8 @@
 
 var SPREADSHEET_ID = ''; // 例 '1AbcDEfGhIJkLmNoPqRsTuVwXyZ'。空ならこのスクリプトがバインドされたシート
 var TOKEN = '';          // 例 'chishokan-log-2026'。空なら token 検証をしない
+// 「報告」の転記先 Google ドキュメント ID（URL の /d/ と /edit の間）
+var REPORT_DOC_ID = '1rwSMzzBoJEFUwOMJNPA3rmmGMkarlryCheUGbbNPQik';
 
 function doPost(e) {
   try {
@@ -37,6 +40,11 @@ function doPost(e) {
     }
 
     var action = data.action || 'log';
+
+    if (action === 'appendReport') {
+      appendReport_(data);
+      return json_({ ok: true });
+    }
 
     if (action === 'saveMinutes') {
       appendRow_(
@@ -69,6 +77,31 @@ function appendRow_(sheetName, headers, row) {
   var sh = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
   if (sh.getLastRow() === 0) sh.appendRow(headers);
   sh.appendRow(row);
+}
+
+// 報告を Google ドキュメントへ「新しいセクション（見出し＋改ページ区切り）」として追記する。
+// ※ Apps Script では新規「タブ」の作成が未対応のため、見出し付きセクションで代替。
+function appendReport_(data) {
+  var doc = DocumentApp.openById(REPORT_DOC_ID);
+  var body = doc.getBody();
+  // 既に内容があれば改ページで区切る（2件目以降）
+  if (body.getText().replace(/\s/g, '').length > 0) {
+    body.appendPageBreak();
+  }
+  var heading = body.appendParagraph((data.campus || '') + '／' + (data.user || '') + '　' + nowJp_(data.ts));
+  heading.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+  // 貼り付けられた報告を行ごとに段落として追記（改行を保持）
+  var lines = String(data.content || '').split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    body.appendParagraph(lines[i]);
+  }
+  doc.saveAndClose();
+}
+
+function nowJp_(ts) {
+  var d = ts ? new Date(ts) : new Date();
+  if (isNaN(d.getTime())) d = new Date();
+  return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy/MM/dd HH:mm');
 }
 
 function nowIso_() {
