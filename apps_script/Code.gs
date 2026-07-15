@@ -30,6 +30,17 @@ var REPORT_DOC_ID = '1rwSMzzBoJEFUwOMJNPA3rmmGMkarlryCheUGbbNPQik';
 // 部門ごとのタブが無い報告を入れる既定タブ（タイトルの部分一致・月ごとに更新可）
 var DEFAULT_TAB_HINT = '7月会議内容テスト';
 
+// 部門（campus）→ タブ探索キーワード。タブ名にこの文字列が含まれていれば、そのタブに振り分ける。
+// ※タブ名が部門名と少し違っても振り分けられるようにするための対応表。タブ名変更時はここを直す。
+var TAB_HINTS = {
+  '小中等部': '小中等部',
+  'RED個別': 'RED個別',
+  '高等部': '高等部',
+  'LEC': 'LEC',
+  '英検': '英検',
+  '総務・人事・支援・管理': '総務', // タブ「総務・人事・管理」にも一致するよう短いキーワードで指定
+};
+
 function doPost(e) {
   try {
     var data = {};
@@ -124,7 +135,8 @@ function reportBodyForCampus_(doc, campus) {
       var tabs = doc.getTabs();
       if (tabs && tabs.length > 0) {
         if (campus) {
-          var hit = findTabByTitle_(tabs, campus);
+          var hint = TAB_HINTS[campus] || campus;
+          var hit = findTabByTitle_(tabs, hint);
           if (hit) return hit.asDocumentTab().getBody();
         }
         var def = findTabByTitle_(tabs, DEFAULT_TAB_HINT);
