@@ -81,9 +81,10 @@ function appendRow_(sheetName, headers, row) {
 
 // 報告を Google ドキュメントへ「新しいセクション（見出し＋改ページ区切り）」として追記する。
 // ※ Apps Script では新規「タブ」の作成が未対応のため、見出し付きセクションで代替。
+//   タブ付きドキュメントでは最初のタブの本文に書き込む（getBody() の挙動差を吸収）。
 function appendReport_(data) {
   var doc = DocumentApp.openById(REPORT_DOC_ID);
-  var body = doc.getBody();
+  var body = reportBody_(doc);
   // 既に内容があれば改ページで区切る（2件目以降）
   if (body.getText().replace(/\s/g, '').length > 0) {
     body.appendPageBreak();
@@ -96,6 +97,21 @@ function appendReport_(data) {
     body.appendParagraph(lines[i]);
   }
   doc.saveAndClose();
+}
+
+// タブ付きドキュメントなら最初のタブの本文、なければ通常の本文を返す。
+function reportBody_(doc) {
+  try {
+    if (typeof doc.getTabs === 'function') {
+      var tabs = doc.getTabs();
+      if (tabs && tabs.length > 0) {
+        return tabs[0].asDocumentTab().getBody();
+      }
+    }
+  } catch (e) {
+    // タブ非対応環境では通常の本文にフォールバック
+  }
+  return doc.getBody();
 }
 
 function nowJp_(ts) {

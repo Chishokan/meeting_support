@@ -27,7 +27,7 @@ export default function ReportUI({ name, campus }: { name: string; campus: strin
       } else if (j?.reason === 'not_configured') {
         setStatus('未設定です。転記先ドキュメントの連携（Apps Script）を設定してください。');
       } else {
-        setStatus('転記に失敗しました。もう一度お試しください。');
+        setStatus(`転記に失敗しました（理由：${j?.reason ?? '不明'}）。Apps Scriptの再デプロイをご確認ください。`);
       }
     } catch {
       setStatus('通信エラーが発生しました。');

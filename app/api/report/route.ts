@@ -31,8 +31,13 @@ export async function POST(req: Request) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) return Response.json({ ok: false, reason: 'upstream_error' }, { status: 502 });
-    return Response.json({ ok: true });
+    // GAS(ContentService)は失敗時も HTTP 200 を返すため、本文の ok/reason を必ず確認する。
+    const j = await res.json().catch(() => null);
+    if (res.ok && j && j.ok === true) return Response.json({ ok: true });
+    return Response.json(
+      { ok: false, reason: (j && j.reason) || 'upstream_error' },
+      { status: 502 },
+    );
   } catch {
     return Response.json({ ok: false, reason: 'network_error' }, { status: 502 });
   }
