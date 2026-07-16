@@ -67,6 +67,10 @@ function doPost(e) {
       return json_(listInquiries_(data));
     }
 
+    if (action === 'updateInquiryReply') {
+      return json_(updateInquiryReply_(data));
+    }
+
     if (action === 'saveMinutes') {
       appendRow_(
         '議事録',
@@ -105,6 +109,28 @@ function testReport() {
   });
 }
 
+var INQUIRY_HEADERS = ['日時', '事業部', '担当', '種別', '内容', '画像URL', '回答', '回答者', '回答日時'];
+
+// 「問い合わせ」シート（ログと同じスプレッドシート内）を取得（無ければ作成）し、見出しを整える。
+function inquirySheet_() {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('問い合わせ') || ss.insertSheet('問い合わせ');
+  ensureInquiryHeaders_(sh);
+  return sh;
+}
+
+// 見出し行を9列（回答・回答者・回答日時を含む）に整える。既存シートには不足列を補う。
+function ensureInquiryHeaders_(sh) {
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(INQUIRY_HEADERS);
+    return;
+  }
+  var cur = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+  for (var c = 0; c < INQUIRY_HEADERS.length; c++) {
+    if (!cur[c]) sh.getRange(1, c + 1).setValue(INQUIRY_HEADERS[c]);
+  }
+}
+
 // 問い合わせを保存する。画像があれば Drive に保存してリンクを記録する。
 function saveInquiry_(data) {
   var imageUrl = '';
@@ -119,31 +145,40 @@ function saveInquiry_(data) {
       imageUrl = '(画像保存エラー: ' + e + ')';
     }
   }
-  appendRow_(
-    '問い合わせ',
-    ['日時', '事業部', '担当', '種別', '内容', '画像URL'],
-    [data.ts || nowIso_(), data.campus || '', data.user || '', data.category || '', data.content || '', imageUrl]
-  );
+  var sh = inquirySheet_();
+  sh.appendRow([data.ts || nowIso_(), data.campus || '', data.user || '', data.category || '', data.content || '', imageUrl, '', '', '']);
   return { ok: true, imageUrl: imageUrl };
 }
 
-// 問い合わせ一覧（新しい順・最大300件）を返す。
+// 問い合わせ一覧（新しい順・最大300件）を返す。row は回答更新の対象シート行。
 function listInquiries_(data) {
-  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName('問い合わせ');
-  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  var sh = inquirySheet_();
+  if (sh.getLastRow() < 2) return { ok: true, items: [] };
   var values = sh.getDataRange().getValues();
   var items = [];
   for (var i = 1; i < values.length; i++) {
     var r = values[i];
     items.push({
+      row: i + 1,
       ts: String(r[0]), campus: String(r[1]), user: String(r[2]),
       category: String(r[3]), content: String(r[4]), imageUrl: String(r[5] || ''),
+      reply: String(r[6] || ''), repliedBy: String(r[7] || ''), repliedAt: String(r[8] || ''),
     });
   }
   items.reverse();
   if (items.length > 300) items = items.slice(0, 300);
   return { ok: true, items: items };
+}
+
+// 管理者の回答を該当行に書き込む。
+function updateInquiryReply_(data) {
+  var sh = inquirySheet_();
+  var row = Number(data.row);
+  if (!(row >= 2) || row > sh.getLastRow()) return { ok: false, reason: 'bad_row' };
+  sh.getRange(row, 7).setValue(String(data.reply || ''));
+  sh.getRange(row, 8).setValue(String(data.repliedBy || ''));
+  sh.getRange(row, 9).setValue(nowJp_(''));
+  return { ok: true };
 }
 
 // 問い合わせ画像の保存先フォルダ（無ければ作成）。

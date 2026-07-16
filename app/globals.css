@@ -220,6 +220,13 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .inq-meta { font-size: 12px; color: #97a1ac; }
 .inq-content { font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
 .inq-img-link { display: inline-block; margin-top: 6px; font-size: 12px; color: var(--navy); }
+.inq-reply { margin-top: 8px; padding: 8px 12px; background: #eaf6ef; border: 1px solid #cfe8db; border-radius: 8px; }
+.inq-reply-label { font-size: 11px; font-weight: 700; color: #2e6b4f; margin-bottom: 2px; }
+.inq-reply-text { font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+.inq-reply-edit { margin-top: 8px; display: flex; gap: 8px; align-items: flex-end; }
+.inq-reply-edit textarea { flex: 1; min-height: 52px; resize: vertical; padding: 8px 10px; font-size: 13px; border: 1px solid #cdd3da; border-radius: 8px; font-family: inherit; }
+.inq-reply-edit button { padding: 8px 14px; font-size: 13px; font-weight: 700; color: #fff; background: #2e7d5b; border: none; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.inq-reply-edit button:disabled { opacity: .5; cursor: default; }
 
 @media (max-width: 820px) {
   .inq-body { grid-template-columns: 1fr; }

@@ -3,6 +3,9 @@ import { getSession } from '@/lib/auth';
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
+// 回答を書き込める管理者部門（この部門でログインした人だけ回答可能）。
+const ADMIN_CAMPUS = '総務・人事・支援・管理';
+
 type GasResult = { ok?: boolean; reason?: string; items?: unknown[]; imageUrl?: string };
 
 async function callGas(payload: Record<string, unknown>): Promise<GasResult | null> {
@@ -61,6 +64,28 @@ export async function POST(req: Request) {
   try {
     const j = await callGas(payload);
     if (j && j.ok) return Response.json({ ok: true, imageUrl: j.imageUrl ?? '' });
+    return Response.json({ ok: false, reason: j?.reason ?? 'upstream_error' }, { status: 502 });
+  } catch {
+    return Response.json({ ok: false, reason: 'network_error' }, { status: 502 });
+  }
+}
+
+// 管理者による回答の書き込み（ADMIN_CAMPUS でログインした人のみ）
+export async function PUT(req: Request) {
+  const session = getSession();
+  if (!session) return Response.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
+  if (session.campus !== ADMIN_CAMPUS) return Response.json({ ok: false, reason: 'forbidden' }, { status: 403 });
+
+  const body = await req.json().catch(() => ({}));
+  const row = Number(body?.row);
+  const reply = String(body?.reply ?? '');
+  if (!(row >= 2)) return Response.json({ ok: false, reason: 'bad_row' }, { status: 400 });
+
+  if (!process.env.APPS_SCRIPT_URL) return Response.json({ ok: false, reason: 'not_configured' });
+
+  try {
+    const j = await callGas({ action: 'updateInquiryReply', row, reply, repliedBy: session.name });
+    if (j && j.ok) return Response.json({ ok: true });
     return Response.json({ ok: false, reason: j?.reason ?? 'upstream_error' }, { status: 502 });
   } catch {
     return Response.json({ ok: false, reason: 'network_error' }, { status: 502 });
