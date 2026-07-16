@@ -59,6 +59,14 @@ function doPost(e) {
       return json_({ ok: true });
     }
 
+    if (action === 'saveInquiry') {
+      return json_(saveInquiry_(data));
+    }
+
+    if (action === 'listInquiries') {
+      return json_(listInquiries_(data));
+    }
+
     if (action === 'saveMinutes') {
       appendRow_(
         '議事録',
@@ -95,6 +103,60 @@ function testReport() {
     ts: new Date().toISOString(),
     content: '（テスト転記）権限承認の確認です。この行は削除して構いません。',
   });
+}
+
+// 問い合わせを保存する。画像があれば Drive に保存してリンクを記録する。
+function saveInquiry_(data) {
+  var imageUrl = '';
+  if (data.imageData) {
+    try {
+      var name = data.imageName || ('inquiry_' + new Date().getTime() + '.jpg');
+      var blob = Utilities.newBlob(Utilities.base64Decode(data.imageData), data.imageMime || 'image/jpeg', name);
+      var file = inquiryFolder_().createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      imageUrl = file.getUrl();
+    } catch (e) {
+      imageUrl = '(画像保存エラー: ' + e + ')';
+    }
+  }
+  appendRow_(
+    '問い合わせ',
+    ['日時', '事業部', '担当', '種別', '内容', '画像URL'],
+    [data.ts || nowIso_(), data.campus || '', data.user || '', data.category || '', data.content || '', imageUrl]
+  );
+  return { ok: true, imageUrl: imageUrl };
+}
+
+// 問い合わせ一覧（新しい順・最大300件）を返す。
+function listInquiries_(data) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('問い合わせ');
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  var values = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    items.push({
+      ts: String(r[0]), campus: String(r[1]), user: String(r[2]),
+      category: String(r[3]), content: String(r[4]), imageUrl: String(r[5] || ''),
+    });
+  }
+  items.reverse();
+  if (items.length > 300) items = items.slice(0, 300);
+  return { ok: true, items: items };
+}
+
+// 問い合わせ画像の保存先フォルダ（無ければ作成）。
+function inquiryFolder_() {
+  var name = '会議DX_お問い合わせ画像';
+  var it = DriveApp.getFoldersByName(name);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(name);
+}
+
+// 【権限承認用】Docs と Drive の権限をまとめて承認するために一度実行する。
+function authorizeAll() {
+  try { DocumentApp.openById(REPORT_DOC_ID).getName(); } catch (e) {}
+  try { inquiryFolder_().getName(); } catch (e) {}
 }
 
 function appendRow_(sheetName, headers, row) {

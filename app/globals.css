@@ -190,6 +190,41 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .report-note { font-size: 13px; color: #2e6b4f; }
 .report-hint { margin-top: 14px; font-size: 12px; color: #8a94a0; line-height: 1.7; }
 
+/* ============ お問い合わせ ============ */
+.inq-body { padding: 20px 24px 48px; display: grid; gap: 20px; grid-template-columns: minmax(320px, 420px) 1fr; align-items: start; }
+.inq-form { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+.inq-form label { display: block; font-size: 13px; font-weight: 700; margin: 14px 0 6px; }
+.inq-form label:first-child { margin-top: 0; }
+.inq-form select, .inq-form input[type="file"] { width: 100%; padding: 9px 10px; font-size: 14px; border: 1px solid #cdd3da; border-radius: 8px; background: #fff; }
+.inq-form textarea { width: 100%; min-height: 130px; resize: vertical; padding: 10px 12px; font-size: 14px; line-height: 1.6; border: 1px solid #cdd3da; border-radius: 8px; font-family: inherit; }
+.inq-preview { margin-top: 10px; }
+.inq-preview img { max-width: 100%; max-height: 220px; border: 1px solid var(--line); border-radius: 8px; display: block; }
+.inq-clear { margin-top: 6px; font-size: 12px; color: #c0392b; background: #fff; border: 1px solid #e3c2bd; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.inq-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+.inq-actions button { padding: 10px 20px; font-size: 14px; font-weight: 700; color: #fff; background: var(--navy); border: none; border-radius: 8px; cursor: pointer; }
+.inq-actions button:disabled { opacity: .5; cursor: default; }
+.inq-note { font-size: 13px; color: #2e6b4f; }
+
+.inq-list { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+.inq-list-head h2 { font-size: 14px; margin: 0 0 10px; }
+.inq-filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.inq-search { flex: 1; min-width: 140px; padding: 8px 10px; font-size: 13px; border: 1px solid #cdd3da; border-radius: 8px; }
+.inq-filters select { padding: 8px 10px; font-size: 13px; border: 1px solid #cdd3da; border-radius: 8px; background: #fff; }
+.inq-reload { padding: 8px 12px; font-size: 13px; color: var(--navy); background: #fff; border: 1px solid #cdd8e3; border-radius: 8px; cursor: pointer; }
+.inq-empty { font-size: 13px; color: #8a94a0; padding: 12px 0; }
+.inq-items { list-style: none; margin: 0; padding: 0; }
+.inq-item { padding: 12px 0; border-bottom: 1px solid #f0f2f5; }
+.inq-item:last-child { border-bottom: none; }
+.inq-item-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.inq-cat { font-size: 11px; font-weight: 700; color: #1f4e78; background: #eaf1f8; border: 1px solid #cfe0ee; border-radius: 999px; padding: 2px 10px; }
+.inq-meta { font-size: 12px; color: #97a1ac; }
+.inq-content { font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+.inq-img-link { display: inline-block; margin-top: 6px; font-size: 12px; color: var(--navy); }
+
+@media (max-width: 820px) {
+  .inq-body { grid-template-columns: 1fr; }
+}
+
 /* 次フェーズ プレースホルダ */
 .soon-block { margin: 24px; background: #fff; border: 1px dashed #cdd8e3; border-radius: 12px; padding: 22px 24px; }
 .soon-badge {

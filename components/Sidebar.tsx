@@ -10,6 +10,7 @@ const NAV: NavItem[] = [
   { href: '/dashboard', label: 'ダッシュボード', desc: '準備状況の一覧' },
   { href: '/chat', label: '会議AI', desc: '事前報告づくり' },
   { href: '/report', label: '報告', desc: 'ドキュメントへ転記' },
+  { href: '/inquiry', label: 'お問い合わせ', desc: '不具合・改善要望' },
   { href: '/minutes', label: '議事録スレッド', desc: '会議ごとに整理', soon: true },
   { href: '/todos', label: 'ToDo・宿題', desc: '決定事項の追跡', soon: true },
   { href: '/agenda', label: 'アジェンダ/テンプレート', desc: '会議の型', soon: true },
