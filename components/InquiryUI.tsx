@@ -309,7 +309,7 @@ export default function InquiryUI({ name, campus }: { name: string; campus: stri
 
                   {it.reply && (
                     <div className="inq-reply">
-                      <div className="inq-reply-label">回答{it.repliedBy ? `（${it.repliedBy}${it.repliedAt ? '・' + it.repliedAt : ''}）` : ''}</div>
+                      <div className="inq-reply-label">回答{it.repliedBy ? `（${it.repliedBy}${it.repliedAt ? '・' + fmt(it.repliedAt) : ''}）` : ''}</div>
                       <div className="inq-reply-text">{it.reply}</div>
                     </div>
                   )}

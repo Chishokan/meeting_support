@@ -164,9 +164,9 @@ function listInquiries_(data) {
     var r = values[i];
     items.push({
       row: i + 1,
-      ts: String(r[0]), campus: String(r[1]), user: String(r[2]),
+      ts: cellStr_(r[0]), campus: String(r[1]), user: String(r[2]),
       category: String(r[3]), content: String(r[4]), imageUrl: String(r[5] || ''),
-      reply: String(r[6] || ''), repliedBy: String(r[7] || ''), repliedAt: String(r[8] || ''),
+      reply: String(r[6] || ''), repliedBy: String(r[7] || ''), repliedAt: cellStr_(r[8]),
     });
   }
   items.reverse();
@@ -196,7 +196,8 @@ function updateInquiryReply_(data) {
   if (!(row >= 2) || row > sh.getLastRow()) return { ok: false, reason: 'bad_row' };
   sh.getRange(row, 7).setValue(String(data.reply || ''));
   sh.getRange(row, 8).setValue(String(data.repliedBy || ''));
-  sh.getRange(row, 9).setValue(nowJp_(''));
+  // 文字列として固定（Sheetsの自動日付変換を防ぐ）
+  sh.getRange(row, 9).setNumberFormat('@').setValue(nowJp_(''));
   return { ok: true };
 }
 
@@ -283,6 +284,12 @@ function findTabByTitle_(tabs, hint) {
     } catch (e) {}
   }
   return null;
+}
+
+// セル値を文字列化。Date型（Sheetsが自動変換した場合）は日本時間の見やすい形式に整える。
+function cellStr_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy/MM/dd HH:mm');
+  return String(v == null ? '' : v);
 }
 
 function nowJp_(ts) {
