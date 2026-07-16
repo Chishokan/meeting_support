@@ -70,6 +70,36 @@ export async function POST(req: Request) {
   }
 }
 
+// 問い合わせ本人による編集（内容・種別）。所有者チェックは GAS 側で実施。
+export async function PATCH(req: Request) {
+  const session = getSession();
+  if (!session) return Response.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
+
+  const body = await req.json().catch(() => ({}));
+  const row = Number(body?.row);
+  const content = String(body?.content ?? '').trim();
+  const category = String(body?.category ?? '');
+  if (!(row >= 2)) return Response.json({ ok: false, reason: 'bad_row' }, { status: 400 });
+  if (!content) return Response.json({ ok: false, reason: 'empty' }, { status: 400 });
+
+  if (!process.env.APPS_SCRIPT_URL) return Response.json({ ok: false, reason: 'not_configured' });
+
+  try {
+    const j = await callGas({
+      action: 'updateInquiry',
+      row,
+      content,
+      category,
+      reqCampus: session.campus,
+      reqUser: session.name,
+    });
+    if (j && j.ok) return Response.json({ ok: true });
+    return Response.json({ ok: false, reason: j?.reason ?? 'upstream_error' }, { status: 502 });
+  } catch {
+    return Response.json({ ok: false, reason: 'network_error' }, { status: 502 });
+  }
+}
+
 // 管理者による回答の書き込み（ADMIN_CAMPUS でログインした人のみ）
 export async function PUT(req: Request) {
   const session = getSession();

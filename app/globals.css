@@ -220,6 +220,15 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .inq-meta { font-size: 12px; color: #97a1ac; }
 .inq-content { font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
 .inq-img-link { display: inline-block; margin-top: 6px; font-size: 12px; color: var(--navy); }
+.inq-edit-btn { margin-left: auto; font-size: 12px; color: var(--navy); background: #eef3f8; border: 1px solid #cfe0ee; border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.inq-edit-btn:hover { background: #e3edf7; }
+.inq-edit { margin: 4px 0 2px; }
+.inq-edit select { width: auto; padding: 6px 8px; font-size: 13px; border: 1px solid #cdd3da; border-radius: 8px; margin-bottom: 6px; }
+.inq-edit textarea { width: 100%; min-height: 80px; resize: vertical; padding: 8px 10px; font-size: 14px; line-height: 1.6; border: 1px solid #cdd3da; border-radius: 8px; font-family: inherit; }
+.inq-edit-actions { display: flex; gap: 8px; margin-top: 8px; }
+.inq-edit-actions button { padding: 7px 16px; font-size: 13px; font-weight: 700; color: #fff; background: var(--navy); border: none; border-radius: 8px; cursor: pointer; }
+.inq-edit-actions .inq-edit-cancel { color: #444; background: #fff; border: 1px solid #cdd3da; }
+.inq-edit-actions button:disabled { opacity: .5; cursor: default; }
 .inq-reply { margin-top: 8px; padding: 8px 12px; background: #eaf6ef; border: 1px solid #cfe8db; border-radius: 8px; }
 .inq-reply-label { font-size: 11px; font-weight: 700; color: #2e6b4f; margin-bottom: 2px; }
 .inq-reply-text { font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }

@@ -71,6 +71,10 @@ function doPost(e) {
       return json_(updateInquiryReply_(data));
     }
 
+    if (action === 'updateInquiry') {
+      return json_(updateInquiry_(data));
+    }
+
     if (action === 'saveMinutes') {
       appendRow_(
         '議事録',
@@ -168,6 +172,21 @@ function listInquiries_(data) {
   items.reverse();
   if (items.length > 300) items = items.slice(0, 300);
   return { ok: true, items: items };
+}
+
+// 問い合わせ本人による編集（内容・種別）。行の所有者（事業部＋担当）が一致する場合のみ許可。
+function updateInquiry_(data) {
+  var sh = inquirySheet_();
+  var row = Number(data.row);
+  if (!(row >= 2) || row > sh.getLastRow()) return { ok: false, reason: 'bad_row' };
+  var rowCampus = String(sh.getRange(row, 2).getValue());
+  var rowUser = String(sh.getRange(row, 3).getValue());
+  if (rowCampus !== String(data.reqCampus || '') || rowUser !== String(data.reqUser || '')) {
+    return { ok: false, reason: 'forbidden' };
+  }
+  if (data.category != null) sh.getRange(row, 4).setValue(String(data.category));
+  if (data.content != null) sh.getRange(row, 5).setValue(String(data.content));
+  return { ok: true };
 }
 
 // 管理者の回答を該当行に書き込む。

@@ -73,8 +73,45 @@ export default function InquiryUI({ name, campus }: { name: string; campus: stri
   const [filterCat, setFilterCat] = useState('すべて');
   const [replyDraft, setReplyDraft] = useState<Record<number, string>>({});
   const [replyBusy, setReplyBusy] = useState<number | null>(null);
+  const [editingRow, setEditingRow] = useState<number | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [editCategory, setEditCategory] = useState(CATEGORIES[0]);
+  const [editBusy, setEditBusy] = useState(false);
 
   const isAdmin = campus === ADMIN_CAMPUS;
+
+  function startEdit(it: Item) {
+    setEditingRow(it.row);
+    setEditContent(it.content);
+    setEditCategory(it.category || CATEGORIES[0]);
+  }
+
+  async function saveEdit(row: number) {
+    if (editBusy) return;
+    if (!editContent.trim()) {
+      alert('内容を入力してください。');
+      return;
+    }
+    setEditBusy(true);
+    try {
+      const res = await fetch('/api/inquiry', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ row, content: editContent.trim(), category: editCategory }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        setEditingRow(null);
+        await loadList();
+      } else {
+        alert(`編集の保存に失敗しました（理由：${j?.reason ?? '不明'}）`);
+      }
+    } catch {
+      alert('通信エラーが発生しました。');
+    } finally {
+      setEditBusy(false);
+    }
+  }
 
   async function saveReply(row: number, current: string) {
     if (replyBusy != null) return;
@@ -238,10 +275,34 @@ export default function InquiryUI({ name, campus }: { name: string; campus: stri
               {shown.map((it, i) => (
                 <li key={it.row ?? i} className="inq-item">
                   <div className="inq-item-top">
-                    <span className="inq-cat">{it.category || '（種別なし）'}</span>
+                    <span className="inq-cat">{editingRow === it.row ? editCategory : it.category || '（種別なし）'}</span>
                     <span className="inq-meta">{it.campus}／{it.user}・{fmt(it.ts)}</span>
+                    {it.campus === campus && it.user === name && editingRow !== it.row && (
+                      <button className="inq-edit-btn" onClick={() => startEdit(it)}>編集</button>
+                    )}
                   </div>
-                  <div className="inq-content">{it.content}</div>
+
+                  {editingRow === it.row ? (
+                    <div className="inq-edit">
+                      <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)}>
+                        {CATEGORIES.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                      <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} />
+                      <div className="inq-edit-actions">
+                        <button onClick={() => saveEdit(it.row)} disabled={editBusy}>
+                          {editBusy ? '保存中…' : '保存'}
+                        </button>
+                        <button className="inq-edit-cancel" onClick={() => setEditingRow(null)} disabled={editBusy}>
+                          キャンセル
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="inq-content">{it.content}</div>
+                  )}
+
                   {it.imageUrl && it.imageUrl.startsWith('http') && (
                     <a className="inq-img-link" href={it.imageUrl} target="_blank" rel="noreferrer">画像を見る</a>
                   )}
