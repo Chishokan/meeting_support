@@ -4,7 +4,7 @@
 export type StaffGroup = { campus: string; names: string[] };
 
 export const STAFF: StaffGroup[] = [
-  { campus: '小中等部', names: ['安東瑞輝', '安田浩晃', '池田貴光', '山中誠', '太田暁', '檀上徳之', '越智秀也'] },
+  { campus: '小中等部', names: ['安東瑞輝', '安田浩晃', '池田貴光', '山中誠子', '太田暁', '檀上徳之', '越智秀也', '小潟理紗'] },
   { campus: 'RED個別', names: ['福元崇恭', '亀谷新', '瀬戸山理恵', '山田佑咲', '冨田翔太', '中山信哉'] },
   { campus: '高等部', names: ['田﨑幸治', '安田浩晃'] },
   { campus: 'LEC', names: ['大谷朋美'] },
