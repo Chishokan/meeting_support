@@ -14,6 +14,33 @@ const client = new Anthropic();
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
+// 添付ファイル（PDF/画像はネイティブ対応、テキスト系は本文として渡す）
+type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };
+
+const IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+// 添付を Claude のコンテンツブロックへ変換する（PDF・画像はテキストより前に置く）。
+function attachBlocks(atts: Attach[]): Anthropic.ContentBlockParam[] {
+  const blocks: Anthropic.ContentBlockParam[] = [];
+  for (const a of atts) {
+    if (!a || typeof a.data !== 'string' || !a.data) continue;
+    if (a.kind === 'pdf') {
+      blocks.push({
+        type: 'document',
+        source: { type: 'base64', media_type: 'application/pdf', data: a.data },
+      });
+    } else if (a.kind === 'image' && IMAGE_MIMES.includes(a.mime)) {
+      blocks.push({
+        type: 'image',
+        source: { type: 'base64', media_type: a.mime as 'image/jpeg', data: a.data },
+      });
+    } else if (a.kind === 'text') {
+      blocks.push({ type: 'text', text: `【添付ファイル：${a.name}】\n${a.data}` });
+    }
+  }
+  return blocks;
+}
+
 export async function POST(req: Request) {
   const session = getSession();
   if (!session) return new Response('unauthorized', { status: 401 });
@@ -37,9 +64,17 @@ export async function POST(req: Request) {
       cache_control: { type: 'ephemeral' },
     },
   ];
+  // 添付は「今回のターン」にのみ付与する（履歴には残さない＝端末保存を軽く保つ）。
+  const attachments: Attach[] = Array.isArray(body?.attachments) ? body.attachments.slice(0, 5) : [];
   const cachedMessages: Anthropic.MessageParam[] = messages.map((m, i) =>
     i === messages.length - 1
-      ? { role: m.role, content: [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }] }
+      ? {
+          role: m.role,
+          content: [
+            ...attachBlocks(attachments),
+            { type: 'text', text: m.content, cache_control: { type: 'ephemeral' } },
+          ] as Anthropic.ContentBlockParam[],
+        }
       : { role: m.role, content: m.content },
   );
 

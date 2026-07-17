@@ -42,7 +42,7 @@ export default function LoginPage() {
   return (
     <div className="wrap">
       <form className="card" onSubmit={submit}>
-        <h1>智翔館 会議事前準備アシスタント</h1>
+        <h1>智翔館 会議DX</h1>
         <p className="sub">テスト運用中：お名前を選んで始めてください</p>
 
         <label>事業部</label>

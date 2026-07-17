@@ -42,7 +42,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
   background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.5);
   border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer;
 }
-.messages { padding: 16px 0 230px; }
+.messages { padding: 16px 0 275px; }
 .msg { margin: 12px 0; display: flex; }
 .msg.user { justify-content: flex-end; }
 .bubble {
@@ -56,6 +56,21 @@ button.primary:disabled { opacity: .5; cursor: default; }
   position: fixed; left: 0; right: 0; bottom: 0; background: #f5f6f8;
   border-top: 1px solid #e3e6ea; padding: 12px;
 }
+.composer .attach-bar {
+  max-width: 760px; margin: 0 auto 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+}
+.attach-btn {
+  font-size: 12px; color: var(--navy); background: #fff; border: 1px solid #cdd8e3;
+  border-radius: 999px; padding: 5px 12px; cursor: pointer; white-space: nowrap;
+}
+.attach-btn:hover { background: #eef3f8; }
+.attach-chip {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #2a2f36;
+  background: #eef3f8; border: 1px solid #cfe0ee; border-radius: 999px; padding: 4px 6px 4px 12px; max-width: 260px;
+}
+.attach-chip button { border: none; background: transparent; color: #7a848f; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 4px; }
+.attach-chip button:hover { color: #c0392b; }
+.attach-note { font-size: 12px; color: #c0392b; }
 .composer .inner { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; }
 .composer textarea {
   flex: 1; resize: vertical; height: 150px; min-height: 100px; padding: 12px; font-size: 15px;
