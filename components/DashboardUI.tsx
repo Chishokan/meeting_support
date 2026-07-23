@@ -27,6 +27,7 @@ export default function DashboardUI({
   isAdmin?: boolean;
 }) {
   const [items, setItems] = useState<ProgressItem[]>([]);
+  const [deptItems, setDeptItems] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
 
@@ -34,13 +35,24 @@ export default function DashboardUI({
     let alive = true;
     (async () => {
       try {
-        const res = await fetch('/api/progress/latest');
-        const j = await res.json().catch(() => ({}));
+        // 提出状況と、この部門の報告項目（管理部門は項目パネルを出さないので取得しない）を並行取得。
+        const [statusRes, itemsRes] = await Promise.all([
+          fetch('/api/progress/latest'),
+          isAdmin ? Promise.resolve(null) : fetch('/api/progress/items'),
+        ]);
+        const j = await statusRes.json().catch(() => ({}));
         if (!alive) return;
         if (j?.ok && Array.isArray(j.items)) {
           setItems(j.items as ProgressItem[]);
         } else if (j?.reason === 'not_configured') {
           setNote('中間報告の連携（Apps Script）が未設定です。');
+        }
+        if (itemsRes) {
+          const j2 = await itemsRes.json().catch(() => ({}));
+          if (!alive) return;
+          if (j2?.ok && j2.items && Array.isArray(j2.items[campus])) {
+            setDeptItems((j2.items[campus] as unknown[]).map((s) => String(s)));
+          }
         }
       } catch {
         if (alive) setNote('中間報告状況の取得に失敗しました。');
@@ -51,7 +63,7 @@ export default function DashboardUI({
     return () => {
       alive = false;
     };
-  }, []);
+  }, [isAdmin, campus]);
 
   const allCampuses = useMemo(() => STAFF.map((s) => s.campus), []);
   const members = useMemo(() => STAFF.find((s) => s.campus === campus)?.names ?? [], [campus]);
@@ -200,6 +212,26 @@ export default function DashboardUI({
         {quickStart}
 
         <div className="dash-panel wide">
+          <h2>報告すべき項目・期日</h2>
+          {deptItems.length === 0 ? (
+            <p className="dash-empty">
+              {loading ? '読み込み中…' : '報告項目が設定されていません。'}
+            </p>
+          ) : (
+            <>
+              <ol className="dept-items">
+                {deptItems.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ol>
+              <p className="dept-items-note">
+                この項目を「中間報告」で順に確認します。項目・期日の変更は総務・人事・支援・管理が行います。
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="dash-panel full">
           <h2>部門メンバーの中間報告状況</h2>
           {note && <p className="dash-empty">{note}</p>}
           <ul className="member-list">

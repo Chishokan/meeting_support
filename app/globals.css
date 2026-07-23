@@ -214,8 +214,14 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .recent-list a:hover { text-decoration: underline; }
 .recent-date { font-size: 12px; color: #97a1ac; }
 
-/* ダッシュボード: 部門メンバーの中間報告状況（枠を2カラム分に拡大） */
+/* ダッシュボード: 中間報告のパネル幅（wide=2カラム分／full=全幅） */
 .dash-panel.wide { grid-column: span 2; }
+.dash-panel.full { grid-column: 1 / -1; }
+
+/* ダッシュボード: 報告すべき項目・期日（表示のみ） */
+.dept-items { margin: 0; padding-left: 1.3em; }
+.dept-items li { font-size: 14px; color: #2a2f36; padding: 4px 0; line-height: 1.6; }
+.dept-items-note { font-size: 12px; color: #97a1ac; margin: 10px 0 0; line-height: 1.6; }
 .member-list { list-style: none; margin: 0; padding: 0; }
 .member-list > li { padding: 10px 0; border-bottom: 1px solid #f0f2f5; }
 .member-list > li:last-child { border-bottom: none; }
@@ -232,7 +238,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .progress-more { font-size: 12px; color: #97a1ac; }
 .member-progress-empty { font-size: 12px; color: #97a1ac; margin-top: 6px; }
 @media (max-width: 720px) {
-  .dash-panel.wide { grid-column: auto; }
+  .dash-panel.wide, .dash-panel.full { grid-column: auto; }
 }
 .soon-panel { background: #fbfcfd; border-style: dashed; }
 
