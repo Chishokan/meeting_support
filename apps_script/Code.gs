@@ -276,7 +276,23 @@ function appendReport_(data) {
   doc.saveAndClose();
 }
 
-var PROGRESS_STATUS_HEADERS = ['日時', '事業部', '担当'];
+var PROGRESS_STATUS_HEADERS = ['日時', '事業部', '担当', '内容'];
+
+// 「中間報告状況」シートを取得（無ければ作成）し、見出しを4列（内容を含む）に整える。
+// 既存シート（3列で作られたもの）には不足列を補う。
+function progressStatusSheet_() {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('中間報告状況') || ss.insertSheet('中間報告状況');
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(PROGRESS_STATUS_HEADERS);
+    return sh;
+  }
+  var cur = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+  for (var c = 0; c < PROGRESS_STATUS_HEADERS.length; c++) {
+    if (!cur[c]) sh.getRange(1, c + 1).setValue(PROGRESS_STATUS_HEADERS[c]);
+  }
+  return sh;
+}
 
 // 中間報告を事前共有ドキュメントへ「【中間報告】…」の新セクションとして追記し、
 // あわせて「中間報告状況」シートに（日時・事業部・担当）を記録する（ダッシュボード表示用）。
@@ -293,11 +309,13 @@ function appendProgress_(data) {
     body.appendParagraph(lines[i]);
   }
   doc.saveAndClose();
-  // 直近報告者の記録（ダッシュボードで参照）。
-  appendRow_('中間報告状況', PROGRESS_STATUS_HEADERS, [data.ts || nowIso_(), data.campus || '', data.user || '']);
+  // 直近報告者と本文の記録（ダッシュボードの進捗表示で参照）。
+  var sh = progressStatusSheet_();
+  sh.appendRow([data.ts || nowIso_(), data.campus || '', data.user || '', String(data.content || '')]);
 }
 
-// 中間報告の状況（新しい順・最大100件）を返す。ダッシュボードの「直近の中間報告」表示に使う。
+// 中間報告の状況（新しい順・最大100件）を返す。ダッシュボードの提出状況・進捗表示に使う。
+// content は報告本文（Next 側で項目と進捗を抜き出して表示する）。
 function listProgress_(data) {
   var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName('中間報告状況');
@@ -306,7 +324,10 @@ function listProgress_(data) {
   var items = [];
   for (var i = 1; i < values.length; i++) {
     var r = values[i];
-    items.push({ ts: cellStr_(r[0]), campus: String(r[1]), user: String(r[2]) });
+    items.push({
+      ts: cellStr_(r[0]), campus: String(r[1]), user: String(r[2]),
+      content: String(r[3] == null ? '' : r[3]),
+    });
   }
   items.reverse();
   if (items.length > 100) items = items.slice(0, 100);

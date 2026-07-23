@@ -213,6 +213,27 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .recent-list a { color: var(--navy); text-decoration: none; }
 .recent-list a:hover { text-decoration: underline; }
 .recent-date { font-size: 12px; color: #97a1ac; }
+
+/* ダッシュボード: 部門メンバーの中間報告状況（枠を2カラム分に拡大） */
+.dash-panel.wide { grid-column: span 2; }
+.member-list { list-style: none; margin: 0; padding: 0; }
+.member-list > li { padding: 10px 0; border-bottom: 1px solid #f0f2f5; }
+.member-list > li:last-child { border-bottom: none; }
+.member-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.member-name { font-size: 14px; font-weight: 700; color: #2a2f36; }
+.member-progress { list-style: none; margin: 6px 0 0; padding: 0; }
+.member-progress li {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  font-size: 13px; color: #4b535c; padding: 2px 0;
+}
+.progress-name { overflow-wrap: anywhere; }
+.progress-status { font-weight: 700; color: #b06a00; white-space: nowrap; }
+.progress-status.done { color: #2e6b4f; }
+.progress-more { font-size: 12px; color: #97a1ac; }
+.member-progress-empty { font-size: 12px; color: #97a1ac; margin-top: 6px; }
+@media (max-width: 720px) {
+  .dash-panel.wide { grid-column: auto; }
+}
 .soon-panel { background: #fbfcfd; border-style: dashed; }
 
 /* ============ 報告（ドキュメント転記） ============ */
