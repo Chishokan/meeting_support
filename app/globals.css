@@ -152,6 +152,33 @@ button.primary:disabled { opacity: .5; cursor: default; }
 /* チャット: サイドバー分だけ composer をずらす */
 .composer { left: var(--sidebar); }
 
+/* 中間報告: 自動転記のステータスを入力欄の上に固定表示 */
+.progress-transfer {
+  position: fixed; left: var(--sidebar); right: 0; bottom: 186px; z-index: 5;
+  max-width: 760px; margin: 0 auto; padding: 8px 12px; text-align: center;
+  background: #fffbe9; border: 1px solid #f0e2ad; border-radius: 8px; color: #7a5c00;
+}
+.progress-transfer.done { background: #eaf6ef; border-color: #cfe8db; color: #2e6b4f; }
+@media (max-width: 720px) {
+  .progress-transfer { left: 0; bottom: 178px; }
+}
+
+/* 中間報告: 定例項目の編集（管理部門） */
+.items-admin { padding: 20px 24px 60px; }
+.items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.items-card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.items-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.items-card textarea {
+  width: 100%; resize: vertical; min-height: 120px; padding: 10px; font-size: 14px;
+  border: 1px solid #cdd3da; border-radius: 8px; font-family: inherit; line-height: 1.7; box-sizing: border-box;
+}
+.items-card-actions { margin-top: 8px; text-align: right; }
+.items-card-actions button {
+  height: 38px; padding: 0 18px; font-weight: 700; color: #fff;
+  background: #1f4e78; border: none; border-radius: 8px; cursor: pointer;
+}
+.items-card-actions button:disabled { opacity: .5; cursor: default; }
+
 /* ============ ダッシュボード ============ */
 .stat-row { display: flex; gap: 12px; padding: 20px 24px 0; flex-wrap: wrap; }
 .stat-card {

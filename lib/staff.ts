@@ -12,6 +12,9 @@ export const STAFF: StaffGroup[] = [
   { campus: '総務・人事・支援・管理', names: ['安藤純平', '冨松太一', '直江弘明', '小山英樹', '宮ケ中葉子', '直江英恵'] },
 ];
 
+// 管理部門（この部門でログインした人だけが中間報告の定例項目編集・問い合わせ回答などを行える）。
+export const ADMIN_CAMPUS = '総務・人事・支援・管理';
+
 export function isValidStaff(campus: string, name: string): boolean {
   const g = STAFF.find((s) => s.campus === campus);
   return !!g && g.names.includes(name);

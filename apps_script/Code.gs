@@ -5,6 +5,9 @@
  *   - action:'log'          … 会議AI / 議事録の会話ログ → スプレッドシート「会話ログ」
  *   - action:'saveMinutes'  … 議事録スレッドの保存       → スプレッドシート「議事録」
  *   - action:'appendReport' … 「報告」からの事前報告      → Google ドキュメント（REPORT_DOC_ID）に新セクション追記
+ *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントに「【中間報告】…」で追記＋「中間報告状況」シートに記録
+ *   - action:'listProgress' … ダッシュボード用の直近報告者  → 「中間報告状況」シートを新しい順に返す
+ *   - action:'getProgressItems'/'saveProgressItems' … 中間報告の定例項目の取得・保存 → 「中間報告項目」シート
  *
  * 【セットアップ手順】
  * 1. 転記先スプレッドシートを開き、拡張機能 → Apps Script でこのコードを貼り付ける
@@ -57,6 +60,23 @@ function doPost(e) {
     if (action === 'appendReport') {
       appendReport_(data);
       return json_({ ok: true });
+    }
+
+    if (action === 'appendProgress') {
+      appendProgress_(data);
+      return json_({ ok: true });
+    }
+
+    if (action === 'listProgress') {
+      return json_(listProgress_(data));
+    }
+
+    if (action === 'getProgressItems') {
+      return json_(getProgressItems_(data));
+    }
+
+    if (action === 'saveProgressItems') {
+      return json_(saveProgressItems_(data));
     }
 
     if (action === 'saveInquiry') {
@@ -239,6 +259,97 @@ function appendReport_(data) {
     body.appendParagraph(lines[i]);
   }
   doc.saveAndClose();
+}
+
+var PROGRESS_STATUS_HEADERS = ['日時', '事業部', '担当'];
+
+// 中間報告を事前共有ドキュメントへ「【中間報告】…」の新セクションとして追記し、
+// あわせて「中間報告状況」シートに（日時・事業部・担当）を記録する（ダッシュボード表示用）。
+function appendProgress_(data) {
+  var doc = DocumentApp.openById(REPORT_DOC_ID);
+  var body = reportBodyForCampus_(doc, data.campus || '');
+  if (body.getText().replace(/\s/g, '').length > 0) {
+    body.appendPageBreak();
+  }
+  var heading = body.appendParagraph('【中間報告】' + (data.campus || '') + '／' + (data.user || '') + '　' + nowJp_(data.ts));
+  heading.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+  var lines = String(data.content || '').split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    body.appendParagraph(lines[i]);
+  }
+  doc.saveAndClose();
+  // 直近報告者の記録（ダッシュボードで参照）。
+  appendRow_('中間報告状況', PROGRESS_STATUS_HEADERS, [data.ts || nowIso_(), data.campus || '', data.user || '']);
+}
+
+// 中間報告の状況（新しい順・最大100件）を返す。ダッシュボードの「直近の中間報告」表示に使う。
+function listProgress_(data) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('中間報告状況');
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  var values = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    items.push({ ts: cellStr_(r[0]), campus: String(r[1]), user: String(r[2]) });
+  }
+  items.reverse();
+  if (items.length > 100) items = items.slice(0, 100);
+  return { ok: true, items: items };
+}
+
+// 中間報告の「定例項目」を部門ごとに保存するシート（無ければ作成）。
+// 1部門1行、項目は改行区切りで1セルに保存する。
+function progressItemsSheet_() {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('中間報告項目') || ss.insertSheet('中間報告項目');
+  if (sh.getLastRow() === 0) sh.appendRow(['事業部', '定例項目']);
+  return sh;
+}
+
+// 保存済みの定例項目を { campus: [項目, ...] } の形で返す（未保存の部門は含めない＝Next 側で初期値を使う）。
+function getProgressItems_(data) {
+  var sh = progressItemsSheet_();
+  var map = {};
+  if (sh.getLastRow() >= 2) {
+    var values = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues();
+    for (var i = 0; i < values.length; i++) {
+      var campus = String(values[i][0]).trim();
+      if (!campus) continue;
+      var items = String(values[i][1] || '')
+        .split('\n')
+        .map(function (s) { return s.trim(); })
+        .filter(function (s) { return s.length > 0; });
+      map[campus] = items;
+    }
+  }
+  return { ok: true, items: map };
+}
+
+// 指定部門の定例項目を保存（該当行を上書き、無ければ追加）。権限確認は Next 側で実施。
+function saveProgressItems_(data) {
+  var campus = String(data.campus || '').trim();
+  if (!campus) return { ok: false, reason: 'bad_campus' };
+  var items = Array.isArray(data.items) ? data.items : String(data.items || '').split('\n');
+  var cleaned = [];
+  for (var i = 0; i < items.length; i++) {
+    var s = String(items[i]).trim();
+    if (s) cleaned.push(s);
+  }
+  var sh = progressItemsSheet_();
+  var joined = cleaned.join('\n');
+  var lastRow = sh.getLastRow();
+  if (lastRow >= 2) {
+    var col = sh.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var r = 0; r < col.length; r++) {
+      if (String(col[r][0]).trim() === campus) {
+        sh.getRange(r + 2, 2).setValue(joined);
+        return { ok: true, items: cleaned };
+      }
+    }
+  }
+  sh.appendRow([campus, joined]);
+  return { ok: true, items: cleaned };
 }
 
 // 部門名でタブを振り分ける：
