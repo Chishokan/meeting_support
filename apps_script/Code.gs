@@ -7,7 +7,8 @@
  *   - action:'appendReport' … 「報告」からの事前報告      → Google ドキュメント（REPORT_DOC_ID）に新セクション追記
  *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントに「【中間報告】…」で追記＋「中間報告状況」シートに記録
  *   - action:'listProgress' … ダッシュボード用の直近報告者  → 「中間報告状況」シートを新しい順に返す
- *   - action:'getProgressItems'/'saveProgressItems' … 中間報告の定例項目の取得・保存 → 「中間報告項目」シート
+ *   - action:'getProgressItems'/'saveProgressItems' … 中間報告の定例項目の取得・保存 → 「中間報告項目」シート（1行1項目）
+ *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
  *
  * 【セットアップ手順】
  * 1. 転記先スプレッドシートを開き、拡張機能 → Apps Script でこのコードを貼り付ける
@@ -298,16 +299,23 @@ function listProgress_(data) {
   return { ok: true, items: items };
 }
 
-// 中間報告の「定例項目」を部門ごとに保存するシート（無ければ作成）。
-// 1部門1行、項目は改行区切りで1セルに保存する。
+// 中間報告の「定例項目」を管理するシート（無ければ作成）。
+// ★1行＝1項目。A列＝事業部、B列＝項目。同じ事業部の項目は複数行に並べる（手動編集しやすい形）。
+//   例）
+//     事業部        | 項目
+//     小中等部      | 生徒数（在籍・前年比）
+//     小中等部      | 成績回収（○/○名）
+//     高等部        | 学年別の実質受講率
+//   ※「会議で決議した事項の進捗」は全部門共通で自動的に含まれるため、ここに書く必要はありません。
 function progressItemsSheet_() {
   var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName('中間報告項目') || ss.insertSheet('中間報告項目');
-  if (sh.getLastRow() === 0) sh.appendRow(['事業部', '定例項目']);
+  if (sh.getLastRow() === 0) sh.appendRow(['事業部', '項目']);
   return sh;
 }
 
-// 保存済みの定例項目を { campus: [項目, ...] } の形で返す（未保存の部門は含めない＝Next 側で初期値を使う）。
+// 保存済みの定例項目を { campus: [項目, ...] } の形で返す（1行1項目を部門ごとにまとめる）。
+// 未登録の部門は含めない（＝Next 側で初期値を使う）。
 function getProgressItems_(data) {
   var sh = progressItemsSheet_();
   var map = {};
@@ -315,18 +323,17 @@ function getProgressItems_(data) {
     var values = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues();
     for (var i = 0; i < values.length; i++) {
       var campus = String(values[i][0]).trim();
-      if (!campus) continue;
-      var items = String(values[i][1] || '')
-        .split('\n')
-        .map(function (s) { return s.trim(); })
-        .filter(function (s) { return s.length > 0; });
-      map[campus] = items;
+      var item = String(values[i][1] == null ? '' : values[i][1]).trim();
+      if (!campus || !item) continue;
+      if (!map[campus]) map[campus] = [];
+      map[campus].push(item);
     }
   }
   return { ok: true, items: map };
 }
 
-// 指定部門の定例項目を保存（該当行を上書き、無ければ追加）。権限確認は Next 側で実施。
+// 指定部門の定例項目を保存する（アプリの編集画面から呼ばれる）。
+// その部門の既存行をすべて外し、渡された項目を1行1項目で入れ直す（他部門はそのまま）。権限確認は Next 側で実施。
 function saveProgressItems_(data) {
   var campus = String(data.campus || '').trim();
   if (!campus) return { ok: false, reason: 'bad_campus' };
@@ -337,19 +344,50 @@ function saveProgressItems_(data) {
     if (s) cleaned.push(s);
   }
   var sh = progressItemsSheet_();
-  var joined = cleaned.join('\n');
-  var lastRow = sh.getLastRow();
-  if (lastRow >= 2) {
-    var col = sh.getRange(2, 1, lastRow - 1, 1).getValues();
-    for (var r = 0; r < col.length; r++) {
-      if (String(col[r][0]).trim() === campus) {
-        sh.getRange(r + 2, 2).setValue(joined);
-        return { ok: true, items: cleaned };
-      }
+  var last = sh.getLastRow();
+  var kept = [];
+  if (last >= 2) {
+    var vals = sh.getRange(2, 1, last - 1, 2).getValues();
+    for (var r = 0; r < vals.length; r++) {
+      var c = String(vals[r][0]).trim();
+      var it = String(vals[r][1] == null ? '' : vals[r][1]).trim();
+      if (!c || !it) continue;            // 空行は捨てる
+      if (c === campus) continue;         // 対象部門の旧行は捨てる（入れ直す）
+      kept.push([c, it]);
     }
   }
-  sh.appendRow([campus, joined]);
+  for (var k = 0; k < cleaned.length; k++) kept.push([campus, cleaned[k]]);
+  // データ領域をクリアして書き直す
+  if (last >= 2) sh.getRange(2, 1, last - 1, 2).clearContent();
+  if (kept.length) sh.getRange(2, 1, kept.length, 2).setValues(kept);
   return { ok: true, items: cleaned };
+}
+
+// 【初期値の流し込み】GAS エディタでこの関数を一度「実行」すると、
+// 「中間報告項目」シートに全部門の初期項目（1行1項目）を書き込む。
+// 既に何か入っている部門は上書きしない（手動編集を尊重）。以後はシート／アプリ画面のどちらでも編集可。
+function seedProgressItems() {
+  var defaults = [
+    ['小中等部', ['生徒数（在籍・前年比）', '成績回収（○/○名）', 'キャンペーン（○/○名）']],
+    ['RED個別', ['スタッフ研修項目の完了／未完（件数）', '生徒対応・退会防止の状況']],
+    ['高等部', ['学年別の実質受講率', '受講進捗（コマ数の進み・修了／遅れ）', '担任・担任助手の面談実施状況', '新規（申込・体験）の申込／実施']],
+    ['LEC', ['生徒数（在籍・前年比）', '売上', '成績回収（○/○名）', 'キャンペーン（○/○名）']],
+    ['英検', ['受験申込・受験者数', '合格状況', '成績回収（○/○名）']],
+    ['総務・人事・支援・管理', ['担当領域の処理・対応件数', '進行中タスク・依頼案件の進捗']]
+  ];
+  var existing = getProgressItems_({}).items || {};
+  var sh = progressItemsSheet_();
+  var added = [];
+  for (var i = 0; i < defaults.length; i++) {
+    var campus = defaults[i][0];
+    if (existing[campus] && existing[campus].length) continue; // 既存は触らない
+    var list = defaults[i][1];
+    for (var j = 0; j < list.length; j++) added.push([campus, list[j]]);
+  }
+  if (added.length) {
+    var start = sh.getLastRow() + 1;
+    sh.getRange(start, 1, added.length, 2).setValues(added);
+  }
 }
 
 // 部門名でタブを振り分ける：
