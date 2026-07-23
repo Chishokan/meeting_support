@@ -5,7 +5,7 @@
  *   - action:'log'          … 会議AI / 議事録の会話ログ → スプレッドシート「会話ログ」
  *   - action:'saveMinutes'  … 議事録スレッドの保存       → スプレッドシート「議事録」
  *   - action:'appendReport' … 「報告」からの事前報告      → Google ドキュメント（REPORT_DOC_ID）に新セクション追記
- *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントに「【中間報告】…」で追記＋「中間報告状況」シートに記録
+ *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントの【中間報告タブ】に追記＋「中間報告状況」シートに記録
  *   - action:'listProgress' … ダッシュボード用の直近報告者  → 「中間報告状況」シートを新しい順に返す
  *   - action:'getProgressItems'/'saveProgressItems' … 中間報告の定例項目の取得・保存 → 「中間報告項目」シート（1行1項目）
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
@@ -43,6 +43,20 @@ var TAB_HINTS = {
   'LEC': 'LEC',
   '英検': '英検',
   '総務・人事・支援・管理': '総務', // タブ「総務・人事・管理」にも一致するよう短いキーワードで指定
+};
+
+// 「中間報告」の転記先タブを探すための設定。
+// タブ名に PROGRESS_TAB_KEYWORD（中間報告）と下の部門キーワードの【両方】を含むタブへ振り分ける。
+// 例：タブ「小中等部中間報告」＝「小中等部」＋「中間報告」を含むので小中等部の中間報告がここに入る。
+// ※該当タブが無い部門は、従来どおり（部門の事前共有タブ→既定タブ）へフォールバックする。
+var PROGRESS_TAB_KEYWORD = '中間報告';
+var PROGRESS_TAB_HINTS = {
+  '小中等部': '小中等部',
+  'RED個別': 'RED個別',
+  '高等部': '高等部',
+  'LEC': 'LEC',
+  '英検': '英検',
+  '総務・人事・支援・管理': '総務', // タブ「総務人事管理中間報告」に一致
 };
 
 function doPost(e) {
@@ -268,7 +282,7 @@ var PROGRESS_STATUS_HEADERS = ['日時', '事業部', '担当'];
 // あわせて「中間報告状況」シートに（日時・事業部・担当）を記録する（ダッシュボード表示用）。
 function appendProgress_(data) {
   var doc = DocumentApp.openById(REPORT_DOC_ID);
-  var body = reportBodyForCampus_(doc, data.campus || '');
+  var body = progressBodyForCampus_(doc, data.campus || '');
   if (body.getText().replace(/\s/g, '').length > 0) {
     body.appendPageBreak();
   }
@@ -391,8 +405,8 @@ function seedProgressItems() {
   }
 }
 
-// 部門名でタブを振り分ける：
-//  1) タイトルに部門名（campus）を含むタブ
+// 部門名でタブを振り分ける（事前報告用）：
+//  1) タイトルに部門名（campus）を含むタブ。※「中間報告」タブは対象外（タブ順が変わっても誤爆しないため）
 //  2) 既定タブ（DEFAULT_TAB_HINT を含むタブ）
 //  3) 先頭タブ
 //  4) タブ非対応なら通常の本文
@@ -403,7 +417,7 @@ function reportBodyForCampus_(doc, campus) {
       if (tabs && tabs.length > 0) {
         if (campus) {
           var hint = TAB_HINTS[campus] || campus;
-          var hit = findTabByTitle_(tabs, hint);
+          var hit = findTabByTitle_(tabs, hint, PROGRESS_TAB_KEYWORD);
           if (hit) return hit.asDocumentTab().getBody();
         }
         var def = findTabByTitle_(tabs, DEFAULT_TAB_HINT);
@@ -417,18 +431,62 @@ function reportBodyForCampus_(doc, campus) {
   return doc.getBody();
 }
 
+// 「中間報告」の転記先タブを決める：
+//  1) タイトルに「中間報告」と部門キーワードの両方を含むタブ（例：小中等部中間報告）
+//  2) 見つからなければ従来の振り分け（部門の事前共有タブ→既定タブ→先頭タブ→通常の本文）
+function progressBodyForCampus_(doc, campus) {
+  try {
+    if (typeof doc.getTabs === 'function') {
+      var tabs = doc.getTabs();
+      if (tabs && tabs.length > 0 && campus) {
+        var hint = PROGRESS_TAB_HINTS[campus] || campus;
+        var hit = findTabByAllTitles_(tabs, [hint, PROGRESS_TAB_KEYWORD]);
+        if (hit) return hit.asDocumentTab().getBody();
+      }
+    }
+  } catch (e) {
+    // タブ非対応環境では下のフォールバックへ
+  }
+  return reportBodyForCampus_(doc, campus);
+}
+
+// タイトルに needles の【すべて】を含む最初のタブを返す（子タブも探索）。
+function findTabByAllTitles_(tabs, needles) {
+  for (var i = 0; i < tabs.length; i++) {
+    var t = tabs[i];
+    var title = '';
+    try { title = t.getTitle(); } catch (e) {}
+    if (title) {
+      var all = true;
+      for (var n = 0; n < needles.length; n++) {
+        if (!needles[n] || title.indexOf(needles[n]) === -1) { all = false; break; }
+      }
+      if (all) return t;
+    }
+    try {
+      var kids = t.getChildTabs ? t.getChildTabs() : null;
+      if (kids && kids.length) {
+        var f = findTabByAllTitles_(kids, needles);
+        if (f) return f;
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+
 // タイトルに hint を含む最初のタブを返す（子タブも探索）。
-function findTabByTitle_(tabs, hint) {
+// exclude を渡すと、その文字列を含むタブは除外する（例：事前報告の検索で「中間報告」タブを避ける）。
+function findTabByTitle_(tabs, hint, exclude) {
   if (!hint) return null;
   for (var i = 0; i < tabs.length; i++) {
     var t = tabs[i];
     var title = '';
     try { title = t.getTitle(); } catch (e) {}
-    if (title && title.indexOf(hint) !== -1) return t;
+    if (title && title.indexOf(hint) !== -1 && !(exclude && title.indexOf(exclude) !== -1)) return t;
     try {
       var kids = t.getChildTabs ? t.getChildTabs() : null;
       if (kids && kids.length) {
-        var f = findTabByTitle_(kids, hint);
+        var f = findTabByTitle_(kids, hint, exclude);
         if (f) return f;
       }
     } catch (e) {}
