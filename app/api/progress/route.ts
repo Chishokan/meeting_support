@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getSession } from '@/lib/auth';
 import { buildProgressPrompt } from '@/lib/progressPrompt';
-import { MODEL } from '@/lib/systemPrompt';
+import { MODEL, THINKING } from '@/lib/systemPrompt';
 import { logInteraction } from '@/lib/log';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
 
@@ -74,7 +74,10 @@ export async function POST(req: Request) {
       try {
         const stream = client.messages.stream({
           model: MODEL,
-          max_tokens: 4000,
+          // Sonnet 5 はトークナイザが変わり、同じ日本語テキストで約1.3倍のトークンを使う。
+          // 旧 4000 のままだと確定ブロック（＝＝＝ 中間報告 ＝＝＝）の途中で切れうるため引き上げる。
+          max_tokens: 6000,
+          thinking: THINKING,
           system,
           messages: cachedMessages,
           stop_sequences: STOP,
