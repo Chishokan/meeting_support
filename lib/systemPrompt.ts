@@ -136,4 +136,14 @@ export function buildSystemPrompt(dept: string, name: string): string {
     .replace(/\{\{担当\}\}/g, name || '（担当）');
 }
 
-export const MODEL = process.env.AGENT_MODEL || 'claude-opus-4-8';
+// 全機能（会議AI・中間報告・議事録・相談AI）で共通のモデル。
+// ★Vercel の環境変数 AGENT_MODEL が設定されているとそちらが優先される。
+//   モデルを変えるときは、このファイルと Vercel の AGENT_MODEL の両方を確認すること。
+export const MODEL = process.env.AGENT_MODEL || 'claude-sonnet-5';
+
+// Sonnet 5 は thinking を省略すると「adaptive thinking（自動思考）」が有効になる。
+// 従来の claude-opus-4-8 は省略＝思考なしだったため、同じ挙動を保つには明示的に切る必要がある。
+// 思考を有効にすると (1) 思考トークンが max_tokens を圧迫して回答が途中で切れる
+// (2) 思考が画面に出ないため返信開始までの無音が長くなる、の2点で体験が落ちる。
+// ※品質を上げたくなったら { type: 'adaptive' } に変えて試す（コストと待ち時間は増える）。
+export const THINKING = { type: 'disabled' } as const;
