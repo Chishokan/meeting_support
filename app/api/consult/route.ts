@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getSession } from '@/lib/auth';
 import { findTemplate } from '@/lib/consultTemplates';
 import { buildConsultPrompt } from '@/lib/consultPrompt';
-import { MODEL } from '@/lib/systemPrompt';
+import { MODEL, THINKING } from '@/lib/systemPrompt';
 import { logInteraction } from '@/lib/log';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
 
@@ -62,7 +62,9 @@ export async function POST(req: Request) {
         const stream = client.messages.stream({
           model: MODEL,
           // 提案書など長い成果物を1回で出し切るため、対話系ルートより広く取る。
-          max_tokens: 8000,
+          // Sonnet 5 はトークナイザが変わり同じ日本語で約1.3倍のトークンを使うので、その分も上乗せ。
+          max_tokens: 12000,
+          thinking: THINKING,
           system,
           messages: cachedMessages,
           stop_sequences: STOP,
