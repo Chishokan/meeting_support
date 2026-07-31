@@ -9,6 +9,11 @@ export type Interaction = {
 // APPS_SCRIPT_URL 未設定なら送信せず、標準出力のみ（Vercel → Logs で確認可）。
 export async function logInteraction(i: Interaction): Promise<void> {
   const ts = new Date().toISOString();
+  // プレビューデプロイ（feat/* ブランチ）は本番と同じスプレッドへ書くため、
+  // 後からテスト分だけ除外できるよう入力の先頭に印を付ける。本番では何も付かない。
+  if (process.env.VERCEL_ENV === 'preview') {
+    i = { ...i, input: `[preview] ${i.input}` };
+  }
   try {
     console.log('[CHAT_LOG]', JSON.stringify({ ts, ...i }));
   } catch {
