@@ -22,7 +22,12 @@ export default function ReportUI({ name, campus }: { name: string; campus: strin
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) {
-        setStatus('ドキュメントに転記しました。');
+        const shared = Number(j?.success ?? 0);
+        setStatus(
+          shared > 0
+            ? `ドキュメントに転記しました。成功事例${shared}件を全体共有に登録しました。`
+            : 'ドキュメントに転記しました。',
+        );
         setText('');
       } else if (j?.reason === 'not_configured') {
         setStatus('未設定です。転記先ドキュメントの連携（Apps Script）を設定してください。');
@@ -63,7 +68,8 @@ export default function ReportUI({ name, campus }: { name: string; campus: strin
           {status && <span className="report-note">{status}</span>}
         </div>
         <p className="report-hint">
-          ※ 転記先の見出しには「{campus}／{name}／日時」が自動で付きます。個人情報の扱いは会議AIの方針（生徒氏名はイニシャル）に従ってください。
+          ※ 転記先の見出しには「{campus}／{name}／日時」が自動で付きます。個人情報の扱いは会議AIの方針（生徒氏名はイニシャル）に従ってください。<br />
+          ※ 夏期結果報告の「成功事例（全体共有）」は、転記と同時に全社の成功事例としてダッシュボードに集約されます。
         </p>
       </div>
     </div>

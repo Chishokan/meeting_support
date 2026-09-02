@@ -4,11 +4,14 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { STAFF } from '@/lib/staff';
 import type { ProgressEntry } from '@/lib/progressPrompt';
+import type { SuccessRow } from '@/app/api/success/route';
 
 type ProgressItem = { ts: string; campus: string; user: string; progress: ProgressEntry[] };
 
 // メンバー行に出す進捗の最大件数（超えた分は「他N件」にまとめる）。
 const MAX_SHOWN_ITEMS = 3;
+// 成功事例パネルに出す件数（新しい順）。
+const MAX_SHOWN_CASES = 6;
 
 function fmtDateTime(s: string) {
   // GAS からは 'yyyy/MM/dd HH:mm' 等の文字列で来る。日付部分だけ簡潔に表示。
@@ -28,6 +31,7 @@ export default function DashboardUI({
 }) {
   const [items, setItems] = useState<ProgressItem[]>([]);
   const [deptItems, setDeptItems] = useState<string[]>([]);
+  const [cases, setCases] = useState<SuccessRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
 
@@ -36,9 +40,10 @@ export default function DashboardUI({
     (async () => {
       try {
         // 提出状況と、この部門の報告項目（管理部門は項目パネルを出さないので取得しない）を並行取得。
-        const [statusRes, itemsRes] = await Promise.all([
+        const [statusRes, itemsRes, successRes] = await Promise.all([
           fetch('/api/progress/latest'),
           isAdmin ? Promise.resolve(null) : fetch('/api/progress/items'),
+          fetch('/api/success').catch(() => null),
         ]);
         const j = await statusRes.json().catch(() => ({}));
         if (!alive) return;
@@ -54,6 +59,10 @@ export default function DashboardUI({
             setDeptItems((j2.items[campus] as unknown[]).map((s) => String(s)));
           }
         }
+        // 成功事例は取得できなくても他の表示は止めない（未設定・未集計なら空のまま）。
+        const j3 = successRes ? await successRes.json().catch(() => ({})) : {};
+        if (!alive) return;
+        if (j3?.ok && Array.isArray(j3.items)) setCases(j3.items as SuccessRow[]);
       } catch {
         if (alive) setNote('中間報告状況の取得に失敗しました。');
       } finally {
@@ -108,6 +117,34 @@ export default function DashboardUI({
           </span>
         </Link>
       </div>
+    </div>
+  );
+
+  const successPanel = (
+    <div className="dash-panel full">
+      <h2>この夏の成功事例（全部門）</h2>
+      {cases.length === 0 ? (
+        <p className="dash-empty">
+          {loading
+            ? '読み込み中…'
+            : 'まだ成功事例はありません。会議AIの「夏の結果報告」でまとめ、'}
+          {!loading && <><Link href="/report">報告</Link>から転記すると、ここに集まります。</>}
+        </p>
+      ) : (
+        <ul className="case-list">
+          {cases.slice(0, MAX_SHOWN_CASES).map((c, i) => (
+            <li key={i} className="case-item">
+              <div className="case-head">
+                <span className="case-title">{c.title || '（件名なし）'}</span>
+                <span className="recent-date">{c.campus}／{c.user}　{fmtDateTime(c.ts)}</span>
+              </div>
+              {c.action && <p className="case-line"><b>取り組み</b>{c.action}</p>}
+              {c.result && <p className="case-line"><b>結果</b>{c.result}</p>}
+              {c.point && <p className="case-line"><b>ポイント</b>{c.point}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 
@@ -178,6 +215,8 @@ export default function DashboardUI({
               </ul>
             )}
           </div>
+
+          {successPanel}
         </div>
       </div>
     );
@@ -268,6 +307,8 @@ export default function DashboardUI({
             })}
           </ul>
         </div>
+
+        {successPanel}
       </div>
     </div>
   );

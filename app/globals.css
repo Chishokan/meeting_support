@@ -252,6 +252,19 @@ button.primary:disabled { opacity: .5; cursor: default; }
 }
 .soon-panel { background: #fbfcfd; border-style: dashed; }
 
+/* ダッシュボード: 全社の成功事例 */
+.case-list { list-style: none; margin: 0; padding: 0; }
+.case-item { padding: 12px 0; border-bottom: 1px solid #f0f2f5; }
+.case-item:last-child { border-bottom: none; }
+.case-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.case-title { font-size: 14px; font-weight: 700; color: #2a2f36; }
+.case-line { margin: 4px 0 0; font-size: 13px; line-height: 1.7; color: #2a2f36; }
+.case-line b {
+  display: inline-block; min-width: 68px; margin-right: 8px; font-size: 11px; font-weight: 700;
+  color: #1f4e78; background: #eaf1f8; border: 1px solid #cfe0ee; border-radius: 999px;
+  padding: 1px 8px; text-align: center;
+}
+
 /* ============ 報告（ドキュメント転記） ============ */
 .report-body { padding: 20px 24px 40px; }
 .report-body textarea {

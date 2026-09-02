@@ -8,6 +8,8 @@
  *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントの【中間報告タブ】に追記＋「中間報告状況」シートに記録
  *   - action:'listProgress' … ダッシュボード用の直近報告者  → 「中間報告状況」シートを新しい順に返す
  *   - action:'getProgressItems'/'saveProgressItems' … 中間報告の定例項目の取得・保存 → 「中間報告項目」シート（1行1項目）
+ *   - action:'saveSuccess'  … 夏期結果報告の成功事例        → 「成功事例」シートに1件1行で記録（「報告」転記時に自動）
+ *   - action:'listSuccess'  … ダッシュボード用の成功事例一覧  → 「成功事例」シートを新しい順に返す
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
  *
  * 【セットアップ手順】
@@ -108,6 +110,14 @@ function doPost(e) {
 
     if (action === 'updateInquiry') {
       return json_(updateInquiry_(data));
+    }
+
+    if (action === 'saveSuccess') {
+      return json_(saveSuccess_(data));
+    }
+
+    if (action === 'listSuccess') {
+      return json_(listSuccess_(data));
     }
 
     if (action === 'saveMinutes') {
@@ -327,6 +337,47 @@ function listProgress_(data) {
     items.push({
       ts: cellStr_(r[0]), campus: String(r[1]), user: String(r[2]),
       content: String(r[3] == null ? '' : r[3]),
+    });
+  }
+  items.reverse();
+  if (items.length > 100) items = items.slice(0, 100);
+  return { ok: true, items: items };
+}
+
+var SUCCESS_HEADERS = ['日時', '事業部', '担当', '件名', '取り組み', '結果', '他でも使えるポイント'];
+
+// 夏期結果報告の成功事例を「成功事例」シートへ1件1行で記録する。
+// data.cases = [{ title, action, result, point }, ...]（Next 側で報告文から抽出済み）。
+function saveSuccess_(data) {
+  var cases = data.cases;
+  if (!cases || !cases.length) return { ok: true, count: 0 };
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('成功事例') || ss.insertSheet('成功事例');
+  if (sh.getLastRow() === 0) sh.appendRow(SUCCESS_HEADERS);
+  var ts = data.ts || nowIso_();
+  for (var i = 0; i < cases.length; i++) {
+    var c = cases[i] || {};
+    sh.appendRow([
+      ts, data.campus || '', data.user || '',
+      c.title || '', c.action || '', c.result || '', c.point || ''
+    ]);
+  }
+  return { ok: true, count: cases.length };
+}
+
+// 成功事例（新しい順・最大100件）を返す。ダッシュボードの全社共有パネルで使う。
+function listSuccess_(data) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('成功事例');
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  var values = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    items.push({
+      ts: cellStr_(r[0]), campus: String(r[1] == null ? '' : r[1]), user: String(r[2] == null ? '' : r[2]),
+      title: String(r[3] == null ? '' : r[3]), action: String(r[4] == null ? '' : r[4]),
+      result: String(r[5] == null ? '' : r[5]), point: String(r[6] == null ? '' : r[6])
     });
   }
   items.reverse();
