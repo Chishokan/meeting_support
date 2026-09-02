@@ -15,7 +15,8 @@
 
 ## 中身の調整
 - 会社情報・理念・社長方針: lib/companyKnowledge.ts
-- 会話の進め方（プロンプト）: lib/systemPrompt.ts
+- 会話の進め方（プロンプト）: lib/systemPrompt.ts（会議AI「事前報告」モード）
+- 夏の結果報告（会議AI「夏の結果報告」モード）: lib/summerPrompt.ts
 - ここを直すと全社員の AI に一括反映
 
 ## ログ / セキュリティ（テスト版のため要ハードニング）

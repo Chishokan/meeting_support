@@ -42,7 +42,7 @@ export default function ReportUI({ name, campus }: { name: string; campus: strin
       <div className="page-head">
         <h1>報告</h1>
         <p>
-          {campus}／{name} さん。「会議AI」が出力した<b>「貼り付け用：事前報告」</b>ブロックをここに貼り付け、
+          {campus}／{name} さん。「会議AI」が出力した<b>「貼り付け用：…（ここから）〜（ここまで）」</b>ブロック（事前報告／夏期結果報告）をここに貼り付け、
           「報告する」を押すと会議ドキュメントに新しいセクションとして転記されます。
         </p>
       </div>
@@ -51,7 +51,7 @@ export default function ReportUI({ name, campus }: { name: string; campus: strin
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="ここに『貼り付け用：事前報告』ブロックをそのまま貼り付けてください"
+          placeholder="ここに『貼り付け用：事前報告』『貼り付け用：夏期結果報告』などのブロックをそのまま貼り付けてください"
         />
         <div className="report-actions">
           <button onClick={submit} disabled={busy || !text.trim()}>

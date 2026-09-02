@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getSession } from '@/lib/auth';
 import { buildSystemPrompt, MODEL, THINKING } from '@/lib/systemPrompt';
+import { buildSummerPrompt } from '@/lib/summerPrompt';
 import { logInteraction } from '@/lib/log';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
 
@@ -13,6 +14,9 @@ export const maxDuration = 60;
 const client = new Anthropic();
 
 type Msg = { role: 'user' | 'assistant'; content: string };
+
+// 会議AIのモード。meeting＝通常の事前報告 / summer＝夏の結果報告（計画確認なし）。
+type Mode = 'meeting' | 'summer';
 
 // 添付ファイル（PDF/画像はネイティブ対応、テキスト系は本文として渡す）
 type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };
@@ -50,6 +54,7 @@ export async function POST(req: Request) {
   // 役割漏れ・空メッセージを除去（既に汚れた履歴が送られても自己対話ループを断つ）。
   const messages = sanitizeHistory(raw) as Msg[];
   if (messages.length === 0) return new Response('messages required', { status: 400 });
+  const mode: Mode = body?.mode === 'summer' ? 'summer' : 'meeting';
 
   const encoder = new TextEncoder();
   let full = '';
@@ -60,7 +65,10 @@ export async function POST(req: Request) {
   const system: Anthropic.TextBlockParam[] = [
     {
       type: 'text',
-      text: buildSystemPrompt(session.campus, session.name),
+      text:
+        mode === 'summer'
+          ? buildSummerPrompt(session.campus, session.name)
+          : buildSystemPrompt(session.campus, session.name),
       cache_control: { type: 'ephemeral' },
     },
   ];
@@ -105,7 +113,7 @@ export async function POST(req: Request) {
       } finally {
         if (cacheLog) {
           try {
-            console.log('[CACHE chat]', cacheLog);
+            console.log(`[CACHE chat:${mode}]`, cacheLog);
           } catch {}
         }
         const lastUser = [...messages].reverse().find((m) => m.role === 'user');
@@ -113,7 +121,7 @@ export async function POST(req: Request) {
           await logInteraction({
             user: session.name,
             campus: session.campus,
-            input: lastUser?.content ?? '',
+            input: mode === 'summer' ? `[夏期結果] ${lastUser?.content ?? ''}` : (lastUser?.content ?? ''),
             output: stripRoleBleed(full),
           });
         } catch {}

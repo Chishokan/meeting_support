@@ -113,9 +113,9 @@ const DEPT_SUPPLEMENTS: Record<string, string> = {
 };
 
 // 数値報告を必須とする部門（社長要望）。管理部門は対象外。
-const NUMERIC_DEPTS = ['小中等部', '高等部', 'RED個別', 'LEC', '英検'];
+export const NUMERIC_DEPTS = ['小中等部', '高等部', 'RED個別', 'LEC', '英検'];
 // 売上を数値報告に含めない部門（社長指示：小中等部は売上を入れない）
-const NO_SALES_DEPTS = ['小中等部'];
+export const NO_SALES_DEPTS = ['小中等部'];
 
 function numbersSupplement(dept: string): string {
   const lines = ['- 生徒数（在籍・前年比）'];

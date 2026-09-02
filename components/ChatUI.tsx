@@ -6,6 +6,26 @@ import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
 type Msg = { role: 'user' | 'assistant'; content: string };
 type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };
 
+// 会議AIのモード。meeting＝通常の事前報告 / summer＝夏の結果報告（計画確認なし）。
+type Mode = 'meeting' | 'summer';
+
+const MODES: { id: Mode; label: string; title: string; desc: string; hint: string }[] = [
+  {
+    id: 'meeting',
+    label: '事前報告',
+    title: '会議AI',
+    desc: '会議前の報告を、AIとの対話で「協議・報告・決裁」に整理します。',
+    hint: '事前報告をまとめましょう。下の入力欄に「会議の報告を始めたい」などと送るか、共有したいことを箇条書きで貼り付けてください。',
+  },
+  {
+    id: 'summer',
+    label: '夏の結果報告',
+    title: '会議AI（夏の結果報告）',
+    desc: '夏の結果を、募集・継続・成績の「昨年対比／目標対比」とその他振り返りに整理します。授業担当の方は夏期講習会の振り返りのみです。',
+    hint: '夏の結果報告をまとめましょう。下の入力欄に「始めたい」と送ってください（集計表の貼り付け・PDFの添付もできます）。',
+  },
+];
+
 const MAX_TOTAL_BYTES = 3_500_000; // 送信全体の目安（Vercelのリクエスト上限に対する余裕分）
 
 function toBase64(file: File): Promise<string> {
@@ -67,6 +87,23 @@ async function toAttach(file: File): Promise<Attach | null> {
 
 const STORE_PREFIX = 'chishokan_chat_v1';
 
+// 会話はモードごとに分けて保存する（既存の事前報告の履歴はキーを変えない）。
+function keyFor(campus: string, name: string, mode: Mode): string {
+  return `${STORE_PREFIX}:${campus}/${name}${mode === 'summer' ? ':summer' : ''}`;
+}
+
+function loadMessages(key: string): Msg[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    // 過去に保存された役割漏れ・空メッセージをここで浄化して復元する。
+    return Array.isArray(arr) ? (sanitizeHistory(arr) as Msg[]) : [];
+  } catch {
+    return []; // 読み込み失敗は無視して新規開始
+  }
+}
+
 export default function ChatUI({ name, campus }: { name: string; campus: string }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -75,6 +112,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [attachments, setAttachments] = useState<Attach[]>([]);
   const [attachNote, setAttachNote] = useState('');
+  const [mode, setMode] = useState<Mode>('meeting');
 
   async function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -106,39 +144,52 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
   const endRef = useRef<HTMLDivElement>(null);
   const loaded = useRef(false);
   const sendingRef = useRef(false);
-  const storeKey = `${STORE_PREFIX}:${campus}/${name}`;
+  const storeKey = keyFor(campus, name, mode);
+  const modeKey = `${STORE_PREFIX}:mode:${campus}/${name}`;
+  const view = MODES.find((m) => m.id === mode) ?? MODES[0];
 
   // 同じ端末・ブラウザで中断→再開できるよう、会話を localStorage に保存する。
+  // 前回開いていたモードと、そのモードの会話を復元する。
   useEffect(() => {
+    let m: Mode = 'meeting';
     try {
-      const raw = localStorage.getItem(storeKey);
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) {
-          // 過去に保存された役割漏れ・空メッセージをここで浄化して復元する。
-          const clean = sanitizeHistory(arr) as Msg[];
-          if (clean.length) {
-            setMessages(clean);
-            setRestored(true);
-          }
-        }
-      }
-    } catch {
-      // 読み込み失敗は無視して新規開始
+      if (localStorage.getItem(modeKey) === 'summer') m = 'summer';
+    } catch {}
+    const saved = loadMessages(keyFor(campus, name, m));
+    setMode(m);
+    if (saved.length) {
+      setMessages(saved);
+      setRestored(true);
     }
     loaded.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 空配列での上書き（＝マウント直後や空のモードへの切替）で他モードの履歴を消さないよう、
+  // 保存は会話がある時だけ。削除は resetChat で明示的に行う。
   useEffect(() => {
-    if (!loaded.current) return;
+    if (!loaded.current || !messages.length) return;
     try {
-      if (messages.length) localStorage.setItem(storeKey, JSON.stringify(messages));
-      else localStorage.removeItem(storeKey);
+      localStorage.setItem(storeKey, JSON.stringify(messages));
     } catch {
       // 保存失敗は本処理を止めない
     }
   }, [messages, storeKey]);
+
+  // モード切替：会話はモードごとに保持し、切り替え先の続きから再開する。
+  function switchMode(next: Mode) {
+    if (busy || next === mode) return;
+    const saved = loadMessages(keyFor(campus, name, next));
+    setMode(next);
+    setMessages(saved);
+    setRestored(saved.length > 0);
+    setInput('');
+    setAttachments([]);
+    setAttachNote('');
+    try {
+      localStorage.setItem(modeKey, next);
+    } catch {}
+  }
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -180,7 +231,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: next, attachments: sending }),
+        body: JSON.stringify({ messages: next, attachments: sending, mode }),
       });
       if (!res.ok || !res.body) throw new Error('failed');
       const reader = res.body.getReader();
@@ -234,8 +285,20 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
   return (
     <>
       <div className="page-head">
-        <h1>会議AI</h1>
-        <p>会議前の報告を、AIとの対話で「協議・報告・決裁」に整理します。</p>
+        <h1>{view.title}</h1>
+        <p>{view.desc}</p>
+        <div className="mode-switch">
+          {MODES.map((m) => (
+            <button
+              key={m.id}
+              className={`mode-btn ${m.id === mode ? 'active' : ''}`}
+              onClick={() => switchMode(m.id)}
+              disabled={busy}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
         {messages.length > 0 && (
           <button className="reset-chat" onClick={resetChat} disabled={busy}>
             最初からやり直す
@@ -249,10 +312,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
             <div className="resume-note">前回の続きから再開しました（この端末に保存されています）。</div>
           )}
           {messages.length === 0 && (
-            <div className="hint">
-              事前報告をまとめましょう。<br />
-              下の入力欄に「会議の報告を始めたい」などと送るか、共有したいことを箇条書きで貼り付けてください。
-            </div>
+            <div className="hint">{view.hint}</div>
           )}
           {messages.map((m, i) => (
             <div key={i} className={`msg ${m.role}`}>

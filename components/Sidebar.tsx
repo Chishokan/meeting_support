@@ -8,7 +8,7 @@ type NavItem = { href: string; label: string; desc?: string; soon?: boolean };
 
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'ダッシュボード', desc: '準備状況の一覧' },
-  { href: '/chat', label: '会議AI', desc: '事前報告づくり' },
+  { href: '/chat', label: '会議AI', desc: '事前報告・夏の結果報告' },
   { href: '/progress', label: '中間報告', desc: '決議事項の進捗報告' },
   { href: '/report', label: '報告', desc: 'ドキュメントへ転記' },
   { href: '/inquiry', label: 'お問い合わせ', desc: '不具合・改善要望' },
