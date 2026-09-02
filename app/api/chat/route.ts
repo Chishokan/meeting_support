@@ -2,6 +2,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getSession } from '@/lib/auth';
 import { buildSystemPrompt, MODEL, THINKING } from '@/lib/systemPrompt';
 import { buildSummerPrompt } from '@/lib/summerPrompt';
+import { listNumbers } from '@/lib/numbersStore';
+import { formatEntries, latestByCampus } from '@/lib/summerNumbers';
 import { logInteraction } from '@/lib/log';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
 
@@ -56,6 +58,11 @@ export async function POST(req: Request) {
   if (messages.length === 0) return new Response('messages required', { status: 400 });
   const mode: Mode = body?.mode === 'summer' ? 'summer' : 'meeting';
 
+  // 夏の結果報告では「数値報告」メニューの登録内容をプロンプトへ差し込む
+  // （毎ターン最新を取りに行くので、会話の途中で登録されても次の発言から反映される）。
+  const numbersText =
+    mode === 'summer' ? formatEntries(latestByCampus(await listNumbers(session.campus))) : '';
+
   const encoder = new TextEncoder();
   let full = '';
   let cacheLog = '';
@@ -67,7 +74,7 @@ export async function POST(req: Request) {
       type: 'text',
       text:
         mode === 'summer'
-          ? buildSummerPrompt(session.campus, session.name)
+          ? buildSummerPrompt(session.campus, session.name, numbersText)
           : buildSystemPrompt(session.campus, session.name),
       cache_control: { type: 'ephemeral' },
     },

@@ -8,6 +8,8 @@
  *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントの【中間報告タブ】に追記＋「中間報告状況」シートに記録
  *   - action:'listProgress' … ダッシュボード用の直近報告者  → 「中間報告状況」シートを新しい順に返す
  *   - action:'getProgressItems'/'saveProgressItems' … 中間報告の定例項目の取得・保存 → 「中間報告項目」シート（1行1項目）
+ *   - action:'saveNumbers'  … 「数値報告」メニューの入力       → 「夏期数値」シートに1行で記録（校舎ごと・送り直すと追記）
+ *   - action:'listNumbers'  … 会議AI・数値報告画面での参照     → 「夏期数値」シートを新しい順に返す
  *   - action:'saveSuccess'  … 夏期結果報告の成功事例        → 「成功事例」シートに1件1行で記録（「報告」転記時に自動）
  *   - action:'listSuccess'  … ダッシュボード用の成功事例一覧  → 「成功事例」シートを新しい順に返す
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
@@ -110,6 +112,14 @@ function doPost(e) {
 
     if (action === 'updateInquiry') {
       return json_(updateInquiry_(data));
+    }
+
+    if (action === 'saveNumbers') {
+      return json_(saveNumbers_(data));
+    }
+
+    if (action === 'listNumbers') {
+      return json_(listNumbers_(data));
     }
 
     if (action === 'saveSuccess') {
@@ -341,6 +351,49 @@ function listProgress_(data) {
   }
   items.reverse();
   if (items.length > 100) items = items.slice(0, 100);
+  return { ok: true, items: items };
+}
+
+// 「数値報告」メニューの入力を「夏期数値」シートへ1行で記録する。
+// 見出し（headers）と値（row）は Next 側（lib/summerNumbers.ts）が組み立てて送る。
+// 既存シートの見出しが古い場合は、不足分の見出しだけを補う。
+function saveNumbers_(data) {
+  var headers = data.headers || [];
+  var row = data.row || [];
+  if (!headers.length) return { ok: false, reason: 'no_headers' };
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('夏期数値') || ss.insertSheet('夏期数値');
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(headers);
+  } else {
+    var cur = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+    for (var c = 0; c < headers.length; c++) {
+      if (!cur[c]) sh.getRange(1, c + 1).setValue(headers[c]);
+    }
+  }
+  sh.appendRow([data.ts || nowIso_(), data.dept || '', data.campus || '', data.user || ''].concat(row));
+  return { ok: true };
+}
+
+// 「夏期数値」シートを新しい順（最大200件）に、見出しをキーにした連想配列で返す。
+function listNumbers_(data) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('夏期数値');
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  var values = sh.getDataRange().getValues();
+  var headers = values[0];
+  var items = [];
+  for (var i = 1; i < values.length; i++) {
+    var obj = {};
+    for (var c = 0; c < headers.length; c++) {
+      var key = String(headers[c]);
+      if (!key) continue;
+      obj[key] = c === 0 ? cellStr_(values[i][c]) : String(values[i][c] == null ? '' : values[i][c]);
+    }
+    items.push(obj);
+  }
+  items.reverse();
+  if (items.length > 200) items = items.slice(0, 200);
   return { ok: true, items: items };
 }
 

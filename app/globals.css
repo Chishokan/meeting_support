@@ -265,6 +265,48 @@ button.primary:disabled { opacity: .5; cursor: default; }
   padding: 1px 8px; text-align: center;
 }
 
+/* ============ 数値報告 ============ */
+.numbers-body { padding: 20px 24px 48px; display: grid; gap: 20px; grid-template-columns: minmax(320px, 1fr) 280px; align-items: start; }
+.numbers-form { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+.num-selects { display: flex; gap: 14px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.num-selects label { display: flex; flex-direction: column; gap: 4px; min-width: 200px; flex: 1; }
+.num-selects span { font-size: 12px; font-weight: 700; color: #667; }
+.num-selects select, .num-selects input {
+  padding: 9px 10px; font-size: 14px; border: 1px solid #cdd3da; border-radius: 8px; background: #fff; font-family: inherit;
+}
+.num-fields { list-style: none; margin: 0; padding: 0; }
+.num-fields > li { padding: 14px 0; border-bottom: 1px solid #f0f2f5; }
+.num-fields > li:last-child { border-bottom: none; }
+.num-label { font-size: 14px; font-weight: 700; color: #2a2f36; margin-bottom: 8px; }
+.num-label small { display: block; font-size: 12px; font-weight: 400; color: #97a1ac; margin-top: 2px; }
+.num-cols { display: flex; gap: 10px; flex-wrap: wrap; }
+.num-cols label { display: flex; flex-direction: column; gap: 3px; flex: 1 1 120px; }
+.num-cols label.wide { flex-basis: 100%; }
+.num-cols span { font-size: 11px; color: #8a94a0; }
+.num-cols input {
+  padding: 8px 10px; font-size: 14px; border: 1px solid #cdd3da; border-radius: 8px;
+  font-family: inherit; font-variant-numeric: tabular-nums; width: 100%;
+}
+.num-actions { display: flex; align-items: center; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+.num-actions button { padding: 10px 22px; font-size: 14px; font-weight: 700; color: #fff; background: var(--navy); border: none; border-radius: 8px; cursor: pointer; }
+.num-actions button:disabled { opacity: .5; cursor: default; }
+.num-note { font-size: 13px; color: #2e6b4f; }
+.num-hint { margin: 12px 0 0; font-size: 12px; color: #8a94a0; line-height: 1.7; }
+.num-list { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+.num-list h2 { font-size: 14px; margin: 0 0 10px; }
+.num-list ul { list-style: none; margin: 0; padding: 0; }
+.num-list li { padding: 10px 0; border-bottom: 1px solid #f0f2f5; }
+.num-list li:last-child { border-bottom: none; }
+.num-list-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.num-list-head b { font-size: 14px; }
+.num-meta { font-size: 12px; color: #97a1ac; }
+.num-empty { font-size: 13px; color: #8a94a0; margin: 0; }
+.num-edit { margin-top: 4px; font-size: 12px; color: var(--navy); background: #eef3f8; border: 1px solid #cfe0ee; border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.num-edit:hover { background: #e3edf7; }
+@media (max-width: 860px) {
+  .numbers-body { grid-template-columns: 1fr; }
+}
+
 /* ============ 報告（ドキュメント転記） ============ */
 .report-body { padding: 20px 24px 40px; }
 .report-body textarea {
