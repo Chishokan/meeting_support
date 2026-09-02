@@ -72,8 +72,17 @@ export function cellKey(field: NumberField, col: NumberCol): string {
 // 部門（既存の事業部区分）。
 export const DEPARTMENTS: string[] = STAFF.map((s) => s.campus);
 
-// 校舎のプルダウン候補。★校舎名が確定したらここに並べる（空のままなら自由入力欄になる）。
-export const CAMPUSES: string[] = [];
+// 部門ごとの校舎プルダウン候補。★校舎の増減はここを編集する。
+// 記載のない部門（LEC・英検・総務など）は校舎名の自由入力欄になる。
+export const CAMPUSES_BY_DEPT: Record<string, string[]> = {
+  小中等部: ['佐世保駅前校', '日野校', '大野校', '日宇校', '県中対策'],
+  RED個別: ['広田教室', '京町教室', '日野教室', '佐々教室', '西海大島教室', '大野教室', 'ネクスタ'],
+  高等部: ['佐世保駅前校', '日宇校', '大野校'],
+};
+
+export function campusesFor(dept: string): string[] {
+  return CAMPUSES_BY_DEPT[dept] ?? [];
+}
 
 // スプレッドシート「夏期数値」の見出し。NUMBER_FIELDS と必ず同じ並びにする。
 export const NUMBER_SHEET_HEADERS: string[] = [

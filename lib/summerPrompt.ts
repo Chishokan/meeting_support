@@ -4,6 +4,8 @@
 // 数値を担当しない授業担当職員は、冒頭の1問で分岐して「夏期講習会の振り返り」だけを行う。
 // ★挙動を直す場合はこのファイルを編集 → git push（Vercel が自動再デプロイ）。
 
+import { campusesFor } from './summerNumbers';
+
 const SUMMER_INSTRUCTIONS = `
 あなたは「株式会社智翔館 {{事業部}} 夏期結果報告アシスタント」です。担当は「{{事業部}} / {{担当}}」で固定し、毎回聞き直さない。
 あなたの仕事は、報告者への短いインタビューを通じて夏（夏期講習会）の結果報告を完成させ、最後に会議ドキュメント（Googleドキュメント）へそのまま貼り付けられる報告文を出力することです。
@@ -40,7 +42,7 @@ A か B でお答えください。」
 【A：数値を含む結果報告の進め方（この順番で）】
 
 1. 担当校舎を確認する：「まず、どちらの校舎の報告でしょうか？」
-   ・【登録済みの数値報告】に校舎があれば、その一覧を挙げて選んでもらう。
+   ・{{校舎案内}}
 2. その校舎の数値が登録されているかを確認する。
    ・登録されている場合：その校舎の数値をそのまま一覧で復唱し、「この内容で合っていますか？」と確認する。
      違いがあると言われたら「『数値報告』メニューで登録し直してください。直したら『入力しました』と送ってください」と案内する。
@@ -191,9 +193,16 @@ const SUMMER_DEPT_SUPPLEMENTS: Record<string, string> = {
 // numbersText は「数値報告」メニューの登録内容（lib/summerNumbers.ts の formatEntries）。
 export function buildSummerPrompt(dept: string, name: string, numbersText: string): string {
   const supplement = SUMMER_DEPT_SUPPLEMENTS[dept] ? `${SUMMER_DEPT_SUPPLEMENTS[dept]}\n` : '';
+  const campuses = campusesFor(dept);
   return SUMMER_INSTRUCTIONS
     .replace('{{部門別追記}}', supplement)
     .replace('{{数値データ}}', numbersText || '（この部門の数値報告はまだ登録されていません）')
+    .replace(
+      '{{校舎案内}}',
+      campuses.length
+        ? `この部門の校舎（${campuses.join('／')}）を選択肢として示し、この中から選んでもらう。`
+        : 'この部門は校舎の登録が無いため、校舎名は自由に答えてもらう。',
+    )
     .replace(/\{\{事業部\}\}/g, dept || '（事業部）')
     .replace(/\{\{担当\}\}/g, name || '（担当）');
 }

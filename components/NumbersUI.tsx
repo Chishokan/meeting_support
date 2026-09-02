@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import {
-  CAMPUSES,
   DEPARTMENTS,
+  campusesFor,
   NUMBER_FIELDS,
   cellKey,
   type NumberEntry,
@@ -17,7 +17,7 @@ function fmtDate(s: string) {
 
 export default function NumbersUI({ name, campus }: { name: string; campus: string }) {
   const [dept, setDept] = useState(DEPARTMENTS.includes(campus) ? campus : DEPARTMENTS[0] ?? '');
-  const [site, setSite] = useState(CAMPUSES[0] ?? '');
+  const [site, setSite] = useState('');
   const [values, setValues] = useState<NumberValues>({});
   const [entries, setEntries] = useState<NumberEntry[]>([]);
   const [busy, setBusy] = useState(false);
@@ -38,6 +38,13 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
   useEffect(() => {
     void load();
   }, []);
+
+  // 部門を変えたら、その部門に無い校舎の選択は外す（自由入力の部門はそのまま残す）。
+  function changeDept(next: string) {
+    setDept(next);
+    const list = campusesFor(next);
+    if (list.length > 0 && !list.includes(site)) setSite('');
+  }
 
   function set(key: string, v: string) {
     setValues((prev) => ({ ...prev, [key]: v }));
@@ -97,7 +104,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
           <div className="num-selects">
             <label>
               <span>部門</span>
-              <select value={dept} onChange={(e) => setDept(e.target.value)}>
+              <select value={dept} onChange={(e) => changeDept(e.target.value)}>
                 {DEPARTMENTS.map((d) => (
                   <option key={d} value={d}>{d}</option>
                 ))}
@@ -105,10 +112,10 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
             </label>
             <label>
               <span>校舎</span>
-              {CAMPUSES.length > 0 ? (
+              {campusesFor(dept).length > 0 ? (
                 <select value={site} onChange={(e) => setSite(e.target.value)}>
                   <option value="">選択してください</option>
-                  {CAMPUSES.map((c) => (
+                  {campusesFor(dept).map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
