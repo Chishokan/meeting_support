@@ -266,7 +266,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
 }
 
 /* ============ 数値報告 ============ */
-.numbers-body { padding: 20px 24px 48px; display: grid; gap: 20px; grid-template-columns: minmax(320px, 1fr) 280px; align-items: start; }
+.numbers-body { padding: 20px 24px 48px; display: grid; gap: 20px; grid-template-columns: minmax(320px, 1fr) minmax(300px, 400px); align-items: start; }
 .numbers-form { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
 .num-selects { display: flex; gap: 14px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
 .num-selects label { display: flex; flex-direction: column; gap: 4px; min-width: 200px; flex: 1; }
@@ -295,7 +295,13 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .num-list { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
 .num-list h2 { font-size: 14px; margin: 0 0 10px; }
 .num-list ul { list-style: none; margin: 0; padding: 0; }
-.num-list li { padding: 10px 0; border-bottom: 1px solid #f0f2f5; }
+.num-list-note { margin: -4px 0 12px; font-size: 12px; color: #97a1ac; line-height: 1.6; }
+.num-list li { padding: 12px 0; border-bottom: 1px solid #f0f2f5; }
+.num-view { margin: 8px 0 0; padding: 10px 12px; background: #f8fafc; border: 1px solid #eef1f5; border-radius: 8px; }
+.num-view > div { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; }
+.num-view dt { flex: 1 1 auto; font-size: 12px; color: #667; line-height: 1.5; }
+.num-view dd { flex: 0 0 auto; margin: 0; font-size: 13px; font-weight: 700; color: #2a2f36; font-variant-numeric: tabular-nums; text-align: right; }
+.num-view > div.empty dd { color: #b6bec7; font-weight: 400; }
 .num-list li:last-child { border-bottom: none; }
 .num-list-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .num-list-head b { font-size: 14px; }

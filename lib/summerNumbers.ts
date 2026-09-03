@@ -136,6 +136,20 @@ export type NumberEntry = {
   values: NumberValues;
 };
 
+// 画面表示用に「項目名：値」の行へ変換する（未入力は「—」）。
+export function displayRows(values: NumberValues): { label: string; value: string }[] {
+  return NUMBER_FIELDS.map((f) => {
+    const parts = f.cols
+      .map((c) => {
+        const v = (values[cellKey(f, c)] ?? '').trim();
+        if (!v) return null;
+        return f.cols.length === 1 ? v : `${c.label} ${v}`;
+      })
+      .filter(Boolean);
+    return { label: f.label, value: parts.length ? parts.join(' ／ ') : '—' };
+  });
+}
+
 // 会議AIのプロンプトへ差し込む形に整形する。
 export function formatEntries(entries: NumberEntry[]): string {
   if (entries.length === 0) return '';

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   DEPARTMENTS,
   campusesFor,
+  displayRows,
   NUMBER_FIELDS,
   cellKey,
   type NumberEntry,
@@ -166,7 +167,8 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
         </div>
 
         <div className="num-list">
-          <h2>登録済み（{campus}）</h2>
+          <h2>登録済みの数値（{campus}）</h2>
+          <p className="num-list-note">部門のメンバーが登録した内容です。会議AIはこの数値を使います。</p>
           {note && <p className="num-empty">{note}</p>}
           {entries.length === 0 ? (
             <p className="num-empty">まだ登録がありません。</p>
@@ -178,7 +180,15 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
                     <b>{e.campus}</b>
                     <span className="num-meta">{e.user}／{fmtDate(e.ts)}</span>
                   </div>
-                  <button className="num-edit" onClick={() => edit(e)}>この内容を読み込む</button>
+                  <dl className="num-view">
+                    {displayRows(e.values).map((r, j) => (
+                      <div key={j} className={r.value === '—' ? 'empty' : ''}>
+                        <dt>{r.label}</dt>
+                        <dd>{r.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <button className="num-edit" onClick={() => edit(e)}>この内容を読み込んで修正</button>
                 </li>
               ))}
             </ul>
