@@ -4,13 +4,15 @@
 
 import { STAFF } from './staff';
 
-export type NumberCol = { key: string; label: string; placeholder?: string };
-export type NumberField = { key: string; label: string; note?: string; cols: NumberCol[] };
+// short は一覧表示だけで使う短縮名（label はシート見出しに使うので変更しない）。
+export type NumberCol = { key: string; label: string; short?: string; placeholder?: string };
+export type NumberField = { key: string; label: string; short: string; note?: string; cols: NumberCol[] };
 
 export const NUMBER_FIELDS: NumberField[] = [
   {
     key: 'recruit',
     label: '夏期講習会（招待）の外部生募集',
+    short: '招待外部生',
     cols: [
       { key: 'apply', label: '申込', placeholder: '○名' },
       { key: 'target', label: '目標', placeholder: '○名' },
@@ -20,20 +22,23 @@ export const NUMBER_FIELDS: NumberField[] = [
   {
     key: 'interview',
     label: '外部生の継続面談（入会面談）',
+    short: '継続面談',
     cols: [{ key: 'count', label: '実施数', placeholder: '○名' }],
   },
   {
     key: 'retention',
     label: '外部生の継続',
+    short: '外部生継続',
     cols: [
-      { key: 'count', label: '継続数', placeholder: '○名' },
-      { key: 'lastCount', label: '昨年の継続数', placeholder: '○名' },
-      { key: 'lastTotal', label: '昨年の母数', placeholder: '○名' },
+      { key: 'count', label: '継続数', short: '継続', placeholder: '○名' },
+      { key: 'lastCount', label: '昨年の継続数', short: '昨年継続', placeholder: '○名' },
+      { key: 'lastTotal', label: '昨年の母数', short: '昨年母数', placeholder: '○名' },
     ],
   },
   {
     key: 'mock',
     label: '8月模試の外部生',
+    short: '8月模試',
     cols: [
       { key: 'now', label: '今年', placeholder: '○名' },
       { key: 'last', label: '昨年', placeholder: '○名' },
@@ -43,6 +48,7 @@ export const NUMBER_FIELDS: NumberField[] = [
   {
     key: 'students',
     label: '生徒数',
+    short: '生徒数',
     cols: [
       { key: 'sep', label: '9月現在', placeholder: '○名' },
       { key: 'lastSep', label: '昨年9月', placeholder: '○名' },
@@ -51,12 +57,14 @@ export const NUMBER_FIELDS: NumberField[] = [
   {
     key: 'grades',
     label: '通知表回収（新規入会者を含む）',
+    short: '通知表回収',
     note: '100% か、あと何名か',
     cols: [{ key: 'status', label: '回収状況', placeholder: '100% ／ あと○名' }],
   },
   {
     key: 'other',
     label: 'その他、夏の数字で報告が必要なもの',
+    short: 'その他',
     note: '売上・東進の受講率など、担当で把握している数字があれば',
     cols: [{ key: 'note', label: '内容', placeholder: '項目名：今年 ○ ／ 昨年 ○ ／ 目標 ○' }],
   },
@@ -137,16 +145,17 @@ export type NumberEntry = {
 };
 
 // 画面表示用に「項目名：値」の行へ変換する（未入力は「—」）。
+// 一覧は幅が狭いので、短い項目名と詰めた値（例「申込12／目標15」）にする。
 export function displayRows(values: NumberValues): { label: string; value: string }[] {
   return NUMBER_FIELDS.map((f) => {
     const parts = f.cols
       .map((c) => {
         const v = (values[cellKey(f, c)] ?? '').trim();
         if (!v) return null;
-        return f.cols.length === 1 ? v : `${c.label} ${v}`;
+        return f.cols.length === 1 ? v : `${c.short ?? c.label}${v}`;
       })
       .filter(Boolean);
-    return { label: f.label, value: parts.length ? parts.join(' ／ ') : '—' };
+    return { label: f.short, value: parts.length ? parts.join('／') : '—' };
   });
 }
 

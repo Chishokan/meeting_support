@@ -275,12 +275,12 @@ button.primary:disabled { opacity: .5; cursor: default; }
   padding: 9px 10px; font-size: 14px; border: 1px solid #cdd3da; border-radius: 8px; background: #fff; font-family: inherit;
 }
 .num-fields { list-style: none; margin: 0; padding: 0; }
-.num-fields > li { padding: 14px 0; border-bottom: 1px solid #f0f2f5; }
+.num-fields > li { padding: 11px 0; border-bottom: 1px solid #f0f2f5; }
 .num-fields > li:last-child { border-bottom: none; }
 .num-label { font-size: 14px; font-weight: 700; color: #2a2f36; margin-bottom: 8px; }
 .num-label small { display: block; font-size: 12px; font-weight: 400; color: #97a1ac; margin-top: 2px; }
 .num-cols { display: flex; gap: 10px; flex-wrap: wrap; }
-.num-cols label { display: flex; flex-direction: column; gap: 3px; flex: 1 1 120px; }
+.num-cols label { display: flex; flex-direction: column; gap: 3px; flex: 1 1 92px; min-width: 92px; }
 .num-cols label.wide { flex-basis: 100%; }
 .num-cols span { font-size: 11px; color: #8a94a0; }
 .num-cols input {
@@ -297,10 +297,13 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .num-list ul { list-style: none; margin: 0; padding: 0; }
 .num-list-note { margin: -4px 0 12px; font-size: 12px; color: #97a1ac; line-height: 1.6; }
 .num-list li { padding: 12px 0; border-bottom: 1px solid #f0f2f5; }
-.num-view { margin: 8px 0 0; padding: 10px 12px; background: #f8fafc; border: 1px solid #eef1f5; border-radius: 8px; }
-.num-view > div { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; }
-.num-view dt { flex: 1 1 auto; font-size: 12px; color: #667; line-height: 1.5; }
-.num-view dd { flex: 0 0 auto; margin: 0; font-size: 13px; font-weight: 700; color: #2a2f36; font-variant-numeric: tabular-nums; text-align: right; }
+.num-view { margin: 6px 0 0; padding: 8px 10px; background: #f8fafc; border: 1px solid #eef1f5; border-radius: 8px; }
+.num-view > div { display: grid; grid-template-columns: 76px 1fr; gap: 8px; align-items: baseline; padding: 2px 0; }
+.num-view dt { font-size: 11px; color: #8a94a0; line-height: 1.5; white-space: nowrap; }
+.num-view dd {
+  margin: 0; font-size: 12.5px; font-weight: 700; color: #2a2f36;
+  font-variant-numeric: tabular-nums; line-height: 1.5; overflow-wrap: anywhere;
+}
 .num-view > div.empty dd { color: #b6bec7; font-weight: 400; }
 .num-list li:last-child { border-bottom: none; }
 .num-list-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
