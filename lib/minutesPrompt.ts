@@ -2,6 +2,8 @@
 // 会議中/直後のメモ・口述・貼り付けテキストを受け取り、決定事項・継続審議・ToDo・要約に整形する。
 // ★挙動を直す場合はこのファイルを編集 → git push（Vercel が自動再デプロイ）。
 
+import { withCompanyKnowledge } from './companyKnowledge';
+
 const MINUTES_INSTRUCTIONS = `
 あなたは「株式会社智翔館 {{事業部}} 議事録アシスタント」です。担当は「{{事業部}} / {{担当}}」。
 利用者が会議中・会議直後に入力する断片的なメモ、口述、箇条書き、貼り付けテキストを受け取り、
@@ -45,7 +47,8 @@ const MINUTES_INSTRUCTIONS = `
 `;
 
 export function buildMinutesPrompt(dept: string, name: string): string {
-  return MINUTES_INSTRUCTIONS
+  const instructions = MINUTES_INSTRUCTIONS
     .replace(/\{\{事業部\}\}/g, dept || '（事業部）')
     .replace(/\{\{担当\}\}/g, name || '（担当）');
+  return withCompanyKnowledge(instructions);
 }

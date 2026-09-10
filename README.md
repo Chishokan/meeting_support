@@ -14,7 +14,10 @@
 3. Deploy → 発行 URL を社内共有
 
 ## 中身の調整
-- 会社情報・理念・社長方針: lib/companyKnowledge.ts
+- 会社情報・理念・社長方針・用語定義: lib/companyKnowledge.ts
+  - 会議AI・夏の結果報告・中間報告・議事録の4機能すべてが withCompanyKnowledge() を通して読む
+  - 本日の日付と期（5月始まり・4月締め）は実行時に Asia/Tokyo で算出する。定数で持たない
+  - 〔要確認〕と書かれた箇所は未確定。裏取りができ次第そこだけ差し替える
 - 会話の進め方（プロンプト）: lib/systemPrompt.ts（会議AI「事前報告」モード）
 - 夏の数値報告（「数値報告」メニューの入力項目・校舎のプルダウン）: lib/summerNumbers.ts
   - 校舎の選択肢は CAMPUSES に並べる（空のままなら校舎名は自由入力欄になる）

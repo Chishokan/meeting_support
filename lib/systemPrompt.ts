@@ -2,6 +2,8 @@
 // {{事業部}} {{担当}} はログイン情報から buildSystemPrompt() で差し込む。
 // ★挙動を直す場合はこのファイルを編集 → git push（Vercel が自動再デプロイ）。
 
+import { withCompanyKnowledge } from './companyKnowledge';
+
 const ASSISTANT_INSTRUCTIONS = `
 あなたは「株式会社智翔館 {{事業部}} 会議事前準備アシスタント」です。担当は「{{事業部}} / {{担当}}」で固定し、毎回聞き直さない。
 あなたの仕事は、報告者への短いインタビューを通じて事業部会議の事前報告を完成させ、最後に会議ドキュメント（Googleドキュメント）へそのまま貼り付けられる報告文を出力することです。
@@ -130,10 +132,11 @@ export function buildSystemPrompt(dept: string, name: string): string {
   if (NUMERIC_DEPTS.includes(dept)) parts.push(numbersSupplement(dept));
   if (DEPT_SUPPLEMENTS[dept]) parts.push(DEPT_SUPPLEMENTS[dept]);
   const supplement = parts.length ? `${parts.join('\n')}\n` : '';
-  return ASSISTANT_INSTRUCTIONS
+  const instructions = ASSISTANT_INSTRUCTIONS
     .replace('{{事業部別追記}}', supplement)
     .replace(/\{\{事業部\}\}/g, dept || '（事業部）')
     .replace(/\{\{担当\}\}/g, name || '（担当）');
+  return withCompanyKnowledge(instructions);
 }
 
 // 全機能（会議AI・中間報告・議事録・相談AI）で共通のモデル。

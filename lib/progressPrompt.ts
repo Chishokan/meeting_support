@@ -3,6 +3,8 @@
 // {{事業部}} {{担当}} はログイン情報から buildProgressPrompt() で差し込む。
 // ★挙動を直す場合はこのファイルを編集 → git push（Vercel が自動再デプロイ）。
 
+import { withCompanyKnowledge } from './companyKnowledge';
+
 // 出力ブロックの囲み（UI 側がこの囲みを検知して自動転記する。会議AI の「貼り付け用」とは別物）。
 export const PROGRESS_BLOCK_START = '＝＝＝ 中間報告（ここから）＝＝＝';
 export const PROGRESS_BLOCK_END = '＝＝＝ 中間報告（ここまで）＝＝＝';
@@ -136,8 +138,9 @@ export function buildProgressPrompt(dept: string, name: string, override?: strin
   const items = resolved.length ? resolved : FALLBACK_ITEMS;
   const itemList = items.map((s, i) => `  ${i + 1}. ${s}`).join('\n');
   const supplement = `\n【この部門で確認する項目】（${dept || '（事業部）'}｜この順番・この表記で尋ねる）\n${itemList}\n`;
-  return ASSISTANT_INSTRUCTIONS
+  const instructions = ASSISTANT_INSTRUCTIONS
     .replace('【インタビューの進め方（この順番で）】', `${supplement}【インタビューの進め方（この順番で）】`)
     .replace(/\{\{事業部\}\}/g, dept || '（事業部）')
     .replace(/\{\{担当\}\}/g, name || '（担当）');
+  return withCompanyKnowledge(instructions);
 }

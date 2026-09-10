@@ -4,6 +4,8 @@
 // 数値を担当しない授業担当職員は、冒頭の1問で分岐して「夏期講習会の振り返り」だけを行う。
 // ★挙動を直す場合はこのファイルを編集 → git push（Vercel が自動再デプロイ）。
 
+import { withCompanyKnowledge } from './companyKnowledge';
+
 import { campusesFor } from './summerNumbers';
 
 const SUMMER_INSTRUCTIONS = `
@@ -197,7 +199,7 @@ const SUMMER_DEPT_SUPPLEMENTS: Record<string, string> = {
 export function buildSummerPrompt(dept: string, name: string, numbersText: string): string {
   const supplement = SUMMER_DEPT_SUPPLEMENTS[dept] ? `${SUMMER_DEPT_SUPPLEMENTS[dept]}\n` : '';
   const campuses = campusesFor(dept);
-  return SUMMER_INSTRUCTIONS
+  const instructions = SUMMER_INSTRUCTIONS
     .replace('{{部門別追記}}', supplement)
     .replace('{{数値データ}}', numbersText || '（この部門の数値報告はまだ登録されていません）')
     .replace(
@@ -208,4 +210,5 @@ export function buildSummerPrompt(dept: string, name: string, numbersText: strin
     )
     .replace(/\{\{事業部\}\}/g, dept || '（事業部）')
     .replace(/\{\{担当\}\}/g, name || '（担当）');
+  return withCompanyKnowledge(instructions);
 }
