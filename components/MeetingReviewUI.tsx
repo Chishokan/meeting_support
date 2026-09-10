@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-const PROMPT = '本日の全体会議の感想、気付き、やろうと思ったことを書いてください。';
+const PROMPT = '本日の全体会議の感想、気付き、やると決めたことを書いてください。';
 
 export default function MeetingReviewUI({ name, campus }: { name: string; campus: string }) {
   const [started, setStarted] = useState(false);
