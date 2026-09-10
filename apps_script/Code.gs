@@ -10,6 +10,7 @@
  *   - action:'getProgressItems'/'saveProgressItems' … 中間報告の定例項目の取得・保存 → 「中間報告項目」シート（1行1項目）
  *   - action:'saveNumbers'  … 「数値報告」メニューの入力       → 「夏期数値」シートに1行で記録（校舎ごと・送り直すと追記）
  *   - action:'listNumbers'  … 会議AI・数値報告画面での参照     → 「夏期数値」シートを新しい順に返す
+ *   - action:'saveReview'   … 「全体会議振り返り」の入力      → 「全体会議振り返り」シートに1行で記録
  *   - action:'saveSuccess'  … 夏期結果報告の成功事例        → 「成功事例」シートに1件1行で記録（「報告」転記時に自動）
  *   - action:'listSuccess'  … ダッシュボード用の成功事例一覧  → 「成功事例」シートを新しい順に返す
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
@@ -120,6 +121,15 @@ function doPost(e) {
 
     if (action === 'listNumbers') {
       return json_(listNumbers_(data));
+    }
+
+    if (action === 'saveReview') {
+      appendRow_(
+        '全体会議振り返り',
+        ['日時', '事業部', '担当', '内容'],
+        [data.ts || nowIso_(), data.campus || '', data.user || '', data.content || '']
+      );
+      return json_({ ok: true });
     }
 
     if (action === 'saveSuccess') {

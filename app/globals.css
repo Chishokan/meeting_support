@@ -265,6 +265,24 @@ button.primary:disabled { opacity: .5; cursor: default; }
   padding: 1px 8px; text-align: center;
 }
 
+/* ============ 全体会議振り返り ============ */
+.review-body { padding: 24px; max-width: 720px; }
+.review-start button, .review-actions button, .review-done button {
+  padding: 12px 28px; font-size: 15px; font-weight: 700; color: #fff; background: var(--navy);
+  border: none; border-radius: 8px; cursor: pointer;
+}
+.review-actions button:disabled { opacity: .5; cursor: default; }
+.review-done button { color: var(--navy); background: #fff; border: 1px solid #cdd8e3; font-size: 13px; padding: 8px 18px; }
+.review-prompt { margin: 0 0 12px; font-size: 16px; font-weight: 700; color: #2a2f36; line-height: 1.8; }
+.review-body textarea {
+  width: 100%; min-height: 240px; resize: vertical; padding: 14px;
+  font-size: 15px; line-height: 1.8; font-family: inherit;
+  border: 1px solid #cdd3da; border-radius: 10px;
+}
+.review-actions { display: flex; align-items: center; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
+.review-note { font-size: 13px; color: #c0392b; }
+.review-done p { font-size: 15px; color: #2e6b4f; margin: 0 0 14px; }
+
 /* ============ 数値報告 ============ */
 .numbers-body { padding: 20px 24px 48px; display: grid; gap: 20px; grid-template-columns: minmax(320px, 1fr) minmax(300px, 400px); align-items: start; }
 .numbers-form { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
