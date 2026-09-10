@@ -1,14 +1,22 @@
-// 音声ファイルをブラウザ側で分割するユーティリティ（会議DX フェーズ2）
+// 音声ファイルをブラウザ側で WAV に変換・分割するユーティリティ（会議DX フェーズ2）
 // -------------------------------------------------------------------------
-// 1時間の会議の録音をそのまま送ると、サーバ関数の実行時間・リクエストサイズの上限に引っかかる。
-// そこでブラウザで音声を読み込み、16kHz モノラルの WAV に変換したうえで
-// SEGMENT_SECONDS ごとに切り出し、1区間ずつ順番に文字起こしAPIへ送る。
+// この処理には2つの役目がある。
+//
+// 1) 形式をそろえる：文字起こしに使う Gemini が受け付ける音声は
+//    WAV / MP3 / AIFF / AAC / OGG / FLAC で、ブラウザ録音の webm は受け付けない。
+//    そこで録音・添付ファイルのどちらも、いったん 16kHz モノラルの WAV に変換してから送る。
+// 2) 大きさを抑える：1時間の会議をそのまま送ると、サーバ関数の実行時間・
+//    リクエストサイズの上限に引っかかる。SEGMENT_SECONDS ごとに切り出して順番に送る。
 //
 // 16kHz モノラル 16bit = 32KB/秒。SEGMENT_SECONDS=90 なら1区間およそ2.9MB。
 // ★区間の長さを変えるときは、サーバ側（app/api/dept-minutes/transcribe/route.ts）の
 //   実行時間上限に収まるかを必ず確認すること。
 
 export const SEGMENT_SECONDS = 90;
+
+// これより短い末尾の区間は捨てる（1秒未満に意味のある発言は入らないので、
+// 文字起こしAPIを1回無駄に呼ばないため）。区間が1つしか無い場合は捨てない。
+const MIN_TAIL_SECONDS = 1;
 
 const TARGET_RATE = 16000; // Whisper 系の音声認識が想定するサンプリングレート
 
@@ -80,7 +88,7 @@ export type AudioSegments = {
 };
 
 // 音声ファイル（mp3 / m4a / wav / webm など、ブラウザが再生できる形式）を
-// SEGMENT_SECONDS ごとの WAV に切り分ける。
+// SEGMENT_SECONDS ごとの 16kHz モノラル WAV に切り分ける。
 export async function splitAudioFile(file: Blob): Promise<AudioSegments> {
   const ctx = audioContext();
   try {
@@ -90,7 +98,10 @@ export async function splitAudioFile(file: Blob): Promise<AudioSegments> {
     const per = SEGMENT_SECONDS * TARGET_RATE;
     const segments: Blob[] = [];
     for (let start = 0; start < mono.length; start += per) {
-      segments.push(encodeWav(mono.subarray(start, Math.min(start + per, mono.length)), TARGET_RATE));
+      const chunk = mono.subarray(start, Math.min(start + per, mono.length));
+      // 末尾に1秒未満の切れ端が出たら捨てる（ただし全体がそれしか無い場合は残す）。
+      if (start > 0 && chunk.length < MIN_TAIL_SECONDS * TARGET_RATE) break;
+      segments.push(encodeWav(chunk, TARGET_RATE));
     }
     return { segments, durationSec: decoded.duration };
   } finally {

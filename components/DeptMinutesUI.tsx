@@ -7,7 +7,10 @@ import type { DecisionRow } from '@/app/api/dept-minutes/list/route';
 
 // 録音は1区間ずつ独立したファイルにして、会議中から順に文字起こししていく。
 // 会議が終わった時点でほぼ文字起こしが終わっている状態にするための作り。
-const REC_SEGMENT_SECONDS = 120;
+// ★文字起こしに使う Gemini は webm を受け付けないため、録音した区間は送信前に
+//   splitAudioFile() で 16kHz モノラルの WAV に変換している。
+//   1区間が SEGMENT_SECONDS を超えると変換後に2つに割れるので、同じ長さにそろえておく。
+const REC_SEGMENT_SECONDS = SEGMENT_SECONDS;
 
 const REC_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
 
@@ -28,10 +31,20 @@ function pickMime(): string {
   return '';
 }
 
-function extFor(mime: string): string {
-  if (mime.includes('mp4')) return 'm4a';
-  if (mime.includes('ogg')) return 'ogg';
-  return 'webm';
+// 文字起こしAPIが返す失敗理由を、そのまま画面に出せる日本語にする。
+function transcribeError(reason: string): string {
+  switch (reason) {
+    case 'not_configured':
+      return '音声の自動文字起こしが未設定です。管理者に GEMINI_API_KEY の設定を依頼してください。';
+    case 'unsupported_type':
+      return 'この音声形式には対応していません。mp3 / m4a / wav などでお試しください。';
+    case 'blocked':
+      return '文字起こしが安全フィルタで止められました。該当の区間だけ手で入力してください。';
+    case 'timeout':
+      return '文字起こしに時間がかかりすぎました。時間をおいてもう一度お試しください。';
+    default:
+      return '文字起こしに失敗しました。時間をおいてお試しください。';
+  }
 }
 
 function todayLocal(): string {
@@ -132,8 +145,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     const res = await fetch('/api/dept-minutes/transcribe', { method: 'POST', body: form });
     const j = await res.json().catch(() => ({}));
     if (j?.ok) return String(j.text ?? '');
-    if (j?.reason === 'not_configured') throw new Error('not_configured');
-    throw new Error('failed');
+    // 失敗理由をそのまま投げ、呼び出し側で日本語にして表示する。
+    throw new Error(String(j?.reason ?? 'failed'));
   }, []);
 
   const pump = useCallback(async () => {
@@ -143,14 +156,14 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       while (queueRef.current.length > 0) {
         const blob = queueRef.current[0];
         try {
-          const text = await sendSegment(blob, `segment.${extFor(mimeRef.current)}`);
-          if (text) setTranscript((prev) => (prev ? `${prev}\n${text}` : text));
+          // 録音そのままの形式（webm 等）は文字起こし側が受け付けないため、WAV に変換して送る。
+          const { segments } = await splitAudioFile(blob);
+          for (let i = 0; i < segments.length; i++) {
+            const text = await sendSegment(segments[i], `rec${i + 1}.wav`);
+            if (text) setTranscript((prev) => (prev ? `${prev}\n${text}` : text));
+          }
         } catch (e) {
-          setErr(
-            (e as Error).message === 'not_configured'
-              ? '音声の自動文字起こしが未設定のため、録音を文字にできませんでした。'
-              : '一部の区間の文字起こしに失敗しました。時間をおいて録り直すか、テキストの貼り付けをご利用ください。',
-          );
+          setErr(transcribeError((e as Error).message));
         }
         queueRef.current.shift();
         setQueued(queueRef.current.length);
@@ -266,11 +279,13 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           const text = await sendSegment(segments[i], `part${i + 1}.wav`);
           if (text) setTranscript((prev) => (prev ? `${prev}\n${text}` : text));
         } catch (ex) {
-          if ((ex as Error).message === 'not_configured') {
-            setErr('音声の自動文字起こしが未設定です。文字起こしテキストの貼り付けをご利用ください。');
+          const reason = (ex as Error).message;
+          // 設定そのものが無い場合は続けても全区間失敗するので、そこで止める。
+          if (reason === 'not_configured' || reason === 'unsupported_type') {
+            setErr(transcribeError(reason));
             break;
           }
-          setErr(`区間 ${i + 1} の文字起こしに失敗しました。続きを処理します。`);
+          setErr(`区間 ${i + 1} でつまずきました（${transcribeError(reason)}）続きを処理します。`);
         }
         setFileProgress({ done: i + 1, total: segments.length });
       }
@@ -427,8 +442,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
 
             {configured === false && (
               <p className="dm-warn">
-                音声の自動文字起こしが未設定です。管理者に環境変数 <code>SPEECH_API_KEY</code> の設定を依頼してください。
-                設定までは「文字起こしを貼り付け」をご利用いただけます。
+                音声の自動文字起こしが未設定です。管理者に環境変数 <code>GEMINI_API_KEY</code>（Google AI Studio のAPIキー）
+                の設定を依頼してください。設定までは「文字起こしを貼り付け」をご利用いただけます。
               </p>
             )}
 

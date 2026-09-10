@@ -38,18 +38,28 @@
 - ここを直すと全社員の AI に一括反映
 
 ## 音声の文字起こしについて（部門会議議事録）
-Claude は音声を直接読めないため、文字起こしだけ外部の音声認識サービスを使う。
-OpenAI 互換の `/v1/audio/transcriptions` を持つサービスならどれでも接続できる。
+Claude は音声を直接読めないため、文字起こしだけ **Google AI Studio（Gemini API）** に任せ、
+その結果を Claude に渡して議事録化している。
 
-1. サービス（OpenAI / Groq / Azure OpenAI / 自前の faster-whisper 等）で API キーを発行
-2. Vercel の環境変数に設定：`SPEECH_API_KEY`（必須）／`SPEECH_API_URL`・`SPEECH_MODEL`・
-   `SPEECH_LANGUAGE`（既定値のままでよければ不要）
+1. https://aistudio.google.com/apikey で API キーを発行
+2. Vercel の環境変数に設定：`GEMINI_API_KEY`（必須）／
+   `GEMINI_MODEL`（任意・既定 `gemini-3.6-flash`）／`GEMINI_API_URL`（任意・通常は不要）
 3. 未設定のままでもアプリは壊れない。画面が「音声の自動文字起こしは未設定」と表示し、
    他アプリで文字起こししたテキストの貼り付けだけが使える状態になる
 
-長い会議はブラウザ側で自動的に分割して送る（録音は2分ごと、添付ファイルは16kHzモノラルWAVの90秒ごと）。
+### 音声の形式と分割（触るときの注意）
+Gemini が受け付ける音声は **WAV / MP3 / AIFF / AAC / OGG / FLAC** で、
+ブラウザ録音の **webm は受け付けない**。そのため録音・添付ファイルのどちらも、
+送信前に `lib/audioChunk.ts` で **16kHz モノラルの WAV** に変換している。
+
+あわせて、長い会議は90秒ごとの区間に分けて順番に送る（1区間およそ2.9MB）。
+WAV は圧縮しないので通信量は増える（1時間の会議でおよそ110MB＝2.9MB×40回）。
+その場で録音する場合は会議中に少しずつ送るので気になりにくいが、
+長い録音ファイルを後から添付する場合は回線に余裕のある場所で行うこと。
 サーバ関数の実行時間・リクエストサイズの上限に収めるための分割なので、
-区間の長さを変えるときは components/DeptMinutesUI.tsx と lib/audioChunk.ts の両方を確認すること。
+区間の長さを変えるときは `lib/audioChunk.ts` の `SEGMENT_SECONDS` を直し、
+`app/api/dept-minutes/transcribe/route.ts` の実行時間上限に収まるか必ず確認すること
+（録音の区切りは `components/DeptMinutesUI.tsx` で `SEGMENT_SECONDS` に合わせてある）。
 
 ## ログ / セキュリティ（テスト版のため要ハードニング）
 - 会話は Vercel のログに [CHAT_LOG] として出力。durable 保存は lib/log.ts で DB 追加。
