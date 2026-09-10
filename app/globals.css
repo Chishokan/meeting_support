@@ -497,6 +497,15 @@ button.primary:disabled { opacity: .5; cursor: default; }
 }
 .dm-warn code { background: #fff6df; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 
+.dm-check { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.dm-check button {
+  padding: 7px 14px; font-size: 12px; font-weight: 700; color: var(--navy);
+  background: #eef3f8; border: 1px solid #cfe0ee; border-radius: 8px; cursor: pointer;
+}
+.dm-check button:disabled { opacity: .5; cursor: default; }
+.dm-check-msg { font-size: 12px; line-height: 1.7; color: #c0392b; overflow-wrap: anywhere; }
+.dm-check-msg.ok { color: #2e6b4f; }
+
 .dm-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
 .dm-tab {
   padding: 7px 14px; font-size: 13px; font-weight: 700; color: var(--navy);

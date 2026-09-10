@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/auth';
-import { isTranscribeConfigured, transcribeAudio } from '@/lib/transcribe';
+import { checkTranscribeSetup, isTranscribeConfigured, transcribeAudio } from '@/lib/transcribe';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -10,9 +10,16 @@ export const maxDuration = 60;
 // 区間の長さを変えるときは lib/audioChunk.ts の SEGMENT_SECONDS を直すこと。
 
 // 文字起こしが使える設定かを画面へ伝える（未設定ならテキスト貼り付けを案内する）。
-export async function GET() {
+// ?check=1 を付けると、実際に Gemini へ問い合わせてキーとモデル名まで確かめる
+//（画面の「接続テスト」ボタン用。音声を送る前に設定ミスを見つけるためのもの）。
+export async function GET(req: Request) {
   const session = getSession();
   if (!session) return Response.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
+
+  if (new URL(req.url).searchParams.get('check') === '1') {
+    const r = await checkTranscribeSetup();
+    return Response.json({ configured: isTranscribeConfigured(), ...r });
+  }
   return Response.json({ ok: true, configured: isTranscribeConfigured() });
 }
 

@@ -75,6 +75,79 @@ export function resolveAudioMime(filename: string, given: string): string | null
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// 設定の確認（画面の「接続テスト」ボタンから呼ばれる）
+// ---------------------------------------------------------------------------
+// キーが有効か・設定したモデルが実際に使えるかを、音声を送る前に確かめる。
+// モデル名の打ち間違いは「文字起こしに失敗しました」としか出ず原因が分かりにくいので、
+// ここで「そのモデルは使えない／使えるのはこれ」と具体的に返す。
+
+export type SetupCheck =
+  | { ok: true; model: string; modelOk: boolean; suggestions: string[] }
+  | { ok: false; reason: 'not_configured' | 'invalid_key' | 'timeout' | 'upstream_error' | 'network_error' };
+
+// 音声を渡して文字起こしさせるのに向くモデルだけを候補として残す。
+function isUsableModel(name: string, methods: string[]): boolean {
+  if (!methods.includes('generateContent')) return false;
+  return !/(tts|embedding|imagen|image-|aqa)/i.test(name);
+}
+
+export async function checkTranscribeSetup(): Promise<SetupCheck> {
+  if (!isTranscribeConfigured()) return { ok: false, reason: 'not_configured' };
+
+  const base = process.env.GEMINI_API_URL || DEFAULT_BASE;
+  const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const res = await fetch(`${base}/models?pageSize=1000`, {
+      headers: { 'x-goog-api-key': process.env.GEMINI_API_KEY as string },
+      signal: ctrl.signal,
+    });
+    if (res.status === 401 || res.status === 403) return { ok: false, reason: 'invalid_key' };
+    if (!res.ok) {
+      const detail = (await res.text().catch(() => '')).slice(0, 300);
+      try {
+        console.error('[TRANSCRIBE] check', res.status, detail);
+      } catch {}
+      return { ok: false, reason: 'upstream_error' };
+    }
+
+    const j = (await res.json().catch(() => null)) as {
+      models?: { name?: unknown; supportedGenerationMethods?: unknown }[];
+    } | null;
+    const rows = Array.isArray(j?.models) ? j!.models! : [];
+
+    const usable: string[] = [];
+    for (const m of rows) {
+      // name は "models/gemini-..." の形で返る。設定に使う短い名前へ直す。
+      const full = typeof m?.name === 'string' ? m.name : '';
+      const short = full.replace(/^models\//, '');
+      const methods = Array.isArray(m?.supportedGenerationMethods)
+        ? (m.supportedGenerationMethods as unknown[]).map((x) => String(x))
+        : [];
+      if (short && isUsableModel(short, methods)) usable.push(short);
+    }
+
+    return {
+      ok: true,
+      model,
+      modelOk: usable.includes(model),
+      // 使えない場合に画面へ出す候補（flash 系を優先して数件だけ）。
+      suggestions: [...usable.filter((n) => n.includes('flash')), ...usable.filter((n) => !n.includes('flash'))].slice(0, 8),
+    };
+  } catch (e) {
+    const aborted = (e as Error)?.name === 'AbortError';
+    try {
+      console.error('[TRANSCRIBE] check', aborted ? 'timeout' : String(e));
+    } catch {}
+    return { ok: false, reason: aborted ? 'timeout' : 'network_error' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // 返ってきた候補からテキストだけを拾う（parts が複数に割れることがあるので全部つなぐ）。
 function readText(j: unknown): string {
   const root = j as {

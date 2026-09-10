@@ -74,6 +74,10 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
 
+  const [checking, setChecking] = useState(false);
+  const [checkMsg, setCheckMsg] = useState('');
+  const [checkOk, setCheckOk] = useState(false);
+
   const [decisions, setDecisions] = useState<DecisionRow[]>([]);
   const [decFilter, setDecFilter] = useState('');
   const [showTemplate, setShowTemplate] = useState(false);
@@ -125,6 +129,41 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       alive = false;
     };
   }, []);
+
+  // 音声を送る前に、キーとモデル名が正しいかを確かめる。
+  async function checkSetup() {
+    if (checking) return;
+    setChecking(true);
+    setCheckMsg('確認中…');
+    setCheckOk(false);
+    try {
+      const res = await fetch('/api/dept-minutes/transcribe?check=1');
+      const j = await res.json().catch(() => ({}));
+      setConfigured(Boolean(j?.configured));
+      if (j?.ok && j?.modelOk) {
+        setCheckOk(true);
+        setCheckMsg(`接続できました。モデル「${j.model}」で文字起こしします。`);
+      } else if (j?.ok) {
+        const s = Array.isArray(j.suggestions) ? j.suggestions.slice(0, 4).join(' / ') : '';
+        setCheckMsg(
+          `キーは有効ですが、モデル「${j.model}」が使えません。`
+          + `環境変数 GEMINI_MODEL を次のいずれかに変えてください：${s || '（候補を取得できませんでした）'}`,
+        );
+      } else if (j?.reason === 'not_configured') {
+        setCheckMsg('GEMINI_API_KEY が設定されていません。');
+      } else if (j?.reason === 'invalid_key') {
+        setCheckMsg('APIキーが無効か、権限がありません。Google AI Studio のキーをご確認ください。');
+      } else if (j?.reason === 'timeout') {
+        setCheckMsg('応答がありませんでした。時間をおいてお試しください。');
+      } else {
+        setCheckMsg('確認に失敗しました。時間をおいてお試しください。');
+      }
+    } catch {
+      setCheckMsg('確認に失敗しました。通信状況をご確認ください。');
+    } finally {
+      setChecking(false);
+    }
+  }
 
   const loadDecisions = useCallback(async () => {
     try {
@@ -446,6 +485,13 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                 の設定を依頼してください。設定までは「文字起こしを貼り付け」をご利用いただけます。
               </p>
             )}
+
+            <div className="dm-check">
+              <button onClick={() => void checkSetup()} disabled={checking || recording}>
+                文字起こしの接続テスト
+              </button>
+              {checkMsg && <span className={`dm-check-msg ${checkOk ? 'ok' : ''}`}>{checkMsg}</span>}
+            </div>
 
             <div className="dm-tabs">
               <button
