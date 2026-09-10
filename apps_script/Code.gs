@@ -4,6 +4,10 @@
  * アプリ（Vercel）から送られる以下を Google へ転記する。
  *   - action:'log'          … 会議AI / 議事録の会話ログ → スプレッドシート「会話ログ」
  *   - action:'saveMinutes'  … 議事録スレッドの保存       → スプレッドシート「議事録」
+ *   - action:'saveDeptMinutes' … 「部門会議議事録」の保存 → 「部門会議議事録」シートに1会議1行＋
+ *                                                          「部門決定事項」シートに1決定1行
+ *   - action:'listDeptMinutes' … 部門会議議事録の一覧
+ *   - action:'listDeptDecisions' … 部門横断の決定事項一覧（決め事の見える化）
  *   - action:'appendReport' … 「報告」からの事前報告      → Google ドキュメント（REPORT_DOC_ID）に新セクション追記
  *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントの【中間報告タブ】に追記＋「中間報告状況」シートに記録
  *   - action:'listProgress' … ダッシュボード用の直近報告者  → 「中間報告状況」シートを新しい順に返す
@@ -138,6 +142,18 @@ function doPost(e) {
 
     if (action === 'listSuccess') {
       return json_(listSuccess_(data));
+    }
+
+    if (action === 'saveDeptMinutes') {
+      return json_(saveDeptMinutes_(data));
+    }
+
+    if (action === 'listDeptMinutes') {
+      return json_(listDeptMinutes_(data));
+    }
+
+    if (action === 'listDeptDecisions') {
+      return json_(listDeptDecisions_(data));
     }
 
     if (action === 'saveMinutes') {
@@ -445,6 +461,83 @@ function listSuccess_(data) {
   }
   items.reverse();
   if (items.length > 100) items = items.slice(0, 100);
+  return { ok: true, items: items };
+}
+
+var DEPT_MINUTES_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '場所', '出席者', '予定議題', '議事録', '会議の質チェック'];
+var DEPT_DECISION_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '件名', '内容', '理由・背景', '担当', '期限', '関係部門'];
+
+// 「部門会議議事録」メニューの保存。
+//  ・「部門会議議事録」シートに1会議1行（議事録本文と会議の質チェックを丸ごと保存）
+//  ・「部門決定事項」シートに1決定1行（部門をまたいで決め事を一覧するためのもと）
+// 決定事項の切り出しは Next 側（lib/deptMinutesParse.ts）で済ませて data.decisions に入れて送られてくる。
+function saveDeptMinutes_(data) {
+  var ts = data.ts || nowIso_();
+  appendRow_(
+    '部門会議議事録',
+    DEPT_MINUTES_HEADERS,
+    [
+      ts, data.campus || '', data.user || '', data.title || '', data.date || '',
+      data.place || '', data.attendees || '', data.agenda || '',
+      data.minutes || '', data.quality || ''
+    ]
+  );
+
+  var decisions = data.decisions || [];
+  for (var i = 0; i < decisions.length; i++) {
+    var d = decisions[i] || {};
+    appendRow_(
+      '部門決定事項',
+      DEPT_DECISION_HEADERS,
+      [
+        ts, data.campus || '', data.user || '', data.title || '', data.date || '',
+        d.title || '', d.detail || '', d.reason || '', d.owner || '', d.due || '', d.related || ''
+      ]
+    );
+  }
+  return { ok: true, decisions: decisions.length };
+}
+
+// 部門会議議事録の一覧（新しい順・最大100件）。
+function listDeptMinutes_(data) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('部門会議議事録');
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  var values = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    items.push({
+      ts: cellStr_(r[0]), campus: String(r[1] == null ? '' : r[1]), user: String(r[2] == null ? '' : r[2]),
+      title: String(r[3] == null ? '' : r[3]), date: cellStr_(r[4]), place: String(r[5] == null ? '' : r[5]),
+      attendees: String(r[6] == null ? '' : r[6]), agenda: String(r[7] == null ? '' : r[7]),
+      minutes: String(r[8] == null ? '' : r[8]), quality: String(r[9] == null ? '' : r[9])
+    });
+  }
+  items.reverse();
+  if (items.length > 100) items = items.slice(0, 100);
+  return { ok: true, items: items };
+}
+
+// 部門横断の決定事項（新しい順・最大200件）。「部門会議議事録」画面の右側に出す。
+function listDeptDecisions_(data) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('部門決定事項');
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  var values = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    items.push({
+      ts: cellStr_(r[0]), campus: String(r[1] == null ? '' : r[1]), user: String(r[2] == null ? '' : r[2]),
+      meeting: String(r[3] == null ? '' : r[3]), date: cellStr_(r[4]),
+      title: String(r[5] == null ? '' : r[5]), detail: String(r[6] == null ? '' : r[6]),
+      reason: String(r[7] == null ? '' : r[7]), owner: String(r[8] == null ? '' : r[8]),
+      due: String(r[9] == null ? '' : r[9]), related: String(r[10] == null ? '' : r[10])
+    });
+  }
+  items.reverse();
+  if (items.length > 200) items = items.slice(0, 200);
   return { ok: true, items: items };
 }
 
