@@ -13,6 +13,7 @@
  *   - action:'saveReview'   … 「全体会議振り返り」の入力      → 「全体会議振り返り」シートに1行で記録
  *   - action:'saveSuccess'  … 夏期結果報告の成功事例        → 「成功事例」シートに1件1行で記録（「報告」転記時に自動）
  *   - action:'listSuccess'  … ダッシュボード用の成功事例一覧  → 「成功事例」シートを新しい順に返す
+ *   - action:'listInquiryBoard' … 問い合わせQA用の小中等部問合せ管理 → 別スプレッドシート（INQUIRY_BOARD_ID）を校舎シートごとに読み、個人情報を落として返す
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
  *
  * 【セットアップ手順】
@@ -38,6 +39,12 @@ var TOKEN = '';          // 例 'chishokan-log-2026'。空なら token 検証を
 var REPORT_DOC_ID = '1rwSMzzBoJEFUwOMJNPA3rmmGMkarlryCheUGbbNPQik';
 // 部門ごとのタブが無い報告を入れる既定タブ（タイトルの部分一致・月ごとに更新可）
 var DEFAULT_TAB_HINT = '7月会議内容テスト';
+
+// 「問い合わせQA」が読む小中等部の問合せ管理スプレッドシートID（URL の /d/ と /edit の間）。
+// 会議DXの転記先とは別ファイルなので、ここに ID を貼ること。空なら問い合わせQAは動かない。
+// ※このシートは生徒・保護者の個人情報を含むため、下の listInquiryBoard_ が
+//   氏名をマスクし、電話・住所・保護者名・メールを落としてから返す（アプリ側には渡らない）。
+var INQUIRY_BOARD_ID = '';
 
 // 部門（campus）→ タブ探索キーワード。タブ名にこの文字列が含まれていれば、そのタブに振り分ける。
 // ※タブ名が部門名と少し違っても振り分けられるようにするための対応表。タブ名変更時はここを直す。
@@ -138,6 +145,10 @@ function doPost(e) {
 
     if (action === 'listSuccess') {
       return json_(listSuccess_(data));
+    }
+
+    if (action === 'listInquiryBoard') {
+      return json_(listInquiryBoard_(data));
     }
 
     if (action === 'saveMinutes') {
@@ -627,6 +638,135 @@ function findTabByTitle_(tabs, hint, exclude) {
     } catch (e) {}
   }
   return null;
+}
+
+
+// ===== 問い合わせQA（小中等部問合せ管理） =====================================
+// 校舎ごとのシートを読み、AIが答えるのに必要な列だけを返す。
+// 個人情報（電話・住所・郵便番号・保護者名・メール・ふりがな）は返さず、
+// 生徒氏名は1文字目＋「○」にマスクする。校舎名＋No. で元シートを引けるようにしてある。
+
+// 返す列（この順・見出しの完全一致で拾う）
+var INQUIRY_COLUMNS = [
+  'No.', '日付', '生徒氏名', '学校名', '学年', '媒体', '受講期', '連絡',
+  '体験日', '体験', '入塾提案面談日', '本人OK', 'クローズ予定日', '結果',
+];
+// 備考は見出しが長い（「備考(架電日時・検討中理由・見送り理由・その他補足事項)」）ので前方一致で拾う。
+var INQUIRY_NOTE_PREFIX = '備考';
+// 備考の最大文字数（プロンプトが膨らむのを防ぐ）
+var INQUIRY_NOTE_MAX = 200;
+// 1回に返す最大行数
+var INQUIRY_MAX_ROWS = 500;
+// ヘッダー行を探す深さ（シート上部に結合セルの見出しが数行あるため）
+var INQUIRY_HEADER_SCAN = 20;
+
+// 備考に混ざる問い合わせフォームの定型文を落とす。
+// 「個人情報保護方針：…」以降は全件同じ文面で、200字の枠を食いつぶして
+// 肝心の検討中理由・見送り理由が切られてしまうため。
+var INQUIRY_NOTE_CUTS = ['個人情報保護方針：', '個人情報保護方針:', '-- このメールは', '--　このメールは'];
+
+function cleanNote_(s) {
+  var t = String(s == null ? '' : s).replace(/[\r\n]+/g, ' ');
+  for (var i = 0; i < INQUIRY_NOTE_CUTS.length; i++) {
+    var at = t.indexOf(INQUIRY_NOTE_CUTS[i]);
+    if (at !== -1) t = t.slice(0, at);
+  }
+  return t.replace(/[\s　]+/g, ' ').trim();
+}
+
+// 氏名を「佐藤友次朗」→「佐○」にする。空欄はそのまま空欄。
+function maskName_(v) {
+  var s = String(v == null ? '' : v).replace(/[\s　]/g, '');
+  if (!s) return '';
+  return s.charAt(0) + '○';
+}
+
+// 見出し行を探す。問合せ管理の本体シートは「生徒氏名」と「結果」を必ず持つ。
+// 転記ログなど別用途のシートを巻き込まないための判定でもある。
+function findInquiryHeader_(values) {
+  var limit = Math.min(values.length, INQUIRY_HEADER_SCAN);
+  for (var r = 0; r < limit; r++) {
+    var row = values[r];
+    var hasName = false;
+    var hasResult = false;
+    for (var c = 0; c < row.length; c++) {
+      var h = String(row[c] == null ? '' : row[c]).replace(/[\s　]/g, '');
+      if (h === '生徒氏名') hasName = true;
+      if (h === '結果') hasResult = true;
+    }
+    if (hasName && hasResult) return r;
+  }
+  return -1;
+}
+
+function listInquiryBoard_(data) {
+  if (!INQUIRY_BOARD_ID) return { ok: false, reason: 'board_not_configured', items: [] };
+
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(INQUIRY_BOARD_ID);
+  } catch (err) {
+    return { ok: false, reason: 'board_open_failed', items: [] };
+  }
+
+  var sheets = ss.getSheets();
+  var items = [];
+  var campuses = [];
+
+  for (var si = 0; si < sheets.length; si++) {
+    var sh = sheets[si];
+    if (sh.isSheetHidden && sh.isSheetHidden()) continue;
+    if (sh.getLastRow() < 2) continue;
+
+    var values = sh.getDataRange().getValues();
+    var hr = findInquiryHeader_(values);
+    if (hr === -1) continue; // 本体シートではない（転記ログ・集計シート等）
+
+    var campus = String(sh.getName()).replace(/[\s　]/g, '');
+    campuses.push(campus);
+
+    // 見出し → 列番号。同じ見出しが複数あるときは左側を優先する。
+    var headers = values[hr];
+    var colOf = {};
+    var noteCol = -1;
+    for (var c = 0; c < headers.length; c++) {
+      var h = String(headers[c] == null ? '' : headers[c]).replace(/[\s　]/g, '');
+      if (!h) continue;
+      if (colOf[h] === undefined) colOf[h] = c;
+      if (noteCol === -1 && h.indexOf(INQUIRY_NOTE_PREFIX) === 0) noteCol = c;
+    }
+
+    for (var r = hr + 1; r < values.length; r++) {
+      if (items.length >= INQUIRY_MAX_ROWS) break;
+      var row = values[r];
+
+      var obj = { '校舎': campus };
+      var filled = 0;
+      for (var k = 0; k < INQUIRY_COLUMNS.length; k++) {
+        var key = INQUIRY_COLUMNS[k];
+        var idx = colOf[key];
+        var val = idx === undefined ? '' : cellStr_(row[idx]);
+        if (key === '生徒氏名') val = maskName_(val);
+        obj[key] = val;
+        if (val) filled++;
+      }
+
+      var note = noteCol === -1 ? '' : cleanNote_(cellStr_(row[noteCol]));
+      if (note.length > INQUIRY_NOTE_MAX) note = note.slice(0, INQUIRY_NOTE_MAX) + '…';
+      obj['備考'] = note;
+      if (note) filled++;
+
+      // 日付も氏名も無い行は空行・小計行とみなして捨てる。
+      if (!obj['日付'] && !obj['生徒氏名']) continue;
+      // 動作確認用のテスト行を除く。
+      if (obj['生徒氏名'].indexOf('テ') === 0 && (note.indexOf('テスト') !== -1)) continue;
+      if (filled < 2) continue;
+
+      items.push(obj);
+    }
+  }
+
+  return { ok: true, items: items, campuses: campuses, fetchedAt: nowJp_() };
 }
 
 // セル値を文字列化。Date型（Sheetsが自動変換した場合）は日本時間の見やすい形式に整える。

@@ -13,8 +13,16 @@ const NAV: NavItem[] = [
   { href: '/meeting-review', label: '全体会議振り返り', desc: '感想・気づき・やると決めたこと' },
   { href: '/progress', label: '中間報告', desc: '決議事項の進捗報告' },
   { href: '/report', label: '報告', desc: 'ドキュメントへ転記' },
+  { href: '/inquiry-qa', label: '問い合わせQA', desc: '小中等部の問合せ状況をAIに聞く' },
   { href: '/inquiry', label: 'お問い合わせ', desc: '不具合・改善要望' },
 ];
+
+// 前方一致だけだと /inquiry が /inquiry-qa にも一致してしまうので、
+// 完全一致か「その配下のパス」だけをアクティブとみなす。
+function isActive(pathname: string | null, href: string): boolean {
+  if (!pathname) return false;
+  return pathname === href || pathname.startsWith(href + '/');
+}
 
 export default function Sidebar({ name, campus }: { name: string; campus: string }) {
   const pathname = usePathname();
@@ -25,7 +33,7 @@ export default function Sidebar({ name, campus }: { name: string; campus: string
     window.location.href = '/login';
   }
 
-  const current = NAV.find((n) => pathname?.startsWith(n.href));
+  const current = NAV.find((n) => isActive(pathname, n.href));
 
   return (
     <>
@@ -46,7 +54,7 @@ export default function Sidebar({ name, campus }: { name: string; campus: string
 
         <nav className="sidebar-nav">
           {NAV.map((n) => {
-            const active = pathname?.startsWith(n.href);
+            const active = isActive(pathname, n.href);
             return (
               <Link
                 key={n.href}
