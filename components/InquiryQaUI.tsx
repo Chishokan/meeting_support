@@ -26,7 +26,7 @@ type CampusStat = {
   bySource: Record<string, number>;
 };
 
-type MonthBlock = { ym: string; label: string; stats: CampusStat[] };
+type MonthBlock = { ym: string; label: string; stats: CampusStat[]; totalGoals?: GoalView[] };
 
 type StatsRes =
   | {
@@ -210,7 +210,21 @@ function MonthSection({ title, block }: { title: string; block: MonthBlock }) {
     <div className="iqa-month">
       <div className="iqa-month-head">
         {title}
-        <span className="iqa-month-total">{total} 件</span>
+        <span className="iqa-month-total">問い合わせ {total} 件</span>
+        {block.totalGoals && block.totalGoals.length > 0 && (
+          <span className="iqa-month-goals">
+            中等部合計{' '}
+            {block.totalGoals.map((g) => {
+              const behind = (g.target ?? 0) > 0 && (g.actual ?? 0) < (g.target ?? 0);
+              return (
+                <span key={g.metric} className="iqa-month-goal">
+                  {g.metric} <b className={behind ? 'behind' : 'met'}>{g.actual ?? '—'}</b>
+                  <i>/{g.target ?? '—'}</i>
+                </span>
+              );
+            })}
+          </span>
+        )}
       </div>
       {block.stats.length === 0 ? (
         <div className="iqa-month-empty">この月の問い合わせはまだ登録されていません。</div>

@@ -508,6 +508,12 @@ button.primary:disabled { opacity: .5; cursor: default; }
   font-size: 13px; font-weight: 700; color: #2a2f36;
 }
 .iqa-month-total { font-size: 12px; font-weight: 600; color: #8a94a0; }
+.iqa-month-goals { font-size: 11.5px; font-weight: 400; color: #8a94a0; display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; }
+.iqa-month-goal { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.iqa-month-goal b { font-weight: 700; }
+.iqa-month-goal b.met { color: #2e6b4f; }
+.iqa-month-goal b.behind { color: #c0392b; }
+.iqa-month-goal i { font-style: normal; color: #a3adb8; }
 .iqa-month-empty { padding: 10px 24px 0; font-size: 12px; color: #8a94a0; }
 .iqa-month .iqa-cards { padding-top: 10px; }
 

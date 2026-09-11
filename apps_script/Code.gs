@@ -893,37 +893,67 @@ function normCell_(v) {
 }
 
 // 「9月 の営業サマリー」から月を取り出す。取れなければ null。
+// ※「営業サマリー」の文字は結合セルの先頭にしか入らないことがあるので、
+//   隣のセルだけでなく行全体を見る。ここを取りこぼすと、次の月のブロックが
+//   前の月に混ざって同じ指標が二重に出る。
 function goalsMonthOf_(row) {
-  for (var c = 0; c < Math.min(row.length, 4); c++) {
+  var joined = '';
+  for (var i = 0; i < row.length; i++) joined += normCell_(row[i]);
+  if (joined.indexOf('営業サマリー') === -1) return null;
+
+  for (var c = 0; c < Math.min(row.length, 6); c++) {
     var a = normCell_(row[c]);
-    var b = c + 1 < row.length ? normCell_(row[c + 1]) : '';
-    if (/^\d{1,2}月$/.test(a) && (a + b).indexOf('営業サマリー') !== -1) {
-      return parseInt(a, 10);
-    }
-    if (/^\d{1,2}月の営業サマリー/.test(a)) return parseInt(a, 10);
+    if (/^\d{1,2}月$/.test(a)) return parseInt(a, 10);
+    var m = /^(\d{1,2})月の営業サマリー/.exec(a);
+    if (m) return parseInt(m[1], 10);
   }
   return null;
 }
 
 // 「目標」「実績」が並ぶ行から、列 → {指標, 種別} の対応を作る。
-// 指標名は1〜2行上にあり、結合セルのため同じ値が繰り返される。
+//
+// ★指標名のセルは「目標」「実績」の2列にまたがって結合されている。
+//   getValues() は結合セルの先頭にしか値を返さない（2列目は空文字）ため、
+//   真上だけを見ると「実績」列の指標名が取れず、実績がすべて欠落する。
+//   そこで左から順に見て、直前に見つけた指標名を繰り越す（結合の見え方に合わせる）。
 function goalsColumnMap_(values, labelRow) {
   var map = {};
   var row = values[labelRow];
-  for (var c = 0; c < row.length; c++) {
-    var kind = normCell_(row[c]);
-    if (kind !== '目標' && kind !== '実績') continue;
 
-    var metric = '';
+  // 指標名の候補を、1〜3行上から拾って左から繰り越す。
+  var metricAt = [];
+  var carry = '';
+  for (var c = 0; c < row.length; c++) {
+    var found = '';
     for (var up = 1; up <= 3 && labelRow - up >= 0; up++) {
-      var cand = String(values[labelRow - up][c] == null ? '' : values[labelRow - up][c]).trim();
+      var upRow = values[labelRow - up];
+      var cand = String(upRow[c] == null ? '' : upRow[c]).trim();
       var n = normCell_(cand);
       if (n && n !== '目標' && n !== '実績' && n !== '主なトピック' && n.indexOf('営業サマリー') === -1) {
-        metric = cand;
+        found = cand;
         break;
       }
     }
-    if (metric) map[c] = { metric: metric, kind: kind };
+    if (found) carry = found;
+    metricAt[c] = carry;
+  }
+
+  // 「目標」「実績」が現れる範囲の外まで繰り越さないよう、その範囲だけを対象にする。
+  var first = -1;
+  var last = -1;
+  for (var c2 = 0; c2 < row.length; c2++) {
+    var k = normCell_(row[c2]);
+    if (k === '目標' || k === '実績') {
+      if (first === -1) first = c2;
+      last = c2;
+    }
+  }
+  if (first === -1) return map;
+
+  for (var c3 = first; c3 <= last; c3++) {
+    var kind = normCell_(row[c3]);
+    if (kind !== '目標' && kind !== '実績') continue;
+    if (metricAt[c3]) map[c3] = { metric: metricAt[c3], kind: kind };
   }
   return map;
 }

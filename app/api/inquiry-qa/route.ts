@@ -6,7 +6,7 @@ import {
   listInquiryBoard, statsByCampus, formatRows, formatStats,
   splitByMonth, currentAndPreviousYm, ymLabel, trialsInMonth,
 } from '@/lib/inquiryBoard';
-import { listGoals, goalsFor, formatGoals } from '@/lib/goals';
+import { listGoals, goalsFor, formatGoals, sameCampus } from '@/lib/goals';
 import { logInteraction } from '@/lib/log';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
 
@@ -44,22 +44,51 @@ export async function GET() {
   // 目標は「秋～冬行動計画」から。未設定でもダッシュボードは動く（目標欄が出ないだけ）。
   const goals = await listGoals();
   const goalRows = goals.ok ? goals.rows : [];
+  // 「中等部」は4校舎合計の行なので、校舎カードにはしない（二重計上になる）。
+  const TOTAL_ROW = '中等部';
+
   // 体験は「体験日がその月の件数」で数える。問い合わせ日で数えると、
   // 8月に問い合わせて9月に体験した人が8月側に入り、行動計画とずれるため。
   const withGoals = (stats: typeof curStats, ymStr: string) => {
     const month = Number(ymStr.split('-')[1]);
     const trials = trialsInMonth(board.rows, ymStr);
-    return stats.map((s) => ({
+
+    const out = stats.map((s) => ({
       ...s,
       trialsThisMonth: trials.get(s.campus) ?? 0,
       goals: goalsFor(goalRows, month, s.campus, trials.get(s.campus)),
     }));
+
+    // その月の問い合わせが0件でも、目標がある校舎はカードを出す。
+    // 出さないと「目標5件・実績0」が画面から消えてしまい、目標管理にならない。
+    const shown = new Set(out.map((s) => s.campus));
+    for (const c of new Set(goalRows.filter((g) => g.month === month).map((g) => g.campus))) {
+      if (c === TOTAL_ROW) continue;
+      if ([...shown].some((x) => sameCampus(x, c))) continue;
+      out.push({
+        campus: c, total: 0, joined: 0, applied: 0, declined: 0, open: 0, other: 0,
+        trialDone: 0, noContact: 0, bySource: {},
+        trialsThisMonth: trials.get(c) ?? 0,
+        goals: goalsFor(goalRows, month, c, trials.get(c)),
+      });
+    }
+    return out;
   };
+
+  // 4校舎合計の目標（行動計画の「中等部」行）。月の見出しに出す。
+  const totalGoals = (ymStr: string) =>
+    goalsFor(goalRows, Number(ymStr.split('-')[1]), TOTAL_ROW);
 
   return Response.json({
     ok: true,
-    current: { ym: ym.current, label: ymLabel(ym.current), stats: withGoals(curStats, ym.current) },
-    previous: { ym: ym.previous, label: ymLabel(ym.previous), stats: withGoals(prevStats, ym.previous) },
+    current: {
+      ym: ym.current, label: ymLabel(ym.current),
+      stats: withGoals(curStats, ym.current), totalGoals: totalGoals(ym.current),
+    },
+    previous: {
+      ym: ym.previous, label: ymLabel(ym.previous),
+      stats: withGoals(prevStats, ym.previous), totalGoals: totalGoals(ym.previous),
+    },
     goalsStatus: goals.ok ? 'ok' : goals.reason,
     olderCount: split.older.length,
     unknownCount: split.unknown.length,
