@@ -88,7 +88,7 @@ export type CampusStat = {
   declined: number;    // 結果＝見送り
   open: number;        // 結果が未記入（＝追客中）
   other: number;       // 上記以外の結果が入っている（想定外の値。黙って追客中に混ぜない）
-  trialDone: number;   // 体験を実施した件数
+  trialDone: number;   // その月に問い合わせた人のうち体験に至った件数
   noContact: number;   // 連絡も結果も未記入（＝着手できていない）
   bySource: Record<string, number>; // 媒体別の件数
 };
@@ -227,6 +227,25 @@ export function splitByMonth(rows: InquiryRow[], now: Date = new Date()): MonthS
     if (ym === current) out.current.push(r);
     else if (ym === previous) out.previous.push(r);
     else out.older.push(r);
+  }
+  return out;
+}
+
+/**
+ * その月に「体験を実施した」件数を、体験日の月で数える。
+ *
+ * 問い合わせ日で数えると、8月に問い合わせて9月に体験した人が8月側に入る。
+ * 行動計画の「体験授業」はその月に実施した数なので、体験日で数えないと一致しない。
+ */
+export function trialsInMonth(rows: InquiryRow[], ym: string, now: Date = new Date()): Map<string, number> {
+  const { startYear } = fiscalPeriod(now);
+  const out = new Map<string, number>();
+  for (const r of rows) {
+    if (!r.trialDate) continue;
+    const p = parseRowDate(r.trialDate, startYear);
+    if (!p || toYm(p) !== ym) continue;
+    const key = r.campus || '（校舎不明）';
+    out.set(key, (out.get(key) ?? 0) + 1);
   }
   return out;
 }

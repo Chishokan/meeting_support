@@ -4,7 +4,7 @@ import { MODEL, THINKING } from '@/lib/systemPrompt';
 import { buildInquiryQaPrompt } from '@/lib/inquiryQaPrompt';
 import {
   listInquiryBoard, statsByCampus, formatRows, formatStats,
-  splitByMonth, currentAndPreviousYm, ymLabel,
+  splitByMonth, currentAndPreviousYm, ymLabel, trialsInMonth,
 } from '@/lib/inquiryBoard';
 import { listGoals, goalsFor, formatGoals } from '@/lib/goals';
 import { logInteraction } from '@/lib/log';
@@ -44,9 +44,16 @@ export async function GET() {
   // 目標は「秋～冬行動計画」から。未設定でもダッシュボードは動く（目標欄が出ないだけ）。
   const goals = await listGoals();
   const goalRows = goals.ok ? goals.rows : [];
+  // 体験は「体験日がその月の件数」で数える。問い合わせ日で数えると、
+  // 8月に問い合わせて9月に体験した人が8月側に入り、行動計画とずれるため。
   const withGoals = (stats: typeof curStats, ymStr: string) => {
     const month = Number(ymStr.split('-')[1]);
-    return stats.map((s) => ({ ...s, goals: goalsFor(goalRows, month, s.campus, s) }));
+    const trials = trialsInMonth(board.rows, ymStr);
+    return stats.map((s) => ({
+      ...s,
+      trialsThisMonth: trials.get(s.campus) ?? 0,
+      goals: goalsFor(goalRows, month, s.campus, trials.get(s.campus)),
+    }));
   };
 
   return Response.json({
@@ -108,8 +115,8 @@ export async function POST(req: Request) {
     ? formatGoals(
         goals.rows,
         new Map([
-          [Number(ym.current.split('-')[1]), statsByCampus(split.current)],
-          [Number(ym.previous.split('-')[1]), statsByCampus(split.previous)],
+          [Number(ym.current.split('-')[1]), trialsInMonth(board.rows, ym.current)],
+          [Number(ym.previous.split('-')[1]), trialsInMonth(board.rows, ym.previous)],
         ]),
       )
     : `（目標データを読めませんでした: ${goals.reason}）`;

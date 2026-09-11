@@ -14,6 +14,7 @@ type GoalView = {
 type CampusStat = {
   campus: string;
   goals?: GoalView[];
+  trialsThisMonth?: number;
   total: number;
   joined: number;
   applied: number;
@@ -145,6 +146,10 @@ export default function InquiryQaUI({ name, campus }: { name: string; campus: st
                 <br />
               </>
             )}
+            <b>「入塾」はその月に入会した人数ではありません。</b>
+            その月に問い合わせた人のうち、最終的に入塾に至った件数です。
+            月の入会実績は目標欄（行動計画の入力値）をご覧ください。
+            <br />
             表示は当月と前月のみです。それ以前（{stats.olderCount} 件）は下のチャットで
             「7月の問い合わせ件数は？」のように月を指定して尋ねてください。
             {stats.unknownCount > 0 && (
@@ -219,12 +224,16 @@ function MonthSection({ title, block }: { title: string; block: MonthBlock }) {
                 <span>件</span>
               </div>
               <div className="iqa-breakdown">
+                <div className="iqa-breakdown-label">この月の問い合わせのその後</div>
                 <div>入塾 <b>{s.joined}</b> ／ 申込 <b>{s.applied}</b> ／ 見送り <b>{s.declined}</b></div>
                 <div>
                   追客中 <b>{s.open}</b>
                   {s.other > 0 && <> ／ その他 <b>{s.other}</b></>}
                 </div>
                 {s.noContact > 0 && <div className="iqa-warn">未着手 {s.noContact} 件</div>}
+                {s.trialsThisMonth != null && s.trialsThisMonth > 0 && (
+                  <div>この月に体験を実施 <b>{s.trialsThisMonth}</b></div>
+                )}
               </div>
               {s.goals && s.goals.length > 0 && (
                 <div className="iqa-goals">

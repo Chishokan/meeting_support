@@ -6,8 +6,6 @@
 // - 計算できないもの（サイトク・模試）はシートに入力された実績を使う。
 // どちらを使ったかは画面に出す。数字の出所が分からないまま判断されるのを防ぐため。
 
-import type { CampusStat } from './inquiryBoard';
-
 export type GoalRow = {
   month: number;    // 9, 10, ...
   campus: string;   // 中等部 / 日野校 / 駅前校 / 大野校 / 日宇校 / 県中
@@ -65,10 +63,20 @@ export function sameCampus(a: string, b: string): boolean {
 
 // --- 実績の出所 -----------------------------------------------------------
 
-/** 問合せ管理から自動計算できる指標。キーは指標名に含まれる文字列。 */
-const AUTO_METRICS: { match: string; field: keyof Pick<CampusStat, 'joined' | 'trialDone'> }[] = [
-  { match: '入会', field: 'joined' },
-  { match: '体験', field: 'trialDone' },
+/**
+ * 問合せ管理から自動計算できる指標。
+ *
+ * ★「入会」は自動計算できない。問合せ管理には入塾日の列が無いため。
+ *   「結果=入塾」を問い合わせ日の月で数えると、行動計画の「今月入会」とは別物になる。
+ *   実データで確認すると、入塾42件の問い合わせ日は5月7件・6月13件・7月15件に集中し、
+ *   9月に問い合わせた行の入塾は0件。9月に入会した人の行は5〜7月にある。
+ *   備考に「6/2入会」と書かれている行は42件中1件だけで、抽出もできない。
+ *   → シートに入塾日の列が追加されるまでは、行動計画の手入力値を使う。
+ *
+ * 「体験」は体験日の列があるので、体験日の月で数えれば一致する（trialsInMonth）。
+ */
+const AUTO_METRICS: { match: string; kind: 'trialByDate' }[] = [
+  { match: '体験', kind: 'trialByDate' },
 ];
 
 export type GoalView = {
@@ -80,20 +88,21 @@ export type GoalView = {
 
 /**
  * ある月・ある校舎の目標対比を組み立てる。
- * stat が渡されていれば、自動計算できる指標はそちらの値を使う。
+ * autoTrials（体験日の月で数えた件数）が渡されていれば、体験の指標はその値を使う。
+ * それ以外はすべてシートの手入力値。
  */
 export function goalsFor(
   goals: GoalRow[],
   month: number,
   campus: string,
-  stat?: CampusStat,
+  autoTrials?: number,
 ): GoalView[] {
   return goals
     .filter((g) => g.month === month && sameCampus(g.campus, campus))
     .map((g) => {
       const auto = AUTO_METRICS.find((a) => g.metric.includes(a.match));
-      if (auto && stat) {
-        return { metric: g.metric, target: g.target, actual: stat[auto.field], source: '自動' as const };
+      if (auto && autoTrials != null) {
+        return { metric: g.metric, target: g.target, actual: autoTrials, source: '自動' as const };
       }
       return { metric: g.metric, target: g.target, actual: g.actual, source: 'シート' as const };
     })
@@ -105,8 +114,11 @@ export function behindGoals(views: GoalView[]): GoalView[] {
   return views.filter((v) => v.target != null && v.target > 0 && (v.actual ?? 0) < v.target);
 }
 
-/** プロンプト用。月・校舎ごとに1行。 */
-export function formatGoals(goals: GoalRow[], statsByMonth: Map<number, CampusStat[]>): string {
+/**
+ * プロンプト用。月・校舎ごとに1行。
+ * trialsByMonth は「月 → 校舎名 → 体験日がその月の件数」。
+ */
+export function formatGoals(goals: GoalRow[], trialsByMonth: Map<number, Map<string, number>>): string {
   if (!goals.length) return '（目標データがありません）';
 
   const months = [...new Set(goals.map((g) => g.month))].sort((a, b) => a - b);
@@ -116,8 +128,14 @@ export function formatGoals(goals: GoalRow[], statsByMonth: Map<number, CampusSt
     out.push(`■ ${m}月`);
     const campuses = [...new Set(goals.filter((g) => g.month === m).map((g) => g.campus))];
     for (const c of campuses) {
-      const stat = (statsByMonth.get(m) ?? []).find((s) => sameCampus(s.campus, c));
-      const views = goalsFor(goals, m, c, stat);
+      const trials = trialsByMonth.get(m);
+      let auto: number | undefined;
+      if (trials) {
+        for (const [k, v] of trials) {
+          if (sameCampus(k, c)) { auto = v; break; }
+        }
+      }
+      const views = goalsFor(goals, m, c, auto);
       if (!views.length) continue;
       const body = views
         .map((v) => {
