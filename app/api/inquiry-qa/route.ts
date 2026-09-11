@@ -2,7 +2,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getSession } from '@/lib/auth';
 import { MODEL, THINKING } from '@/lib/systemPrompt';
 import { buildInquiryQaPrompt } from '@/lib/inquiryQaPrompt';
-import { listInquiryBoard, statsByCampus, formatRows, formatStats } from '@/lib/inquiryBoard';
+import {
+  listInquiryBoard, statsByCampus, formatRows, formatStats,
+  splitByMonth, currentAndPreviousYm, ymLabel,
+} from '@/lib/inquiryBoard';
 import { logInteraction } from '@/lib/log';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
 
@@ -31,9 +34,16 @@ export async function GET() {
   const board = await listInquiryBoard();
   if (!board.ok) return Response.json({ ok: false, reason: board.reason }, { status: 200 });
 
+  // ダッシュボードは当月と前月だけを出す。それ以前はチャットで尋ねる運用。
+  const split = splitByMonth(board.rows);
+  const ym = currentAndPreviousYm();
+
   return Response.json({
     ok: true,
-    stats: statsByCampus(board.rows),
+    current: { ym: ym.current, label: ymLabel(ym.current), stats: statsByCampus(split.current) },
+    previous: { ym: ym.previous, label: ymLabel(ym.previous), stats: statsByCampus(split.previous) },
+    olderCount: split.older.length,
+    unknownCount: split.unknown.length,
     total: board.rows.length,
     fetchedAt: board.fetchedAt,
   });
@@ -63,11 +73,27 @@ export async function POST(req: Request) {
     return new Response(msg, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   }
 
-  const stats = statsByCampus(board.rows);
+  // 集計は当月・前月・全期間の3本を渡す。
+  // 画面は当月・前月だけだが、チャットではそれ以前も聞けるようにするため全行も渡す。
+  const split = splitByMonth(board.rows);
+  const ym = currentAndPreviousYm();
+  const statsText = [
+    `【${ymLabel(ym.current)}（当月）】`,
+    formatStats(statsByCampus(split.current)),
+    '',
+    `【${ymLabel(ym.previous)}（前月）】`,
+    formatStats(statsByCampus(split.previous)),
+    '',
+    '【全期間（シート全体）】',
+    formatStats(statsByCampus(board.rows)),
+    '',
+    `※それ以前の月 ${split.older.length}件、日付を読み取れなかった行 ${split.unknown.length}件。`,
+  ].join('\n');
+
   const systemText = buildInquiryQaPrompt({
     dept: session.campus,
     name: session.name,
-    statsText: formatStats(stats),
+    statsText,
     rowsText: formatRows(board.rows),
   });
 

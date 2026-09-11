@@ -3,6 +3,8 @@
 // このファイルに個人情報（実名・電話・住所・保護者名・メール）は入ってこない。
 // ★列が増減したときは INQUIRY_COLUMNS（apps_script/Code.gs）と下の型を合わせる。
 
+import { fiscalPeriod } from './companyKnowledge';
+
 export type InquiryRow = {
   campus: string;   // 校舎（シート名）
   no: string;       // シート上の No.（元データを引くための番号）
@@ -132,6 +134,101 @@ export function statsByCampus(rows: InquiryRow[]): CampusStat[] {
 /** 追客中（結果が未記入）の行。滞留の確認に使う。 */
 export function openRows(rows: InquiryRow[]): InquiryRow[] {
   return rows.filter((r) => !r.result);
+}
+
+// ---- 日付の解釈 ---------------------------------------------------------
+//
+// シートの日付は書式が揃っていない（実データ348件の内訳）：
+//   M/D        147件（5/22 など。最多）
+//   M月D日      29件
+//   M/D＋付加   約15件（「7/14.17」「6/15.29母」など複数日・メモ付き）
+//   解釈不能    校舎名・「DMリスト」等が入った行
+// いずれも年が無いので、期（5月始まり）から補う。
+// 解釈できない行は捨てずに「日付不明」として数え、件数が黙って消えないようにする。
+
+export type ParsedDate = { y: number; m: number; d: number };
+
+/** 文字列から最初の日付を取り出す。年が無ければ期の開始年から補う。 */
+export function parseRowDate(raw: string, startYear: number): ParsedDate | null {
+  const s = (raw || '').trim();
+  if (!s) return null;
+
+  // 1. YYYY/M/D（Apps Script が Date 型セルをこの形に整形する）
+  const full = /(\d{4})[/-](\d{1,2})[/-](\d{1,2})/.exec(s);
+  if (full) {
+    const y = Number(full[1]);
+    const m = Number(full[2]);
+    const d = Number(full[3]);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) return { y, m, d };
+  }
+
+  // 2. M/D または M月D日（先頭のものを採る。「7/14.17」は 7/14 とみなす）
+  const md = /(?:^|[^\d])(\d{1,2})(?:\/|月)(\d{1,2})/.exec(s);
+  if (md) {
+    const m = Number(md[1]);
+    const d = Number(md[2]);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      // 期は5月始まり。5〜12月は期の開始年、1〜4月は翌年。
+      return { y: m >= 5 ? startYear : startYear + 1, m, d };
+    }
+  }
+  return null;
+}
+
+/** 「2026-09」形式。月でまとめるためのキー。 */
+export function toYm(p: ParsedDate): string {
+  return `${p.y}-${String(p.m).padStart(2, '0')}`;
+}
+
+/** 「2026年9月」形式。画面表示用。 */
+export function ymLabel(ym: string): string {
+  const [y, m] = ym.split('-');
+  return `${y}年${Number(m)}月`;
+}
+
+/** 当月と前月の ym を返す（Asia/Tokyo 基準）。 */
+export function currentAndPreviousYm(now: Date = new Date()): { current: string; previous: string } {
+  const parts = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: 'numeric',
+  }).formatToParts(now);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  const y = get('year');
+  const m = get('month');
+  const pm = m === 1 ? 12 : m - 1;
+  const py = m === 1 ? y - 1 : y;
+  return {
+    current: `${y}-${String(m).padStart(2, '0')}`,
+    previous: `${py}-${String(pm).padStart(2, '0')}`,
+  };
+}
+
+export type MonthSplit = {
+  current: InquiryRow[];
+  previous: InquiryRow[];
+  older: InquiryRow[];   // それ以前（画面には出さず、チャットで参照する）
+  unknown: InquiryRow[]; // 日付を解釈できなかった行
+};
+
+/** 当月・前月・それ以前・日付不明に分ける。 */
+export function splitByMonth(rows: InquiryRow[], now: Date = new Date()): MonthSplit {
+  const { current, previous } = currentAndPreviousYm(now);
+  const { startYear } = fiscalPeriod(now);
+  const out: MonthSplit = { current: [], previous: [], older: [], unknown: [] };
+
+  for (const r of rows) {
+    const p = parseRowDate(r.date, startYear);
+    if (!p) {
+      out.unknown.push(r);
+      continue;
+    }
+    const ym = toYm(p);
+    if (ym === current) out.current.push(r);
+    else if (ym === previous) out.previous.push(r);
+    else out.older.push(r);
+  }
+  return out;
 }
 
 // ---- プロンプト用の整形 -------------------------------------------------

@@ -17,13 +17,24 @@ type CampusStat = {
   bySource: Record<string, number>;
 };
 
+type MonthBlock = { ym: string; label: string; stats: CampusStat[] };
+
 type StatsRes =
-  | { ok: true; stats: CampusStat[]; total: number; fetchedAt: string }
+  | {
+      ok: true;
+      current: MonthBlock;
+      previous: MonthBlock;
+      olderCount: number;
+      unknownCount: number;
+      total: number;
+      fetchedAt: string;
+    }
   | { ok: false; reason: string };
 
 // 最初の一歩を作る例。担当者が何を聞けるか分からずに止まるのを防ぐ。
 const EXAMPLES = [
-  '校舎ごとの問い合わせ状況をまとめて',
+  '当月と前月を比べてどうですか？',
+  '7月の問い合わせ件数は？',
   '追客中で止まっている人は？',
   '媒体の内訳は？紹介はどれくらい',
   '体験まで来たのに入塾していない人は？',
@@ -115,26 +126,15 @@ export default function InquiryQaUI({ name, campus }: { name: string; campus: st
 
       {stats?.ok && (
         <>
-          <div className="iqa-cards">
-            {stats.stats.map((s) => (
-              <div className="iqa-card" key={s.campus}>
-                <div className="iqa-campus">{s.campus}</div>
-                <div className="iqa-total">
-                  {s.total}
-                  <span>件</span>
-                </div>
-                <div className="iqa-breakdown">
-                  <div>入塾 <b>{s.joined}</b> ／ 申込 <b>{s.applied}</b> ／ 見送り <b>{s.declined}</b></div>
-                  <div>
-                    追客中 <b>{s.open}</b>
-                    {s.other > 0 && <> ／ その他 <b>{s.other}</b></>}
-                  </div>
-                  {s.noContact > 0 && <div className="iqa-warn">未着手 {s.noContact} 件</div>}
-                </div>
-              </div>
-            ))}
-          </div>
+          <MonthSection title={`${stats.current.label}（当月）`} block={stats.current} />
+          <MonthSection title={`${stats.previous.label}（前月）`} block={stats.previous} />
           <div className="iqa-note">
+            表示は当月と前月のみです。それ以前（{stats.olderCount} 件）は下のチャットで
+            「7月の問い合わせ件数は？」のように月を指定して尋ねてください。
+            {stats.unknownCount > 0 && (
+              <> 日付を読み取れなかった行が {stats.unknownCount} 件あり、月別の集計には入っていません。</>
+            )}
+            <br />
             全 {stats.total} 件を読み込みました{stats.fetchedAt ? `（${stats.fetchedAt} 時点）` : ''}。
             生徒氏名は「佐○」の形にマスクされ、電話番号・住所・保護者名はAIに渡していません。
             個別の件は「校舎名 #No.」でシートを引いてください。
@@ -178,6 +178,42 @@ export default function InquiryQaUI({ name, campus }: { name: string; campus: st
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// 1か月分の校舎カード。当月・前月で同じ形を使う。
+function MonthSection({ title, block }: { title: string; block: MonthBlock }) {
+  const total = block.stats.reduce((a, s) => a + s.total, 0);
+  return (
+    <div className="iqa-month">
+      <div className="iqa-month-head">
+        {title}
+        <span className="iqa-month-total">{total} 件</span>
+      </div>
+      {block.stats.length === 0 ? (
+        <div className="iqa-month-empty">この月の問い合わせはまだ登録されていません。</div>
+      ) : (
+        <div className="iqa-cards">
+          {block.stats.map((s) => (
+            <div className="iqa-card" key={s.campus}>
+              <div className="iqa-campus">{s.campus}</div>
+              <div className="iqa-total">
+                {s.total}
+                <span>件</span>
+              </div>
+              <div className="iqa-breakdown">
+                <div>入塾 <b>{s.joined}</b> ／ 申込 <b>{s.applied}</b> ／ 見送り <b>{s.declined}</b></div>
+                <div>
+                  追客中 <b>{s.open}</b>
+                  {s.other > 0 && <> ／ その他 <b>{s.other}</b></>}
+                </div>
+                {s.noContact > 0 && <div className="iqa-warn">未着手 {s.noContact} 件</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
