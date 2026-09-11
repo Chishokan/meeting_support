@@ -61,6 +61,28 @@ export function sameCampus(a: string, b: string): boolean {
   return x === y || x.includes(y) || y.includes(x);
 }
 
+// --- 表示順 ---------------------------------------------------------------
+
+/**
+ * カードの並び順。会議で見る順（日野・駅前・大野・日宇 → 県中 → その他）に固定する。
+ * シートのタブ順やデータの出現順に任せると、月によって並びが変わって読みにくい。
+ * ここに無い名前は末尾へ（新しい校舎が増えても落ちないように）。
+ */
+export const CAMPUS_ORDER = ['日野校', '駅前校', '大野校', '日宇校', '県中対策', 'その他'];
+
+export function campusRank(name: string): number {
+  const i = CAMPUS_ORDER.findIndex((c) => sameCampus(c, name));
+  return i === -1 ? CAMPUS_ORDER.length : i;
+}
+
+/** 表示順に並べ替える（元の配列は変えない）。 */
+export function sortByCampusOrder<T extends { campus: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const d = campusRank(a.campus) - campusRank(b.campus);
+    return d !== 0 ? d : a.campus.localeCompare(b.campus, 'ja');
+  });
+}
+
 // --- 実績の出所 -----------------------------------------------------------
 
 /**

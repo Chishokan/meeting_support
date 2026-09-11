@@ -897,15 +897,14 @@ function normCell_(v) {
 //   隣のセルだけでなく行全体を見る。ここを取りこぼすと、次の月のブロックが
 //   前の月に混ざって同じ指標が二重に出る。
 function goalsMonthOf_(row) {
-  var joined = '';
-  for (var i = 0; i < row.length; i++) joined += normCell_(row[i]);
-  if (joined.indexOf('営業サマリー') === -1) return null;
-
+  // 「営業サマリー」の文字は結合セルの先頭にしか入らず、行によっては取れない。
+  // 見出しの体裁に頼らず、左端付近に「N月」だけのセルがあれば月の切り替わりとみなす。
+  // ここを取りこぼすと次の月のブロックが前の月に混ざり、同じ指標が二重に出る。
   for (var c = 0; c < Math.min(row.length, 6); c++) {
     var a = normCell_(row[c]);
     if (/^\d{1,2}月$/.test(a)) return parseInt(a, 10);
-    var m = /^(\d{1,2})月の営業サマリー/.exec(a);
-    if (m) return parseInt(m[1], 10);
+    var m = /^(\d{1,2})月の/.exec(a);
+    if (m && a.indexOf('営業サマリー') !== -1) return parseInt(m[1], 10);
   }
   return null;
 }
@@ -920,9 +919,13 @@ function goalsColumnMap_(values, labelRow) {
   var map = {};
   var row = values[labelRow];
 
-  // 指標名の候補を、1〜3行上から拾って左から繰り越す。
+  // 指標名の候補を1〜3行上から拾う。
+  // ★繰り越しは「1列だけ」にする。指標名は『目標』『実績』の2列分しか結合されていないので、
+  //   右端まで流すと無関係な列（主なトピック等）に指標が割り当たり、
+  //   「サイトク 0/—」「1010/—」のような出鱈目な対比が出る。
   var metricAt = [];
   var carry = '';
+  var carryLeft = 0; // あと何列まで繰り越してよいか
   for (var c = 0; c < row.length; c++) {
     var found = '';
     for (var up = 1; up <= 3 && labelRow - up >= 0; up++) {
@@ -934,8 +937,16 @@ function goalsColumnMap_(values, labelRow) {
         break;
       }
     }
-    if (found) carry = found;
-    metricAt[c] = carry;
+    if (found) {
+      carry = found;
+      carryLeft = 1; // 自分＋次の1列（目標・実績の対）まで
+      metricAt[c] = carry;
+    } else if (carryLeft > 0) {
+      metricAt[c] = carry;
+      carryLeft--;
+    } else {
+      metricAt[c] = '';
+    }
   }
 
   // 「目標」「実績」が現れる範囲の外まで繰り越さないよう、その範囲だけを対象にする。
@@ -983,6 +994,7 @@ function listGoals_(data) {
 
   var values = sh.getDataRange().getValues();
   var items = [];
+  var seen = {};
   var month = null;
   var colMap = null;
 
@@ -1032,6 +1044,10 @@ function listGoals_(data) {
     }
 
     for (var metric in byMetric) {
+      // 同じ月・校舎・指標が二度出たら先に読めた方を残す（ブロックの取りこぼしに対する保険）。
+      var dupKey = month + '|' + rowName + '|' + metric;
+      if (seen[dupKey]) continue;
+      seen[dupKey] = true;
       items.push({
         month: month,
         campus: rowName,

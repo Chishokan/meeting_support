@@ -6,7 +6,7 @@ import {
   listInquiryBoard, statsByCampus, formatRows, formatStats,
   splitByMonth, currentAndPreviousYm, ymLabel, trialsInMonth,
 } from '@/lib/inquiryBoard';
-import { listGoals, goalsFor, formatGoals, sameCampus } from '@/lib/goals';
+import { listGoals, goalsFor, formatGoals, sameCampus, sortByCampusOrder } from '@/lib/goals';
 import { logInteraction } from '@/lib/log';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
 
@@ -72,7 +72,7 @@ export async function GET() {
         goals: goalsFor(goalRows, month, c, trials.get(c)),
       });
     }
-    return out;
+    return sortByCampusOrder(out);
   };
 
   // 4校舎合計の目標（行動計画の「中等部」行）。月の見出しに出す。
