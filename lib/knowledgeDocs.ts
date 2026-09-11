@@ -60,6 +60,8 @@ async function listMarkdown(dir: string): Promise<string[]> {
   const out: string[] = [];
   for (const e of entries) {
     const p = path.join(dir, e.name);
+    // _ で始まるファイルはテンプレート・メモ類。要項ではないので読まない。
+    if (e.name.startsWith('_')) continue;
     if (e.isDirectory()) out.push(...(await listMarkdown(p)));
     else if (e.name.endsWith('.md')) out.push(p);
   }
