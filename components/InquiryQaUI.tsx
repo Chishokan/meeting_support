@@ -4,8 +4,16 @@ import { useEffect, useRef, useState } from 'react';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
+type GoalView = {
+  metric: string;
+  target: number | null;
+  actual: number | null;
+  source: '自動' | 'シート';
+};
+
 type CampusStat = {
   campus: string;
+  goals?: GoalView[];
   total: number;
   joined: number;
   applied: number;
@@ -24,6 +32,7 @@ type StatsRes =
       ok: true;
       current: MonthBlock;
       previous: MonthBlock;
+      goalsStatus: string;
       olderCount: number;
       unknownCount: number;
       total: number;
@@ -129,6 +138,13 @@ export default function InquiryQaUI({ name, campus }: { name: string; campus: st
           <MonthSection title={`${stats.current.label}（当月）`} block={stats.current} />
           <MonthSection title={`${stats.previous.label}（前月）`} block={stats.previous} />
           <div className="iqa-note">
+            {stats.goalsStatus !== 'ok' && (
+              <>
+                目標データを読み込めていません（{stats.goalsStatus}）。
+                Apps Script の GOALS_BOOK_ID を設定すると、カードに目標対比が出ます。
+                <br />
+              </>
+            )}
             表示は当月と前月のみです。それ以前（{stats.olderCount} 件）は下のチャットで
             「7月の問い合わせ件数は？」のように月を指定して尋ねてください。
             {stats.unknownCount > 0 && (
@@ -210,6 +226,25 @@ function MonthSection({ title, block }: { title: string; block: MonthBlock }) {
                 </div>
                 {s.noContact > 0 && <div className="iqa-warn">未着手 {s.noContact} 件</div>}
               </div>
+              {s.goals && s.goals.length > 0 && (
+                <div className="iqa-goals">
+                  {s.goals.map((g) => {
+                    const a = g.actual ?? 0;
+                    const t = g.target ?? 0;
+                    const behind = t > 0 && a < t;
+                    return (
+                      <div className="iqa-goal" key={g.metric}>
+                        <span className="iqa-goal-name" title={`実績の出所: ${g.source}`}>
+                          {g.metric}
+                        </span>
+                        <span className={`iqa-goal-num ${behind ? 'behind' : 'met'}`}>
+                          {g.actual ?? '—'}<i>/{g.target ?? '—'}</i>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ))}
         </div>

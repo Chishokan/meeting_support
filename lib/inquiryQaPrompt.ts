@@ -41,6 +41,7 @@ const QA_INSTRUCTIONS = `
 - 数字は「件数」で示す。率を出すときは分母も一緒に書く（例：入塾12/問い合わせ40件）。
 - 状況が良くないときは、そのまま書く。取り繕わない。
 - 3件を超える一覧は箇条書きにする。長い備考は要点だけを引く。
+- 目標がある指標は「実績/目標」の形で示し、届いていなければそう書く。取り繕わない。
 - 最後に「次にやるとよいこと」を1〜2行で添える。ただしデータから言えることに限る。
 
 【集計（校舎ごと・この数字を正とする）】
@@ -49,6 +50,13 @@ const QA_INSTRUCTIONS = `
 それ以前の月は【問い合わせデータ】の各行の日付から数える（数えた条件を必ず書く）。
 
 {{集計}}
+
+【目標と実績（秋～冬行動計画より。月×校舎×指標）】
+「実績の出所:自動」は問合せ管理シートから計算した値（日々更新される）。
+「実績の出所:シート」は行動計画に手入力された値（会議前にまとめて入力されるため遅れることがある）。
+目標に触れるときは、どちらの数字かを必ず添える。
+
+{{目標}}
 
 【問い合わせデータ（1行1件）】
 {{データ}}
@@ -59,10 +67,12 @@ type Args = {
   name: string;
   statsText: string;
   rowsText: string;
+  goalsText?: string;
 };
 
-export function buildInquiryQaPrompt({ dept, name, statsText, rowsText }: Args): string {
+export function buildInquiryQaPrompt({ dept, name, statsText, rowsText, goalsText }: Args): string {
   const instructions = QA_INSTRUCTIONS
+    .replace('{{目標}}', goalsText || '（目標データがありません）')
     .replace('{{集計}}', statsText || '（データなし）')
     .replace('{{データ}}', rowsText || '（データなし）')
     .replace(/\{\{事業部\}\}/g, dept || '（事業部）')

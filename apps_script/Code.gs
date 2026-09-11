@@ -18,6 +18,7 @@
  *   - action:'saveSuccess'  … 夏期結果報告の成功事例        → 「成功事例」シートに1件1行で記録（「報告」転記時に自動）
  *   - action:'listSuccess'  … ダッシュボード用の成功事例一覧  → 「成功事例」シートを新しい順に返す
  *   - action:'listInquiryBoard' … 問い合わせQA用の小中等部問合せ管理 → 別スプレッドシート（INQUIRY_BOARD_ID）を校舎シートごとに読み、個人情報を落として返す
+ *   - action:'listGoals'        … 目標管理用 → 中等部会議議事録（GOALS_BOOK_ID）の「秋～冬行動計画」タブから月×校舎×指標の目標／実績を返す
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
  *
  * 【セットアップ手順】
@@ -49,6 +50,14 @@ var DEFAULT_TAB_HINT = '7月会議内容テスト';
 // ※このシートは生徒・保護者の個人情報を含むため、下の listInquiryBoard_ が
 //   氏名をマスクし、電話・住所・保護者名・メールを落としてから返す（アプリ側には渡らない）。
 var INQUIRY_BOARD_ID = '';
+
+// 「目標管理」が読む中等部会議議事録スプレッドシートID。
+// 目標・実績は下の GOALS_SHEET_NAME のタブにある。空なら目標対比は表示されない。
+var GOALS_BOOK_ID = '';
+// 目標が載っているタブ名。※位置や順番では探さないこと。
+// 旧タブに「このシート内容を『秋～冬行動計画』に移行しました。こちらのシートは削除します。」と
+// 注記があり、タブの並びは変わる前提。名前で引く。
+var GOALS_SHEET_NAME = '秋～冬行動計画';
 
 // 部門（campus）→ タブ探索キーワード。タブ名にこの文字列が含まれていれば、そのタブに振り分ける。
 // ※タブ名が部門名と少し違っても振り分けられるようにするための対応表。タブ名変更時はここを直す。
@@ -153,6 +162,10 @@ function doPost(e) {
 
     if (action === 'listInquiryBoard') {
       return json_(listInquiryBoard_(data));
+    }
+
+    if (action === 'listGoals') {
+      return json_(listGoals_(data));
     }
 
     if (action === 'saveDeptMinutes') {
@@ -860,6 +873,146 @@ function listInquiryBoard_(data) {
   }
 
   return { ok: true, items: items, campuses: campuses, fetchedAt: nowJp_() };
+}
+
+
+// ===== 目標管理（秋～冬行動計画） ==========================================
+// 「9月 の営業サマリー（4校舎合計）」ブロックを月ごとに読む。構造は
+//   （月行）   9月 の営業サマリー（4校舎合計）
+//   （指標行）           今月入会 | サイトク前期外部受講者 | 体験授業 | 10/18一斉模試
+//   （小見出し）         目標 実績 | 目標 実績 | 目標 実績 | 目標 実績 | 主なトピック
+//   （校舎行）  中等部 |  43  33  |  10   1  |  19   3  |  17   2  | ...
+//              日野校 |  15  13  | ...
+// 指標名は月によって変わる（「10/18一斉模試」など日付入り）ため、見出しから読み取る。
+
+// 目標の対象となる行（この名前の行だけを拾う）
+var GOALS_ROW_NAMES = ['中等部', '日野校', '駅前校', '大野校', '日宇校', '県中'];
+
+function normCell_(v) {
+  return String(v == null ? '' : v).replace(/[\s　]/g, '');
+}
+
+// 「9月 の営業サマリー」から月を取り出す。取れなければ null。
+function goalsMonthOf_(row) {
+  for (var c = 0; c < Math.min(row.length, 4); c++) {
+    var a = normCell_(row[c]);
+    var b = c + 1 < row.length ? normCell_(row[c + 1]) : '';
+    if (/^\d{1,2}月$/.test(a) && (a + b).indexOf('営業サマリー') !== -1) {
+      return parseInt(a, 10);
+    }
+    if (/^\d{1,2}月の営業サマリー/.test(a)) return parseInt(a, 10);
+  }
+  return null;
+}
+
+// 「目標」「実績」が並ぶ行から、列 → {指標, 種別} の対応を作る。
+// 指標名は1〜2行上にあり、結合セルのため同じ値が繰り返される。
+function goalsColumnMap_(values, labelRow) {
+  var map = {};
+  var row = values[labelRow];
+  for (var c = 0; c < row.length; c++) {
+    var kind = normCell_(row[c]);
+    if (kind !== '目標' && kind !== '実績') continue;
+
+    var metric = '';
+    for (var up = 1; up <= 3 && labelRow - up >= 0; up++) {
+      var cand = String(values[labelRow - up][c] == null ? '' : values[labelRow - up][c]).trim();
+      var n = normCell_(cand);
+      if (n && n !== '目標' && n !== '実績' && n !== '主なトピック' && n.indexOf('営業サマリー') === -1) {
+        metric = cand;
+        break;
+      }
+    }
+    if (metric) map[c] = { metric: metric, kind: kind };
+  }
+  return map;
+}
+
+function listGoals_(data) {
+  if (!GOALS_BOOK_ID) return { ok: false, reason: 'goals_not_configured', items: [] };
+
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(GOALS_BOOK_ID);
+  } catch (err) {
+    return { ok: false, reason: 'goals_open_failed', items: [] };
+  }
+
+  // タブ名で引く（並び順に依存しない）。完全一致が無ければ部分一致で探す。
+  var sh = ss.getSheetByName(GOALS_SHEET_NAME);
+  if (!sh) {
+    var all = ss.getSheets();
+    for (var i = 0; i < all.length; i++) {
+      if (normCell_(all[i].getName()).indexOf(normCell_(GOALS_SHEET_NAME)) !== -1) {
+        sh = all[i];
+        break;
+      }
+    }
+  }
+  if (!sh) return { ok: false, reason: 'goals_sheet_not_found', items: [] };
+
+  var values = sh.getDataRange().getValues();
+  var items = [];
+  var month = null;
+  var colMap = null;
+
+  for (var r = 0; r < values.length; r++) {
+    var row = values[r];
+
+    var m = goalsMonthOf_(row);
+    if (m) {
+      month = m;
+      colMap = null; // 月が変われば指標の並びも取り直す
+      continue;
+    }
+    if (!month) continue;
+
+    // 「目標／実績」の見出し行を見つけたら列対応を作る
+    var hasKind = false;
+    for (var c0 = 0; c0 < row.length; c0++) {
+      var n0 = normCell_(row[c0]);
+      if (n0 === '目標' || n0 === '実績') { hasKind = true; break; }
+    }
+    if (hasKind) {
+      colMap = goalsColumnMap_(values, r);
+      continue;
+    }
+    if (!colMap) continue;
+
+    // 校舎行を拾う（行名は先頭3列のどこかに入っている）
+    var rowName = '';
+    for (var c1 = 0; c1 < Math.min(row.length, 4); c1++) {
+      var cand = normCell_(row[c1]);
+      if (GOALS_ROW_NAMES.indexOf(cand) !== -1) { rowName = cand; break; }
+    }
+    if (!rowName) continue;
+
+    // 指標ごとに 目標／実績 をまとめる
+    var byMetric = {};
+    for (var key in colMap) {
+      var col = Number(key);
+      if (col >= row.length) continue;
+      var raw = row[col];
+      if (raw === '' || raw === null) continue;
+      var num = Number(String(raw).replace(/[^\d.-]/g, ''));
+      if (isNaN(num)) continue;
+      var info = colMap[key];
+      if (!byMetric[info.metric]) byMetric[info.metric] = {};
+      byMetric[info.metric][info.kind === '目標' ? 'target' : 'actual'] = num;
+    }
+
+    for (var metric in byMetric) {
+      items.push({
+        month: month,
+        campus: rowName,
+        metric: metric,
+        target: byMetric[metric].target == null ? null : byMetric[metric].target,
+        actual: byMetric[metric].actual == null ? null : byMetric[metric].actual,
+      });
+    }
+  }
+
+  return { ok: true, items: items, sheet: sh.getName(), fetchedAt: nowJp_() };
 }
 
 // セル値を文字列化。Date型（Sheetsが自動変換した場合）は日本時間の見やすい形式に整える。

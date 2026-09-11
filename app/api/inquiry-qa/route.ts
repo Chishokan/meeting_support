@@ -6,6 +6,7 @@ import {
   listInquiryBoard, statsByCampus, formatRows, formatStats,
   splitByMonth, currentAndPreviousYm, ymLabel,
 } from '@/lib/inquiryBoard';
+import { listGoals, goalsFor, formatGoals } from '@/lib/goals';
 import { logInteraction } from '@/lib/log';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
 
@@ -37,11 +38,22 @@ export async function GET() {
   // ダッシュボードは当月と前月だけを出す。それ以前はチャットで尋ねる運用。
   const split = splitByMonth(board.rows);
   const ym = currentAndPreviousYm();
+  const curStats = statsByCampus(split.current);
+  const prevStats = statsByCampus(split.previous);
+
+  // 目標は「秋～冬行動計画」から。未設定でもダッシュボードは動く（目標欄が出ないだけ）。
+  const goals = await listGoals();
+  const goalRows = goals.ok ? goals.rows : [];
+  const withGoals = (stats: typeof curStats, ymStr: string) => {
+    const month = Number(ymStr.split('-')[1]);
+    return stats.map((s) => ({ ...s, goals: goalsFor(goalRows, month, s.campus, s) }));
+  };
 
   return Response.json({
     ok: true,
-    current: { ym: ym.current, label: ymLabel(ym.current), stats: statsByCampus(split.current) },
-    previous: { ym: ym.previous, label: ymLabel(ym.previous), stats: statsByCampus(split.previous) },
+    current: { ym: ym.current, label: ymLabel(ym.current), stats: withGoals(curStats, ym.current) },
+    previous: { ym: ym.previous, label: ymLabel(ym.previous), stats: withGoals(prevStats, ym.previous) },
+    goalsStatus: goals.ok ? 'ok' : goals.reason,
     olderCount: split.older.length,
     unknownCount: split.unknown.length,
     total: board.rows.length,
@@ -90,11 +102,24 @@ export async function POST(req: Request) {
     `※それ以前の月 ${split.older.length}件、日付を読み取れなかった行 ${split.unknown.length}件。`,
   ].join('\n');
 
+  // 目標（秋～冬行動計画）。読めなくてもQAは動く。
+  const goals = await listGoals();
+  const goalsText = goals.ok
+    ? formatGoals(
+        goals.rows,
+        new Map([
+          [Number(ym.current.split('-')[1]), statsByCampus(split.current)],
+          [Number(ym.previous.split('-')[1]), statsByCampus(split.previous)],
+        ]),
+      )
+    : `（目標データを読めませんでした: ${goals.reason}）`;
+
   const systemText = buildInquiryQaPrompt({
     dept: session.campus,
     name: session.name,
     statsText,
     rowsText: formatRows(board.rows),
+    goalsText,
   });
 
   const encoder = new TextEncoder();
