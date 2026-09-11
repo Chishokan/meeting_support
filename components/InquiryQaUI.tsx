@@ -56,7 +56,7 @@ export default function InquiryQaUI({ name, campus }: { name: string; campus: st
   }, []);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length) endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   async function ask(text: string) {
@@ -95,38 +95,47 @@ export default function InquiryQaUI({ name, campus }: { name: string; campus: st
     }
   }
 
-  const cards = stats?.ok ? stats.stats : [];
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      ask(input);
+    }
+  }
 
   return (
-    <div className="minutes">
+    <div className="iqa-page">
       <div className="page-head">
         <h1>問い合わせQA</h1>
         <p>小中等部「問合せ管理」シートの内容に、AIが答えます（{campus} / {name} さん）。</p>
       </div>
 
       {stats && !stats.ok && (
-        <div className="err">{REASON_TEXT[stats.reason] ?? `読み込みエラー（${stats.reason}）`}</div>
+        <div className="iqa-err">{REASON_TEXT[stats.reason] ?? `読み込みエラー（${stats.reason}）`}</div>
       )}
 
       {stats?.ok && (
         <>
-          <div className="stat-row">
-            {cards.map((s) => (
-              <div className="stat-card" key={s.campus}>
-                <div className="stat-num">{s.total}</div>
-                <div className="stat-label">
-                  {s.campus}
-                  <br />
-                  入塾{s.joined}・申込{s.applied}・見送り{s.declined}
-                  <br />
-                  追客中{s.open}{s.other > 0 ? `・その他${s.other}` : ''}
-                  {s.noContact > 0 ? `（未着手${s.noContact}）` : ''}
+          <div className="iqa-cards">
+            {stats.stats.map((s) => (
+              <div className="iqa-card" key={s.campus}>
+                <div className="iqa-campus">{s.campus}</div>
+                <div className="iqa-total">
+                  {s.total}
+                  <span>件</span>
+                </div>
+                <div className="iqa-breakdown">
+                  <div>入塾 <b>{s.joined}</b> ／ 申込 <b>{s.applied}</b> ／ 見送り <b>{s.declined}</b></div>
+                  <div>
+                    追客中 <b>{s.open}</b>
+                    {s.other > 0 && <> ／ その他 <b>{s.other}</b></>}
+                  </div>
+                  {s.noContact > 0 && <div className="iqa-warn">未着手 {s.noContact} 件</div>}
                 </div>
               </div>
             ))}
           </div>
-          <div className="hint">
-            全{stats.total}件を読み込みました{stats.fetchedAt ? `（${stats.fetchedAt} 時点）` : ''}。
+          <div className="iqa-note">
+            全 {stats.total} 件を読み込みました{stats.fetchedAt ? `（${stats.fetchedAt} 時点）` : ''}。
             生徒氏名は「佐○」の形にマスクされ、電話番号・住所・保護者名はAIに渡していません。
             個別の件は「校舎名 #No.」でシートを引いてください。
           </div>
@@ -134,40 +143,40 @@ export default function InquiryQaUI({ name, campus }: { name: string; campus: st
       )}
 
       {messages.length === 0 && (
-        <div className="quick-links">
+        <div className="iqa-examples">
           {EXAMPLES.map((e) => (
-            <button key={e} className="quick-link" onClick={() => ask(e)} disabled={busy}>
+            <button key={e} className="iqa-example" onClick={() => ask(e)} disabled={busy}>
               {e}
             </button>
           ))}
         </div>
       )}
 
-      <div className="messages">
-        {messages.map((m, i) => (
-          <div key={i} className={`msg ${m.role}`}>
-            <div>
-              <div className="bubble">{m.content || '…'}</div>
+      <div className="wrap">
+        <div className="messages">
+          {messages.map((m, i) => (
+            <div key={i} className={`msg ${m.role}`}>
+              <div>
+                <div className="bubble">{m.content || '…'}</div>
+              </div>
             </div>
-          </div>
-        ))}
-        <div ref={endRef} />
+          ))}
+          <div ref={endRef} />
+        </div>
       </div>
 
       <div className="composer">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) ask(input);
-          }}
-          placeholder="例：大野校の追客中を教えて（Ctrl+Enter で送信）"
-          rows={2}
-          disabled={busy}
-        />
-        <button onClick={() => ask(input)} disabled={busy || !input.trim()}>
-          {busy ? '考え中…' : '質問する'}
-        </button>
+        <div className="inner">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="例：大野校の追客中を教えて（⌘/Ctrl+Enter で送信）"
+          />
+          <button onClick={() => ask(input)} disabled={busy || !input.trim()}>
+            {busy ? '…' : '質問'}
+          </button>
+        </div>
       </div>
     </div>
   );
