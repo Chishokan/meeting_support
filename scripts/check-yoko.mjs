@@ -23,6 +23,13 @@ const REQUIRED = [
   { label: '申込方法', keys: ['申込方法', 'お申込み方法', 'お申し込み方法', '申込受付'] },
   { label: '支払い方法', keys: ['支払', '引き落と', '引落', '払込'] },
   { label: '連絡先', keys: ['連絡先', 'お問い合わせ', 'フリーダイヤル'] },
+  { label: '経理連絡事項', keys: ['経理連絡事項', '請求対象'] },
+];
+
+// 消し忘れると事故になるもの。残っていたら指摘する。
+const LEFTOVERS = [
+  { label: '記入例の節', re: /◆?\s*記入例/ },
+  { label: '「（例：…）」のひな形', re: /（例[：:]/ },
 ];
 
 function walk(dir) {
@@ -71,6 +78,14 @@ for (const f of files) {
   // 見出しだけでなく本文も見る（表で書かれている要項があるため）。
   const body = raw.replace(/[*＜＞<>#\s　]/g, '');
   const missing = REQUIRED.filter((r) => !r.keys.some((k) => body.includes(k.replace(/\s/g, ''))));
+
+  // ひな形の消し忘れ。確定済みで残っていると、AIが例の金額を実際の受講料として答える。
+  const left = LEFTOVERS.filter((l) => l.re.test(raw));
+  if (left.length) {
+    console.log(`${confirmed ? '要修正' : '注意  '} [${confirmed ? '確定' : '下書き'}] ${f.replace(ROOT + '/', '')}`);
+    console.log(`       消し忘れ: ${left.map((l) => l.label).join('、')}`);
+    if (confirmed) incomplete++;
+  }
 
   const mark = confirmed ? '確定' : '下書き';
   if (missing.length === 0) {
