@@ -527,7 +527,9 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .iqa-goal-num.behind { color: #c0392b; }
 
 /* ---- 要項QA（.iqa-page と .iqa-* を共用） ---- */
-.yq-list, .yq-pending { max-width: 760px; margin: 16px auto 0; padding: 0 16px; }
+/* カード（.iqa-cards の左右 24px）と左端を揃える。中央寄せの760px幅にすると、
+   カードの下で見出しだけが右にずれて段差に見える。 */
+.yq-list, .yq-pending { margin: 16px 0 0; padding: 0 24px; }
 .yq-list-head { font-size: 12px; font-weight: 700; color: #2a2f36; margin-bottom: 6px; }
 .yq-items { margin: 0; padding-left: 1.2em; }
 .yq-items li { font-size: 12.5px; color: #445; line-height: 1.9; }
@@ -539,6 +541,50 @@ button.primary:disabled { opacity: .5; cursor: default; }
 }
 .yq-toggle:hover { text-decoration: underline; }
 .yq-pending-note { font-size: 11.5px; color: #8a94a0; line-height: 1.8; margin: 6px 0; }
+
+/* 要項カード（実施中・まもなく実施） -------------------------------------- */
+/* 問い合わせQAのカード（.iqa-cards / .iqa-card）を土台にして、
+   要項に必要な行だけ足している。2画面で見た目を揃えるため。 */
+.yq-cards-wrap { margin-top: 4px; }
+.yq-cards-head {
+  padding: 18px 24px 0; display: flex; align-items: baseline; gap: 10px;
+  font-size: 13px; font-weight: 700; color: #2a2f36;
+}
+.yq-cards-sub { font-size: 12px; font-weight: 600; color: #8a94a0; }
+/* 要項カードは題名と3行が入るので、問い合わせQAの190pxでは折り返しが増える。 */
+.yq-cards-wrap .iqa-cards {
+  padding-top: 10px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+.yq-empty { padding: 10px 24px 0; font-size: 12px; color: #8a94a0; line-height: 1.9; }
+
+.yq-card { display: flex; flex-direction: column; gap: 8px; }
+.yq-chip {
+  align-self: flex-start;
+  font-size: 10.5px; font-weight: 700; line-height: 1;
+  padding: 4px 7px; border-radius: 999px;
+}
+.yq-chip.now { background: #e7f4ed; color: #2e6b4f; }
+.yq-chip.soon { background: #fdf1e3; color: #a4620f; }
+.yq-chip.test { background: #eef0f3; color: #6b7683; }
+.yq-card-title { font-size: 13px; font-weight: 700; color: #2a2f36; line-height: 1.5; }
+
+/* 「学年／期間／料金」の2列。見出し幅を固定して、カードを横に並べても行が揃うように。 */
+.yq-card-rows {
+  display: grid; grid-template-columns: 3.2em 1fr;
+  gap: 4px 10px; margin: 0; font-size: 12px;
+}
+.yq-card-rows dt { color: #8a94a0; font-weight: 600; }
+.yq-card-rows dd { margin: 0; color: #445; line-height: 1.7; }
+
+.yq-fee { display: flex; gap: 8px; justify-content: space-between; }
+.yq-fee-aud { color: #8a94a0; }
+.yq-fee-val { font-variant-numeric: tabular-nums; text-align: right; }
+.yq-fee-note { font-size: 11px; color: #a3adb8; margin-top: 2px; line-height: 1.6; }
+.yq-card-test {
+  font-size: 11px; color: #8a94a0; line-height: 1.6;
+  border-top: 1px dashed var(--line); padding-top: 7px;
+}
+
 .iqa-err code {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 12px; background: #fff; border: 1px solid #f0cfc8; border-radius: 4px; padding: 1px 5px;

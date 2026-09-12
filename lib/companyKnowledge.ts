@@ -11,7 +11,7 @@ const FISCAL_ANCHOR_START_YEAR = 2026;
 type JstDate = { y: number; m: number; d: number; w: string };
 
 // サーバのタイムゾーン（Vercel は UTC）に関わらず日本時間の日付を得る。
-function jstDate(now: Date): JstDate {
+export function jstDate(now: Date): JstDate {
   const parts = new Intl.DateTimeFormat('ja-JP', {
     timeZone: 'Asia/Tokyo',
     year: 'numeric',

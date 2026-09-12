@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { MODEL, THINKING } from '@/lib/systemPrompt';
 import { buildYokoQaPrompt } from '@/lib/yokoQaPrompt';
 import { loadYokoDocs, confirmedDocs, formatDocs, formatIndex } from '@/lib/knowledgeDocs';
+import { buildCards, docPeriod } from '@/lib/yokoCards';
 import { logInteraction } from '@/lib/log';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
 
@@ -23,9 +24,17 @@ export async function GET() {
   if (!session) return Response.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
 
   const docs = await loadYokoDocs();
+  const confirmed = confirmedDocs(docs);
+
+  // 日程が読めない要項はカードに出しようがない。件数だけ返して画面で知らせる
+  // （要項側の「日程：」が空のまま確定されている、という現場の修正点になる）。
+  const periodUnknown = confirmed.filter((d) => !docPeriod(d.body).start).length;
+
   return Response.json({
     ok: true,
-    confirmed: confirmedDocs(docs).map((d) => ({ title: d.title, updated: d.updated, owner: d.owner })),
+    cards: buildCards(confirmed),
+    periodUnknown,
+    confirmed: confirmed.map((d) => ({ title: d.title, updated: d.updated, owner: d.owner })),
     pending: docs.filter((d) => d.status !== '確定').map((d) => ({ title: d.title })),
     total: docs.length,
   });
