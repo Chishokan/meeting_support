@@ -657,6 +657,37 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .dm-rec-note, .dm-progress { font-size: 12px; color: #8a94a0; }
 .dm-progress { margin: 8px 0 0; }
 
+/* 処理中の表示（読み込み／アップロード／解析／議事録作成） */
+.dm-spinner {
+  width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%;
+  border: 2px solid #cfe0ee; border-top-color: var(--navy);
+  animation: dm-spin .8s linear infinite;
+}
+@keyframes dm-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .dm-spinner { animation-duration: 2.4s; }
+}
+
+.dm-work { padding: 12px 14px; background: #eef3f8; border: 1px solid #cfe0ee; border-radius: 8px; }
+.dm-work-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dm-work-phase { font-size: 13px; font-weight: 700; color: var(--navy); }
+.dm-work-count { margin-left: auto; font-size: 12px; color: #5a7ea6; white-space: nowrap; }
+.dm-work-note { margin: 8px 0 0; font-size: 12px; color: #5a7ea6; line-height: 1.7; }
+
+.dm-bar { margin-top: 10px; height: 6px; background: #d7e6f3; border-radius: 999px; overflow: hidden; }
+.dm-bar-fill { height: 100%; background: var(--navy); border-radius: 999px; transition: width .3s ease; }
+/* 全体量が決まっていないとき（録音中・読み込み中）は往復するバーで「動いている」ことを示す */
+.dm-bar-fill.indet { width: 35%; animation: dm-slide 1.4s ease-in-out infinite; }
+@keyframes dm-slide {
+  0% { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+
+.dm-work-line {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  font-size: 13px; font-weight: 700; color: var(--navy);
+}
+
 /* 文字起こしの状況だけを1行で出す（本文は普段隠す） */
 .dm-tstatus {
   display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;

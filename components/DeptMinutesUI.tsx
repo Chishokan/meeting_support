@@ -20,6 +20,18 @@ const STORE_KEY = 'chishokan_dept_minutes_v1';
 type Meta = { title: string; date: string; place: string; attendees: string; agenda: string };
 type Source = 'record' | 'file' | 'paste';
 
+// 文字起こしの進み具合。利用者から見て「止まっている」と「処理中」を区別するために持つ。
+//   decoding  … ブラウザで音声を読み込み、送れる形（WAV）に変換している
+//   uploading … その区間をサーバへ送っている（1区間 約2.9MB）
+//   analyzing … サーバ側で Gemini が音声を文字にしている
+type Phase = 'idle' | 'decoding' | 'uploading' | 'analyzing';
+
+const PHASE_LABEL: Record<Exclude<Phase, 'idle'>, string> = {
+  decoding: '音声を読み込んでいます',
+  uploading: 'アップロード中',
+  analyzing: '解析中（AIが文字に起こしています）',
+};
+
 const EMPTY_META: Meta = { title: '', date: '', place: '', attendees: '', agenda: '' };
 
 function pickMime(): string {
@@ -70,6 +82,9 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [elapsed, setElapsed] = useState(0);
   const [queued, setQueued] = useState(0); // 文字起こし待ちの区間数
   const [fileProgress, setFileProgress] = useState({ done: 0, total: 0 });
+  // いま何をしているか（無反応に見えないよう画面に出す）。
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [uploadPct, setUploadPct] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState('');
@@ -200,14 +215,45 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   }, [openMeeting]);
 
   // ---- 文字起こし（1区間ずつ順番に送る） ----
-  const sendSegment = useCallback(async (blob: Blob, filename: string): Promise<string> => {
-    const form = new FormData();
-    form.append('audio', blob, filename);
-    const res = await fetch('/api/dept-minutes/transcribe', { method: 'POST', body: form });
-    const j = await res.json().catch(() => ({}));
-    if (j?.ok) return String(j.text ?? '');
-    // 失敗理由をそのまま投げ、呼び出し側で日本語にして表示する。
-    throw new Error(String(j?.reason ?? 'failed'));
+  // 1区間は約2.9MB あり、回線によっては送信だけで時間がかかる。
+  // 「アップロード中」と「解析中」を画面で区別するため、fetch ではなく
+  // XMLHttpRequest を使って送信の進み具合（upload.onprogress）を拾う。
+  const sendSegment = useCallback((blob: Blob, filename: string): Promise<string> => {
+    return new Promise<string>((resolve, reject) => {
+      const form = new FormData();
+      form.append('audio', blob, filename);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/dept-minutes/transcribe');
+
+      // 進捗イベントが来ない環境でも表示が前の段階のまま固まらないよう、
+      // 送信を始める時点で「アップロード中」にしておく。
+      setPhase('uploading');
+      setUploadPct(0);
+
+      xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
+        setPhase('uploading');
+        setUploadPct(Math.min(100, Math.round((e.loaded / e.total) * 100)));
+      };
+      // 送り終わったらサーバ側（Gemini）の処理待ちに変わる。
+      xhr.upload.onload = () => {
+        setUploadPct(100);
+        setPhase('analyzing');
+      };
+      xhr.onload = () => {
+        let j: { ok?: boolean; text?: unknown; reason?: unknown } = {};
+        try {
+          j = JSON.parse(xhr.responseText);
+        } catch {}
+        if (j?.ok) resolve(String(j.text ?? ''));
+        // 失敗理由をそのまま投げ、呼び出し側で日本語にして表示する。
+        else reject(new Error(String(j?.reason ?? 'failed')));
+      };
+      xhr.onerror = () => reject(new Error('network_error'));
+      xhr.onabort = () => reject(new Error('aborted'));
+      xhr.send(form);
+    });
   }, []);
 
   const pump = useCallback(async () => {
@@ -218,6 +264,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         const blob = queueRef.current[0];
         try {
           // 録音そのままの形式（webm 等）は文字起こし側が受け付けないため、WAV に変換して送る。
+          setPhase('decoding');
           const { segments } = await splitAudioFile(blob);
           for (let i = 0; i < segments.length; i++) {
             const text = await sendSegment(segments[i], `rec${i + 1}.wav`);
@@ -231,6 +278,9 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       }
     } finally {
       workingRef.current = false;
+      // 待ち行列が空になったら進捗表示を畳む。
+      setPhase('idle');
+      setUploadPct(0);
     }
   }, [sendSegment]);
 
@@ -330,8 +380,10 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     e.target.value = '';
     if (!file) return;
     setErr('');
-    setNote('音声を読み込んでいます…');
+    setNote('');
     try {
+      // 1時間の音声だと読み込み（WAVへの変換）だけで数十秒かかる。無反応に見えないよう状態を出す。
+      setPhase('decoding');
       const { segments, durationSec } = await splitAudioFile(file);
       setNote(`${fmtDuration(durationSec)}の音声を${segments.length}区間に分けて文字起こしします。`);
       setFileProgress({ done: 0, total: segments.length });
@@ -355,6 +407,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       setErr('この音声ファイルを読み込めませんでした。mp3 / m4a / wav などでお試しください。');
       setNote('');
     } finally {
+      setPhase('idle');
+      setUploadPct(0);
       setFileProgress({ done: 0, total: 0 });
     }
   }
@@ -442,7 +496,9 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const set = (k: keyof Meta) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setMeta((m) => ({ ...m, [k]: e.target.value }));
 
-  const busyTranscribe = queued > 0 || fileProgress.total > 0;
+  // 音声の読み込み中は区間数がまだ決まっていないので、phase も見て「処理中」と判断する
+  //（ここを落とすと、1時間の音声の読み込み中だけ画面が無反応に見える）。
+  const busyTranscribe = phase !== 'idle' || queued > 0 || fileProgress.total > 0;
   const shownDecisions = decisions.filter((d) => (decFilter ? d.campus === decFilter : true));
   const shownMeetings = meetings.filter((m) => (decFilter ? m.campus === decFilter : true));
   // 絞り込みの選択肢は、議事録と決定事項の両方に出てくる部門から作る。
@@ -554,7 +610,6 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                     </button>
                   )}
                   {recording && <span className="dm-rec-time">録音中 {fmtDuration(elapsed)}</span>}
-                  {queued > 0 && <span className="dm-rec-note">文字起こし待ち {queued} 区間</span>}
                 </div>
                 <p className="dm-hint">
                   録音は{REC_SEGMENT_SECONDS / 60}分ごとに区切って、会議中から順に文字にしていきます。
@@ -565,12 +620,12 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
 
             {source === 'file' && (
               <div className="dm-source">
-                <input type="file" accept="audio/*,video/*" onChange={onPickFile} disabled={configured === false} />
-                {fileProgress.total > 0 && (
-                  <p className="dm-progress">
-                    文字起こし中… {fileProgress.done} / {fileProgress.total} 区間
-                  </p>
-                )}
+                <input
+                  type="file"
+                  accept="audio/*,video/*"
+                  onChange={onPickFile}
+                  disabled={configured === false || phase !== 'idle'}
+                />
                 <p className="dm-hint">
                   スマートフォンの録音アプリ等で録った音声（mp3 / m4a / wav など）を選んでください。
                   長い会議は自動で{SEGMENT_SECONDS}秒ずつに分けて処理します。
@@ -600,20 +655,55 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
               </label>
             ) : (
               <>
-                <div className="dm-tstatus">
-                  <span>
-                    {busyTranscribe
-                      ? '文字起こし中…'
-                      : transcript.trim()
+                {busyTranscribe ? (
+                  /* いま何をしているか（読み込み／アップロード／解析）と、どこまで進んだかを出す */
+                  <div className="dm-work">
+                    <div className="dm-work-head">
+                      <span className="dm-spinner" aria-hidden="true" />
+                      <span className="dm-work-phase">
+                        {phase === 'idle' ? '処理中' : PHASE_LABEL[phase]}
+                        {phase === 'uploading' && ` ${uploadPct}%`}
+                      </span>
+                      {/* 読み込みが終わるまで区間数は決まらないので、決まってから出す */}
+                      {fileProgress.total > 0 ? (
+                        <span className="dm-work-count">
+                          {fileProgress.done} / {fileProgress.total} 区間
+                        </span>
+                      ) : queued > 0 ? (
+                        <span className="dm-work-count">残り {queued} 区間</span>
+                      ) : null}
+                    </div>
+                    <div className="dm-bar">
+                      <div
+                        className={`dm-bar-fill ${fileProgress.total > 0 ? '' : 'indet'}`}
+                        style={
+                          fileProgress.total > 0
+                            ? { width: `${Math.round((fileProgress.done / fileProgress.total) * 100)}%` }
+                            : undefined
+                        }
+                      />
+                    </div>
+                    <p className="dm-work-note">
+                      {transcript.trim()
+                        ? `ここまでに ${transcript.length.toLocaleString()} 字を文字にしました。`
+                        : '最初の区間の結果が出るまで少しお待ちください。'}
+                      {phase === 'analyzing' && ' 画面を閉じずにお待ちください。'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="dm-tstatus">
+                    <span>
+                      {transcript.trim()
                         ? `文字起こし完了（${transcript.length.toLocaleString()}字）`
                         : '音声を取り込むと、ここで文字起こしが進みます'}
-                  </span>
-                  {transcript.trim() && !busyTranscribe && (
-                    <button className="dm-tlink" onClick={() => setShowTranscript((v) => !v)}>
-                      {showTranscript ? '閉じる' : '文字起こしを確認'}
-                    </button>
-                  )}
-                </div>
+                    </span>
+                    {transcript.trim() && (
+                      <button className="dm-tlink" onClick={() => setShowTranscript((v) => !v)}>
+                        {showTranscript ? '閉じる' : '文字起こしを確認'}
+                      </button>
+                    )}
+                  </div>
+                )}
                 {showTranscript && (
                   <label className="dm-transcript">
                     <span>文字起こし（通常は直す必要はありません。議事録は次の欄で直せます）</span>
@@ -645,6 +735,14 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
               <p className="dm-hint">議事録を作成すると、ここに表示されます。そのまま手で直せます。</p>
             ) : (
               <>
+                {generating && (
+                  <div className="dm-work-line">
+                    <span className="dm-spinner" aria-hidden="true" />
+                    <span>
+                      {draft ? '議事録を作成中…（下に書き出しています）' : 'AIが議事録を作成しています…'}
+                    </span>
+                  </div>
+                )}
                 <textarea
                   className="dm-draft"
                   value={draft}
