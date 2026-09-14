@@ -705,6 +705,85 @@ button.primary:disabled { opacity: .5; cursor: default; }
   border-radius: 8px; background: #fff; margin-bottom: 10px;
 }
 .dm-empty { font-size: 12px; color: #8a94a0; line-height: 1.8; margin: 0; }
+
+/* 保存済み議事録パネルの切替（会議ごと / 決定事項） */
+.dm-panel-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.dm-panel-tabs button {
+  flex: 1; padding: 6px 8px; font-size: 12px; font-weight: 700; color: #667;
+  background: #f2f5f9; border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+}
+.dm-panel-tabs button:hover { background: #eaf1f8; }
+.dm-panel-tabs button.active { color: #fff; background: var(--navy); border-color: var(--navy); }
+
+/* 会議ごとのカード */
+.dm-meet-list { list-style: none; margin: 0; padding: 0; max-height: 62vh; overflow-y: auto; }
+.dm-meet-list > li {
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: #fff;
+}
+.dm-meet-list > li:last-child { margin-bottom: 0; }
+.dm-meet-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.dm-meet-date { font-size: 13px; font-weight: 800; color: var(--navy); }
+.dm-meet-title { font-size: 13px; font-weight: 700; color: #2a2f36; line-height: 1.5; overflow-wrap: anywhere; }
+.dm-meet-agenda { margin: 6px 0 0; padding-left: 1.1em; }
+.dm-meet-agenda li {
+  font-size: 12px; color: #5a636d; line-height: 1.6; padding: 1px 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dm-meet-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid #f0f2f5;
+}
+.dm-meet-count { font-size: 11px; color: #8a94a0; overflow-wrap: anywhere; }
+.dm-detail {
+  font-size: 12px; font-weight: 700; color: var(--navy); background: #eef3f8;
+  border: 1px solid #cfe0ee; border-radius: 6px; padding: 4px 14px; cursor: pointer; white-space: nowrap;
+}
+.dm-detail:hover { background: #e3edf7; }
+.dm-dec-from { margin-top: 4px; font-size: 11px; color: #97a1ac; overflow-wrap: anywhere; }
+
+/* 議事録の詳細 */
+.dm-modal-bg {
+  position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.4);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.dm-modal {
+  background: #fff; border-radius: 12px; width: min(820px, 100%); max-height: 88vh;
+  display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,.25);
+}
+.dm-modal-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 18px 20px 14px; border-bottom: 1px solid var(--line);
+}
+.dm-modal-head h2 { font-size: 17px; margin: 3px 0; overflow-wrap: anywhere; }
+.dm-modal-sub { font-size: 12px; color: #8a94a0; overflow-wrap: anywhere; }
+.dm-modal-close {
+  border: none; background: transparent; color: #97a1ac; font-size: 26px; line-height: 1;
+  cursor: pointer; padding: 0 4px; border-radius: 6px;
+}
+.dm-modal-close:hover { color: #c0392b; background: #f2f5f9; }
+.dm-modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px; }
+.dm-modal-text {
+  margin: 0; font-family: inherit; font-size: 14px; line-height: 1.9; color: #2a2f36;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.dm-modal-quality {
+  margin-top: 18px; padding: 14px 16px; background: #fffbe9;
+  border: 1px solid #f0e2ad; border-radius: 10px;
+}
+.dm-modal-quality h3 { font-size: 13px; margin: 0 0 8px; color: #7a5c00; }
+.dm-modal-quality .dm-modal-text { font-size: 13px; color: #5c4a12; }
+.dm-modal-foot {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  padding: 12px 20px; border-top: 1px solid var(--line);
+}
+.dm-modal-done {
+  padding: 9px 20px; font-size: 13px; font-weight: 700; color: #fff;
+  background: var(--navy); border: none; border-radius: 8px; cursor: pointer;
+}
+@media (max-width: 620px) {
+  .dm-modal-bg { padding: 0; }
+  .dm-modal { max-height: 100vh; height: 100%; border-radius: 0; }
+}
 .dm-dec-list { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto; }
 .dm-dec-list li { padding: 10px 0; border-bottom: 1px solid #f0f2f5; }
 .dm-dec-list li:last-child { border-bottom: none; }

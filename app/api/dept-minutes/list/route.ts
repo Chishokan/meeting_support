@@ -25,7 +25,9 @@ export type MinutesRow = {
   user: string;
   title: string;
   date: string;
+  place: string;
   attendees: string;
+  agenda: string; // 入力時に登録した「予定していた議題」
   minutes: string;
   quality: string;
 };
@@ -57,7 +59,8 @@ export async function GET(req: Request) {
       if (scope === 'minutes') {
         const items: MinutesRow[] = rows.map((r) => ({
           ts: s(r.ts), campus: s(r.campus), user: s(r.user), title: s(r.title),
-          date: s(r.date), attendees: s(r.attendees), minutes: s(r.minutes), quality: s(r.quality),
+          date: s(r.date), place: s(r.place), attendees: s(r.attendees), agenda: s(r.agenda),
+          minutes: s(r.minutes), quality: s(r.quality),
         }));
         return Response.json({ ok: true, items });
       }

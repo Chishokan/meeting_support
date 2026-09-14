@@ -56,10 +56,12 @@ export function extractQuality(text: string): string {
   return between(text, QUALITY_OPEN, QUALITY_CLOSE);
 }
 
-// 議事録本体から「■ 決定事項」〜 次の「■」直前までを取り出す。
-export function extractDecisionSection(minutes: string): string {
+// 議事録本体から「■ 見出し」〜 次の「■」直前までを取り出す。
+// 一覧カードで議題だけを見せる用途にも使う（extractSection(minutes, '議題')）。
+export function extractSection(minutes: string, heading: string): string {
   const lines = minutes.split('\n');
-  const start = lines.findIndex((l) => new RegExp(`^■\\s*${DECISION_HEADING}`).test(l.trim()));
+  const re = new RegExp(`^■\\s*${heading}`);
+  const start = lines.findIndex((l) => re.test(l.trim()));
   if (start < 0) return '';
   const out: string[] = [];
   for (let i = start + 1; i < lines.length; i++) {
@@ -67,6 +69,21 @@ export function extractDecisionSection(minutes: string): string {
     out.push(lines[i]);
   }
   return out.join('\n').trim();
+}
+
+// 議事録本体から「■ 決定事項」のブロックを取り出す。
+export function extractDecisionSection(minutes: string): string {
+  return extractSection(minutes, DECISION_HEADING);
+}
+
+// カードに1〜2行で出すための要約。箇条書きの記号・番号を落として先頭 max 行を返す。
+// 未記入のテンプレート文や「該当なし」はカードに出しても意味がないので落とす。
+export function summarizeSection(section: string, max = 3): string[] {
+  return section
+    .split('\n')
+    .map((l) => l.trim().replace(/^[-*・•]\s*/, '').replace(/^\d+[.．)、]\s*/, ''))
+    .filter((l) => l && !/^[（(].*[）)]$/.test(l) && !/^(該当なし|特になし|なし|未定)$/.test(l))
+    .slice(0, max);
 }
 
 function emptyDecision(): Decision {

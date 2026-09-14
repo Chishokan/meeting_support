@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SEGMENT_SECONDS, fmtDuration, splitAudioFile } from '@/lib/audioChunk';
 import { templateOutline } from '@/lib/deptMinutesTemplate';
-import type { DecisionRow } from '@/app/api/dept-minutes/list/route';
+import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
+import type { DecisionRow, MinutesRow } from '@/app/api/dept-minutes/list/route';
 
 // 録音は1区間ずつ独立したファイルにして、会議中から順に文字起こししていく。
 // 会議が終わった時点でほぼ文字起こしが終わっている状態にするための作り。
@@ -79,6 +80,9 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [checkOk, setCheckOk] = useState(false);
 
   const [decisions, setDecisions] = useState<DecisionRow[]>([]);
+  const [meetings, setMeetings] = useState<MinutesRow[]>([]);
+  const [panelTab, setPanelTab] = useState<'meetings' | 'decisions'>('meetings');
+  const [openMeeting, setOpenMeeting] = useState<MinutesRow | null>(null);
   const [decFilter, setDecFilter] = useState('');
   const [showTemplate, setShowTemplate] = useState(false);
 
@@ -165,17 +169,33 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     }
   }
 
-  const loadDecisions = useCallback(async () => {
+  // 保存済みの議事録（会議ごと）と決定事項（1件ずつ）をまとめて読み込む。
+  const loadSaved = useCallback(async () => {
     try {
-      const res = await fetch('/api/dept-minutes/list');
-      const j = await res.json().catch(() => ({}));
-      if (j?.ok && Array.isArray(j.items)) setDecisions(j.items as DecisionRow[]);
+      const [decRes, minRes] = await Promise.all([
+        fetch('/api/dept-minutes/list'),
+        fetch('/api/dept-minutes/list?scope=minutes'),
+      ]);
+      const jd = await decRes.json().catch(() => ({}));
+      if (jd?.ok && Array.isArray(jd.items)) setDecisions(jd.items as DecisionRow[]);
+      const jm = await minRes.json().catch(() => ({}));
+      if (jm?.ok && Array.isArray(jm.items)) setMeetings(jm.items as MinutesRow[]);
     } catch {}
   }, []);
 
   useEffect(() => {
-    void loadDecisions();
-  }, [loadDecisions]);
+    void loadSaved();
+  }, [loadSaved]);
+
+  // 詳細を開いている間は Esc で閉じられるようにする。
+  useEffect(() => {
+    if (!openMeeting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenMeeting(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openMeeting]);
 
   // ---- 文字起こし（1区間ずつ順番に送る） ----
   const sendSegment = useCallback(async (blob: Blob, filename: string): Promise<string> => {
@@ -389,7 +409,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) {
         setNote(`保存しました（決定事項 ${j.decisions ?? 0} 件を全社共有に登録）。`);
-        void loadDecisions();
+        void loadSaved();
       } else if (j?.reason === 'not_configured') {
         setNote('スプレッドシート連携が未設定のため、この端末にのみ保存しました。');
       } else {
@@ -421,10 +441,12 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     setMeta((m) => ({ ...m, [k]: e.target.value }));
 
   const busyTranscribe = queued > 0 || fileProgress.total > 0;
-  const shownDecisions = decisions.filter((d) =>
-    decFilter ? d.campus === decFilter : true,
+  const shownDecisions = decisions.filter((d) => (decFilter ? d.campus === decFilter : true));
+  const shownMeetings = meetings.filter((m) => (decFilter ? m.campus === decFilter : true));
+  // 絞り込みの選択肢は、議事録と決定事項の両方に出てくる部門から作る。
+  const campusesInList = Array.from(
+    new Set([...meetings.map((m) => m.campus), ...decisions.map((d) => d.campus)].filter(Boolean)),
   );
-  const campusesInList = Array.from(new Set(decisions.map((d) => d.campus).filter(Boolean)));
 
   return (
     <div className="dm">
@@ -635,13 +657,29 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           </section>
         </div>
 
-        {/* ---------- 右：全部門の決定事項 ---------- */}
+        {/* ---------- 右：保存済みの議事録・決定事項 ---------- */}
         <aside className="dm-side">
           <div className="dm-panel">
             <div className="dm-panel-head">
-              <h2>部門横断の決定事項</h2>
-              <button className="dm-reload" onClick={() => void loadDecisions()}>更新</button>
+              <h2>保存済みの議事録</h2>
+              <button className="dm-reload" onClick={() => void loadSaved()}>更新</button>
             </div>
+
+            <div className="dm-panel-tabs">
+              <button
+                className={panelTab === 'meetings' ? 'active' : ''}
+                onClick={() => setPanelTab('meetings')}
+              >
+                会議ごと{meetings.length > 0 && `（${meetings.length}）`}
+              </button>
+              <button
+                className={panelTab === 'decisions' ? 'active' : ''}
+                onClick={() => setPanelTab('decisions')}
+              >
+                決定事項{decisions.length > 0 && `（${decisions.length}）`}
+              </button>
+            </div>
+
             {campusesInList.length > 0 && (
               <select className="dm-filter" value={decFilter} onChange={(e) => setDecFilter(e.target.value)}>
                 <option value="">すべての部門</option>
@@ -650,28 +688,69 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                 ))}
               </select>
             )}
-            {shownDecisions.length === 0 ? (
-              <p className="dm-empty">
-                まだ登録された決定事項はありません。議事録を保存すると、ここに全部門分が並びます。
-              </p>
-            ) : (
-              <ul className="dm-dec-list">
-                {shownDecisions.slice(0, 40).map((d, i) => (
-                  <li key={`${d.ts}-${i}`}>
-                    <div className="dm-dec-head">
-                      <span className="dm-dec-campus">{d.campus}</span>
-                      <span className="dm-dec-date">{fmtDate(d.date || d.ts)}</span>
-                    </div>
-                    <div className="dm-dec-title">{d.title || d.detail}</div>
-                    {d.detail && d.title && <p className="dm-dec-detail">{d.detail}</p>}
-                    <div className="dm-dec-meta">
-                      {d.owner && <span>担当：{d.owner}</span>}
-                      {d.due && <span>期限：{d.due}</span>}
-                      {d.related && <span>関係：{d.related}</span>}
-                    </div>
-                  </li>
-                ))}
-              </ul>
+
+            {/* 会議ごと：日付・会議名・議題が見え、［詳細］で議事録全体を開く */}
+            {panelTab === 'meetings' && (
+              shownMeetings.length === 0 ? (
+                <p className="dm-empty">
+                  まだ保存された議事録はありません。議事録を保存すると、ここに全部門分が会議ごとに並びます。
+                </p>
+              ) : (
+                <ul className="dm-meet-list">
+                  {shownMeetings.slice(0, 40).map((m, i) => {
+                    const agenda = summarizeSection(extractSection(m.minutes, '議題') || m.agenda, 3);
+                    const decCount = extractDecisions(m.minutes).length;
+                    return (
+                      <li key={`${m.ts}-${i}`}>
+                        <div className="dm-meet-head">
+                          <span className="dm-meet-date">{fmtDate(m.date || m.ts)}</span>
+                          <span className="dm-dec-campus">{m.campus}</span>
+                        </div>
+                        <div className="dm-meet-title">{m.title || '（会議名なし）'}</div>
+                        {agenda.length > 0 && (
+                          <ul className="dm-meet-agenda">
+                            {agenda.map((a, k) => <li key={k}>{a}</li>)}
+                          </ul>
+                        )}
+                        <div className="dm-meet-foot">
+                          <span className="dm-meet-count">
+                            決定 {decCount} 件{m.user && ` ／ ${m.user}`}
+                          </span>
+                          <button className="dm-detail" onClick={() => setOpenMeeting(m)}>詳細</button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )
+            )}
+
+            {/* 決定事項：部門をまたいだ決め事を1件ずつ並べる */}
+            {panelTab === 'decisions' && (
+              shownDecisions.length === 0 ? (
+                <p className="dm-empty">
+                  まだ登録された決定事項はありません。議事録を保存すると、ここに全部門分が並びます。
+                </p>
+              ) : (
+                <ul className="dm-dec-list">
+                  {shownDecisions.slice(0, 40).map((d, i) => (
+                    <li key={`${d.ts}-${i}`}>
+                      <div className="dm-dec-head">
+                        <span className="dm-dec-campus">{d.campus}</span>
+                        <span className="dm-dec-date">{fmtDate(d.date || d.ts)}</span>
+                      </div>
+                      <div className="dm-dec-title">{d.title || d.detail}</div>
+                      {d.detail && d.title && <p className="dm-dec-detail">{d.detail}</p>}
+                      <div className="dm-dec-meta">
+                        {d.owner && <span>担当：{d.owner}</span>}
+                        {d.due && <span>期限：{d.due}</span>}
+                        {d.related && <span>関係：{d.related}</span>}
+                      </div>
+                      {d.meeting && <div className="dm-dec-from">{d.meeting}</div>}
+                    </li>
+                  ))}
+                </ul>
+              )
             )}
           </div>
 
@@ -699,6 +778,59 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           </div>
         </aside>
       </div>
+
+      {/* ---------- 議事録の詳細（カードの［詳細］で開く） ---------- */}
+      {openMeeting && (
+        <div className="dm-modal-bg" onClick={() => setOpenMeeting(null)}>
+          <div
+            className="dm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="議事録の詳細"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="dm-modal-head">
+              <div>
+                <div className="dm-modal-sub">
+                  {fmtDate(openMeeting.date || openMeeting.ts)}　{openMeeting.campus}
+                  {openMeeting.user && `　記録：${openMeeting.user}`}
+                </div>
+                <h2>{openMeeting.title || '（会議名なし）'}</h2>
+                {openMeeting.attendees && (
+                  <div className="dm-modal-sub">出席者：{openMeeting.attendees}</div>
+                )}
+              </div>
+              <button className="dm-modal-close" onClick={() => setOpenMeeting(null)} aria-label="閉じる">×</button>
+            </div>
+
+            <div className="dm-modal-body">
+              <pre className="dm-modal-text">{openMeeting.minutes || '（本文がありません）'}</pre>
+              {openMeeting.quality && (
+                <div className="dm-modal-quality">
+                  <h3>会議の質チェック</h3>
+                  <pre className="dm-modal-text">{openMeeting.quality}</pre>
+                </div>
+              )}
+            </div>
+
+            <div className="dm-modal-foot">
+              <button
+                className="dm-copy"
+                onClick={() =>
+                  navigator.clipboard?.writeText(
+                    openMeeting.quality
+                      ? `${openMeeting.minutes}\n\n【会議の質チェック】\n${openMeeting.quality}`
+                      : openMeeting.minutes,
+                  )
+                }
+              >
+                コピー
+              </button>
+              <button className="dm-modal-done" onClick={() => setOpenMeeting(null)}>閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
