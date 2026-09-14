@@ -17,6 +17,8 @@
 //   ★ブラウザ録音の webm は Gemini が受け付けないため、
 //     画面側（lib/audioChunk.ts）で 16kHz モノラルの WAV に変換してから送っている。
 
+import { buildVocabHint } from '@/lib/transcribeVocab';
+
 const DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODEL = 'gemini-3.6-flash';
 
@@ -24,8 +26,8 @@ const DEFAULT_MODEL = 'gemini-3.6-flash';
 const TIMEOUT_MS = 50000;
 
 // 議事録用の文字起こしなので、要約させず・補完させず・前置きも書かせない。
-// 固有名詞のヒントを添えて誤変換を減らす。
-const PROMPT = `この音声は学習塾「智翔館」の部門会議の録音です。長い会議を区切ったうちの一部なので、
+// 末尾に社内用語のヒント（lib/transcribeVocab.ts がナレッジから組み立てる）を足して誤変換を減らす。
+const PROMPT_BASE = `この音声は学習塾「智翔館」の部門会議の録音です。長い会議を区切ったうちの一部なので、
 途中から始まり途中で終わることがあります。
 
 聞こえたとおりに日本語で文字起こししてください。次を必ず守ってください。
@@ -36,9 +38,7 @@ const PROMPT = `この音声は学習塾「智翔館」の部門会議の録音�
 - 話者が聞き分けられる場合のみ「安東：」のように行頭に付ける。分からなければ付けない。
 - 聞き取れない部分は【聞き取り不明】と書く。
 - 音声に人の声が入っていない場合は、何も書かずに空で返す。
-
-固有名詞のヒント：智翔館、小中等部、RED個別、高等部、LEC、英検、総務、人事、支援、管理、
-在籍数、体験授業、面談、講習、模試、退塾、決裁、協議、議事録。`;
+`;
 
 export type TranscribeResult =
   | { ok: true; text: string }
@@ -173,11 +173,21 @@ export async function transcribeAudio(file: Blob, filename: string): Promise<Tra
   const url = `${base}/models/${model}:generateContent`;
 
   const data = Buffer.from(await file.arrayBuffer()).toString('base64');
+  // 社内用語のヒントはナレッジ（GLOSSARY.md / companyKnowledge.ts）から毎回組み立てる。
+  // 読めなくても文字起こし自体は止めない。
+  let vocab = '';
+  try {
+    vocab = await buildVocabHint();
+  } catch {}
+
   const body = {
     contents: [
       {
         role: 'user',
-        parts: [{ text: PROMPT }, { inline_data: { mime_type: mime, data } }],
+        parts: [
+          { text: vocab ? `${PROMPT_BASE}\n${vocab}` : PROMPT_BASE },
+          { inline_data: { mime_type: mime, data } },
+        ],
       },
     ],
     // 文字起こしなので創作させない。
