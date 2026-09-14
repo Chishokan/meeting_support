@@ -85,6 +85,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [openMeeting, setOpenMeeting] = useState<MinutesRow | null>(null);
   const [decFilter, setDecFilter] = useState('');
   const [showTemplate, setShowTemplate] = useState(false);
+  // 文字起こしは普段は隠しておく（必要なときだけ開く）。
+  const [showTranscript, setShowTranscript] = useState(false);
 
   const streamRef = useRef<MediaStream | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
@@ -348,7 +350,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         }
         setFileProgress({ done: i + 1, total: segments.length });
       }
-      setNote('文字起こしが終わりました。内容を確認してから議事録を作成してください。');
+      setNote('文字起こしが終わりました。「議事録を作成」を押してください。');
     } catch {
       setErr('この音声ファイルを読み込めませんでした。mp3 / m4a / wav などでお試しください。');
       setNote('');
@@ -499,7 +501,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
 
           {/* ---------- 2. 音声 → 文字起こし ---------- */}
           <section className="dm-step">
-            <h2><span className="dm-num">2</span>会議の音声を文字にする</h2>
+            <h2><span className="dm-num">2</span>会議の音声を取り込む</h2>
 
             {configured === false && (
               <p className="dm-warn">
@@ -584,17 +586,45 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
               </div>
             )}
 
-            <label className="dm-transcript">
-              <span>
-                文字起こし（{transcript.length.toLocaleString()}字）
-                {busyTranscribe && <em>　処理中…</em>}
-              </span>
-              <textarea
-                value={transcript}
-                onChange={(e) => setTranscript(e.target.value)}
-                placeholder="ここに会議の文字起こしが入ります。誤変換はここで直せます。"
-              />
-            </label>
+            {/* 文字起こしは画面に出さず内部で保持する。
+                40〜60分の会議では数万字になり、直すのは議事録の方なので普段は見せない。
+                ただし「貼り付け」は入力欄そのものなので、そのときだけ常に表示する。 */}
+            {source === 'paste' ? (
+              <label className="dm-transcript">
+                <span>文字起こしを貼り付け（{transcript.length.toLocaleString()}字）</span>
+                <textarea
+                  value={transcript}
+                  onChange={(e) => setTranscript(e.target.value)}
+                  placeholder="他のアプリで文字起こししたテキストをここに貼り付けてください。"
+                />
+              </label>
+            ) : (
+              <>
+                <div className="dm-tstatus">
+                  <span>
+                    {busyTranscribe
+                      ? '文字起こし中…'
+                      : transcript.trim()
+                        ? `文字起こし完了（${transcript.length.toLocaleString()}字）`
+                        : '音声を取り込むと、ここで文字起こしが進みます'}
+                  </span>
+                  {transcript.trim() && !busyTranscribe && (
+                    <button className="dm-tlink" onClick={() => setShowTranscript((v) => !v)}>
+                      {showTranscript ? '閉じる' : '文字起こしを確認'}
+                    </button>
+                  )}
+                </div>
+                {showTranscript && (
+                  <label className="dm-transcript">
+                    <span>文字起こし（通常は直す必要はありません。議事録は次の欄で直せます）</span>
+                    <textarea
+                      value={transcript}
+                      onChange={(e) => setTranscript(e.target.value)}
+                    />
+                  </label>
+                )}
+              </>
+            )}
 
             <div className="dm-actions">
               <button
