@@ -113,7 +113,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .nav-body { display: flex; flex-direction: column; min-width: 0; }
 .nav-label { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
 .nav-desc { font-size: 11px; color: #97a1ac; margin-top: 1px; }
-.nav-item.soon .nav-label { color: #7a828c; }
+.nav-item.soon:not(.active) .nav-label { color: #7a828c; }
 .nav-badge {
   font-size: 10px; font-weight: 700; color: #8a6d1a; background: #fdf3d6;
   border: 1px solid #f0dfa8; border-radius: 999px; padding: 1px 7px;

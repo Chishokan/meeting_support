@@ -14,8 +14,10 @@ const NAV: NavItem[] = [
   { href: '/meeting-review', label: '全体会議振り返り', desc: '感想・気づき・やると決めたこと' },
   { href: '/progress', label: '中間報告', desc: '決議事項の進捗報告' },
   { href: '/report', label: '報告', desc: 'ドキュメントへ転記' },
-  { href: '/inquiry-qa', label: '問い合わせQA', desc: '小中等部の問合せ状況をAIに聞く' },
-  { href: '/yoko-qa', label: '要項QA', desc: '申込方法・支払い・日程を要項から確認' },
+  // この2つはテスト運用中。担当者が本番の数字として使わないよう「準備中」を出す。
+  // 画面は開けるので soon は表示だけで、リンクは止めない。
+  { href: '/inquiry-qa', label: '問い合わせQA', desc: '小中等部の問合せ状況をAIに聞く', soon: true },
+  { href: '/yoko-qa', label: '要項QA', desc: '申込方法・支払い・日程を要項から確認', soon: true },
   { href: '/inquiry', label: 'お問い合わせ', desc: '不具合・改善要望' },
 ];
 
