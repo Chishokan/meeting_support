@@ -746,10 +746,25 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                     onChange={(e) => setInstruction(e.target.value)}
                     placeholder="AIに直してほしいこと（例：決定事項3の担当を池田に）"
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && instruction.trim()) void generate('revise');
+                      // 日本語入力の変換確定でも Enter が来るため、単独の Enter では送らない。
+                      // 他の画面と同じく ⌘/Ctrl + Enter で送信する。
+                      // isComposing は変換中かどうか（変換中の確定キーを弾く）。
+                      if (
+                        e.key === 'Enter'
+                        && (e.metaKey || e.ctrlKey)
+                        && !e.nativeEvent.isComposing
+                        && instruction.trim()
+                      ) {
+                        e.preventDefault();
+                        void generate('revise');
+                      }
                     }}
                   />
-                  <button onClick={() => void generate('revise')} disabled={generating || !instruction.trim()}>
+                  <button
+                    onClick={() => void generate('revise')}
+                    disabled={generating || !instruction.trim()}
+                    title="⌘・Ctrl + Enter でも送信できます"
+                  >
                     修正を依頼
                   </button>
                 </div>
