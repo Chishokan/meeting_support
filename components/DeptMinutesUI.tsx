@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { SEGMENT_SECONDS, fmtDuration, splitAudioFile } from '@/lib/audioChunk';
 import { templateOutline } from '@/lib/deptMinutesTemplate';
 import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
+import MinutesDetail from '@/components/MinutesDetail';
 import type { DecisionRow, MinutesRow } from '@/app/api/dept-minutes/list/route';
 
 // 録音は1区間ずつ独立したファイルにして、会議中から順に文字起こししていく。
@@ -203,16 +204,6 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   useEffect(() => {
     void loadSaved();
   }, [loadSaved]);
-
-  // 詳細を開いている間は Esc で閉じられるようにする。
-  useEffect(() => {
-    if (!openMeeting) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpenMeeting(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [openMeeting]);
 
   // ---- 文字起こし（1区間ずつ順番に送る） ----
   // 1区間は約2.9MB あり、回線によっては送信だけで時間がかかる。
@@ -907,57 +898,9 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         </aside>
       </div>
 
-      {/* ---------- 議事録の詳細（カードの［詳細］で開く） ---------- */}
+      {/* 議事録の詳細（ポップアップ）。ダッシュボードと同じ部品を使う。 */}
       {openMeeting && (
-        <div className="dm-modal-bg" onClick={() => setOpenMeeting(null)}>
-          <div
-            className="dm-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="議事録の詳細"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="dm-modal-head">
-              <div>
-                <div className="dm-modal-sub">
-                  {fmtDate(openMeeting.date || openMeeting.ts)}　{openMeeting.campus}
-                  {openMeeting.user && `　記録：${openMeeting.user}`}
-                </div>
-                <h2>{openMeeting.title || '（会議名なし）'}</h2>
-                {openMeeting.attendees && (
-                  <div className="dm-modal-sub">出席者：{openMeeting.attendees}</div>
-                )}
-              </div>
-              <button className="dm-modal-close" onClick={() => setOpenMeeting(null)} aria-label="閉じる">×</button>
-            </div>
-
-            <div className="dm-modal-body">
-              <pre className="dm-modal-text">{openMeeting.minutes || '（本文がありません）'}</pre>
-              {openMeeting.quality && (
-                <div className="dm-modal-quality">
-                  <h3>会議の質チェック</h3>
-                  <pre className="dm-modal-text">{openMeeting.quality}</pre>
-                </div>
-              )}
-            </div>
-
-            <div className="dm-modal-foot">
-              <button
-                className="dm-copy"
-                onClick={() =>
-                  navigator.clipboard?.writeText(
-                    openMeeting.quality
-                      ? `${openMeeting.minutes}\n\n【会議の質チェック】\n${openMeeting.quality}`
-                      : openMeeting.minutes,
-                  )
-                }
-              >
-                コピー
-              </button>
-              <button className="dm-modal-done" onClick={() => setOpenMeeting(null)}>閉じる</button>
-            </div>
-          </div>
-        </div>
+        <MinutesDetail row={openMeeting} onClose={() => setOpenMeeting(null)} />
       )}
     </div>
   );

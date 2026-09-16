@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { STAFF } from '@/lib/staff';
 import YokoCard, { type YokoCardData } from '@/components/YokoCard';
+import MinutesDetail from '@/components/MinutesDetail';
 import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
 import type { ProgressEntry } from '@/lib/progressPrompt';
 import type { SuccessRow } from '@/app/api/success/route';
@@ -45,6 +46,8 @@ export default function DashboardUI({
   const [deptItems, setDeptItems] = useState<string[]>([]);
   const [cases, setCases] = useState<SuccessRow[]>([]);
   const [minutes, setMinutes] = useState<MinutesRow[]>([]);
+  // ［詳細］で開く議事録。画面を移らずにこのページ上で開く。
+  const [openMinutes, setOpenMinutes] = useState<MinutesRow | null>(null);
   const [yoko, setYoko] = useState<YokoCardData[]>([]);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
@@ -187,7 +190,7 @@ export default function DashboardUI({
                   <span className="dm-meet-count">
                     決定 {decCount} 件{m.user && ` ／ ${m.user}`}
                   </span>
-                  <Link href="/dept-minutes" className="dm-detail">詳細</Link>
+                  <button className="dm-detail" onClick={() => setOpenMinutes(m)}>詳細</button>
                 </div>
               </li>
             );
@@ -269,6 +272,11 @@ export default function DashboardUI({
           {yokoPanel}
           {successPanel}
         </div>
+
+        {/* 議事録の詳細（ポップアップ）。議事録画面と同じ部品を使う。 */}
+        {openMinutes && (
+          <MinutesDetail row={openMinutes} onClose={() => setOpenMinutes(null)} />
+        )}
       </div>
     );
   }
