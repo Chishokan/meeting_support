@@ -4,13 +4,20 @@
  *
  * 使い方:
  *   1. 要項ドキュメントを Markdown で書き出す（ファイル > ダウンロード > Markdown）
- *   2. node scripts/import-yoko.mjs <書き出したファイル> [出力先ディレクトリ]
+ *   2. 複数の要項が1つのドキュメントに入っている場合
+ *        node scripts/import-yoko.mjs <書き出したファイル> [出力先ディレクトリ]
+ *      要項1件が1つのドキュメントの場合（テンプレートを複製して書いた通常の形）
+ *        node scripts/import-yoko.mjs <書き出したファイル> <出力先> <出力ファイル名.md>
  *   3. 生成されたファイルを確認する（node scripts/check-yoko.mjs）
  *
  * 区切りの判定：太字でない「# 見出し」を1件の要項の先頭とみなす
  * （ドキュメント上のタブ見出し。本文中の装飾見出しは「# **…**」と太字になっている）。
  * テンプレートの「やってはいけないこと」に
  * 「本文に見出し1を使わない」と書いてあるのはこのため。
+ *
+ * 「# 見出し」が1つも無いときは、ファイル全体を要項1件として扱う。
+ * テンプレートを複製して1講座ぶんを書くと「## ＜基本情報＞」で始まり、
+ * 見出し1が出てこないため。題名は＜基本情報＞の「講座名」から取る。
  *
  * ＜基本情報＞ から front matter を作る:
  *   講座名   → title
@@ -28,8 +35,13 @@ import { join } from 'node:path';
 
 const SRC = process.argv[2];
 const OUT = process.argv[3] ?? 'knowledge/40_要項/2026';
+const OUT_NAME = process.argv[4]; // 要項1件のドキュメントを取り込むときの出力ファイル名
 if (!SRC) {
-  console.error('使い方: node scripts/import-yoko.mjs <Markdownファイル> [出力先]');
+  console.error('使い方: node scripts/import-yoko.mjs <Markdownファイル> [出力先] [出力ファイル名.md]');
+  process.exit(1);
+}
+if (OUT_NAME && !OUT_NAME.endsWith('.md')) {
+  console.error('出力ファイル名は .md で終わる必要があります。');
   process.exit(1);
 }
 
@@ -57,6 +69,14 @@ function fieldOf(body, label) {
     .trim();
 }
 
+// 「2026年9月15日（火）」を front matter 用に「2026-09-15」へ。
+// 画面の一覧で並べたときに、和暦まじりの文字列だと日付順に見えないため。
+function isoDate(s) {
+  const m = /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/.exec(s || '');
+  if (!m) return (s || '').trim();
+  return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+}
+
 const raw = readFileSync(SRC, 'utf8');
 const lines = raw.split('\n');
 
@@ -65,9 +85,10 @@ lines.forEach((l, i) => {
   const m = /^# (?!\*)(.+?)\s*$/.exec(l);
   if (m && m[1].trim()) bounds.push({ line: i, title: m[1].trim() });
 });
-if (!bounds.length) {
-  console.error('要項の区切り（太字でない # 見出し）が見つかりませんでした。');
-  process.exit(1);
+// 見出し1が無い＝テンプレートを複製した1講座ぶんのドキュメント。全体を1件として扱う。
+const singleDoc = bounds.length === 0;
+if (singleDoc) {
+  bounds.push({ line: -1, title: '' });
 }
 
 mkdirSync(OUT, { recursive: true });
@@ -97,17 +118,21 @@ bounds.forEach((b, i) => {
   }
 
   const title = fieldOf(body, '講座名') || b.title;
+  if (!title) {
+    console.error('題名が分かりません。＜基本情報＞の「講座名」を書くか、見出し1を付けてください。');
+    process.exit(1);
+  }
   const owner = fieldOf(body, '作成者');
   const statusRaw = fieldOf(body, 'ステータス');
   const status = statusRaw.includes('確定') ? '確定' : '下書き';
-  const updated = fieldOf(body, '作成日') || today;
+  const updated = isoDate(fieldOf(body, '作成日')) || today;
   const dept = fieldOf(body, '部門');
 
   if (!owner) warnings.push(`${title}: 作成者が未記入`);
   if (!statusRaw) warnings.push(`${title}: ステータスが未記入（下書き扱いにした）`);
   if (/（例[：:]/.test(body)) warnings.push(`${title}: 「（例：…）」が残っている`);
 
-  const name = slug(title, i);
+  const name = OUT_NAME ?? slug(title, i);
   // すでにある（＝担当者が確定済みかもしれない）ファイルは上書きしない。
   if (existing.has(name)) {
     console.log(`skip  ${name}（既存。上書きしない）`);

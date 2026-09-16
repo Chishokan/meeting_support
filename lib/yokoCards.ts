@@ -16,16 +16,16 @@ import { jstDate } from './companyKnowledge';
 export const SOON_DAYS = 30;
 
 /**
- * テスト表示。
+ * テスト表示。ここに書いた題名の要項は、日程に関わらずカードに出る。
  *
- * 2026年9月時点で確定している要項は実施が終わっており、日程だけで絞ると
- * カードが1枚も出ない。画面の確認ができないため、この2件を「実施中」として
- * 強制的に出している。カードには「テスト表示」と明示する。
+ * 2026年9月の画面確認で、当時は確定要項がすべて実施済みでカードが0件だったため、
+ * 夏期2件を一時的に出していた。秋講座の要項が入り実際の日程でカードが出るように
+ * なったので空にしてある。
  *
- * ★秋以降の要項が入ったら、この配列を空にする（`= []`）。
- *   空にすれば、あとは実際の日程だけでカードが出る。ほかに直す所は無い。
+ * ★通常はこの配列は空のままにする。画面確認のために一時的に使うときだけ題名を入れ、
+ *   確認が終わったら必ず空に戻すこと。入れたままだと終わった講座が出続ける。
  */
-export const TEST_PINNED_TITLES = ['中等部夏期講習会', '県中対策 夏期講習会'];
+export const TEST_PINNED_TITLES: string[] = [];
 
 export type YokoFee = { audience: string; text: string };
 
@@ -76,7 +76,9 @@ const DATE_RE = /(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日/g;
  * 「8月22日・8月10日」のような単なる前後は繰り上げない（誤って翌年にしないため）。
  */
 export function docPeriod(body: string): { start: string | null; end: string | null; text: string } {
-  const lines = body.split('\n').filter((l) => /^日程[：:]/.test(l.trim()));
+  // Google ドキュメントから書き出すと「- 日程：…」と箇条書きになる。
+  // 「- 形式：全6日程　…」のように途中に「日程」が出る行は拾わない。
+  const lines = body.split('\n').filter((l) => /^[-*・\s]*日程[：:]/.test(l.trim()));
   const found: string[] = [];
 
   // 年の書かれていない行のために、要項の中で最初に出てくる年を控えておく。
@@ -175,6 +177,9 @@ export function docGrades(body: string): string {
   };
 
   for (const raw of sec.split('\n')) {
+    // 「※小学5年生は通常授業で対応」のような注記は対象学年ではない。
+    // 拾うと、対象外の学年がカードに載る。
+    if (/^[\s　]*[※*＊]/.test(raw)) continue;
     if (scan(raw.replace(/[（(][^）)]*[）)]/g, ' ')) === 0) scan(raw);
   }
 
@@ -203,14 +208,17 @@ export function docGrades(body: string): string {
 
 // --- 料金 -----------------------------------------------------------------
 
-function yen(n: number): string {
-  return n === 0 ? '無料' : `${n.toLocaleString('ja-JP')}円`;
+// 0 の書き方は要項に合わせる。「無料」と書いてあれば無料、
+// 「0円（通常授業料に含む）」と書いてあれば 0円。
+// 後者を「無料」と出すと、授業料を払っている塾生に「無料の講座」と伝わりかねない。
+function yen(n: number, zeroText: string): string {
+  return n === 0 ? zeroText : `${n.toLocaleString('ja-JP')}円`;
 }
 
-function range(list: number[]): string {
+function range(list: number[], zeroText: string): string {
   const lo = Math.min(...list);
   const hi = Math.max(...list);
-  return lo === hi ? yen(lo) : `${yen(lo)}〜${yen(hi)}`;
+  return lo === hi ? yen(lo, zeroText) : `${yen(lo, zeroText)}〜${yen(hi, zeroText)}`;
 }
 
 /**
@@ -232,6 +240,7 @@ export function docFees(body: string): YokoFee[] {
   const BUCKETS = ['塾生', '一般生', '区分なし'] as const;
   type Bucket = (typeof BUCKETS)[number];
   const amounts: Record<Bucket, number[]> = { 塾生: [], 一般生: [], 区分なし: [] };
+  const sawFree = new Set<Bucket>();   // 「無料」と書かれていた
   const seen = new Set<Bucket>();
   let heading: Bucket | null = null;
 
@@ -266,12 +275,21 @@ export function docFees(body: string): YokoFee[] {
       const n = Number(m[1].replace(/,/g, ''));
       if (Number.isFinite(n)) amounts[bucket].push(n);
     }
-    if (/無料/.test(cleaned)) amounts[bucket].push(0);
+    // 「無料」は括弧の外にあるときだけ価格として数える。
+    // 「5,500円／回（初めて受験する場合は初回無料）」の無料は条件付きの但し書きで、
+    // これを拾うと一般生の料金が「無料〜33,000円」になり 5,500円 が消えてしまう。
+    // 括弧の中の「金額」は逆に本物のことがある（「29,700円（塾生紹介の場合 25,300円）」）ので落とさない。
+    if (/無料/.test(cleaned.replace(/[（(][^）)]*[）)]/g, ' '))) {
+      amounts[bucket].push(0);
+      sawFree.add(bucket);
+    }
   }
 
   const fees: YokoFee[] = [];
   for (const b of BUCKETS) {
-    if (amounts[b].length) fees.push({ audience: b, text: range(amounts[b]) });
+    if (amounts[b].length) {
+      fees.push({ audience: b, text: range(amounts[b], sawFree.has(b) ? '無料' : '0円') });
+    }
     // 見出しや行はあるのに金額が書かれていない場合（「未記入」「月額授業料に変更なし」など）。
     // 黙って消すと「料金の記載がある要項」に見えてしまうので、記載なしと出す。
     else if (seen.has(b) && b !== '区分なし') fees.push({ audience: b, text: '金額の記載なし' });

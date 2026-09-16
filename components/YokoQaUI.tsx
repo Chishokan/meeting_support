@@ -225,7 +225,8 @@ export default function YokoQaUI({ name, campus }: { name: string; campus: strin
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="例：中等部夏期講習会の一般生の申込方法は？（⌘/Ctrl+Enter で送信）"
+            // 季節の講座名を例に出すと、その講座が終わったあと例文だけ古いまま残る。
+            placeholder="例：〇〇講座の一般生の申込方法は？（⌘/Ctrl+Enter で送信）"
           />
           <button onClick={() => ask(input)} disabled={busy || !input.trim()}>
             {busy ? '…' : '質問'}
