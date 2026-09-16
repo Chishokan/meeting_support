@@ -1,24 +1,15 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { getSession } from '@/lib/auth';
-import { MODEL, THINKING } from '@/lib/systemPrompt';
+import { sanitizeHistory } from '@/lib/sanitize';
+import { cachedMessages, lastUserText, streamClaude, type Msg } from '@/lib/claudeStream';
 import { buildInquiryQaPrompt } from '@/lib/inquiryQaPrompt';
 import {
   listInquiryBoard, statsByCampus, formatRows, formatStats,
   splitByMonth, currentAndPreviousYm, ymLabel, trialsInMonth,
 } from '@/lib/inquiryBoard';
 import { listGoals, goalsFor, formatGoals, sameCampus, sortByCampusOrder } from '@/lib/goals';
-import { logInteraction } from '@/lib/log';
-import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
-
-// モデルが偽の user/assistant ターンを書き始めたら即停止させる。
-const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
-
-const client = new Anthropic();
-
-type Msg = { role: 'user' | 'assistant'; content: string };
 
 // 問合せ管理には生徒・保護者の個人情報が含まれるため、閲覧できる部門を限定する。
 // ※氏名は Apps Script でマスク済みだが、備考の自由記述までは機械的に消せない。
@@ -158,64 +149,14 @@ export async function POST(req: Request) {
     goalsText,
   });
 
-  const encoder = new TextEncoder();
-  let full = '';
-  let cacheLog = '';
-
   // プロンプトキャッシュ：シート本文はターン間で変わらないことが多いので、
   // システム側にキャッシュポイントを置いて毎ターンの再送コストを抑える。
-  const system: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: systemText, cache_control: { type: 'ephemeral' } },
-  ];
-  const cachedMessages: Anthropic.MessageParam[] = messages.map((m, i) =>
-    i === messages.length - 1
-      ? { role: m.role, content: [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }] }
-      : { role: m.role, content: m.content },
-  );
-
-  const rs = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        const stream = client.messages.stream({
-          model: MODEL,
-          max_tokens: 4000,
-          thinking: THINKING,
-          system,
-          messages: cachedMessages,
-          stop_sequences: STOP,
-        });
-        for await (const ev of stream) {
-          if (ev.type === 'message_start') {
-            const u = ev.message.usage;
-            cacheLog = `in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`;
-          } else if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
-            full += ev.delta.text;
-            controller.enqueue(encoder.encode(ev.delta.text));
-          }
-        }
-      } catch {
-        controller.enqueue(encoder.encode('\n[エラーが発生しました。もう一度お試しください。]'));
-      } finally {
-        if (cacheLog) {
-          try {
-            console.log('[CACHE inquiry-qa]', cacheLog, `rows=${board.rows.length}`);
-          } catch {}
-        }
-        const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-        try {
-          await logInteraction({
-            user: session.name,
-            campus: session.campus,
-            input: `[問い合わせQA] ${lastUser?.content ?? ''}`,
-            output: stripRoleBleed(full),
-          });
-        } catch {}
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(rs, {
-    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+  return streamClaude({
+    label: 'inquiry-qa',
+    system: systemText,
+    messages: cachedMessages(messages),
+    maxTokens: 4000,
+    log: { user: session.name, campus: session.campus, input: `[問い合わせQA] ${lastUserText(messages)}` },
+    cacheNote: `rows=${board.rows.length}`,
   });
 }

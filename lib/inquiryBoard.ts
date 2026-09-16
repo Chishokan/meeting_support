@@ -4,6 +4,7 @@
 // ★列が増減したときは INQUIRY_COLUMNS（apps_script/Code.gs）と下の型を合わせる。
 
 import { fiscalPeriod } from './companyKnowledge';
+import { callGas, gasItems } from './gas';
 
 export type InquiryRow = {
   campus: string;   // 校舎（シート名）
@@ -35,47 +36,28 @@ function pick(r: Record<string, unknown>, key: string): string {
 
 /** Apps Script から問合せ管理の行を取得する。個人情報は向こう側で落とされている。 */
 export async function listInquiryBoard(): Promise<BoardResult> {
-  const url = process.env.APPS_SCRIPT_URL;
-  if (!url) return { ok: false, reason: 'not_configured' };
-
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'listInquiryBoard', token: process.env.APPS_SCRIPT_TOKEN || '' }),
-      cache: 'no-store',
-    });
-    const j = await res.json().catch(() => null);
-    if (!res.ok || !j || j.ok !== true || !Array.isArray(j.items)) {
-      return { ok: false, reason: (j && j.reason) || 'upstream_error' };
-    }
-    const rows: InquiryRow[] = j.items.map((r: Record<string, unknown>) => ({
-      campus: pick(r, '校舎'),
-      no: pick(r, 'No.'),
-      date: pick(r, '日付'),
-      name: pick(r, '生徒氏名'),
-      school: pick(r, '学校名'),
-      grade: pick(r, '学年'),
-      source: pick(r, '媒体'),
-      term: pick(r, '受講期'),
-      contacted: pick(r, '連絡'),
-      trialDate: pick(r, '体験日'),
-      trial: pick(r, '体験'),
-      meetingDate: pick(r, '入塾提案面談日'),
-      agreed: pick(r, '本人OK'),
-      closeDate: pick(r, 'クローズ予定日'),
-      result: pick(r, '結果'),
-      note: pick(r, '備考'),
-    }));
-    return {
-      ok: true,
-      rows,
-      campuses: Array.isArray(j.campuses) ? j.campuses.map(String) : [],
-      fetchedAt: String(j.fetchedAt ?? ''),
-    };
-  } catch {
-    return { ok: false, reason: 'network_error' };
-  }
+  const r = await callGas('listInquiryBoard');
+  if (!r.ok) return r;
+  const rows: InquiryRow[] = gasItems(r.data).map((row) => ({
+    campus: pick(row, '校舎'),
+    no: pick(row, 'No.'),
+    date: pick(row, '日付'),
+    name: pick(row, '生徒氏名'),
+    school: pick(row, '学校名'),
+    grade: pick(row, '学年'),
+    source: pick(row, '媒体'),
+    term: pick(row, '受講期'),
+    contacted: pick(row, '連絡'),
+    trialDate: pick(row, '体験日'),
+    trial: pick(row, '体験'),
+    meetingDate: pick(row, '入塾提案面談日'),
+    agreed: pick(row, '本人OK'),
+    closeDate: pick(row, 'クローズ予定日'),
+    result: pick(row, '結果'),
+    note: pick(row, '備考'),
+  }));
+  const campuses = Array.isArray(r.data.campuses) ? (r.data.campuses as unknown[]).map(String) : [];
+  return { ok: true, rows, campuses, fetchedAt: String(r.data.fetchedAt ?? '') };
 }
 
 // ---- 集計 -------------------------------------------------------------

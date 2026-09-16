@@ -1,4 +1,5 @@
 import { getSession } from '@/lib/auth';
+import { callGas, gasErrorStatus } from '@/lib/gas';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -15,32 +16,12 @@ export async function POST(req: Request) {
   const content = String(body?.content ?? '').trim();
   if (!content) return Response.json({ ok: false, reason: 'empty' }, { status: 400 });
 
-  const url = process.env.APPS_SCRIPT_URL;
-  if (!url) return Response.json({ ok: false, reason: 'not_configured' });
-
-  const payload = {
-    action: 'appendProgress',
-    token: process.env.APPS_SCRIPT_TOKEN || '',
+  const r = await callGas('appendProgress', {
     ts: new Date().toISOString(),
     campus: session.campus,
     user: session.name,
     content,
-  };
-
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    // GAS(ContentService)は失敗時も HTTP 200 を返すため、本文の ok/reason を必ず確認する。
-    const j = await res.json().catch(() => null);
-    if (res.ok && j && j.ok === true) return Response.json({ ok: true });
-    return Response.json(
-      { ok: false, reason: (j && j.reason) || 'upstream_error' },
-      { status: 502 },
-    );
-  } catch {
-    return Response.json({ ok: false, reason: 'network_error' }, { status: 502 });
-  }
+  });
+  if (!r.ok) return Response.json(r, { status: gasErrorStatus(r.reason) });
+  return Response.json({ ok: true });
 }

@@ -1,4 +1,5 @@
 import { getSession } from '@/lib/auth';
+import { callGas, gasErrorStatus, isGasConfigured } from '@/lib/gas';
 import { ADMIN_CAMPUS, STAFF } from '@/lib/staff';
 import { DEFAULT_PROGRESS_DEPT_ITEMS } from '@/lib/progressPrompt';
 
@@ -6,18 +7,6 @@ export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 type ItemsMap = Record<string, string[]>;
-
-async function callGas(payload: Record<string, unknown>): Promise<{ ok?: boolean; reason?: string; items?: unknown } | null> {
-  const url = process.env.APPS_SCRIPT_URL;
-  if (!url) return null;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: process.env.APPS_SCRIPT_TOKEN || '', ...payload }),
-  });
-  if (!res.ok) return { ok: false, reason: 'upstream_error' };
-  return (await res.json().catch(() => null)) as { ok?: boolean; reason?: string; items?: unknown } | null;
-}
 
 // 全部門の現行の定例項目を返す。初期値（デフォルト）に GAS 保存分を上書きしたものを返す。
 export async function GET() {
@@ -27,15 +16,15 @@ export async function GET() {
   const merged: ItemsMap = {};
   for (const g of STAFF) merged[g.campus] = DEFAULT_PROGRESS_DEPT_ITEMS[g.campus] ?? [];
 
-  let configured = !!process.env.APPS_SCRIPT_URL;
+  let configured = isGasConfigured();
   if (configured) {
-    try {
-      const j = await callGas({ action: 'getProgressItems' });
-      const saved = (j && j.ok && j.items && typeof j.items === 'object' ? (j.items as ItemsMap) : {}) || {};
+    const r = await callGas('getProgressItems');
+    if (r.ok) {
+      const saved = (r.data.items && typeof r.data.items === 'object' ? (r.data.items as ItemsMap) : {}) || {};
       for (const campus of Object.keys(saved)) {
         if (Array.isArray(saved[campus])) merged[campus] = saved[campus].map((s) => String(s));
       }
-    } catch {
+    } else if (r.reason === 'network_error') {
       configured = false;
     }
   }
@@ -56,13 +45,7 @@ export async function PUT(req: Request) {
   }
   if (!items) return Response.json({ ok: false, reason: 'bad_items' }, { status: 400 });
 
-  if (!process.env.APPS_SCRIPT_URL) return Response.json({ ok: false, reason: 'not_configured' });
-
-  try {
-    const j = await callGas({ action: 'saveProgressItems', campus, items });
-    if (j && j.ok) return Response.json({ ok: true, items: (j.items as string[]) ?? items });
-    return Response.json({ ok: false, reason: j?.reason ?? 'upstream_error' }, { status: 502 });
-  } catch {
-    return Response.json({ ok: false, reason: 'network_error' }, { status: 502 });
-  }
+  const r = await callGas('saveProgressItems', { campus, items });
+  if (!r.ok) return Response.json(r, { status: gasErrorStatus(r.reason) });
+  return Response.json({ ok: true, items: (r.data.items as string[]) ?? items });
 }

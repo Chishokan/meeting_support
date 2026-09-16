@@ -1,4 +1,5 @@
 import { getSession } from '@/lib/auth';
+import { gasErrorStatus, isGasConfigured } from '@/lib/gas';
 import { listNumbers, saveNumbers } from '@/lib/numbersStore';
 import { latestByCampus, type NumberValues } from '@/lib/summerNumbers';
 
@@ -9,7 +10,7 @@ export const maxDuration = 30;
 export async function GET() {
   const session = getSession();
   if (!session) return Response.json({ ok: false, reason: 'unauthorized', items: [] }, { status: 401 });
-  if (!process.env.APPS_SCRIPT_URL) return Response.json({ ok: false, reason: 'not_configured', items: [] });
+  if (!isGasConfigured()) return Response.json({ ok: false, reason: 'not_configured', items: [] });
 
   const items = latestByCampus(await listNumbers(session.campus));
   return Response.json({ ok: true, items });
@@ -33,5 +34,5 @@ export async function POST(req: Request) {
 
   const result = await saveNumbers({ dept, campus, user: session.name, values });
   if (result.ok) return Response.json({ ok: true });
-  return Response.json(result, { status: result.reason === 'not_configured' ? 200 : 502 });
+  return Response.json(result, { status: gasErrorStatus(result.reason) });
 }

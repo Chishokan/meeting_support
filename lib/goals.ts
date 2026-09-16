@@ -6,6 +6,8 @@
 // - 計算できないもの（サイトク・模試）はシートに入力された実績を使う。
 // どちらを使ったかは画面に出す。数字の出所が分からないまま判断されるのを防ぐため。
 
+import { callGas, gasItems } from './gas';
+
 export type GoalRow = {
   month: number;    // 9, 10, ...
   campus: string;   // 中等部 / 日野校 / 駅前校 / 大野校 / 日宇校 / 県中
@@ -19,31 +21,16 @@ export type GoalsResult =
   | { ok: false; reason: string };
 
 export async function listGoals(): Promise<GoalsResult> {
-  const url = process.env.APPS_SCRIPT_URL;
-  if (!url) return { ok: false, reason: 'not_configured' };
-
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'listGoals', token: process.env.APPS_SCRIPT_TOKEN || '' }),
-      cache: 'no-store',
-    });
-    const j = await res.json().catch(() => null);
-    if (!res.ok || !j || j.ok !== true || !Array.isArray(j.items)) {
-      return { ok: false, reason: (j && j.reason) || 'upstream_error' };
-    }
-    const rows: GoalRow[] = j.items.map((r: Record<string, unknown>) => ({
-      month: Number(r?.month ?? 0),
-      campus: String(r?.campus ?? ''),
-      metric: String(r?.metric ?? ''),
-      target: r?.target == null ? null : Number(r.target),
-      actual: r?.actual == null ? null : Number(r.actual),
-    }));
-    return { ok: true, rows, sheet: String(j.sheet ?? ''), fetchedAt: String(j.fetchedAt ?? '') };
-  } catch {
-    return { ok: false, reason: 'network_error' };
-  }
+  const r = await callGas('listGoals');
+  if (!r.ok) return r;
+  const rows: GoalRow[] = gasItems(r.data).map((g) => ({
+    month: Number(g?.month ?? 0),
+    campus: String(g?.campus ?? ''),
+    metric: String(g?.metric ?? ''),
+    target: g?.target == null ? null : Number(g.target),
+    actual: g?.actual == null ? null : Number(g.actual),
+  }));
+  return { ok: true, rows, sheet: String(r.data.sheet ?? ''), fetchedAt: String(r.data.fetchedAt ?? '') };
 }
 
 // --- 校舎名の突き合わせ ---------------------------------------------------

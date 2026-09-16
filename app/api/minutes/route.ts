@@ -1,19 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { getSession } from '@/lib/auth';
-import { MODEL, THINKING } from '@/lib/systemPrompt';
 import { buildMinutesPrompt } from '@/lib/minutesPrompt';
-import { logInteraction } from '@/lib/log';
-import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
-
-// モデルが偽の user/assistant ターン（崩れた us/use/usb を含む）を書き始めたら即停止させる。
-const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
+import { sanitizeHistory } from '@/lib/sanitize';
+import { cachedMessages, lastUserText, streamClaude, type Msg } from '@/lib/claudeStream';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
-
-const client = new Anthropic();
-
-type Msg = { role: 'user' | 'assistant'; content: string };
 
 export async function POST(req: Request) {
   const session = getSession();
@@ -25,69 +16,12 @@ export async function POST(req: Request) {
   const messages = sanitizeHistory(raw) as Msg[];
   if (messages.length === 0) return new Response('messages required', { status: 400 });
 
-  const encoder = new TextEncoder();
-  let full = '';
-  let cacheLog = '';
-
-  // プロンプトキャッシュ：議事録プロンプト（セッション内で固定）と直近メッセージに
-  // キャッシュポイントを置き、毎ターンの再送コストを抑える。
-  const system: Anthropic.TextBlockParam[] = [
-    {
-      type: 'text',
-      text: buildMinutesPrompt(session.campus, session.name),
-      cache_control: { type: 'ephemeral' },
-    },
-  ];
-  const cachedMessages: Anthropic.MessageParam[] = messages.map((m, i) =>
-    i === messages.length - 1
-      ? { role: m.role, content: [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }] }
-      : { role: m.role, content: m.content },
-  );
-
-  const rs = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        const stream = client.messages.stream({
-          model: MODEL,
-          // Sonnet 5 はトークナイザが変わり、同じ日本語テキストで約1.3倍のトークンを使う。
-          max_tokens: 6000,
-          thinking: THINKING,
-          system,
-          messages: cachedMessages,
-          stop_sequences: STOP,
-        });
-        for await (const ev of stream) {
-          if (ev.type === 'message_start') {
-            const u = ev.message.usage;
-            cacheLog = `in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`;
-          } else if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
-            full += ev.delta.text;
-            controller.enqueue(encoder.encode(ev.delta.text));
-          }
-        }
-      } catch {
-        controller.enqueue(encoder.encode('\n[エラーが発生しました。もう一度お試しください。]'));
-      } finally {
-        if (cacheLog) {
-          try {
-            console.log('[CACHE minutes]', cacheLog);
-          } catch {}
-        }
-        const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-        try {
-          await logInteraction({
-            user: session.name,
-            campus: session.campus,
-            input: `[議事録] ${lastUser?.content ?? ''}`,
-            output: stripRoleBleed(full),
-          });
-        } catch {}
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(rs, {
-    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+  return streamClaude({
+    label: 'minutes',
+    system: buildMinutesPrompt(session.campus, session.name),
+    messages: cachedMessages(messages),
+    // Sonnet 5 はトークナイザが変わり、同じ日本語テキストで約1.3倍のトークンを使う。
+    maxTokens: 6000,
+    log: { user: session.name, campus: session.campus, input: `[議事録] ${lastUserText(messages)}` },
   });
 }

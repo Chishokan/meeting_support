@@ -1,10 +1,12 @@
 import { getSession } from '@/lib/auth';
+import { callGas, gasErrorStatus, gasItems } from '@/lib/gas';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 // 部門横断の決め事の見える化。「部門決定事項」シートを新しい順に返す。
 // ?scope=minutes を付けると、議事録そのものの一覧（本文込み）を返す。
+
 export type DecisionRow = {
   ts: string;
   campus: string;
@@ -32,8 +34,6 @@ export type MinutesRow = {
   quality: string;
 };
 
-type GasRow = Record<string, unknown>;
-
 const s = (v: unknown) => String(v ?? '');
 
 export async function GET(req: Request) {
@@ -41,41 +41,22 @@ export async function GET(req: Request) {
   if (!session) return Response.json({ ok: false, reason: 'unauthorized', items: [] }, { status: 401 });
 
   const scope = new URL(req.url).searchParams.get('scope') === 'minutes' ? 'minutes' : 'decisions';
-  const url = process.env.APPS_SCRIPT_URL;
-  if (!url) return Response.json({ ok: false, reason: 'not_configured', items: [] });
+  const r = await callGas(scope === 'minutes' ? 'listDeptMinutes' : 'listDeptDecisions');
+  if (!r.ok) return Response.json({ ...r, items: [] }, { status: gasErrorStatus(r.reason) });
 
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: scope === 'minutes' ? 'listDeptMinutes' : 'listDeptDecisions',
-        token: process.env.APPS_SCRIPT_TOKEN || '',
-      }),
-    });
-    const j = await res.json().catch(() => null);
-    if (res.ok && j && j.ok === true) {
-      const rows: GasRow[] = Array.isArray(j.items) ? j.items : [];
-      if (scope === 'minutes') {
-        const items: MinutesRow[] = rows.map((r) => ({
-          ts: s(r.ts), campus: s(r.campus), user: s(r.user), title: s(r.title),
-          date: s(r.date), place: s(r.place), attendees: s(r.attendees), agenda: s(r.agenda),
-          minutes: s(r.minutes), quality: s(r.quality),
-        }));
-        return Response.json({ ok: true, items });
-      }
-      const items: DecisionRow[] = rows.map((r) => ({
-        ts: s(r.ts), campus: s(r.campus), user: s(r.user), meeting: s(r.meeting),
-        date: s(r.date), title: s(r.title), detail: s(r.detail), reason: s(r.reason),
-        owner: s(r.owner), due: s(r.due), related: s(r.related),
-      }));
-      return Response.json({ ok: true, items });
-    }
-    return Response.json(
-      { ok: false, reason: (j && j.reason) || 'upstream_error', items: [] },
-      { status: 502 },
-    );
-  } catch {
-    return Response.json({ ok: false, reason: 'network_error', items: [] }, { status: 502 });
+  const rows = gasItems(r.data);
+  if (scope === 'minutes') {
+    const items: MinutesRow[] = rows.map((row) => ({
+      ts: s(row.ts), campus: s(row.campus), user: s(row.user), title: s(row.title),
+      date: s(row.date), place: s(row.place), attendees: s(row.attendees), agenda: s(row.agenda),
+      minutes: s(row.minutes), quality: s(row.quality),
+    }));
+    return Response.json({ ok: true, items });
   }
+  const items: DecisionRow[] = rows.map((row) => ({
+    ts: s(row.ts), campus: s(row.campus), user: s(row.user), meeting: s(row.meeting),
+    date: s(row.date), title: s(row.title), detail: s(row.detail), reason: s(row.reason),
+    owner: s(row.owner), due: s(row.due), related: s(row.related),
+  }));
+  return Response.json({ ok: true, items });
 }

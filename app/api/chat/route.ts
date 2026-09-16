@@ -1,21 +1,14 @@
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import { getSession } from '@/lib/auth';
-import { buildSystemPrompt, MODEL, THINKING } from '@/lib/systemPrompt';
+import { buildSystemPrompt } from '@/lib/systemPrompt';
 import { buildSummerPrompt } from '@/lib/summerPrompt';
 import { listNumbers } from '@/lib/numbersStore';
 import { formatEntries, latestByCampus } from '@/lib/summerNumbers';
-import { logInteraction } from '@/lib/log';
-import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
-
-// モデルが偽の user/assistant ターン（崩れた us/use/usb を含む）を書き始めたら即停止させる。
-const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
+import { sanitizeHistory } from '@/lib/sanitize';
+import { cachedMessages, lastUserText, streamClaude, type Msg } from '@/lib/claudeStream';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
-
-const client = new Anthropic();
-
-type Msg = { role: 'user' | 'assistant'; content: string };
 
 // 会議AIのモード。meeting＝通常の事前報告 / summer＝夏の結果報告（計画確認なし）。
 type Mode = 'meeting' | 'summer';
@@ -63,81 +56,23 @@ export async function POST(req: Request) {
   const numbersText =
     mode === 'summer' ? formatEntries(latestByCampus(await listNumbers(session.campus))) : '';
 
-  const encoder = new TextEncoder();
-  let full = '';
-  let cacheLog = '';
-
-  // プロンプトキャッシュ：システムプロンプト（同一セッション内で固定）と直近メッセージに
-  // キャッシュポイントを置き、毎ターンの「システム＋全履歴」再送コストを抑える。
-  const system: Anthropic.TextBlockParam[] = [
-    {
-      type: 'text',
-      text:
-        mode === 'summer'
-          ? buildSummerPrompt(session.campus, session.name, numbersText)
-          : buildSystemPrompt(session.campus, session.name),
-      cache_control: { type: 'ephemeral' },
-    },
-  ];
   // 添付は「今回のターン」にのみ付与する（履歴には残さない＝端末保存を軽く保つ）。
   const attachments: Attach[] = Array.isArray(body?.attachments) ? body.attachments.slice(0, 5) : [];
-  const cachedMessages: Anthropic.MessageParam[] = messages.map((m, i) =>
-    i === messages.length - 1
-      ? {
-          role: m.role,
-          content: [
-            ...attachBlocks(attachments),
-            { type: 'text', text: m.content, cache_control: { type: 'ephemeral' } },
-          ] as Anthropic.ContentBlockParam[],
-        }
-      : { role: m.role, content: m.content },
-  );
 
-  const rs = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        const stream = client.messages.stream({
-          model: MODEL,
-          // Sonnet 5 はトークナイザが変わり、同じ日本語テキストで約1.3倍のトークンを使う。
-          // 旧 4000 のままだと「貼り付け用：事前報告」の途中で切れうるため引き上げる。
-          max_tokens: 6000,
-          thinking: THINKING,
-          system,
-          messages: cachedMessages,
-          stop_sequences: STOP,
-        });
-        for await (const ev of stream) {
-          if (ev.type === 'message_start') {
-            const u = ev.message.usage;
-            cacheLog = `in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`;
-          } else if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
-            full += ev.delta.text;
-            controller.enqueue(encoder.encode(ev.delta.text));
-          }
-        }
-      } catch {
-        controller.enqueue(encoder.encode('\n[エラーが発生しました。もう一度お試しください。]'));
-      } finally {
-        if (cacheLog) {
-          try {
-            console.log(`[CACHE chat:${mode}]`, cacheLog);
-          } catch {}
-        }
-        const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-        try {
-          await logInteraction({
-            user: session.name,
-            campus: session.campus,
-            input: mode === 'summer' ? `[夏期結果] ${lastUser?.content ?? ''}` : (lastUser?.content ?? ''),
-            output: stripRoleBleed(full),
-          });
-        } catch {}
-        controller.close();
-      }
+  return streamClaude({
+    label: `chat:${mode}`,
+    system:
+      mode === 'summer'
+        ? buildSummerPrompt(session.campus, session.name, numbersText)
+        : buildSystemPrompt(session.campus, session.name),
+    messages: cachedMessages(messages, attachBlocks(attachments)),
+    // Sonnet 5 はトークナイザが変わり、同じ日本語テキストで約1.3倍のトークンを使う。
+    // 旧 4000 のままだと「貼り付け用：事前報告」の途中で切れうるため引き上げる。
+    maxTokens: 6000,
+    log: {
+      user: session.name,
+      campus: session.campus,
+      input: mode === 'summer' ? `[夏期結果] ${lastUserText(messages)}` : lastUserText(messages),
     },
-  });
-
-  return new Response(rs, {
-    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
   });
 }

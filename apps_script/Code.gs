@@ -19,7 +19,8 @@
  *   - action:'listSuccess'  … ダッシュボード用の成功事例一覧  → 「成功事例」シートを新しい順に返す
  *   - action:'listInquiryBoard' … 問い合わせQA用の小中等部問合せ管理 → 別スプレッドシート（INQUIRY_BOARD_ID）を校舎シートごとに読み、個人情報を落として返す
  *   - action:'listGoals'        … 目標管理用 → 中等部会議議事録（GOALS_BOOK_ID）の「秋～冬行動計画」タブから月×校舎×指標の目標／実績を返す
- *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
+ *     ※ 未登録の部門は Next 側の初期値（lib/progressPrompt.ts DEFAULT_PROGRESS_DEPT_ITEMS）が使われる。
+ *       シートに入れるにはアプリの「中間報告 → 設定」（管理部門）から保存する。GAS 側に初期値は持たない。
  *
  * 【セットアップ手順】
  * 1. 転記先スプレッドシートを開き、拡張機能 → Apps Script でこのコードを貼り付ける
@@ -628,33 +629,6 @@ function saveProgressItems_(data) {
   if (last >= 2) sh.getRange(2, 1, last - 1, 2).clearContent();
   if (kept.length) sh.getRange(2, 1, kept.length, 2).setValues(kept);
   return { ok: true, items: cleaned };
-}
-
-// 【初期値の流し込み】GAS エディタでこの関数を一度「実行」すると、
-// 「中間報告項目」シートに全部門の初期項目（1行1項目）を書き込む。
-// 既に何か入っている部門は上書きしない（手動編集を尊重）。以後はシート／アプリ画面のどちらでも編集可。
-function seedProgressItems() {
-  var defaults = [
-    ['小中等部', ['会議で決議した事項の進捗', '生徒数（在籍・前年比）', '成績回収（○/○名）', 'キャンペーン（○/○名）']],
-    ['RED個別', ['会議で決議した事項の進捗', 'スタッフ研修項目の完了／未完（件数）', '生徒対応・退会防止の状況']],
-    ['高等部', ['会議で決議した事項の進捗', '学年別の実質受講率', '受講進捗（コマ数の進み・修了／遅れ）', '担任・担任助手の面談実施状況', '新規（申込・体験）の申込／実施']],
-    ['LEC', ['会議で決議した事項の進捗', '生徒数（在籍・前年比）', '売上', '成績回収（○/○名）', 'キャンペーン（○/○名）']],
-    ['英検', ['会議で決議した事項の進捗', '受験申込・受験者数', '合格状況', '成績回収（○/○名）']],
-    ['総務・人事・支援・管理', ['会議で決議した事項の進捗', '担当領域の処理・対応件数', '進行中タスク・依頼案件の進捗']]
-  ];
-  var existing = getProgressItems_({}).items || {};
-  var sh = progressItemsSheet_();
-  var added = [];
-  for (var i = 0; i < defaults.length; i++) {
-    var campus = defaults[i][0];
-    if (existing[campus] && existing[campus].length) continue; // 既存は触らない
-    var list = defaults[i][1];
-    for (var j = 0; j < list.length; j++) added.push([campus, list[j]]);
-  }
-  if (added.length) {
-    var start = sh.getLastRow() + 1;
-    sh.getRange(start, 1, added.length, 2).setValues(added);
-  }
 }
 
 // 部門名でタブを振り分ける（事前報告用）：
