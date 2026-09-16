@@ -553,33 +553,50 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .yq-cards-sub { font-size: 12px; font-weight: 600; color: #8a94a0; }
 /* 要項カードは題名と3行が入るので、問い合わせQAの190pxでは折り返しが増える。 */
 .yq-cards-wrap .iqa-cards {
-  padding-top: 10px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  padding-top: 10px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
 }
 .yq-empty { padding: 10px 24px 0; font-size: 12px; color: #8a94a0; line-height: 1.9; }
 
 .yq-card { display: flex; flex-direction: column; gap: 8px; }
+.yq-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .yq-chip {
-  align-self: flex-start;
   font-size: 10.5px; font-weight: 700; line-height: 1;
   padding: 4px 7px; border-radius: 999px;
 }
 .yq-chip.now { background: #e7f4ed; color: #2e6b4f; }
 .yq-chip.soon { background: #fdf1e3; color: #a4620f; }
 .yq-chip.test { background: #eef0f3; color: #6b7683; }
-.yq-card-title { font-size: 13px; font-weight: 700; color: #2a2f36; line-height: 1.5; }
+.yq-card-meta { font-size: 11.5px; color: #8a94a0; font-variant-numeric: tabular-nums; }
+.yq-card-title { font-size: 13.5px; font-weight: 700; color: #2a2f36; line-height: 1.5; }
 
-/* 「学年／期間／料金」の2列。見出し幅を固定して、カードを横に並べても行が揃うように。 */
-.yq-card-rows {
-  display: grid; grid-template-columns: 3.2em 1fr;
-  gap: 4px 10px; margin: 0; font-size: 12px;
+/* 要項全体で1つの値段のとき（講座ごとに分かれていない受講料）。 */
+.yq-whole {
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  background: #f6f8fa; border-radius: 8px; padding: 8px 10px;
 }
-.yq-card-rows dt { color: #8a94a0; font-weight: 600; }
-.yq-card-rows dd { margin: 0; color: #445; line-height: 1.7; }
+.yq-whole-label { font-size: 11px; font-weight: 700; color: #8a94a0; flex: none; }
+.yq-whole-fees { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.yq-whole-fee, .yq-item-fee { font-size: 12px; white-space: nowrap; }
+.yq-whole-fee i, .yq-item-fee i { font-style: normal; color: #8a94a0; margin-right: 5px; }
+.yq-whole-fee b, .yq-item-fee b { font-weight: 700; color: #2a2f36; font-variant-numeric: tabular-nums; }
 
-.yq-fee { display: flex; gap: 8px; justify-content: space-between; }
-.yq-fee-aud { color: #8a94a0; }
-.yq-fee-val { font-variant-numeric: tabular-nums; text-align: right; }
-.yq-fee-note { font-size: 11px; color: #a3adb8; margin-top: 2px; line-height: 1.6; }
+/* 講座・コースの一覧。開始日を先頭に固定幅で置き、縦に読めば日程順になる。 */
+.yq-items-list { list-style: none; margin: 0; padding: 0; }
+.yq-item {
+  display: grid; grid-template-columns: 6.5em 1fr; gap: 2px 10px;
+  padding: 7px 0; border-top: 1px solid var(--line);
+}
+.yq-item:first-child { border-top: none; padding-top: 2px; }
+.yq-when {
+  font-size: 12.5px; font-weight: 700; color: var(--navy);
+  font-variant-numeric: tabular-nums; line-height: 1.5;
+}
+.yq-when.undecided { color: #a3adb8; font-weight: 600; }
+.yq-item-body { min-width: 0; }
+.yq-item-name { font-size: 12.5px; color: #2a2f36; line-height: 1.5; }
+.yq-item-fees { display: flex; flex-wrap: wrap; gap: 2px 14px; margin-top: 3px; }
+.yq-item-empty { font-size: 12px; color: #8a94a0; line-height: 1.7; }
+
 .yq-card-test {
   font-size: 11px; color: #8a94a0; line-height: 1.6;
   border-top: 1px dashed var(--line); padding-top: 7px;
