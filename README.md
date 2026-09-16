@@ -163,8 +163,8 @@ AI が答える（メニュー「要項QA」）。全部門が利用できる（
 
 | 種類 | Google ドキュメント | リポジトリ側の控え |
 |---|---|---|
-| 有料講座 | https://docs.google.com/document/d/1CYW9MnclPSkT8WyJErAiZR2MNEGAshC0IpBA0c9zLrU/edit | `knowledge/40_要項/_TEMPLATE_有料講座.md` |
-| 無料講座（無料体験・説明会・セミナー・無料模試など） | https://docs.google.com/document/d/1LGErUA_UceaNbiE7Weyc3IWkzCz_9ziYKrJxMS_Jf2s/edit | `knowledge/40_要項/_TEMPLATE_無料講座.md` |
+| 有料講座 | https://docs.google.com/document/d/1FkGszrr4jDMIfY6pUYreS_PKSIhOh6kgAYsEho9aspo/edit | `knowledge/40_要項/_TEMPLATE_有料講座.md` |
+| 無料講座（無料体験・説明会・セミナー・無料模試など） | https://docs.google.com/document/d/1L1aYpV1E3nLValKXMG1pZjU2Qlgu7TC5dbhD_tLDYVU/edit | `knowledge/40_要項/_TEMPLATE_無料講座.md` |
 
 タブ「_要項テンプレート（有料講座／無料講座）」を複製 → 講座名にリネーム → 上から埋める →
 ＜基本情報＞の「ステータス」を「確定」にする。
@@ -179,7 +179,10 @@ AI が答える（メニュー「要項QA」）。全部門が利用できる（
   講座担当は空欄のままにする（記入ルール「空欄にしない」の唯一の例外）。
   「確定」にする前に経理記入欄が埋まっているかを確認する。
 - **＜広報物・制作物＞を追加**。LP・チラシ・ポスター（校舎内）・ポスター（校舎外）・サイネージ
-  の制作要否を「☐」→「☑」で示し、納期と担当を書く。
+  の制作要否を「☐」→「☑」で示し、制作依頼日と納品希望日を書く。
+  制作はすべて NEP事業部（安藤）が担当するので担当者欄は無い。
+  募集開始（申込開始日）の10日前までに要項を確定する。納品希望日は制作依頼日の10日以上後に
+  する。制作物ごとに制作費がかかり、10日以内の特急は割り増しになる。
   （Google ドキュメントの Markdown 変換ではチェックボックス記法 `- [ ]` が消えるため、
   「☐」「☑」の文字を使っている）
 - 無料講座は＜受講料＞が「塾生：無料／一般生：無料＋教材費等」の形で、割引の節が無い。
