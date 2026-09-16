@@ -201,7 +201,7 @@ export default function DashboardUI({
   const yokoPanel = (
     <div className="dash-panel full">
       <h2>
-        いまの要項
+        実施期間中の要項
         <Link href="/yoko-qa" className="panel-more">要項QAで聞く</Link>
       </h2>
       {yoko.length === 0 ? (
