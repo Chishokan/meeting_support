@@ -3,15 +3,33 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { STAFF } from '@/lib/staff';
+import YokoCard, { type YokoCardData } from '@/components/YokoCard';
+import MinutesDetail from '@/components/MinutesDetail';
+import ShareItemDetail from '@/components/ShareItemDetail';
+import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
 import type { ProgressEntry } from '@/lib/progressPrompt';
 import type { SuccessRow } from '@/app/api/success/route';
+import type { MinutesRow } from '@/app/api/dept-minutes/list/route';
+import type { ShareRow } from '@/app/api/share-items/route';
 
 type ProgressItem = { ts: string; campus: string; user: string; progress: ProgressEntry[] };
+
+// ★中間報告まわりの表示を一時的に止めている。
+//   再開するときはここを true に戻すだけでよい（提出状況の数値・部門別の状況・
+//   報告すべき項目・部門メンバーの報告状況・直近の中間報告がまとめて戻る）。
+//   false の間は中間報告の API も呼ばない。
+const SHOW_PROGRESS = false;
 
 // メンバー行に出す進捗の最大件数（超えた分は「他N件」にまとめる）。
 const MAX_SHOWN_ITEMS = 3;
 // 成功事例パネルに出す件数（新しい順）。
 const MAX_SHOWN_CASES = 6;
+// ダッシュボードに出す直近の議事録・要項カードの件数。
+const MAX_SHOWN_MINUTES = 5;
+const MAX_SHOWN_YOKO = 4;
+// 事前共有事項のカード件数。協議・決裁は会議で扱うので、報告より前に出す。
+const MAX_SHOWN_SHARE = 6;
+const SHARE_ORDER: Record<string, number> = { 協議: 0, 決裁: 1, 報告: 2 };
 
 function fmtDateTime(s: string) {
   // GAS からは 'yyyy/MM/dd HH:mm' 等の文字列で来る。日付部分だけ簡潔に表示。
@@ -32,6 +50,13 @@ export default function DashboardUI({
   const [items, setItems] = useState<ProgressItem[]>([]);
   const [deptItems, setDeptItems] = useState<string[]>([]);
   const [cases, setCases] = useState<SuccessRow[]>([]);
+  const [minutes, setMinutes] = useState<MinutesRow[]>([]);
+  const [shareItems, setShareItems] = useState<ShareRow[]>([]);
+  // ［詳細］で開く事前共有事項。議事録と同じくこのページ上で開く。
+  const [openShare, setOpenShare] = useState<ShareRow | null>(null);
+  // ［詳細］で開く議事録。画面を移らずにこのページ上で開く。
+  const [openMinutes, setOpenMinutes] = useState<MinutesRow | null>(null);
+  const [yoko, setYoko] = useState<YokoCardData[]>([]);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
 
@@ -39,18 +64,23 @@ export default function DashboardUI({
     let alive = true;
     (async () => {
       try {
-        // 提出状況と、この部門の報告項目（管理部門は項目パネルを出さないので取得しない）を並行取得。
-        const [statusRes, itemsRes, successRes] = await Promise.all([
-          fetch('/api/progress/latest'),
-          isAdmin ? Promise.resolve(null) : fetch('/api/progress/items'),
+        // 中間報告は非表示のあいだ取得しない（GAS への無駄な往復を減らす）。
+        const [statusRes, itemsRes, successRes, minutesRes, yokoRes, shareRes] = await Promise.all([
+          SHOW_PROGRESS ? fetch('/api/progress/latest') : Promise.resolve(null),
+          SHOW_PROGRESS && !isAdmin ? fetch('/api/progress/items') : Promise.resolve(null),
           fetch('/api/success').catch(() => null),
+          fetch('/api/dept-minutes/list?scope=minutes').catch(() => null),
+          fetch('/api/yoko-qa').catch(() => null),
+          fetch('/api/share-items').catch(() => null),
         ]);
-        const j = await statusRes.json().catch(() => ({}));
-        if (!alive) return;
-        if (j?.ok && Array.isArray(j.items)) {
-          setItems(j.items as ProgressItem[]);
-        } else if (j?.reason === 'not_configured') {
-          setNote('中間報告の連携（Apps Script）が未設定です。');
+        if (statusRes) {
+          const j = await statusRes.json().catch(() => ({}));
+          if (!alive) return;
+          if (j?.ok && Array.isArray(j.items)) {
+            setItems(j.items as ProgressItem[]);
+          } else if (j?.reason === 'not_configured') {
+            setNote('中間報告の連携（Apps Script）が未設定です。');
+          }
         }
         if (itemsRes) {
           const j2 = await itemsRes.json().catch(() => ({}));
@@ -59,12 +89,24 @@ export default function DashboardUI({
             setDeptItems((j2.items[campus] as unknown[]).map((s) => String(s)));
           }
         }
-        // 成功事例は取得できなくても他の表示は止めない（未設定・未集計なら空のまま）。
+        // 以下は取得できなくても他の表示は止めない（未設定・未集計なら空のまま）。
         const j3 = successRes ? await successRes.json().catch(() => ({})) : {};
         if (!alive) return;
         if (j3?.ok && Array.isArray(j3.items)) setCases(j3.items as SuccessRow[]);
+
+        const j4 = minutesRes ? await minutesRes.json().catch(() => ({})) : {};
+        if (!alive) return;
+        if (j4?.ok && Array.isArray(j4.items)) setMinutes(j4.items as MinutesRow[]);
+
+        const j5 = yokoRes ? await yokoRes.json().catch(() => ({})) : {};
+        if (!alive) return;
+        if (j5?.ok && Array.isArray(j5.cards)) setYoko(j5.cards as YokoCardData[]);
+
+        const j6 = shareRes ? await shareRes.json().catch(() => ({})) : {};
+        if (!alive) return;
+        if (j6?.ok && Array.isArray(j6.items)) setShareItems(j6.items as ShareRow[]);
       } catch {
-        if (alive) setNote('中間報告状況の取得に失敗しました。');
+        if (alive) setNote('情報の取得に失敗しました。');
       } finally {
         if (alive) setLoading(false);
       }
@@ -98,18 +140,26 @@ export default function DashboardUI({
     <div className="dash-panel">
       <h2>クイックスタート</h2>
       <div className="quick-links">
+        <Link href="/dept-minutes" className="quick-link">
+          <span>
+            <b>部門会議の議事録をつくる</b>
+            <small>録音から議事録・決定事項を共有</small>
+          </span>
+        </Link>
         <Link href="/chat" className="quick-link">
           <span>
             <b>会議AIで事前報告をつくる</b>
             <small>会議前の報告を対話で整理</small>
           </span>
         </Link>
-        <Link href="/progress" className="quick-link">
-          <span>
-            <b>中間報告を送る</b>
-            <small>決議事項の進捗を締切までに報告</small>
-          </span>
-        </Link>
+        {SHOW_PROGRESS && (
+          <Link href="/progress" className="quick-link">
+            <span>
+              <b>中間報告を送る</b>
+              <small>決議事項の進捗を締切までに報告</small>
+            </span>
+          </Link>
+        )}
         <Link href="/report" className="quick-link">
           <span>
             <b>報告をドキュメントへ転記</b>
@@ -117,6 +167,109 @@ export default function DashboardUI({
           </span>
         </Link>
       </div>
+    </div>
+  );
+
+  // 直近の議事録（全部門）。カードの見た目は「部門会議議事録」画面と同じものを使う。
+  const minutesPanel = (
+    <div className="dash-panel">
+      <h2>
+        直近の議事録
+        <Link href="/dept-minutes" className="panel-more">すべて見る</Link>
+      </h2>
+      {minutes.length === 0 ? (
+        <p className="dash-empty">
+          {loading ? '読み込み中…' : 'まだ保存された議事録はありません。'}
+          {!loading && <> <Link href="/dept-minutes">部門会議議事録</Link>から作れます。</>}
+        </p>
+      ) : (
+        <ul className="dm-meet-list">
+          {minutes.slice(0, MAX_SHOWN_MINUTES).map((m, i) => {
+            const agenda = summarizeSection(extractSection(m.minutes, '議題') || m.agenda, 2);
+            const decCount = extractDecisions(m.minutes).length;
+            return (
+              <li key={`${m.ts}-${i}`}>
+                <div className="dm-meet-head">
+                  <span className="dm-meet-date">{fmtDateTime(m.date || m.ts)}</span>
+                  <span className="dm-dec-campus">{m.campus}</span>
+                </div>
+                <div className="dm-meet-title">{m.title || '（会議名なし）'}</div>
+                {agenda.length > 0 && (
+                  <ul className="dm-meet-agenda">
+                    {agenda.map((a, k) => <li key={k}>{a}</li>)}
+                  </ul>
+                )}
+                <div className="dm-meet-foot">
+                  <span className="dm-meet-count">
+                    決定 {decCount} 件{m.user && ` ／ ${m.user}`}
+                  </span>
+                  <button className="dm-detail" onClick={() => setOpenMinutes(m)}>詳細</button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+
+  // 直近の事前共有事項。会議AIで作り「報告」で転記した「協議・決裁・報告」を全部門分まとめる。
+  // 会議の前にここを見れば、当日どこで議論になるかが分かる状態にするのが狙い。
+  const sharePanel = (
+    <div className="dash-panel">
+      <h2>
+        直近の事前共有事項
+        <Link href="/chat" className="panel-more">会議AIでつくる</Link>
+      </h2>
+      {shareItems.length === 0 ? (
+        <p className="dash-empty">
+          {loading
+            ? '読み込み中…'
+            : 'まだ事前共有事項はありません。会議AIで事前報告をまとめ、'}
+          {!loading && <><Link href="/report">報告</Link>から転記すると、ここに集まります。</>}
+        </p>
+      ) : (
+        <ul className="share-list">
+          {[...shareItems]
+            .sort((a, b) => (SHARE_ORDER[a.kind] ?? 9) - (SHARE_ORDER[b.kind] ?? 9))
+            .slice(0, MAX_SHOWN_SHARE)
+            .map((s, i) => (
+              <li key={`${s.ts}-${i}`} className={`share-item ${s.kind === '協議' ? 'k-giron' : s.kind === '決裁' ? 'k-kessai' : 'k-hokoku'}`}>
+                <div className="share-top">
+                  <span className="share-kind">{s.kind || '報告'}</span>
+                  <span className="share-meta">{s.campus}／{s.user}　{fmtDateTime(s.ts)}</span>
+                </div>
+                <div className="share-title">{s.title}</div>
+                {/* 経緯・論点・意見はカードに入れると見切れるので、詳細で全文を読む */}
+                <div className="share-foot">
+                  <button className="dm-detail" onClick={() => setOpenShare(s)}>詳細</button>
+                </div>
+              </li>
+            ))}
+        </ul>
+      )}
+    </div>
+  );
+
+  // 実施中・開始間近の要項。保護者対応でその場で見るものなので、全部門に同じものを出す。
+  const yokoPanel = (
+    <div className="dash-panel full">
+      <h2>
+        実施期間中の要項
+        <Link href="/yoko-qa" className="panel-more">要項QAで聞く</Link>
+      </h2>
+      {yoko.length === 0 ? (
+        <p className="dash-empty">
+          {loading ? '読み込み中…' : '実施中・開始間近の要項はありません。'}
+          {!loading && <> <Link href="/yoko-qa">要項QA</Link>で確定済みの一覧を見られます。</>}
+        </p>
+      ) : (
+        <div className="iqa-cards">
+          {yoko.slice(0, MAX_SHOWN_YOKO).map((c) => (
+            <YokoCard key={c.file} card={c} compact />
+          ))}
+        </div>
+      )}
     </div>
   );
 
@@ -147,6 +300,41 @@ export default function DashboardUI({
       )}
     </div>
   );
+
+  // ── 中間報告を止めているあいだのダッシュボード ──
+  // 直近の議事録と、いま使う要項を出す。SHOW_PROGRESS を true に戻すと、
+  // ここを素通りして下の従来のダッシュボード（提出状況）に戻る。
+  if (!SHOW_PROGRESS) {
+    return (
+      <div className="dash">
+        <div className="page-head">
+          <h1>ダッシュボード</h1>
+          <p>
+            {campus}／{name} さん、おつかれさまです。
+            直近の議事録・会議前に共有された協議事項・実施期間中の要項をまとめます。
+          </p>
+        </div>
+
+        {note && <p className="dash-note">{note}</p>}
+
+        <div className="dash-grid">
+          {quickStart}
+          {minutesPanel}
+          {sharePanel}
+          {yokoPanel}
+          {successPanel}
+        </div>
+
+        {/* 議事録の詳細（ポップアップ）。議事録画面と同じ部品を使う。 */}
+        {openMinutes && (
+          <MinutesDetail row={openMinutes} onClose={() => setOpenMinutes(null)} />
+        )}
+        {openShare && (
+          <ShareItemDetail row={openShare} onClose={() => setOpenShare(null)} />
+        )}
+      </div>
+    );
+  }
 
   // ── 管理部門（総務・人事・支援・管理）：全部門の提出状況を俯瞰する ──
   if (isAdmin) {
