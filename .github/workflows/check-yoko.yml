@@ -1,0 +1,23 @@
+# 要項ファイルを変える PR で、確定済みの必須項目チェックを走らせる。
+# 人が手で直した PR にも効く。sync-yoko が GITHUB_TOKEN で作った PR では起動しない
+# （GitHub の仕様）ため、そちらは sync-yoko の中で同じチェックを実行している。
+name: check-yoko
+
+on:
+  pull_request:
+    paths:
+      - 'knowledge/40_要項/**'
+      - 'scripts/check-yoko.mjs'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # 当面は警告のみ（既存の確定 22 件に「経理連絡事項」が無いため）。
+      # 既存分を直し終えたら continue-on-error を外して必須化する。
+      - run: node scripts/check-yoko.mjs --confirmed
+        continue-on-error: true

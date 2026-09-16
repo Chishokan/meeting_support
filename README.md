@@ -147,6 +147,8 @@ AI が答える（メニュー「要項QA」）。全部門が利用できる（
 保護者に誤った金額を伝える事故につながるので、担当者が確認したものだけを git に置いて読む。
 
 ### 要項を追加・更新する手順
+通常は下の「自動同期」で足りる。手で取り込む場合（初回投入・自動同期が止まっているとき）は次の手順。
+
 1. 要項ドキュメントを Markdown で書き出す（ファイル > ダウンロード > Markdown）
 2. `node scripts/import-yoko.mjs <書き出したファイル>` を実行
    - 太字でない `# 見出し`（ドキュメントのタブ見出し）を区切りとして1件1ファイルに割る
@@ -200,6 +202,40 @@ node scripts/check-yoko.mjs --confirmed # 確定のものだけ（不足があ�
 必須項目（対象・日程・受講料・申込開始日・申込期限・申込方法・支払い方法・連絡先・
 経理連絡事項）が書かれているかを見る。あわせて「記入例」「（例：…）」の消し忘れも指摘する。
 要項QAは書かれていることしか答えられないため、確定にする前に通す。
+
+### 自動同期（確定したタブを git へ流す）
+要項ドキュメントの ＜基本情報＞「ステータス」を **確定** にすると、GitHub Actions が
+git 側に反映して PR を作る。総務がマージすると Vercel が再デプロイし、要項QA に反映される。
+
+流れ: 要項ドキュメント →（Drive API で Markdown 書き出し）→ `scripts/import-yoko.mjs --sync`
+→ `check-yoko.mjs --confirmed` → PR `sync/yoko` → 人がマージ → デプロイ
+
+- 起動: 毎日 03:00 JST。Actions タブから手動実行もできる。
+  `apps_script/YokoSync.gs` を入れておくと「確定」の変化を1時間おきに検知して即起動する
+- 対象: ステータスが「確定」のタブだけ。既存ファイルは front matter の `title` と講座名で突き合わせて
+  **上書き**する（ドキュメントが正本）。「確定」でなくなったタブは git 側の `status` を「下書き」に戻す
+- ステータス欄が無いタブ（旧形式）は触らない。旧形式の要項を自動同期に載せたいときは、
+  そのタブに ＜基本情報＞ を足す
+- 講座名を変えると別ファイル扱いになる。変えるときは旧ファイルを削除する PR とセットで行う
+- 定義: `.github/workflows/sync-yoko.yml`（同期）／`.github/workflows/check-yoko.yml`（人手の PR にも必須項目チェック）
+
+セットアップ（初回のみ）:
+1. Google Cloud でサービスアカウントを作り、鍵（JSON）を発行する。Drive API を有効にする
+2. 要項ドキュメントをそのサービスアカウントのメールアドレスに「閲覧者」で共有する
+3. GitHub の Settings → Secrets and variables → Actions に登録する
+   - `YOKO_DOC_ID`: 要項ドキュメントの ID（URL の /d/ と /edit の間）
+   - `GOOGLE_SERVICE_ACCOUNT_JSON`: 鍵 JSON の中身
+   - `SYNC_YOKO_TOKEN`（任意）: fine-grained PAT（Contents / Pull requests: write）。
+     入れると PR 上でも `check-yoko` が走る（GITHUB_TOKEN が作った PR では他のワークフローが起動しない仕様のため）
+4. Settings → Actions → General → Workflow permissions で
+   「Allow GitHub Actions to create and approve pull requests」を有効にする
+5. Actions タブ → sync-yoko → Run workflow で1回動かし、PR の内容を確認する
+6. （任意）即時反映したい場合は `apps_script/YokoSync.gs` を Apps Script に追加し、ファイル冒頭の手順で
+   `YOKO_DOC_ID` と スクリプト プロパティ `GITHUB_TOKEN` を設定して `installYokoTrigger()` を実行する
+
+※ 2026-09 時点で確定済み 22 件すべてに「経理連絡事項」が無く、`check-yoko --confirmed` は失敗する。
+そのため両ワークフローとも当面は**警告止まり**にしてある。既存分を直し終えたら、
+`sync-yoko.yml` の最後の step を `exit 1` に、`check-yoko.yml` の `continue-on-error` を外して必須化する。
 
 ### 触るときの注意
 - knowledge/ の置き場所を変えたら next.config.mjs の `outputFileTracingIncludes` も直すこと。

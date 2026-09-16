@@ -1,0 +1,89 @@
+# 要項ドキュメント（Google ドキュメント）→ knowledge/40_要項/ の自動同期。
+#
+# ＜基本情報＞の「ステータス：確定」になったタブだけを git に反映し、PR を作る。
+# 人がマージすると Vercel が再デプロイし、要項QA の回答に反映される。
+#
+# 起動:
+#   - 毎日 03:00 JST（18:00 UTC）
+#   - 手動（Actions タブ → Run workflow）
+#   - Apps Script からの repository_dispatch（apps_script/YokoSync.gs が「確定」を検知したとき）
+#
+# 必要な Secrets（Settings → Secrets and variables → Actions）:
+#   YOKO_DOC_ID                  要項ドキュメントの ID
+#   GOOGLE_SERVICE_ACCOUNT_JSON  Drive 読み取り用サービスアカウントの鍵 JSON（ドキュメントを閲覧共有しておく）
+#   SYNC_YOKO_TOKEN（任意）      PR 作成に使う fine-grained PAT（Contents / Pull requests: write）。
+#                                無ければ GITHUB_TOKEN を使うが、その場合 PR 上で check-yoko.yml が走らない
+#                                （GitHub の仕様: GITHUB_TOKEN が作った PR は他のワークフローを起動しない）。
+#
+# あわせて Settings → Actions → General → Workflow permissions で
+# 「Allow GitHub Actions to create and approve pull requests」を有効にすること。
+name: sync-yoko
+
+on:
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [yoko-confirmed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-yoko
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 要項ドキュメントを Markdown に書き出す
+        env:
+          YOKO_DOC_ID: ${{ secrets.YOKO_DOC_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: node scripts/export-yoko-doc.mjs "$RUNNER_TEMP/yoko.md"
+
+      - name: 確定タブを knowledge/40_要項 に反映
+        id: sync
+        run: node scripts/import-yoko.mjs --sync "$RUNNER_TEMP/yoko.md"
+
+      - name: 必須項目チェック（確定のみ）
+        id: check
+        if: steps.sync.outputs.changed != '0'
+        continue-on-error: true
+        run: node scripts/check-yoko.mjs --confirmed | tee "$RUNNER_TEMP/check.txt"
+
+      - name: PR を作成・更新
+        if: steps.sync.outputs.changed != '0'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.SYNC_YOKO_TOKEN || github.token }}
+          branch: sync/yoko
+          delete-branch: true
+          commit-message: 'docs(要項): 確定した要項をドキュメントから同期'
+          title: '要項の同期: 確定 ${{ steps.sync.outputs.changed }} 件'
+          labels: yoko-sync
+          body: |
+            要項ドキュメントで「ステータス：確定」になったタブを反映しました。
+            マージすると Vercel が再デプロイし、要項QA の回答に使われます。
+
+            ${{ steps.sync.outputs.summary }}
+
+            必須項目チェック（`check-yoko.mjs --confirmed`）: **${{ steps.check.outcome == 'success' && 'OK' || '不足あり。下の Actions ログを確認してから判断してください' }}**
+            実行ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      # 必須項目の不足は「警告」に留める（ジョブは緑のまま）。
+      # 2026-09 時点で確定済み 22 件すべてに「経理連絡事項」が無く、失敗扱いにすると毎回赤になるため。
+      # 既存分を直し終えたら、この step を `exit 1` にして必須化する。
+      - name: 必須項目に不足があれば警告
+        if: steps.check.outcome == 'failure'
+        run: |
+          cat "$RUNNER_TEMP/check.txt"
+          echo "::warning::確定済みの要項に必須項目の不足があります。PR の本文と上のログを確認してください"

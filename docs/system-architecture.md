@@ -140,9 +140,10 @@ flowchart TB
 flowchart LR
   DEV["開発者<br/>git push"] --> GH["GitHub<br/>chishokan/meeting_support"]
   GH -->|"自動デプロイ"| VC["Vercel 本番"]
-  GDOC["要項ドキュメント<br/>（Google ドキュメント）"] -->|"Markdown で書き出し"| IMP["scripts/import-yoko.mjs<br/>1タブ＝1ファイルに分割<br/>front matter 生成（status: 下書き）"]
-  IMP --> CHK["担当者が確認<br/>status: 確定 に変更<br/>scripts/check-yoko.mjs"]
-  CHK -->|"commit & push"| GH
+  GDOC["要項ドキュメント<br/>（Google ドキュメント）<br/>担当者がステータスを「確定」に"] -->|"Drive API で Markdown 書き出し<br/>（毎日 03:00 JST / GAS 検知で即時）"| ACT["GitHub Actions sync-yoko<br/>import-yoko.mjs --sync<br/>check-yoko.mjs --confirmed"]
+  ACT -->|"PR sync/yoko"| REV["総務が差分を確認してマージ"]
+  REV --> GH
+  GASY["apps_script/YokoSync.gs<br/>1時間おきに確定タブを検知"] -->|"repository_dispatch"| ACT
   GASSRC["apps_script/Code.gs"] -->|"手動で貼り付け・再デプロイ"| GASWEB["Apps Script Web アプリ"]
   ENV["Vercel 環境変数<br/>ANTHROPIC_API_KEY / GEMINI_API_KEY<br/>APPS_SCRIPT_URL / APPS_SCRIPT_TOKEN<br/>AGENT_MODEL / GEMINI_MODEL"] --> VC
 ```
@@ -431,7 +432,7 @@ erDiagram
 | ② Google → git（ナレッジ同期） | 要項だけ。書き出し→取り込み→確認→push をすべて人手で行う | **要項の「確定」を起点に自動化する**（下記 4-1） |
 | ③ アプリ → git（読み取り・検索） | 要項と用語辞書だけを、ビルド同梱ファイルから全文読み | **保留**。基本機能の開発完了後、全体を組み直すタイミングで着手（下記 4-2） |
 
-### 4-1. ② 要項の確定 → git 自動同期（設計）
+### 4-1. ② 要項の確定 → git 自動同期（実装済み・要セットアップ）
 
 **起点**: 要項ドキュメント（Google ドキュメント）の各タブ ＜基本情報＞ の「ステータス」が「確定」になったこと。
 確定していないタブは git に流さない（下書きの金額・期限が AI に渡る事故を防ぐ。現行ルールを維持）。
@@ -453,6 +454,9 @@ flowchart LR
   ACT --> EXP --> IMP --> CHK --> PR --> REV -->|"main にマージ"| VC
 ```
 
+実装: `.github/workflows/sync-yoko.yml`・`.github/workflows/check-yoko.yml`・`scripts/export-yoko-doc.mjs`・
+`scripts/import-yoko.mjs --sync`・`apps_script/YokoSync.gs`。セットアップ手順は README「自動同期」の節。
+
 **処理の中身**
 
 1. **検知**: Apps Script が要項ドキュメントのタブを走査し、「ステータス：確定」のタブの一覧とハッシュを Script Properties に持つ。前回と差があれば GitHub の `repository_dispatch` を叩く。トリガーは編集時（onEdit 相当は Docs では使えないため時間主導で 1 時間おき）または夜間 1 回。
@@ -466,13 +470,15 @@ flowchart LR
    - git 側が確定だったタブがドキュメント側で確定でなくなった場合は `status: 下書き` に戻す（AI が答えなくなる）
    - `_` 始まりのファイル・テンプレートタブは今までどおり触らない
 4. **検査**: `check-yoko.mjs --confirmed` を CI として実行する。不足があれば PR に赤を付ける（ファイルは書くが、マージを止める）。
-5. **PR**: 差分があるときだけ `sync/yoko-YYYYMMDD` ブランチで PR を作る。総務がマージ。マージで Vercel が再デプロイし、要項QA に反映される。
+5. **PR**: 差分があるときだけ固定ブランチ `sync/yoko` で PR を作る（開いている PR があればそこに積む。PR が溜まらないようにするため）。総務がマージ。マージで Vercel が再デプロイし、要項QA に反映される。
 
 **先に決めておくこと**
 
 - **ファイル名の突き合わせ鍵**。今の 24 ファイルは取り込み後に人手で `2026-07_夏期_中等部.md` のように改名されており、タブ順の連番（`01_…`）とは一致しない。自動化では **front matter の `title` を鍵**にするので、ドキュメント側の講座名を変えると別ファイル扱いになる。講座名の変更は「旧ファイルを削除する PR」とセットで行う運用にする。
 - **認証情報の置き場**。Google サービスアカウントの鍵は GitHub Secrets。GAS から dispatch する場合は GitHub の fine-grained トークン（Contents: write のみ）を Script Properties に置く。Vercel 側には何も足さない。
 - **マージの自動化**。当面は人がマージする。check が緑なら自動マージにするかは運用が回ってから決める。
+- **必須項目チェックの必須化**。2026-09 時点で確定済み 22 件すべてに「経理連絡事項」が無いため、チェックは当面「警告」に留めている。既存分を直したら必須化する（README 参照）。
+- **旧形式のタブ**。＜基本情報＞が無いタブは同期の対象外（触らない）。自動同期に載せたい要項にはタブに ＜基本情報＞ を足す。
 
 **この設計で変わらないこと**: `status: 確定` 以外は AI に渡さない、個人情報を git に入れない、Google ドキュメントを実行時に直接読まない。
 
