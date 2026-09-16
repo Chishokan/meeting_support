@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { STAFF } from '@/lib/staff';
 import YokoCard, { type YokoCardData } from '@/components/YokoCard';
 import MinutesDetail from '@/components/MinutesDetail';
+import ShareItemDetail from '@/components/ShareItemDetail';
 import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
 import type { ProgressEntry } from '@/lib/progressPrompt';
 import type { SuccessRow } from '@/app/api/success/route';
@@ -51,6 +52,8 @@ export default function DashboardUI({
   const [cases, setCases] = useState<SuccessRow[]>([]);
   const [minutes, setMinutes] = useState<MinutesRow[]>([]);
   const [shareItems, setShareItems] = useState<ShareRow[]>([]);
+  // ［詳細］で開く事前共有事項。議事録と同じくこのページ上で開く。
+  const [openShare, setOpenShare] = useState<ShareRow | null>(null);
   // ［詳細］で開く議事録。画面を移らずにこのページ上で開く。
   const [openMinutes, setOpenMinutes] = useState<MinutesRow | null>(null);
   const [yoko, setYoko] = useState<YokoCardData[]>([]);
@@ -237,8 +240,10 @@ export default function DashboardUI({
                   <span className="share-meta">{s.campus}／{s.user}　{fmtDateTime(s.ts)}</span>
                 </div>
                 <div className="share-title">{s.title}</div>
-                {s.point && <p className="share-line"><b>論点</b>{s.point}</p>}
-                {s.opinion && <p className="share-line"><b>意見</b>{s.opinion}</p>}
+                {/* 経緯・論点・意見はカードに入れると見切れるので、詳細で全文を読む */}
+                <div className="share-foot">
+                  <button className="dm-detail" onClick={() => setOpenShare(s)}>詳細</button>
+                </div>
               </li>
             ))}
         </ul>
@@ -323,6 +328,9 @@ export default function DashboardUI({
         {/* 議事録の詳細（ポップアップ）。議事録画面と同じ部品を使う。 */}
         {openMinutes && (
           <MinutesDetail row={openMinutes} onClose={() => setOpenMinutes(null)} />
+        )}
+        {openShare && (
+          <ShareItemDetail row={openShare} onClose={() => setOpenShare(null)} />
         )}
       </div>
     );
