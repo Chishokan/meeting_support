@@ -9,6 +9,7 @@ import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMi
 import type { ProgressEntry } from '@/lib/progressPrompt';
 import type { SuccessRow } from '@/app/api/success/route';
 import type { MinutesRow } from '@/app/api/dept-minutes/list/route';
+import type { ShareRow } from '@/app/api/share-items/route';
 
 type ProgressItem = { ts: string; campus: string; user: string; progress: ProgressEntry[] };
 
@@ -25,6 +26,9 @@ const MAX_SHOWN_CASES = 6;
 // ダッシュボードに出す直近の議事録・要項カードの件数。
 const MAX_SHOWN_MINUTES = 5;
 const MAX_SHOWN_YOKO = 4;
+// 事前共有事項のカード件数。協議・決裁は会議で扱うので、報告より前に出す。
+const MAX_SHOWN_SHARE = 6;
+const SHARE_ORDER: Record<string, number> = { 協議: 0, 決裁: 1, 報告: 2 };
 
 function fmtDateTime(s: string) {
   // GAS からは 'yyyy/MM/dd HH:mm' 等の文字列で来る。日付部分だけ簡潔に表示。
@@ -46,6 +50,7 @@ export default function DashboardUI({
   const [deptItems, setDeptItems] = useState<string[]>([]);
   const [cases, setCases] = useState<SuccessRow[]>([]);
   const [minutes, setMinutes] = useState<MinutesRow[]>([]);
+  const [shareItems, setShareItems] = useState<ShareRow[]>([]);
   // ［詳細］で開く議事録。画面を移らずにこのページ上で開く。
   const [openMinutes, setOpenMinutes] = useState<MinutesRow | null>(null);
   const [yoko, setYoko] = useState<YokoCardData[]>([]);
@@ -57,12 +62,13 @@ export default function DashboardUI({
     (async () => {
       try {
         // 中間報告は非表示のあいだ取得しない（GAS への無駄な往復を減らす）。
-        const [statusRes, itemsRes, successRes, minutesRes, yokoRes] = await Promise.all([
+        const [statusRes, itemsRes, successRes, minutesRes, yokoRes, shareRes] = await Promise.all([
           SHOW_PROGRESS ? fetch('/api/progress/latest') : Promise.resolve(null),
           SHOW_PROGRESS && !isAdmin ? fetch('/api/progress/items') : Promise.resolve(null),
           fetch('/api/success').catch(() => null),
           fetch('/api/dept-minutes/list?scope=minutes').catch(() => null),
           fetch('/api/yoko-qa').catch(() => null),
+          fetch('/api/share-items').catch(() => null),
         ]);
         if (statusRes) {
           const j = await statusRes.json().catch(() => ({}));
@@ -92,6 +98,10 @@ export default function DashboardUI({
         const j5 = yokoRes ? await yokoRes.json().catch(() => ({})) : {};
         if (!alive) return;
         if (j5?.ok && Array.isArray(j5.cards)) setYoko(j5.cards as YokoCardData[]);
+
+        const j6 = shareRes ? await shareRes.json().catch(() => ({})) : {};
+        if (!alive) return;
+        if (j6?.ok && Array.isArray(j6.items)) setShareItems(j6.items as ShareRow[]);
       } catch {
         if (alive) setNote('情報の取得に失敗しました。');
       } finally {
@@ -200,6 +210,42 @@ export default function DashboardUI({
     </div>
   );
 
+  // 直近の事前共有事項。会議AIで作り「報告」で転記した「協議・決裁・報告」を全部門分まとめる。
+  // 会議の前にここを見れば、当日どこで議論になるかが分かる状態にするのが狙い。
+  const sharePanel = (
+    <div className="dash-panel">
+      <h2>
+        直近の事前共有事項
+        <Link href="/chat" className="panel-more">会議AIでつくる</Link>
+      </h2>
+      {shareItems.length === 0 ? (
+        <p className="dash-empty">
+          {loading
+            ? '読み込み中…'
+            : 'まだ事前共有事項はありません。会議AIで事前報告をまとめ、'}
+          {!loading && <><Link href="/report">報告</Link>から転記すると、ここに集まります。</>}
+        </p>
+      ) : (
+        <ul className="share-list">
+          {[...shareItems]
+            .sort((a, b) => (SHARE_ORDER[a.kind] ?? 9) - (SHARE_ORDER[b.kind] ?? 9))
+            .slice(0, MAX_SHOWN_SHARE)
+            .map((s, i) => (
+              <li key={`${s.ts}-${i}`} className={`share-item ${s.kind === '協議' ? 'k-giron' : s.kind === '決裁' ? 'k-kessai' : 'k-hokoku'}`}>
+                <div className="share-top">
+                  <span className="share-kind">{s.kind || '報告'}</span>
+                  <span className="share-meta">{s.campus}／{s.user}　{fmtDateTime(s.ts)}</span>
+                </div>
+                <div className="share-title">{s.title}</div>
+                {s.point && <p className="share-line"><b>論点</b>{s.point}</p>}
+                {s.opinion && <p className="share-line"><b>意見</b>{s.opinion}</p>}
+              </li>
+            ))}
+        </ul>
+      )}
+    </div>
+  );
+
   // 実施中・開始間近の要項。保護者対応でその場で見るものなので、全部門に同じものを出す。
   const yokoPanel = (
     <div className="dash-panel full">
@@ -260,7 +306,7 @@ export default function DashboardUI({
           <h1>ダッシュボード</h1>
           <p>
             {campus}／{name} さん、おつかれさまです。
-            直近の議事録と、いま実施中・開始間近の要項をまとめます。
+            直近の議事録・会議前に共有された協議事項・実施期間中の要項をまとめます。
           </p>
         </div>
 
@@ -269,6 +315,7 @@ export default function DashboardUI({
         <div className="dash-grid">
           {quickStart}
           {minutesPanel}
+          {sharePanel}
           {yokoPanel}
           {successPanel}
         </div>

@@ -4,6 +4,8 @@
  * アプリ（Vercel）から送られる以下を Google へ転記する。
  *   - action:'log'          … 会議AI / 議事録の会話ログ → スプレッドシート「会話ログ」
  *   - action:'saveMinutes'  … 議事録スレッドの保存       → スプレッドシート「議事録」
+ *   - action:'saveShareItems'  … 「報告」転記時の協議・決裁・報告 → 「事前共有事項」シートに1件1行
+ *   - action:'listShareItems'  … ダッシュボードの事前共有事項カード用の一覧
  *   - action:'saveDeptMinutes' … 「部門会議議事録」の保存 → 「部門会議議事録」シートに1会議1行＋
  *                                                          「部門決定事項」シートに1決定1行
  *   - action:'listDeptMinutes' … 部門会議議事録の一覧
@@ -166,6 +168,14 @@ function doPost(e) {
 
     if (action === 'listGoals') {
       return json_(listGoals_(data));
+    }
+
+    if (action === 'saveShareItems') {
+      return json_(saveShareItems_(data));
+    }
+
+    if (action === 'listShareItems') {
+      return json_(listShareItems_(data));
     }
 
     if (action === 'saveDeptMinutes') {
@@ -485,6 +495,49 @@ function listSuccess_(data) {
   }
   items.reverse();
   if (items.length > 100) items = items.slice(0, 100);
+  return { ok: true, items: items };
+}
+
+var SHARE_HEADERS = ['日時', '部門', '担当', '種別', '件名', '経緯', '論点', '報告者の意見'];
+
+// 「報告」から転記された事前報告の中の「協議・決裁・報告」を1件1行で記録する。
+// data.items = [{ kind, title, background, point, opinion }, ...]（Next 側で抽出済み）。
+// ダッシュボードの「直近の事前共有事項」カードのもとになる。
+function saveShareItems_(data) {
+  var items = data.items;
+  if (!items || !items.length) return { ok: true, count: 0 };
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('事前共有事項') || ss.insertSheet('事前共有事項');
+  if (sh.getLastRow() === 0) sh.appendRow(SHARE_HEADERS);
+  var ts = data.ts || nowIso_();
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i] || {};
+    sh.appendRow([
+      ts, data.campus || '', data.user || '', it.kind || '',
+      it.title || '', it.background || '', it.point || '', it.opinion || ''
+    ]);
+  }
+  return { ok: true, count: items.length };
+}
+
+// 事前共有事項（新しい順・最大150件）を返す。ダッシュボードのカードで使う。
+function listShareItems_(data) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('事前共有事項');
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  var values = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    items.push({
+      ts: cellStr_(r[0]), campus: String(r[1] == null ? '' : r[1]), user: String(r[2] == null ? '' : r[2]),
+      kind: String(r[3] == null ? '' : r[3]), title: String(r[4] == null ? '' : r[4]),
+      background: String(r[5] == null ? '' : r[5]), point: String(r[6] == null ? '' : r[6]),
+      opinion: String(r[7] == null ? '' : r[7])
+    });
+  }
+  items.reverse();
+  if (items.length > 150) items = items.slice(0, 150);
   return { ok: true, items: items };
 }
 

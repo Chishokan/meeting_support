@@ -204,6 +204,31 @@ button.primary:disabled { opacity: .5; cursor: default; }
 }
 .dash-panel { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
 .dash-panel h2 { font-size: 14px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+/* 事前共有事項（協議・決裁・報告）のカード */
+.share-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.share-item {
+  border: 1px solid var(--line); border-left-width: 3px; border-radius: 9px;
+  padding: 9px 12px; background: #fff;
+}
+/* 会議で扱うもの（協議・決裁）を色で区別する。報告は読むだけなので控えめに。 */
+.share-item.k-giron { border-left-color: var(--navy); }
+.share-item.k-kessai { border-left-color: #b06a00; }
+.share-item.k-hokoku { border-left-color: #cdd8e3; }
+.share-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 3px; }
+.share-kind {
+  font-size: 10.5px; font-weight: 700; border-radius: 999px; padding: 1px 9px;
+  color: #1f4e78; background: #eaf1f8; border: 1px solid #cfe0ee;
+}
+.k-kessai .share-kind { color: #8a5a00; background: #fdf3d6; border-color: #f0dfa8; }
+.k-hokoku .share-kind { color: #667; background: #f2f5f9; border-color: #e3e6ea; }
+.share-meta { font-size: 11px; color: #97a1ac; margin-left: auto; }
+.share-title { font-size: 13.5px; font-weight: 700; color: #2a2f36; line-height: 1.6; overflow-wrap: anywhere; }
+.share-line { margin: 3px 0 0; font-size: 12px; line-height: 1.7; color: #5a636d; overflow-wrap: anywhere; }
+.share-line b {
+  display: inline-block; min-width: 2.6em; margin-right: 6px;
+  font-size: 10.5px; font-weight: 700; color: #8a94a0;
+}
+
 /* 取得に失敗したときの一言（パネルの上に出す） */
 .dash-note {
   margin: 16px 24px -6px; padding: 9px 12px; font-size: 13px; color: #8a6d1a;

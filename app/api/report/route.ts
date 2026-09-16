@@ -1,5 +1,6 @@
 import { getSession, type Session } from '@/lib/auth';
 import { extractSuccessCases } from '@/lib/successCases';
+import { extractShareItems } from '@/lib/shareItems';
 
 export const runtime = 'nodejs';
 
@@ -23,6 +24,32 @@ async function shareSuccessCases(url: string, session: Session, content: string)
     });
     const j = await res.json().catch(() => null);
     return res.ok && j && j.ok === true ? cases.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+// 事前報告から「協議・決裁・報告」を取り出し、全社集約用シートへ1件ずつ記録する。
+// ダッシュボードの「直近の事前共有事項」カードのもとになる。
+// 成功事例と同じく転記の付随処理なので、失敗しても転記そのものは成功扱いにする。
+async function shareAgendaItems(url: string, session: Session, content: string): Promise<number> {
+  const items = extractShareItems(content);
+  if (items.length === 0) return 0;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'saveShareItems',
+        token: process.env.APPS_SCRIPT_TOKEN || '',
+        ts: new Date().toISOString(),
+        campus: session.campus,
+        user: session.name,
+        items,
+      }),
+    });
+    const j = await res.json().catch(() => null);
+    return res.ok && j && j.ok === true ? items.length : 0;
   } catch {
     return 0;
   }
@@ -60,8 +87,11 @@ export async function POST(req: Request) {
     // GAS(ContentService)は失敗時も HTTP 200 を返すため、本文の ok/reason を必ず確認する。
     const j = await res.json().catch(() => null);
     if (res.ok && j && j.ok === true) {
-      const shared = await shareSuccessCases(url, session, content);
-      return Response.json({ ok: true, success: shared });
+      const [shared, agenda] = await Promise.all([
+        shareSuccessCases(url, session, content),
+        shareAgendaItems(url, session, content),
+      ]);
+      return Response.json({ ok: true, success: shared, shareItems: agenda });
     }
     return Response.json(
       { ok: false, reason: (j && j.reason) || 'upstream_error' },
