@@ -87,6 +87,13 @@ for (const f of files) {
     if (confirmed) incomplete++;
   }
 
+  // 経理記入欄が空のまま確定している。経理の請求方法が決まる前にAIが答えないよう、注意を出す
+  //（旧テンプレートの要項には欄が無いので、欄がある場合だけ見る）。
+  if (confirmed && /経理記入日[：:]/.test(raw) && !/経理記入日[：:][ \t\u3000]*\S/.test(raw)) {
+    console.log(`注意   [確定] ${f.replace(ROOT + '/', '')}`);
+    console.log('       経理記入欄の「経理記入日」が空。経理の記入を待ってから確定・取り込みするのが原則');
+  }
+
   const mark = confirmed ? '確定' : '下書き';
   if (missing.length === 0) {
     console.log(`OK   [${mark}] ${f.replace(ROOT + '/', '')}`);
