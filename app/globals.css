@@ -246,6 +246,27 @@ button.primary:disabled { opacity: .5; cursor: default; }
 /* パネル見出しの右端に置く「すべて見る」等のリンク */
 .panel-more { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--navy); text-decoration: none; }
 .panel-more:hover { text-decoration: underline; }
+/* 見出し右の「成功事例を見る」など、リンクではなく開閉ボタンのとき */
+.panel-more.as-button { background: none; border: none; padding: 0; cursor: pointer; font-family: inherit; }
+
+/* ダッシュボード: 直近の中間報告（全部門）。部門ごとに1件ずつカードで出す。 */
+.prog-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+.prog-item {
+  border: 1px solid var(--line); border-left-width: 3px; border-left-color: #cdd8e3;
+  border-radius: 9px; padding: 9px 12px; background: #fff;
+}
+/* 自部門は左の線を濃くして、他部門の中から見つけやすくする */
+.prog-item.mine { border-left-color: var(--navy); }
+.prog-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.prog-campus { font-size: 13px; font-weight: 700; color: #2a2f36; }
+.prog-mine {
+  font-size: 10px; font-weight: 700; border-radius: 999px; padding: 1px 7px;
+  color: #1f4e78; background: #eaf1f8; border: 1px solid #cfe0ee;
+}
+.prog-item .member-progress li { font-size: 12.5px; }
 .dash-empty { font-size: 13px; color: #8a94a0; line-height: 1.7; }
 .dash-empty a { color: var(--navy); }
 .quick-links { display: flex; flex-direction: column; gap: 10px; }

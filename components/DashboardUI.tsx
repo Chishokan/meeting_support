@@ -20,10 +20,18 @@ type ProgressItem = { ts: string; campus: string; user: string; progress: Progre
 //   false の間は中間報告の API も呼ばない。
 const SHOW_PROGRESS = false;
 
+// 中間報告の「直近の報告内容」カードだけは SHOW_PROGRESS と別に出す。
+// 提出状況（誰が出していないか）は止めたままで、報告の中身は全部門ぶん共有したいため。
+const SHOW_RECENT_PROGRESS = true;
+
 // メンバー行に出す進捗の最大件数（超えた分は「他N件」にまとめる）。
 const MAX_SHOWN_ITEMS = 3;
 // 成功事例パネルに出す件数（新しい順）。
 const MAX_SHOWN_CASES = 6;
+// 直近の中間報告カードに出す件数（部門ごとに1件ずつ、新しい順）。
+const MAX_SHOWN_PROGRESS = 8;
+// 1枚のカードに出す進捗項目の件数（超えた分は「他N件」）。
+const MAX_SHOWN_PROGRESS_ITEMS = 4;
 // ダッシュボードに出す直近の議事録・要項カードの件数。
 const MAX_SHOWN_MINUTES = 5;
 const MAX_SHOWN_YOKO = 4;
@@ -59,6 +67,8 @@ export default function DashboardUI({
   const [yoko, setYoko] = useState<YokoCardData[]>([]);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
+  // 成功事例は既定で閉じておく。毎日見るものではなく、必要なときに開く扱いにする。
+  const [showCases, setShowCases] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -66,7 +76,7 @@ export default function DashboardUI({
       try {
         // 中間報告は非表示のあいだ取得しない（GAS への無駄な往復を減らす）。
         const [statusRes, itemsRes, successRes, minutesRes, yokoRes, shareRes] = await Promise.all([
-          SHOW_PROGRESS ? fetch('/api/progress/latest') : Promise.resolve(null),
+          SHOW_PROGRESS || SHOW_RECENT_PROGRESS ? fetch('/api/progress/latest') : Promise.resolve(null),
           SHOW_PROGRESS && !isAdmin ? fetch('/api/progress/items') : Promise.resolve(null),
           fetch('/api/success').catch(() => null),
           fetch('/api/dept-minutes/list?scope=minutes').catch(() => null),
@@ -125,6 +135,12 @@ export default function DashboardUI({
     for (const it of items) if (!map.has(it.campus)) map.set(it.campus, it);
     return map;
   }, [items]);
+
+  // 部門ごとの直近1件を新しい順に。自部門も他部門も同じ並びに混ぜる。
+  const recentProgress = useMemo(
+    () => [...latestByCampus.values()].sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, MAX_SHOWN_PROGRESS),
+    [latestByCampus],
+  );
 
   // 自部門メンバーごとの直近1件。
   const latestByMember = useMemo(() => {
@@ -251,6 +267,56 @@ export default function DashboardUI({
     </div>
   );
 
+  // 直近の中間報告（全部門）。
+  // 部門ごとの直近1件を新しい順に出す。単純に新しい順の N 件にすると、報告の多い部門で
+  // 埋まって他部門が見えなくなる。「自部門だけでなく他部門も見られる」ことが目的なので、
+  // 部門を1件ずつ拾ったうえで新しい順に並べる。
+  const progressPanel = (
+    <div className="dash-panel full">
+      <h2>
+        直近の中間報告（全部門）
+        <Link href="/progress" className="panel-more">中間報告を送る</Link>
+      </h2>
+      {recentProgress.length === 0 ? (
+        <p className="dash-empty">
+          {loading ? '読み込み中…' : 'まだ中間報告はありません。'}
+          {!loading && <> <Link href="/progress">中間報告</Link>から送れます。</>}
+        </p>
+      ) : (
+        <ul className="prog-list">
+          {recentProgress.map((it) => {
+            const shown = it.progress.slice(0, MAX_SHOWN_PROGRESS_ITEMS);
+            const rest = it.progress.length - shown.length;
+            return (
+              <li key={`${it.campus}-${it.ts}`} className={`prog-item${it.campus === campus ? ' mine' : ''}`}>
+                <div className="prog-top">
+                  <span className="prog-campus">{it.campus}</span>
+                  {it.campus === campus && <span className="prog-mine">自部門</span>}
+                  <span className="share-meta">{it.user}　{fmtDateTime(it.ts)}</span>
+                </div>
+                {shown.length === 0 ? (
+                  <div className="member-progress-empty">報告内容の記録がありません。</div>
+                ) : (
+                  <ul className="member-progress">
+                    {shown.map((p, i) => (
+                      <li key={i}>
+                        <span className="progress-name">{p.name}</span>
+                        <span className={`progress-status ${p.status === '完了' ? 'done' : ''}`}>
+                          {p.status || '—'}
+                        </span>
+                      </li>
+                    ))}
+                    {rest > 0 && <li className="progress-more">他{rest}件</li>}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+
   // 実施中・開始間近の要項。保護者対応でその場で見るものなので、全部門に同じものを出す。
   const yokoPanel = (
     <div className="dash-panel full">
@@ -273,30 +339,44 @@ export default function DashboardUI({
     </div>
   );
 
+  // 成功事例は既定では畳んでおく。毎日見るものではないので、
+  // 議事録・共有事項・要項より前に場所を取らないようにする。
   const successPanel = (
     <div className="dash-panel full">
-      <h2>この夏の成功事例（全部門）</h2>
-      {cases.length === 0 ? (
-        <p className="dash-empty">
-          {loading
-            ? '読み込み中…'
-            : 'まだ成功事例はありません。会議AIの「夏の結果報告」でまとめ、'}
-          {!loading && <><Link href="/report">報告</Link>から転記すると、ここに集まります。</>}
-        </p>
-      ) : (
-        <ul className="case-list">
-          {cases.slice(0, MAX_SHOWN_CASES).map((c, i) => (
-            <li key={i} className="case-item">
-              <div className="case-head">
-                <span className="case-title">{c.title || '（件名なし）'}</span>
-                <span className="recent-date">{c.campus}／{c.user}　{fmtDateTime(c.ts)}</span>
-              </div>
-              {c.action && <p className="case-line"><b>取り組み</b>{c.action}</p>}
-              {c.result && <p className="case-line"><b>結果</b>{c.result}</p>}
-              {c.point && <p className="case-line"><b>ポイント</b>{c.point}</p>}
-            </li>
-          ))}
-        </ul>
+      <h2>
+        この夏の成功事例（全部門）
+        <button
+          type="button"
+          className="panel-more as-button"
+          onClick={() => setShowCases((v) => !v)}
+          aria-expanded={showCases}
+        >
+          {showCases ? '閉じる' : `成功事例を見る${cases.length > 0 ? `（${cases.length}件）` : ''}`}
+        </button>
+      </h2>
+      {showCases && (
+        cases.length === 0 ? (
+          <p className="dash-empty">
+            {loading
+              ? '読み込み中…'
+              : 'まだ成功事例はありません。会議AIの「夏の結果報告」でまとめ、'}
+            {!loading && <><Link href="/report">報告</Link>から転記すると、ここに集まります。</>}
+          </p>
+        ) : (
+          <ul className="case-list">
+            {cases.slice(0, MAX_SHOWN_CASES).map((c, i) => (
+              <li key={i} className="case-item">
+                <div className="case-head">
+                  <span className="case-title">{c.title || '（件名なし）'}</span>
+                  <span className="recent-date">{c.campus}／{c.user}　{fmtDateTime(c.ts)}</span>
+                </div>
+                {c.action && <p className="case-line"><b>取り組み</b>{c.action}</p>}
+                {c.result && <p className="case-line"><b>結果</b>{c.result}</p>}
+                {c.point && <p className="case-line"><b>ポイント</b>{c.point}</p>}
+              </li>
+            ))}
+          </ul>
+        )
       )}
     </div>
   );
@@ -311,7 +391,7 @@ export default function DashboardUI({
           <h1>ダッシュボード</h1>
           <p>
             {campus}／{name} さん、おつかれさまです。
-            直近の議事録・会議前に共有された協議事項・実施期間中の要項をまとめます。
+            直近の議事録・会議前に共有された協議事項・全部門の中間報告・実施期間中の要項をまとめます。
           </p>
         </div>
 
@@ -321,6 +401,7 @@ export default function DashboardUI({
           {quickStart}
           {minutesPanel}
           {sharePanel}
+          {SHOW_RECENT_PROGRESS && progressPanel}
           {yokoPanel}
           {successPanel}
         </div>
