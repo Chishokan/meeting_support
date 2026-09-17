@@ -5,8 +5,8 @@
 // 完了予定日・原因・その他の共有事項はここで読む。
 // ★事前共有事項（ShareItemDetail）・議事録（MinutesDetail）と同じ見た目の枠（dm-modal-*）を使う。
 
-import { useEffect } from 'react';
 import type { ProgressEntry } from '@/lib/progressPrompt';
+import { useModalDismiss } from '@/lib/useModalDismiss';
 
 export type ProgressRow = {
   ts: string;
@@ -29,13 +29,8 @@ export default function ProgressDetail({
   row: ProgressRow;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // Esc で閉じる／開いているあいだ後ろのページを動かさない
+  useModalDismiss(onClose);
 
   return (
     <div className="dm-modal-bg" onClick={onClose}>

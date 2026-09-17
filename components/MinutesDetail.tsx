@@ -4,8 +4,8 @@
 // 「部門会議議事録」画面とダッシュボードの両方から、カードの［詳細］で開く。
 // ★見た目・項目を変えるときはここだけを直せば両方に反映される。
 
-import { useEffect } from 'react';
 import type { MinutesRow } from '@/app/api/dept-minutes/list/route';
+import { useModalDismiss } from '@/lib/useModalDismiss';
 
 // 「2026/9/14 18:00〜19:30」から日付だけを取り出す。読めなければそのまま出す。
 function fmtDate(s: string) {
@@ -21,13 +21,8 @@ export default function MinutesDetail({
   onClose: () => void;
 }) {
   // 開いているあいだは Esc で閉じられるようにする。
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // Esc で閉じる／開いているあいだ後ろのページを動かさない
+  useModalDismiss(onClose);
 
   return (
     <div className="dm-modal-bg" onClick={onClose}>

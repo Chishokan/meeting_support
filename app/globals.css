@@ -231,7 +231,8 @@ button.primary:disabled { opacity: .5; cursor: default; }
 }
 
 /* 詳細ポップアップの中身（経緯・論点・報告者の意見） */
-.share-detail-sec + .share-detail-sec { margin-top: 16px; }
+.share-detail-sec { margin-top: 16px; }
+.share-detail-sec:first-child { margin-top: 0; }
 .share-detail-sec h3 {
   font-size: 12px; font-weight: 700; color: var(--navy); margin: 0 0 5px;
   padding-bottom: 4px; border-bottom: 1px solid var(--line);
@@ -322,6 +323,19 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .member-progress-empty { font-size: 12px; color: #97a1ac; margin-top: 6px; }
 @media (max-width: 720px) {
   .dash-panel.wide, .dash-panel.full { grid-column: auto; }
+}
+
+/* スマホ幅では、パネルの余白とカードの余白が二重になって中身の幅が足りなくなる。
+   ダッシュボードに置いた要項カードは講座名が3行に折り返していた（390px で本文104px）。
+   入れ子の左右の余白だけを詰めて、中身に幅を回す。 */
+@media (max-width: 480px) {
+  .dash-panel { padding: 14px 12px; }
+  .dash-panel .iqa-cards { padding: 12px 0 0; }
+  .dash-panel .prog-list { grid-template-columns: 1fr; }
+  /* 区分の名前が長い料金（「一般生／全コース一括申込み（上記5つ）」など）は
+     折り返さないと金額が右端へ押し出されて読みにくい。 */
+  .yq-whole-fee, .yq-item-fee { white-space: normal; overflow-wrap: anywhere; }
+  .yq-item { grid-template-columns: 5.4em 1fr; gap: 2px 8px; }
 }
 .soon-panel { background: #fbfcfd; border-style: dashed; }
 
@@ -954,7 +968,13 @@ button.primary:disabled { opacity: .5; cursor: default; }
     display: flex; position: fixed; top: 0; left: 0; right: 0; height: 50px; z-index: 30;
     align-items: center; gap: 12px; padding: 0 14px; background: var(--navy); color: #fff;
   }
-  .hamburger { background: transparent; border: none; color: #fff; font-size: 22px; cursor: pointer; padding: 0; }
+  /* 指で押す唯一のメニュー。文字だけだと 22x30 しか無く、押し外しが起きる。
+     見た目は変えずに当たり判定だけ 44x44 にする（左の余白はマイナスで戻す）。 */
+  .hamburger {
+    background: transparent; border: none; color: #fff; font-size: 22px; cursor: pointer;
+    width: 44px; height: 44px; padding: 0; margin: 0 -12px 0 -11px;
+    display: flex; align-items: center; justify-content: center;
+  }
   .mobilebar-title { font-size: 15px; font-weight: 700; flex: 1; }
   .mobilebar-who { font-size: 12px; opacity: .85; }
   .composer { left: 0; }
@@ -966,4 +986,20 @@ button.primary:disabled { opacity: .5; cursor: default; }
   .new-thread { width: auto; white-space: nowrap; margin-bottom: 0; flex-shrink: 0; }
   .thread-item { flex-shrink: 0; min-width: 140px; }
   .thread-empty { display: none; }
+
+  /* ── スマホでの押しやすさ ────────────────────────────────
+     文字リンク・小さなボタンは高さが 17〜27px しかなく、指では押し外す。
+     見た目（文字の大きさ・間隔）は変えずに、当たり判定だけ広げる。
+     余白を足したぶんはマイナスマージンで戻し、並びがずれないようにする。 */
+  .panel-more { padding: 11px 6px; margin: -11px -6px -11px auto; }
+  .yq-toggle { padding: 11px 4px; margin: -11px -4px; }
+  .doc-link { display: inline-block; padding: 11px 4px; margin: -11px -4px; }
+  .dm-detail, .dm-reload { min-height: 36px; padding: 7px 14px; }
+  /* 画面の切り替えに使うボタンは押す回数が多いので、少し高くする */
+  .dm-tab, .mode-btn, .reset-chat, .iqa-example { min-height: 40px; }
+
+  /* 入力欄が画面の1/4を占め、キーボードを出すと会話がほとんど見えなくなる。
+     スマホでは低くする（.iqa-page 側の指定が優先されるQA画面はそのまま）。 */
+  .composer textarea { height: 88px; min-height: 66px; }
+  .messages { padding-bottom: 200px; }
 }

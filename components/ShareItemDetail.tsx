@@ -5,8 +5,8 @@
 // 経緯・論点・報告者の意見はここで全文を読む。
 // ★議事録の詳細（MinutesDetail）と同じ見た目の枠（dm-modal-*）を使っている。
 
-import { useEffect } from 'react';
 import type { ShareRow } from '@/app/api/share-items/route';
+import { useModalDismiss } from '@/lib/useModalDismiss';
 
 function kindClass(kind: string): string {
   if (kind === '協議') return 'k-giron';
@@ -27,13 +27,8 @@ export default function ShareItemDetail({
   row: ShareRow;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // Esc で閉じる／開いているあいだ後ろのページを動かさない
+  useModalDismiss(onClose);
 
   const sections: { label: string; text: string }[] = [
     { label: '経緯', text: row.background },
