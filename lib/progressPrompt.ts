@@ -86,25 +86,39 @@ ${PROGRESS_BLOCK_END}
 - 生徒・保護者の氏名はイニシャルに変換する（例：田中太郎→T.T.）。職員は実名可。機微な情報は最小限。
 `;
 
-export type ProgressEntry = { name: string; status: string };
+export type ProgressEntry = {
+  name: string;
+  status: string;
+  due?: string;   // 完了予定日（未完のときだけ書かれる）
+  cause?: string; // 原因（未完のときだけ書かれる）
+};
 
-// 中間報告の本文（最終出力ブロックの中身）から「項目名」と「進捗」を取り出す。
+// 中間報告の本文から「■ 見出し」の節を取り出す。見出しが無ければ全文を返す。
+function sectionLines(content: string, head: RegExp): string[] {
+  const lines = content.split('\n');
+  const start = lines.findIndex((l) => head.test(l));
+  if (start === -1) return [];
+  const rest = lines.slice(start + 1).findIndex((l) => /^\s*■/.test(l));
+  return lines.slice(start + 1, rest === -1 ? lines.length : start + 1 + rest);
+}
+
+// 中間報告の本文（最終出力ブロックの中身）から「項目名」と進捗を取り出す。
 // 例）"1. 通知表の回収状況" + "   ・進捗：3/11" → { name: '通知表の回収状況', status: '3/11' }
-// 完了予定日・原因は取り出さない（ダッシュボードには出さないため）。
+//
+// 完了予定日・原因も拾う。カードには出さないが、［詳細］のポップアップで出す。
+// ※項目は「進捗」の行で閉じずに、次の番号付き行（または末尾）まで開いておく。
+//   完了予定日・原因は進捗のあとに続くため、進捗で閉じると拾えない。
 export function parseProgressItems(content: string): ProgressEntry[] {
   const out: ProgressEntry[] = [];
   if (!content) return out;
   let current: ProgressEntry | null = null;
   // 「■ 進捗」の見出しがある場合は、その節だけを見る（その他・共有事項の箇条書きを拾わないため）。
   const lines = content.split('\n');
-  const start = lines.findIndex((l) => /^\s*■\s*進捗/.test(l));
-  const section =
-    start === -1
-      ? lines
-      : lines.slice(start + 1, (() => {
-          const rest = lines.slice(start + 1).findIndex((l) => /^\s*■/.test(l));
-          return rest === -1 ? lines.length : start + 1 + rest;
-        })());
+  const section = /^\s*■\s*進捗/m.test(content) ? sectionLines(content, /^\s*■\s*進捗/) : lines;
+
+  const field = (line: string, label: string) =>
+    line.match(new RegExp(`^[・･\\-]?\\s*(?:[（(][^）)]*[）)])?\\s*${label}\\s*[:：]\\s*(.+)$`));
+
   for (const raw of section) {
     const line = raw.trim();
     if (!line) continue;
@@ -115,15 +129,22 @@ export function parseProgressItems(content: string): ProgressEntry[] {
       current = { name: numbered[2].trim(), status: '' };
       continue;
     }
-    const progress = line.match(/^[・･\-]?\s*進捗\s*[:：]\s*(.+)$/);
-    if (progress && current) {
-      current.status = progress[1].trim();
-      out.push(current);
-      current = null;
-    }
+    if (!current) continue;
+    const progress = field(line, '進捗');
+    if (progress) { current.status = progress[1].trim(); continue; }
+    const due = field(line, '完了予定日');
+    if (due) { current.due = due[1].trim(); continue; }
+    const cause = field(line, '原因');
+    if (cause) { current.cause = cause[1].trim(); continue; }
   }
   if (current) out.push(current);
   return out.filter((e) => e.name);
+}
+
+/** 「■ その他・共有事項」の本文。無ければ空文字。 */
+export function parseProgressNote(content: string): string {
+  if (!content) return '';
+  return sectionLines(content, /^\s*■\s*その他/).join('\n').trim();
 }
 
 // 定例項目を解決する。override（管理部門が保存した項目）があればそれ、無ければデフォルト。

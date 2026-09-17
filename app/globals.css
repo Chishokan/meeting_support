@@ -267,6 +267,16 @@ button.primary:disabled { opacity: .5; cursor: default; }
   color: #1f4e78; background: #eaf1f8; border: 1px solid #cfe0ee;
 }
 .prog-item .member-progress li { font-size: 12.5px; }
+.prog-foot { display: flex; justify-content: flex-end; margin-top: 6px; }
+
+/* 中間報告の詳細（ポップアップ）の中身 */
+.prog-detail-list { list-style: none; margin: 0; padding: 0; }
+.prog-detail-list li { padding: 10px 0; border-bottom: 1px solid #f0f2f5; }
+.prog-detail-list li:last-child { border-bottom: none; }
+.prog-detail-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.prog-detail-name { font-size: 13.5px; font-weight: 700; color: #2a2f36; overflow-wrap: anywhere; }
+.prog-detail-line { margin-top: 4px; font-size: 13px; line-height: 1.7; color: #4b535c; }
+.prog-detail-line b { font-weight: 700; color: #8a94a0; margin-right: 8px; font-size: 11.5px; }
 .dash-empty { font-size: 13px; color: #8a94a0; line-height: 1.7; }
 .dash-empty a { color: var(--navy); }
 .quick-links { display: flex; flex-direction: column; gap: 10px; }

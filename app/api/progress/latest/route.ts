@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/auth';
-import { parseProgressItems } from '@/lib/progressPrompt';
+import { parseProgressItems, parseProgressNote } from '@/lib/progressPrompt';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -8,7 +8,9 @@ type GasRow = { ts?: unknown; campus?: unknown; user?: unknown; content?: unknow
 
 // ダッシュボード用：直近の中間報告（部門・報告者・日時・項目ごとの進捗）を GAS から取得する。
 // 「中間報告状況」シートを新しい順に返す（GAS action:'listProgress'）。
-// 本文はここで項目と進捗だけに変換して返す（完了予定日・原因はクライアントへ渡さない）。
+// 本文はここで構造化して返す（項目・進捗・完了予定日・原因・その他共有事項）。
+// カードには項目と進捗だけを出し、完了予定日・原因・共有事項は［詳細］で読む。
+// 本文そのままは返さない（囲みの記号など、画面に出さないものが混ざるため）。
 export async function GET() {
   const session = getSession();
   if (!session) return Response.json({ ok: false, reason: 'unauthorized', items: [] }, { status: 401 });
@@ -25,12 +27,16 @@ export async function GET() {
     const j = await res.json().catch(() => null);
     if (res.ok && j && j.ok === true) {
       const rows: GasRow[] = Array.isArray(j.items) ? j.items : [];
-      const items = rows.map((r) => ({
-        ts: String(r?.ts ?? ''),
-        campus: String(r?.campus ?? ''),
-        user: String(r?.user ?? ''),
-        progress: parseProgressItems(String(r?.content ?? '')),
-      }));
+      const items = rows.map((r) => {
+        const content = String(r?.content ?? '');
+        return {
+          ts: String(r?.ts ?? ''),
+          campus: String(r?.campus ?? ''),
+          user: String(r?.user ?? ''),
+          progress: parseProgressItems(content),
+          note: parseProgressNote(content),
+        };
+      });
       return Response.json({ ok: true, items });
     }
     return Response.json({ ok: false, reason: (j && j.reason) || 'upstream_error', items: [] }, { status: 502 });

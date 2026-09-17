@@ -6,13 +6,20 @@ import { STAFF } from '@/lib/staff';
 import YokoCard, { type YokoCardData } from '@/components/YokoCard';
 import MinutesDetail from '@/components/MinutesDetail';
 import ShareItemDetail from '@/components/ShareItemDetail';
+import ProgressDetail from '@/components/ProgressDetail';
 import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
 import type { ProgressEntry } from '@/lib/progressPrompt';
 import type { SuccessRow } from '@/app/api/success/route';
 import type { MinutesRow } from '@/app/api/dept-minutes/list/route';
 import type { ShareRow } from '@/app/api/share-items/route';
 
-type ProgressItem = { ts: string; campus: string; user: string; progress: ProgressEntry[] };
+type ProgressItem = {
+  ts: string;
+  campus: string;
+  user: string;
+  progress: ProgressEntry[];
+  note?: string; // 「その他・共有事項」。カードには出さず［詳細］で読む
+};
 
 // ★中間報告まわりの表示を一時的に止めている。
 //   再開するときはここを true に戻すだけでよい（提出状況の数値・部門別の状況・
@@ -64,6 +71,8 @@ export default function DashboardUI({
   const [openShare, setOpenShare] = useState<ShareRow | null>(null);
   // ［詳細］で開く議事録。画面を移らずにこのページ上で開く。
   const [openMinutes, setOpenMinutes] = useState<MinutesRow | null>(null);
+  // ［詳細］で開く中間報告。事前共有事項・議事録と同じくポップアップで開く。
+  const [openProgress, setOpenProgress] = useState<ProgressItem | null>(null);
   const [yoko, setYoko] = useState<YokoCardData[]>([]);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
@@ -309,6 +318,10 @@ export default function DashboardUI({
                     {rest > 0 && <li className="progress-more">他{rest}件</li>}
                   </ul>
                 )}
+                {/* 完了予定日・原因・その他の共有事項はカードに入れると見切れるので詳細で読む */}
+                <div className="prog-foot">
+                  <button className="dm-detail" onClick={() => setOpenProgress(it)}>詳細</button>
+                </div>
               </li>
             );
           })}
@@ -412,6 +425,9 @@ export default function DashboardUI({
         )}
         {openShare && (
           <ShareItemDetail row={openShare} onClose={() => setOpenShare(null)} />
+        )}
+        {openProgress && (
+          <ProgressDetail row={openProgress} onClose={() => setOpenProgress(null)} />
         )}
       </div>
     );
