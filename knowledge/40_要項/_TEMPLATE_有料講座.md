@@ -11,6 +11,7 @@ source: 要項テンプレート（Google ドキュメント・有料講座）
   このまま置いておいて構いません。
 
   ■ 本番の記入は Google ドキュメントのテンプレートで
+     （Google ドライブ「14_教務運営 > 04要項」の「有料講座_要項テンプレート（記入用）」）
      https://docs.google.com/document/d/1ZoGnYxV424TelGRnZuAEmCgVIDt5nKXH1d7-OAYc5wc/edit
      タブを複製して書き、Markdown で書き出して取り込みます。
      このファイルはリポジトリ側の控えです（ドキュメント冒頭の使い方・記入例は省いています）。

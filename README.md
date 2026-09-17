@@ -159,16 +159,19 @@ AI が答える（メニュー「要項QA」）。全部門が利用できる（
 聞かれた場合 AI は「まだ確定していないため回答できません」と答える。
 
 ### 要項テンプレート（本番の記入先）
-要項は Google ドキュメントのテンプレートで書く。有料講座と無料講座で2種類ある。
+要項は Google ドキュメントのテンプレートで書く。有料講座と無料講座で2種類あり、
+Google ドライブの「14_教務運営 > 04要項」フォルダに置いている（担当者への共有用）。
+https://drive.google.com/drive/folders/1IwwmmjAqh7yznmtOgFSkTDZrNS3_x-L5
 
 | 種類 | Google ドキュメント | リポジトリ側の控え |
 |---|---|---|
-| 有料講座 | https://docs.google.com/document/d/1ZoGnYxV424TelGRnZuAEmCgVIDt5nKXH1d7-OAYc5wc/edit | `knowledge/40_要項/_TEMPLATE_有料講座.md` |
-| 無料講座（無料体験・説明会・セミナー・無料模試など） | https://docs.google.com/document/d/1MoDgNhn0i5kUV0D_qaUBuf5GevbX5AG_QTxGCVApYL0/edit | `knowledge/40_要項/_TEMPLATE_無料講座.md` |
+| 有料講座 | 「有料講座_要項テンプレート（記入用）」 https://docs.google.com/document/d/1ZoGnYxV424TelGRnZuAEmCgVIDt5nKXH1d7-OAYc5wc/edit | `knowledge/40_要項/_TEMPLATE_有料講座.md` |
+| 無料講座（無料体験・説明会・セミナー・無料模試など） | 「無料講座_要項テンプレート（記入用）」 https://docs.google.com/document/d/1MoDgNhn0i5kUV0D_qaUBuf5GevbX5AG_QTxGCVApYL0/edit | `knowledge/40_要項/_TEMPLATE_無料講座.md` |
 
-タブ「_要項テンプレート（有料講座／無料講座）」を複製 → 講座名にリネーム → 上から埋める →
+テンプレートのタブを複製 → 講座名にリネーム → 上から埋める →
 ＜基本情報＞の「ステータス」を「確定」にする。
-`_` で始まるファイルは要項QAに読み込まれない。
+`_` で始まるファイルは要項QAに読み込まれない。取り込み時は、タブ名が `_` で始まるものと
+「テンプレート」を含むものを飛ばすので、テンプレート本体のタブは取り込まれない。
 
 旧テンプレート（https://docs.google.com/document/d/1zCh_tpiwfJBbru0Df3T5VFLsn4AQ66RDdmzuAW0BJHQ/edit）は
 2026-09-16 に上の2種類へ置き換えた。旧テンプレートで書いた要項も取り込みはできる。
