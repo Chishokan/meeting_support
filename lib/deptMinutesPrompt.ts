@@ -9,13 +9,12 @@ import {
   QUALITY_CHECKS,
   buildTemplateSkeleton,
 } from '@/lib/deptMinutesTemplate';
+import { instructorKnowledge } from '@/lib/instructors';
 
-// 出力ブロックの区切り。lib/deptMinutesParse.ts の抽出と対になっているので、
-// 変更するときは両方を直すこと。
-export const MINUTES_OPEN = '＝＝＝ 議事録（ここから）＝＝＝';
-export const MINUTES_CLOSE = '＝＝＝ 議事録（ここまで）＝＝＝';
-export const QUALITY_OPEN = '＝＝＝ 会議の質チェック（ここから）＝＝＝';
-export const QUALITY_CLOSE = '＝＝＝ 会議の質チェック（ここまで）＝＝＝';
+// 出力ブロックの区切りは lib/deptMinutesMarkers.ts（画面・パーサと共有）。
+// このファイルはサーバ専用（講師一覧を fs で読む）なので、画面から import しないこと。
+import { MINUTES_OPEN, MINUTES_CLOSE, QUALITY_OPEN, QUALITY_CLOSE } from '@/lib/deptMinutesMarkers';
+export { MINUTES_OPEN, MINUTES_CLOSE, QUALITY_OPEN, QUALITY_CLOSE };
 
 export type MeetingMeta = {
   title: string; // 会議名
@@ -67,7 +66,7 @@ const INSTRUCTIONS = `
 - 該当が1件も無いセクションは、見出しを残したうえで本文に「該当なし」と書く。見出しごと消さない。
 - 文体はです・ます調でなくてよい（記録なので体言止め・簡潔な文で可）。
 - 数字（日付・人数・金額）は発言のとおり正確に転記する。
-{{DEPT_NOTE}}
+{{DEPT_NOTE}}{{INSTRUCTORS}}
 【修正依頼を受けたとき】
 利用者から修正の指示が来たら、指示を反映したうえで、上の2ブロック全体を最初から出し直す。
 差分だけを返さない。
@@ -75,11 +74,16 @@ const INSTRUCTIONS = `
 
 export function buildDeptMinutesPrompt(dept: string, name: string): string {
   const deptNote = DEPT_NOTES[dept] ? `- ${DEPT_NOTES[dept]}\n` : '';
+  // 講師一覧（Color HRM から取り込み）。文字起こしの講師名の誤変換を直し、
+  // 生徒・保護者の名前（イニシャル化する）と講師名（実名でよい）を区別できるようにする。
+  const instructors = instructorKnowledge();
+  const instructorNote = instructors ? `\n【講師の氏名】\n${instructors}\n` : '';
   return INSTRUCTIONS
     .replace('{{TEMPLATE}}', buildTemplateSkeleton())
     .replace('{{CHECKS}}', QUALITY_CHECKS.map((c) => `- ${c}`).join('\n'))
     .replace('{{DECISION_LABELS}}', DECISION_FIELDS.map((f) => f.label).join('・'))
     .replace('{{DEPT_NOTE}}', deptNote)
+    .replace('{{INSTRUCTORS}}', instructorNote)
     .replace('{{MINUTES_OPEN}}', MINUTES_OPEN)
     .replace('{{MINUTES_CLOSE}}', MINUTES_CLOSE)
     .replace('{{QUALITY_OPEN}}', QUALITY_OPEN)

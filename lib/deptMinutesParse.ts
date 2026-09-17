@@ -10,7 +10,7 @@ import {
   MINUTES_CLOSE,
   QUALITY_OPEN,
   QUALITY_CLOSE,
-} from '@/lib/deptMinutesPrompt';
+} from '@/lib/deptMinutesMarkers';
 
 export type Decision = {
   title: string;

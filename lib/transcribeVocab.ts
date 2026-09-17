@@ -8,6 +8,8 @@
 //   1. knowledge/00_index/GLOSSARY.md の表に1行足す ← 普段はこちら
 //   2. lib/companyKnowledge.ts の「（用語の定義）」に足す（AIの理解そのものを変えたいとき）
 //   どちらに足しても、次のデプロイから文字起こしに効く。
+//   3. 講師名は knowledge/20_組織・人事/講師一覧.md（Color HRM から取り込み）から自動で拾う
+//      （lib/instructors.ts）。講師が増えたら scripts/import-instructors.mjs で取り込み直す。
 //
 // ※ GLOSSARY.md はコードから辿れないため、next.config.mjs の
 //   outputFileTracingIncludes に /api/dept-minutes/transcribe を入れてある。
@@ -17,11 +19,14 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { STAFF } from '@/lib/staff';
 import { companyKnowledge } from '@/lib/companyKnowledge';
+import { instructorNames } from '@/lib/instructors';
 
 export const GLOSSARY_FILE = path.join('knowledge', '00_index', 'GLOSSARY.md');
 
 // ヒントは90秒ごとに毎回送るので、長くしすぎない（1会議で40回前後送る）。
 const MAX_TERMS = 90;
+// 講師名は数百人規模になりうるので上限を置く（ヒントが長すぎると肝心の用語が効かなくなる）。
+const MAX_INSTRUCTORS = 250;
 const MAX_GLOSS = 14; // 用語に添える説明の最大文字数
 // 1文字の語（「竹」「松」等）は普通の日本語と区別できずヒントにならないので捨てる。
 const MIN_TERM = 2;
@@ -134,6 +139,10 @@ export async function buildVocabHint(): Promise<string> {
     `・部門名：${campusNames().join('、')}`,
     `・職員名：${staffNames().join('、')}`,
   ];
+  // 講師名（Color HRM から取り込んだ一覧）。職員名と重なる人は職員名側に任せる。
+  const staff = new Set(staffNames());
+  const instructors = instructorNames().filter((n) => !staff.has(n)).slice(0, MAX_INSTRUCTORS);
+  if (instructors.length) lines.push(`・講師名：${instructors.join('、')}`);
   if (terms.length) {
     const list = terms.map((t) => (t.gloss ? `${t.term}（${t.gloss}）` : t.term)).join('、');
     lines.push(`・社内用語：${list}`);

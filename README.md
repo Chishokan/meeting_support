@@ -209,6 +209,31 @@ node scripts/check-yoko.mjs --confirmed # 確定のものだけ（不足があ�
   `status` を戻して外すこと。
 - 個人情報は入れない（要項は対外資料なので通常は問題ないが、社内共有メモ等を混ぜないこと）。
 
+## 講師一覧（Color HRM から取り込み）
+Color HRM（https://chishokan.co.jp/colorhrm/ ・Xサーバーの MySQL）に登録された講師マスタを、
+会議DXアプリが参照できるよう git 上の Markdown に写す。会議AI・部門会議議事録が校舎ごとの講師名・
+部門・カラーを前提知識として持ち、音声の文字起こしでは講師名を固有名詞のヒントとして使う。
+
+- ファイル: `knowledge/20_組織・人事/講師一覧.md`（★スクリプトが生成する。手で直さない）
+- 取り込み: `scripts/import-instructors.mjs` ／ 読み込み: `lib/instructors.ts`
+- 使う側: `lib/companyKnowledge.ts`（`withCompanyKnowledge`）・`lib/deptMinutesPrompt.ts`・`lib/transcribeVocab.ts`
+
+### 更新手順（Color HRM の admin が行う）
+1. Color HRM に admin でログイン → 「講師情報 CSVエクスポート」（`staff_io.php`）で CSV をダウンロード
+2. `node scripts/import-instructors.mjs <ダウンロードした staff_YYYYMMDD.csv>`
+3. `git diff` で増減を確認して commit & push（Vercel が再デプロイ。未取り込みでもアプリは動く）
+4. **ダウンロードした CSV を削除する**（ログイン用の平文パスワードが入っている。`staff_*.csv` は .gitignore 済み）
+
+### なぜ DB を直接読まないか・何を入れないか
+- Vercel から Xサーバーの MySQL には届かない（外部公開されていない）。要項QAと同じく、
+  「担当者が書き出したものを git に置いて読む」方式にした。git なら増減が diff で見える。
+- CSV には メール・ログイン情報・平文パスワード・入社日・メンター・紹介者・育成目標 が入っているが、
+  スクリプトは **氏名・社員コード・部門・校舎・雇用形態・カラー** だけを書き出し、退職者も落とす。
+  git の履歴から消せないので、この列を増やすときは `knowledge/00_index/README.md` の
+  「入れてはいけないもの」に照らして判断すること。
+- 講師一覧は全AI機能の前提知識（`withCompanyKnowledge`）に載る。数百名でも1〜2千トークン程度で、
+  プロンプトキャッシュが効く。置き場所を変えたら `next.config.mjs` の `outputFileTracingIncludes` も直すこと。
+
 ## ログ / セキュリティ（テスト版のため要ハードニング）
 - 会話は Vercel のログに [CHAT_LOG] として出力。durable 保存は lib/log.ts で DB 追加。
 - 認証は簡易版（氏名＋校舎＋合言葉）。本番は Google SSO 等へ。

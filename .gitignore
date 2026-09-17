@@ -8,3 +8,6 @@ out/
 .vercel
 next-env.d.ts
 tsconfig.tsbuildinfo
+
+# Color HRM からダウンロードした講師情報CSV（ログイン情報を含む）。取り込み後は削除する
+staff_*.csv

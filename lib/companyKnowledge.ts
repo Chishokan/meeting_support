@@ -4,6 +4,8 @@
 // 日付と期は実行時に算出する（Asia/Tokyo 基準）。
 // 定数で持つとビルド時の日付で固定され、翌日以降ずれるため。
 
+import { instructorKnowledge } from './instructors';
+
 // 期は5月始まり・4月締め。第36期＝2026年5月〜2027年4月を基準に前後を計算する。
 const FISCAL_ANCHOR_PERIOD = 36;
 const FISCAL_ANCHOR_START_YEAR = 2026;
@@ -153,11 +155,15 @@ RED
 /**
  * 各AI機能のシステムプロンプト先頭に共通前提として差し込む。
  * 会議AI・夏の結果報告・中間報告・議事録すべてがこれを通す。
+ *
+ * 講師一覧（Color HRM から取り込んだ knowledge/20_組織・人事/講師一覧.md）も
+ * ここで足す。未取り込みなら何も足さない。中身は lib/instructors.ts。
  */
 export function withCompanyKnowledge(instructions: string, now: Date = new Date()): string {
+  const instructors = instructorKnowledge();
   return `【智翔館の前提知識（全AI機能で共通）】
 ${companyKnowledge(now).trim()}
-
+${instructors ? `\n${instructors}\n` : ''}
 ここまでが前提知識。以下があなたの役割と進め方。
 
 ${instructions}`;

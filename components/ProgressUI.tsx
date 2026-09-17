@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
-import { PROGRESS_BLOCK_START, PROGRESS_BLOCK_END } from '@/lib/progressPrompt';
+import { PROGRESS_BLOCK_START, PROGRESS_BLOCK_END } from '@/lib/progressBlock';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 

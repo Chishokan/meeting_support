@@ -4,10 +4,10 @@
 // ★挙動を直す場合はこのファイルを編集 → git push（Vercel が自動再デプロイ）。
 
 import { withCompanyKnowledge } from './companyKnowledge';
+import { PROGRESS_BLOCK_START, PROGRESS_BLOCK_END } from './progressBlock';
 
-// 出力ブロックの囲み（UI 側がこの囲みを検知して自動転記する。会議AI の「貼り付け用」とは別物）。
-export const PROGRESS_BLOCK_START = '＝＝＝ 中間報告（ここから）＝＝＝';
-export const PROGRESS_BLOCK_END = '＝＝＝ 中間報告（ここまで）＝＝＝';
+// 出力ブロックの囲みは lib/progressBlock.ts（画面と共有。このファイルはサーバ専用なので画面から import しない）。
+export { PROGRESS_BLOCK_START, PROGRESS_BLOCK_END };
 
 // 部門ごとの「中間報告で確認する項目」の初期値（デフォルト）。
 // AI はこの並び・表記のまま1問ずつ尋ねる。固定の追加項目は無く、ここ（またはスプレッドシート）が全て。
