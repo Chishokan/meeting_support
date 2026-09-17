@@ -316,8 +316,13 @@ button.primary:disabled { opacity: .5; cursor: default; }
   display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
   font-size: 13px; color: #4b535c; padding: 2px 0;
 }
-.progress-name { overflow-wrap: anywhere; }
-.progress-status { font-weight: 700; color: #b06a00; white-space: nowrap; }
+.progress-name { overflow-wrap: anywhere; flex: 1 1 auto; min-width: 0; }
+/* 進捗は「3/11」だけでなく「着手済み（チラシ原稿まで）」のような語も入る。
+   nowrap のままだと項目名を押しつぶすので、右寄せで折り返す。 */
+.progress-status {
+  font-weight: 700; color: #b06a00; text-align: right;
+  flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere;
+}
 .progress-status.done { color: #2e6b4f; }
 .progress-more { font-size: 12px; color: #97a1ac; }
 .member-progress-empty { font-size: 12px; color: #97a1ac; margin-top: 6px; }
