@@ -58,6 +58,7 @@ export type InquiryRecord = {
   address: string;       // 住所
   email: string;         // メールアドレス（HP フォームからの問い合わせ用）
   dm: string;            // DM（〇✕。DM 送付の目印）
+  intakeId: string;      // 受付ID（HP フォーム（WordPress）からの自動登録の送信ID。二重登録の防止用）
   createdAt: string;     // 作成日時
   createdBy: string;     // 作成者
   updatedAt: string;     // 更新日時
@@ -96,6 +97,7 @@ export const RECORD_FIELDS: { key: keyof InquiryRecord; header: string }[] = [
   { key: 'address', header: '住所' },
   { key: 'email', header: 'メールアドレス' },
   { key: 'dm', header: 'DM' },
+  { key: 'intakeId', header: '受付ID' },
   { key: 'createdAt', header: '作成日時' },
   { key: 'createdBy', header: '作成者' },
   { key: 'updatedAt', header: '更新日時' },
@@ -112,7 +114,7 @@ export function emptyInput(campus: string): InquiryInput {
     campus, date: '', studentName: '', kana: '', school: '', grade: '', phone: '',
     source: '', term: '', contacted: '', trialDate: '', trial: '', meetingDate: '',
     agreed: '', closeDate: '', result: '', enrollDate: '', note: '',
-    guardianName: '', postal: '', address: '', email: '', dm: '',
+    guardianName: '', postal: '', address: '', email: '', dm: '', intakeId: '',
   };
 }
 
@@ -230,6 +232,7 @@ export function validateInput(raw: unknown, fallbackYear: number): ValidationRes
     address: str(r.address),
     email: str(r.email),
     dm: normalizeMark(str(r.dm)),
+    intakeId: str(r.intakeId),
   };
   if (r.no != null && str(r.no) !== '') {
     const n = Number(r.no);

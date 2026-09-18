@@ -67,7 +67,7 @@ var INQUIRY_DB_SHEET = '問合せ台帳';
 var INQUIRY_DB_HEADERS = [
   'ID', '校舎', 'No.', '日付', '生徒氏名', 'ふりがな', '学校名', '学年', '電話番号', '媒体', '受講期',
   '連絡', '体験日', '体験', '入塾提案面談日', '本人OK', 'クローズ予定日', '結果', '入塾日', '備考',
-  '保護者名', '郵便番号', '住所', 'メールアドレス', 'DM', '作成日時', '作成者', '更新日時', '更新者', '削除',
+  '保護者名', '郵便番号', '住所', 'メールアドレス', 'DM', '受付ID', '作成日時', '作成者', '更新日時', '更新者', '削除',
 ];
 
 // 「目標管理」が読む中等部会議議事録スプレッドシートID。
@@ -983,10 +983,17 @@ function inquiryDbSheet_() {
     sh.setFrozenRows(1);
     sh.getRange(1, 1, sh.getMaxRows(), INQUIRY_DB_HEADERS.length).setNumberFormat('@');
   } else {
-    // 列が増えたときは見出しを補う
+    // 列が増えたときは、無い見出しを右端に足す（既存の列の位置は変えない。読み書きは見出し名で引く）
     var cur = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+    var have = {};
+    for (var i = 0; i < cur.length; i++) have[String(cur[i]).trim()] = true;
     for (var c = 0; c < INQUIRY_DB_HEADERS.length; c++) {
-      if (!cur[c]) sh.getRange(1, c + 1).setValue(INQUIRY_DB_HEADERS[c]);
+      var h = INQUIRY_DB_HEADERS[c];
+      if (have[h]) continue;
+      var at = sh.getLastColumn() + 1;
+      sh.getRange(1, at).setValue(h);
+      sh.getRange(1, at, sh.getMaxRows(), 1).setNumberFormat('@');
+      have[h] = true;
     }
   }
   return sh;
@@ -1018,12 +1025,14 @@ function dbRowToObj_(row, col) {
   return obj;
 }
 
-function dbObjToRow_(obj, width) {
+// オブジェクト → シートの1行。列の位置は見出し名（col）で決める。
+function dbObjToRow_(obj, col, width) {
   var row = [];
   for (var i = 0; i < width; i++) row.push('');
   for (var j = 0; j < INQUIRY_DB_HEADERS.length; j++) {
     var h = INQUIRY_DB_HEADERS[j];
-    row[j] = obj[h] == null ? '' : String(obj[h]);
+    if (col[h] === undefined) continue;
+    row[col[h]] = obj[h] == null ? '' : String(obj[h]);
   }
   return row;
 }
@@ -1095,7 +1104,7 @@ function saveInquiryRecord_(data) {
       if (!rec['作成者']) rec['作成者'] = rec['更新者'] || '';
       rec['更新日時'] = ts;
       rec['削除'] = '';
-      sh.appendRow(dbObjToRow_(rec, width));
+      sh.appendRow(dbObjToRow_(rec, col, width));
       // 追記した行も文字列書式にしておく（自動変換防止）
       sh.getRange(sh.getLastRow(), 1, 1, width).setNumberFormat('@');
       return { ok: true, item: rec };
@@ -1111,7 +1120,7 @@ function saveInquiryRecord_(data) {
     }
     rec['更新日時'] = ts;
     rec['削除'] = '';
-    sh.getRange(row, 1, 1, width).setNumberFormat('@').setValues([dbObjToRow_(rec, width)]);
+    sh.getRange(row, 1, 1, width).setNumberFormat('@').setValues([dbObjToRow_(rec, col, width)]);
     return { ok: true, item: rec };
   } catch (err) {
     return { ok: false, reason: 'db_open_failed:' + err };
@@ -1261,13 +1270,14 @@ function importLegacyInquiryBoard() {
         '住所': pick('住所'),
         'メールアドレス': pick('メールアドレス'),
         'DM': legacyMark_(String(row[dmCol] == null ? '' : row[dmCol]).trim()),
+        '受付ID': '',
         '作成日時': ts,
         '作成者': '旧シート移行',
         '更新日時': ts,
         '更新者': '旧シート移行',
         '削除': '',
       };
-      rows.push(dbObjToRow_(rec, width));
+      rows.push(dbObjToRow_(rec, col, width));
       added++;
     }
   }
@@ -1279,8 +1289,8 @@ function importLegacyInquiryBoard() {
     var n = Number(parts[1]) || 0;
     if (!maxNo[parts[0]] || n > maxNo[parts[0]]) maxNo[parts[0]] = n;
   }
-  var noIdx = INQUIRY_DB_HEADERS.indexOf('No.');
-  var campusIdx = INQUIRY_DB_HEADERS.indexOf('校舎');
+  var noIdx = col['No.'];
+  var campusIdx = col['校舎'];
   for (var k = 0; k < rows.length; k++) {
     if (rows[k][noIdx]) continue;
     var cp = rows[k][campusIdx];

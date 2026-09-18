@@ -86,9 +86,39 @@ Vercel 本番で未設定なら画面に「未設定」と出る。
   **同じ順で**両方直す。台帳は見出し名で列を引くので、既存の台帳には見出しが自動で足される
 - 削除は「削除」列に 1 を立てる論理削除。誤って消したら、シートでその 1 を消せば戻る
 - 日付は「YYYY-MM-DD」の文字列で持つ（列の書式を @ にしてある）。シート側で日付型に変えないこと
-- HP の問い合わせフォームからメールを旧シートに転記している仕組み（「メール転記」タブ）は
-  このアプリの対象外。旧シートを止めるときは、その転記先を「問合せ台帳」に向け直す必要がある
-  （台帳の列名は INQUIRY_DB_HEADERS のとおり。ID は Utilities.getUuid() で付ける）
+- HP の問い合わせフォームは、通知メールを Apps Script で旧シートへ転記する仕組み（「メール転記」タブ）から、
+  下の「HP フォームからの直接取り込み」に切り替える。切り替えたらメール転記は止める（二重登録になるため）
+
+### HP フォームからの直接取り込み（WordPress → 台帳）
+WordPress の問い合わせフォームの送信先（Webhook）にこのアプリを指定すると、メールを介さず台帳に1件登録される。
+
+- 受け口: `POST https://<このアプリ>/api/inquiry-board/intake`（app/api/inquiry-board/intake/route.ts）
+- 認証: Vercel の環境変数 `INQUIRY_INTAKE_TOKEN` に合言葉を入れ、WordPress 側から
+  ヘッダ `X-Intake-Token: <合言葉>`（ヘッダを付けられないプラグインなら URL に `?token=<合言葉>`）で送る。
+  未設定のあいだ受け口は閉じている（503）
+- 項目の対応: lib/inquiryIntake.ts の `FIELD_ALIASES`。通知メールと同じ項目名（お子様名・ふりがな・保護者名・
+  保護者名ふりがな・郵便番号・住所・電話番号・メールアドレス・学校名・学年・希望コース・受講校舎・相談事項・
+  お問い合わせ内容）と、英語名（student_name / student_kana / guardian_name / guardian_kana / postal / address /
+  phone / email / school / grade / course / campus / consult / message / submission_id）のどちらでも受け付ける。
+  JSON・form-urlencoded・multipart のいずれでもよい
+
+WordPress 側の設定（Contact Form 7 の場合）:
+1. プラグイン「CF7 to Webhook」（Contact Form to Any API 等でも可）を入れる
+2. 対象フォームの Webhook 設定で、送信先 URL に `https://<このアプリ>/api/inquiry-board/intake` を入れる
+3. ヘッダに `X-Intake-Token: <合言葉>` を足す（ヘッダ設定が無ければ URL 末尾に `?token=<合言葉>`）
+4. 送る項目名が上の一覧に無い名前なら、`FIELD_ALIASES` にその名前を足して push する
+5. テスト送信して `/inquiry-board` に出ることを確認。Vercel のログに `[INQUIRY_INTAKE]` が残る
+
+取り込みの決まり（lib/inquiryIntake.ts の decideIntake）:
+- 媒体は「HP」、日付は受信日、結果は空（追客中）で登録する。希望コースから受講期を読み替える
+  （「模試」→模試、「講習」→講習会、「体験・イベント」→その他イベント、それ以外→通常）
+- 受講校舎は「佐世保駅前校」→「駅前校」のように部分一致で寄せる。読めなければ「その他」に入れ、
+  備考に【校舎不明】と元の入力を書く（捨てない）
+- 高校生は小中等部の対象外だが、「その他」に入れて備考に【高校生】と書く（高等部へ引き継ぐ）
+- 同じ校舎に同じ氏名の行があれば新規にせず、その行の備考の先頭に「[9/18 HPフォーム] …」を追記する
+  （旧メール転記の「既存行のため備考に追記」と同じ）。空欄だった連絡先だけ埋め、担当者が直した値は上書きしない。
+  電話番号だけで寄せると兄弟の行に追記してしまうので、電話番号で探すのは氏名が無いときだけ
+- 送信ID（submission_id）が同じものは二重登録しない（WordPress の再送対策）。台帳の「受付ID」列に残る
 
 ## 問い合わせQA（小中等部 問合せ管理）
 小中等部の問合せ管理を読み、各校舎の状況を AI が答える（メニュー「問い合わせQA」）。
