@@ -1187,3 +1187,41 @@ button.primary:disabled { opacity: .5; cursor: default; }
   .board-head { padding: 10px 12px; }
   .board-sub, .board-user { display: none; }
 }
+
+/* 問合せ管理: 一覧上の直接編集 */
+.ib-note-err { color: #b03a2e; background: #fdecea; border-color: #f3c6c0; }
+.ib-toggle.active { color: #fff; background: var(--navy); border-color: var(--navy); }
+.ib-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; vertical-align: middle; }
+.ib-seg button { font-size: 12px; line-height: 1.4; padding: 2px 9px; background: #fff; border: none; color: #b6bec7; cursor: pointer; font-family: inherit; }
+.ib-seg button + button { border-left: 1px solid var(--line); }
+.ib-seg button:hover { background: #f2f5f9; color: #667; }
+.ib-seg button.on { background: #eaf6ef; color: #2e6b4f; font-weight: 700; }
+.ib-seg button.on.x { background: #f0f2f5; color: #556; }
+.ib-seg button:disabled { opacity: .6; cursor: default; }
+.ib-table.inline td { padding: 5px 6px; vertical-align: middle; }
+.ib-table.inline input, .ib-table.inline select, .ib-table.inline textarea {
+  font-size: 12.5px; padding: 5px 6px; border: 1px solid #cdd3da; border-radius: 6px; background: #fff;
+  font-family: inherit; width: 100%; min-width: 0; color: inherit;
+}
+.ib-table.inline input[type="date"] { width: 132px; }
+.ib-table.inline select { width: auto; max-width: 150px; }
+.ib-table.inline .ib-name input { min-width: 130px; }
+.ib-table.inline .ib-school input { min-width: 110px; }
+.ib-table.inline .ib-note-cell { display: table-cell; max-width: none; min-width: 260px; overflow: visible; -webkit-line-clamp: unset; }
+.ib-table.inline textarea { min-width: 260px; resize: vertical; line-height: 1.5; }
+.ib-table.inline .ib-over input { border-color: #f3c6c0; color: #b03a2e; font-weight: 700; }
+.ib-stack { display: flex; flex-direction: column; gap: 3px; }
+.ib-act { white-space: nowrap; }
+.ib-act small { display: block; margin-top: 3px; font-size: 10.5px; color: #97a1ac; }
+.ib-act small.ok { color: #2e6b4f; }
+.ib-act small.err { color: #b03a2e; }
+.ib-ghost.sm { padding: 4px 9px; font-size: 12px; }
+@media (max-width: 900px) {
+  .ib-table.inline .ib-note-cell { display: block; min-width: 0; }
+  .ib-table.inline textarea { min-width: 0; }
+  .ib-table.inline input[type="date"] { width: 100%; }
+  .ib-table.inline select { max-width: none; width: 100%; }
+  .ib-table td.ib-act { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
+  .ib-table td.ib-act::before { display: none; }
+  .ib-table td.ib-act small { margin: 0; }
+}
