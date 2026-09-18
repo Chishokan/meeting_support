@@ -479,16 +479,20 @@ function AlertPanel({ campus, version, onFilter }: { campus: string; version: nu
       )}
 
       {open && ok && (
-        <>
+        <div className="ib-alerts-box" role="list">
           {ok.ai ? (
-            <p className="ib-ai-text">
-              {ok.ai.text.split('\n').filter(Boolean).map((line, i) => <span key={i}>{line}</span>)}
-            </p>
+            ok.ai.text.split('\n').filter(Boolean).map((line, i) => (
+              <div key={`ai${i}`} className={`ib-line ai ${i === 0 ? 'lead' : ''}`} role="listitem">
+                <span className="ib-dot" />
+                <span>{line}</span>
+              </div>
+            ))
           ) : !ok.aiAvailable ? (
-            <p className="ib-meta">AIの一言は未設定です（ANTHROPIC_API_KEY）。下の注意点はルールで数えたものです。</p>
+            <div className="ib-line muted" role="listitem"><span className="ib-dot" /><span>AIの一言は未設定です（ANTHROPIC_API_KEY）。以下はルールで数えた注意点です。</span></div>
           ) : null}
 
-          <div className="ib-kpis">
+          <div className="ib-line kpi" role="listitem">
+            <span className="ib-dot" />
             {ok.facts.kpis.map((k) => (
               <span
                 key={k.metric}
@@ -503,18 +507,17 @@ function AlertPanel({ campus, version, onFilter }: { campus: string; version: nu
             </span>
           </div>
 
-          <ul className="ib-alert-list">
-            {ok.alerts.map((a, i) => (
-              <li key={i} className={`lv-${a.level}`}>
-                {a.filter ? (
-                  <button type="button" onClick={() => onFilter(a.filter!)} title="押すとこの区分で一覧を絞り込む">{a.text}</button>
-                ) : (
-                  <span>{a.text}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </>
+          {ok.alerts.map((a, i) => (
+            <div key={i} className={`ib-line lv-${a.level}`} role="listitem">
+              <span className="ib-dot" />
+              {a.filter ? (
+                <button type="button" onClick={() => onFilter(a.filter!)} title="押すとこの区分で一覧を絞り込む">{a.text}</button>
+              ) : (
+                <span>{a.text}</span>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </section>
   );
