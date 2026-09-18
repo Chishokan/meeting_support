@@ -43,8 +43,13 @@ export async function POST(req: Request) {
   const mode = body?.mode === 'revise' ? 'revise' : 'draft';
   const meta = readMeta(body?.meta);
   const transcript = String(body?.transcript ?? '').trim();
-  if (!transcript) return new Response('transcript required', { status: 400 });
-  if (transcript.length > MAX_TRANSCRIPT) return new Response('transcript too long', { status: 413 });
+  // 会議中に人が書いたメモ（任意）。文字起こしと一緒に渡す。
+  const memo = String(body?.memo ?? '').trim();
+  // 録音が無くメモだけで議事録を作ることもあるので、どちらか一方あればよい。
+  if (!transcript && !memo) return new Response('transcript or memo required', { status: 400 });
+  if (transcript.length + memo.length > MAX_TRANSCRIPT) {
+    return new Response('transcript too long', { status: 413 });
+  }
 
   const draft = String(body?.draft ?? '');
   const instruction = String(body?.instruction ?? '').trim();
@@ -52,8 +57,8 @@ export async function POST(req: Request) {
 
   const userText =
     mode === 'revise'
-      ? buildReviseRequest(meta, transcript, draft, instruction)
-      : buildDraftRequest(meta, transcript);
+      ? buildReviseRequest(meta, transcript, draft, instruction, memo)
+      : buildDraftRequest(meta, transcript, memo);
 
   const encoder = new TextEncoder();
   let full = '';
@@ -103,7 +108,7 @@ export async function POST(req: Request) {
           await logInteraction({
             user: session.name,
             campus: session.campus,
-            input: `[部門会議議事録/${mode}] ${meta.title || '（会議名未入力）'}｜文字起こし${transcript.length}字${instruction ? `｜修正指示：${instruction}` : ''}`,
+            input: `[部門会議議事録/${mode}] ${meta.title || '（会議名未入力）'}｜文字起こし${transcript.length}字${memo ? `｜メモ${memo.length}字` : ''}${instruction ? `｜修正指示：${instruction}` : ''}`,
             output: stripRoleBleed(full),
           });
         } catch {}

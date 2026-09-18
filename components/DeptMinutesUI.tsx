@@ -75,6 +75,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [meta, setMeta] = useState<Meta>({ ...EMPTY_META, date: todayLocal() });
   const [source, setSource] = useState<Source>('record');
   const [transcript, setTranscript] = useState('');
+  // 会議中に人が取ったメモ（任意）。音声と一緒にAIへ渡す。
+  const [memo, setMemo] = useState('');
   const [draft, setDraft] = useState('');
   const [instruction, setInstruction] = useState('');
 
@@ -122,6 +124,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         const j = JSON.parse(raw);
         if (j?.meta) setMeta({ ...EMPTY_META, ...j.meta });
         if (typeof j?.transcript === 'string') setTranscript(j.transcript);
+        if (typeof j?.memo === 'string') setMemo(j.memo);
         if (typeof j?.draft === 'string') setDraft(j.draft);
       }
     } catch {}
@@ -131,9 +134,9 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   useEffect(() => {
     if (!loaded.current) return;
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ meta, transcript, draft }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ meta, transcript, memo, draft }));
     } catch {}
-  }, [meta, transcript, draft]);
+  }, [meta, transcript, memo, draft]);
 
   // ---- 文字起こしが使える設定か ----
   useEffect(() => {
@@ -408,8 +411,10 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   async function generate(mode: 'draft' | 'revise') {
     if (generating) return;
     const text = transcript.trim();
-    if (!text) {
-      setErr('先に会議の文字起こしを用意してください。');
+    const memoText = memo.trim();
+    // 録音が無くメモだけの会議もあるので、どちらか一方あれば作れる。
+    if (!text && !memoText) {
+      setErr('先に会議の音声か議事録メモを用意してください。');
       return;
     }
     if (mode === 'revise' && !instruction.trim()) return;
@@ -421,7 +426,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       const res = await fetch('/api/dept-minutes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, meta, transcript: text, draft, instruction }),
+        body: JSON.stringify({ mode, meta, transcript: text, memo: memoText, draft, instruction }),
       });
       if (!res.ok || !res.body) throw new Error('failed');
       const reader = res.body.getReader();
@@ -478,6 +483,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     setQueued(0);
     setMeta({ ...EMPTY_META, date: todayLocal() });
     setTranscript('');
+    setMemo('');
     setDraft('');
     setInstruction('');
     setNote('');
@@ -707,11 +713,29 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
               </>
             )}
 
+            {/* 会議中に手で取ったメモ。録音と一緒に渡すと、聞き取れなかった数字や
+                固有名詞をメモ側から補える。録音が無い会議はメモだけでも作れる。 */}
+            <label className="dm-memo">
+              <span>
+                議事録メモ（任意）
+                {memo.trim() && <em>　{memo.length.toLocaleString()}字</em>}
+              </span>
+              <textarea
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                placeholder={'会議中に取ったメモがあれば貼り付けてください。箇条書き・断片のままで構いません。\n例：\n・サイトク 9/12開始で決定（池田）\n・バス18:50発に変更 → 総務へ依頼\n・冬期料金は次回持ち越し'}
+              />
+              <small>
+                メモは文字起こしより正確なものとして扱います。数字・固有名詞・担当者名が
+                録音と食い違うときはメモのほうを採用します。
+              </small>
+            </label>
+
             <div className="dm-actions">
               <button
                 className="dm-primary"
                 onClick={() => void generate('draft')}
-                disabled={generating || !transcript.trim() || recording}
+                disabled={generating || (!transcript.trim() && !memo.trim()) || recording}
               >
                 {generating ? '作成中…' : '議事録を作成'}
               </button>
