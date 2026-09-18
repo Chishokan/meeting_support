@@ -148,7 +148,7 @@ ok('リマインド：経理記入待ちが20時間を超えたら', () => {
 
 ok('差分：変わった行だけを前後で出す', () => {
   const d = g.diffLines_(g.parseYoko_(confirmed).moneyText, g.parseYoko_(corrected).moneyText);
-  same(d, ['− - 中1・中2 29,700円', '＋ - 中1・中2 30,800円']);
+  same(d, ['− 中1・中2 29,700円', '＋ 中1・中2 30,800円']);
 });
 
 ok('通知文：金額訂正は至急・更新履歴・差分を含む', () => {
@@ -156,7 +156,7 @@ ok('通知文：金額訂正は至急・更新履歴・差分を含む', () => {
   const msg = g.buildMessage_('金額訂正', g.parseYoko_(corrected), prev, 'https://example/link');
   assert.match(msg, /^【至急】【要項 金額訂正】2026冬期 中等部（有料講座）/);
   assert.match(msg, /更新履歴\n2026年9月18日 一般生受講料 29,700→30,800円（安藤）/);
-  assert.match(msg, /− - 中1・中2 29,700円\n＋ - 中1・中2 30,800円/);
+  assert.match(msg, /− 中1・中2 29,700円\n＋ 中1・中2 30,800円/);
   assert.match(msg, /https:\/\/example\/link$/);
 });
 
@@ -165,6 +165,7 @@ ok('通知文：確定は経理連絡事項の担当者記入部分を載せる'
   assert.match(msg, /^【要項 確定】/);
   assert.match(msg, /請求対象：両方/);
   assert.doesNotMatch(msg, /経理記入日/);
+  assert.equal((msg.match(/■ 講座担当が記入/g) || []).length, 1);
 });
 
 ok('テンプレートのタブ名は飛ばす', () => {

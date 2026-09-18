@@ -288,7 +288,10 @@ function parseYoko_(text) {
     (inAcct ? keiriAcct : keiriStaff).push(l);
   });
 
-  info.keiriSection = normalizeLines_(keiriStaff).join('\n');
+  // 通知に載せる担当者記入部分。「■ 講座担当が記入」の見出し行は通知側で付けるので外す
+  info.keiriSection = normalizeLines_(keiriStaff)
+    .filter(function (l) { return !/^■/.test(l); })
+    .join('\n');
   info.keiriDate = fieldOf_(keiriAcct.join('\n'), '経理記入日');
   info.moneyText = []
     .concat(['＜受講料＞'], normalizeLines_(fee))
@@ -332,7 +335,9 @@ function subsection_(lines, name) {
 /** 空行・装飾・前後の空白を落として比較しやすくする。「※」の注記行は金額ではないので除く。 */
 function normalizeLines_(lines) {
   return lines
-    .map(function (l) { return l.replace(/\*/g, '').replace(/[\s　]+/g, ' ').trim(); })
+    .map(function (l) {
+      return l.replace(/\*/g, '').replace(/[\s　]+/g, ' ').trim().replace(/^[-・•]\s*/, '');
+    })
     .filter(function (l) { return l && l.charAt(0) !== '※' && !/^-{3,}$/.test(l); });
 }
 
