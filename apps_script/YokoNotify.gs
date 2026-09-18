@@ -15,6 +15,7 @@
  *   - setupDailyTrigger  トリガーを作る（1回だけ実行）
  *   - seedLedger     初回に台帳だけ作る（通知しない）。既に確定している要項を今さら通知したくないとき
  *   - testLineWorks  LINE WORKS の設定確認（テスト送信）
+ *   - checkPrivateKey  LW_PRIVATE_KEY の形を診断してログに出す（鍵そのものは出さない）
  *
  * ■ 検知する出来事（要項台帳シートの前回値と比べる）
  *   確定        ステータスが「確定」になった            → 経理へ「経理記入欄を埋めてください」
@@ -30,7 +31,11 @@
  *   LW_CLIENT_ID        LINE WORKS Developer Console のアプリ Client ID
  *   LW_CLIENT_SECRET    同 Client Secret
  *   LW_SERVICE_ACCOUNT  同 Service Account（xxxx@yyyy の形）
- *   LW_PRIVATE_KEY      同 Private Key（PEM をそのまま。改行は \n でもよい）
+ *   LW_PRIVATE_KEY      同 Private Key。Developer Console からダウンロードした private_xxxx.key の中身
+ *                       （-----BEGIN PRIVATE KEY----- で始まり -----END PRIVATE KEY----- で終わる）。
+ *                       改行が消えて1行になっていても、改行が文字の「\n」になっていても、
+ *                       前後に引用符が付いていても読めるように整形してから使う（normalizePem_）。
+ *                       うまくいかないときは checkPrivateKey を実行するとログに診断が出る。
  *   LW_BOT_ID           通知を送る Bot の ID
  *   LW_CHANNEL_ID       通知先トークルーム（経理＋各部門担当が入っている部屋）の Channel ID
  *   YOKO_FOLDER_ID      （任意）走査するフォルダ。既定は 04要項
@@ -594,7 +599,7 @@ function lineWorksToken_() {
   var clientId = prop_('LW_CLIENT_ID');
   var clientSecret = prop_('LW_CLIENT_SECRET');
   var serviceAccount = prop_('LW_SERVICE_ACCOUNT');
-  var privateKey = prop_('LW_PRIVATE_KEY').replace(/\\n/g, '\n');
+  var privateKey = normalizePem_(prop_('LW_PRIVATE_KEY'));
   if (!clientId || !clientSecret || !serviceAccount || !privateKey) {
     throw new Error('LW_CLIENT_ID / LW_CLIENT_SECRET / LW_SERVICE_ACCOUNT / LW_PRIVATE_KEY が未設定です');
   }
@@ -622,6 +627,65 @@ function lineWorksToken_() {
   if (!token) throw new Error('LINE WORKS 認証応答に access_token がありません');
   cache.put('lw_token', token, 21600);
   return token;
+}
+
+/**
+ * スクリプト プロパティに貼った秘密鍵を、署名関数が受け付ける PEM の形に整える。
+ * 受け付ける入れ方：
+ *   - ファイルの中身をそのまま（改行あり）
+ *   - 改行が消えて1行になったもの（プロパティの入力欄に貼ると起きやすい）
+ *   - 改行を文字の「\n」で書いたもの
+ *   - 前後に " や ' が付いたもの
+ * ヘッダー（BEGIN PRIVATE KEY ／ BEGIN RSA PRIVATE KEY）は元の種類を残し、
+ * 本文の base64 を 64 文字ごとに改行し直す。
+ */
+function normalizePem_(raw) {
+  var s = String(raw || '').trim();
+  s = s.replace(/^["']+|["']+$/g, '');          // 前後の引用符
+  s = s.replace(/\\r\\n|\\n|\\r/g, '\n');       // 文字としての \n を本物の改行に
+  s = s.replace(/\r\n?/g, '\n');
+  var type = 'PRIVATE KEY';
+  var m = /-----BEGIN ([A-Z ]+?)-----/.exec(s);
+  if (m) type = m[1];
+  var body = s
+    .replace(/-----BEGIN [A-Z ]+?-----/g, '')
+    .replace(/-----END [A-Z ]+?-----/g, '')
+    .replace(/[^A-Za-z0-9+\/=]/g, '');           // 改行・空白・全角空白などを全部落とす
+  if (!body) return '';
+  var lines = [];
+  for (var i = 0; i < body.length; i += 64) lines.push(body.substr(i, 64));
+  return '-----BEGIN ' + type + '-----\n' + lines.join('\n') + '\n-----END ' + type + '-----\n';
+}
+
+/**
+ * LW_PRIVATE_KEY の診断。Apps Script エディタで実行し、実行ログを見る。
+ * 鍵の中身は出さない（種類・長さ・署名できたかだけ）。
+ */
+function checkPrivateKey() {
+  var raw = prop_('LW_PRIVATE_KEY');
+  if (!raw) {
+    Logger.log('LW_PRIVATE_KEY が空です。プロジェクトの設定 > スクリプト プロパティ に入れてください。');
+    return;
+  }
+  var hasHeader = /-----BEGIN [A-Z ]+?-----/.test(raw);
+  var hasRealNewline = raw.indexOf('\n') !== -1;
+  var hasLiteralNewline = raw.indexOf('\\n') !== -1;
+  Logger.log('貼られた値: ' + raw.length + ' 文字 / BEGIN ヘッダー: ' + (hasHeader ? 'あり' : 'なし') +
+    ' / 本物の改行: ' + (hasRealNewline ? 'あり' : 'なし') + ' / 文字の\\n: ' + (hasLiteralNewline ? 'あり' : 'なし'));
+  if (!hasHeader) {
+    Logger.log('警告: -----BEGIN PRIVATE KEY----- が見当たりません。private_xxxx.key の中身をそのまま貼ってください（Client Secret や Service Account ではありません）。');
+  }
+  var pem = normalizePem_(raw);
+  var type = (/-----BEGIN ([A-Z ]+?)-----/.exec(pem) || [])[1] || '?';
+  var bodyLen = pem.replace(/-----[A-Z ]+?-----/g, '').replace(/\s/g, '').length;
+  Logger.log('整形後: 種類=' + type + ' / base64 本文 ' + bodyLen + ' 文字（2048bit の PKCS#8 なら約 1,600 文字）');
+  try {
+    var sig = Utilities.computeRsaSha256Signature('test', pem);
+    Logger.log('署名テスト: OK（' + sig.length + ' バイト）。鍵は使えます。まだ失敗するなら Client ID / Secret / Service Account を確認してください。');
+  } catch (e) {
+    Logger.log('署名テスト: 失敗 → ' + e);
+    Logger.log('対処: private_xxxx.key をテキストエディタで開き、全文（BEGIN 行から END 行まで）をコピーして貼り直してください。');
+  }
 }
 
 function base64Url_(v) {

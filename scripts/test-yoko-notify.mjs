@@ -187,4 +187,16 @@ ok('初回登録（seed）：通知なしで登録し、次回は変化だけ拾
   same(g.detectEvents_(seeded, g.parseYoko_(corrected)), ['金額訂正']);
 });
 
+ok('秘密鍵：1行・文字の\\n・引用符付きでも同じ PEM に整える', () => {
+  const body = 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7'.repeat(3);
+  const pem = '-----BEGIN PRIVATE KEY-----\n' + body.match(/.{1,64}/g).join('\n') + '\n-----END PRIVATE KEY-----\n';
+  assert.equal(g.normalizePem_(pem), pem);
+  assert.equal(g.normalizePem_(pem.replace(/\n/g, '')), pem);          // 改行が消えた
+  assert.equal(g.normalizePem_(pem.replace(/\n/g, '\\n')), pem);      // 文字の \n
+  assert.equal(g.normalizePem_('"' + pem.replace(/\n/g, ' ') + '"'), pem); // 引用符＋空白
+  assert.equal(g.normalizePem_('\n' + pem), pem);                      // 先頭の改行
+  assert.match(g.normalizePem_(pem.replace(/PRIVATE KEY/g, 'RSA PRIVATE KEY')), /^-----BEGIN RSA PRIVATE KEY-----/);
+  assert.equal(g.normalizePem_(''), '');
+});
+
 console.log(`\n${n} 件すべて通りました。`);

@@ -256,6 +256,10 @@ https://drive.google.com/drive/folders/1IwwmmjAqh7yznmtOgFSkTDZrNS3_x-L5
 3. 各テンプレートドキュメントの「拡張機能 > Apps Script」に `YokoNotify.gs` を貼り、
    「プロジェクトの設定 > スクリプト プロパティ」に `LW_CLIENT_ID` `LW_CLIENT_SECRET` `LW_SERVICE_ACCOUNT`
    `LW_PRIVATE_KEY` `LW_BOT_ID` `LW_CHANNEL_ID` を入れる（両方のドキュメントに同じ値）。
+   `LW_PRIVATE_KEY` は Developer Console からダウンロードした `private_xxxx.key` の中身
+   （`-----BEGIN PRIVATE KEY-----` で始まる）をそのまま貼る。入力欄で改行が消えて1行になっても、
+   改行を文字の `\n` で書いても、スクリプト側で整形するので動く。
+   エラーが出るときは Apps Script エディタで `checkPrivateKey` を実行し、実行ログの診断を見る。
 4. ドキュメントを開き直し、メニュー「要項連絡 > LINE WORKS 接続テスト」で部屋にテスト文が届くことを確認する。
 5. 片方のドキュメントで `seedLedger` を実行する。台帳に現在の状態が記録されるだけで通知は出ない。
    これを飛ばすと、次の走査で既に「確定」の要項がすべて「確定」として通知される。
