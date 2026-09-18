@@ -7,6 +7,8 @@
 // - DM（発送する〇／しない✕）は一覧上の切り替えで即保存。「一覧で編集」を押すと各セルが入力欄になり、
 //   変えた項目はその場で保存される（セルを離れたとき／選び直したとき）
 // - 「結果」が空＝追客中。連絡も結果も無い行（未着手）とクローズ予定日を過ぎた行（期限超過）は色を付ける
+// - 画面上部の「今日の注意点」は /api/inquiry-board/alerts が返す（ルールで数えた事実＋AIの一言）。
+//   チップを押すとその区分で一覧を絞り込む
 // - 集計（学年別の問合・面談・体験・入塾）は元シート右側の表を再現したもの
 // - 保存先は Apps Script 経由のスプレッドシート「問合せ台帳」（lib/inquiryStore.ts）
 
@@ -18,6 +20,7 @@ import {
   type InquiryInput, type InquiryRecord, type RecordStatus,
 } from '@/lib/inquiryRecords';
 import { useModalDismiss } from '@/lib/useModalDismiss';
+import type { Alert, KpiLine } from '@/lib/inquiryAlerts';
 
 type ListRes =
   | { ok: true; items: InquiryRecord[]; fetchedAt: string; backend: 'sheet' | 'local' }
@@ -80,6 +83,8 @@ export default function InquiryBoardUI({ name }: { name: string }) {
   const [showStats, setShowStats] = useState(false);
   const [inlineEdit, setInlineEdit] = useState(false);
   const [flash, setFlash] = useState('');
+  // 台帳が変わるたびに増やす。アラートの再取得のきっかけ
+  const [version, setVersion] = useState(0);
 
   const [editing, setEditing] = useState<InquiryRecord | 'new' | null>(null);
 
@@ -114,6 +119,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
         setFetchedAt(j.fetchedAt);
         setBackend(j.backend);
         setNote('');
+        setVersion((v) => v + 1);
       } else {
         setItems([]);
         setNote(REASON_TEXT[j.reason] ?? `台帳を読み込めませんでした（${j.reason}）。`);
@@ -201,9 +207,11 @@ export default function InquiryBoardUI({ name }: { name: string }) {
       next[i] = item;
       return next;
     });
+    setVersion((v) => v + 1);
   }
   function applyDeleted(id: string) {
     setItems((prev) => prev.filter((r) => r.id !== id));
+    setVersion((v) => v + 1);
   }
 
   // 一覧上の直接編集（DM の切り替え・「一覧で編集」の各セル）。行まるごと PUT して、返ってきた値で置き換える。
@@ -263,6 +271,14 @@ export default function InquiryBoardUI({ name }: { name: string }) {
       {note && <div className="ib-note">{note}</div>}
       {backend === 'local' && (
         <div className="ib-note ib-note-dev">開発モード：この端末の .data/inquiry-board.json に保存しています（スプレッドシート未接続）。</div>
+      )}
+
+      {!note && (
+        <AlertPanel
+          campus={campus}
+          version={version}
+          onFilter={(f) => setStatus((cur) => (cur === f ? '' : f))}
+        />
       )}
 
       <div className="ib-summary">
@@ -398,6 +414,109 @@ export default function InquiryBoardUI({ name }: { name: string }) {
         />
       )}
     </div>
+  );
+}
+
+// ---- 画面上部の注意点（AIアラート） ------------------------------------------
+//
+// /api/inquiry-board/alerts を校舎ごとに読む。台帳を保存するたび（version が変わるたび）に取り直す。
+// AI の一言はサーバ側で 15 分キャッシュされるので、連続して開いても API 代はかさまない。
+
+type AlertsRes =
+  | { ok: true; alerts: Alert[]; ai: { text: string; cached: boolean } | null; aiAvailable: boolean; facts: { monthLabel: string; scope: string; kpis: KpiLine[]; inquiriesThisMonth: number; inquiriesPrevMonth: number } }
+  | { ok: false; reason: string };
+
+const ALERTS_OPEN_KEY = 'ib_alerts_open';
+
+function AlertPanel({ campus, version, onFilter }: { campus: string; version: number; onFilter: (f: NonNullable<Alert['filter']>) => void }) {
+  const [data, setData] = useState<AlertsRes | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    try { if (localStorage.getItem(ALERTS_OPEN_KEY) === '0') setOpen(false); } catch {}
+  }, []);
+  function toggle() {
+    setOpen((v) => { try { localStorage.setItem(ALERTS_OPEN_KEY, v ? '0' : '1'); } catch {} return !v; });
+  }
+
+  const load = useCallback(async (refresh = false) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/inquiry-board/alerts?campus=${encodeURIComponent(campus)}${refresh ? '&refresh=1' : ''}`, { cache: 'no-store' });
+      const j = (await res.json().catch(() => ({ ok: false, reason: 'upstream_error' }))) as AlertsRes;
+      setData(j);
+    } catch {
+      setData({ ok: false, reason: 'network_error' });
+    }
+    setLoading(false);
+  }, [campus]);
+
+  // 保存直後の連続更新をまとめる（少し待ってから取りに行く）
+  useEffect(() => {
+    if (version === 0) return;
+    const t = setTimeout(() => { void load(); }, 400);
+    return () => clearTimeout(t);
+  }, [load, version]);
+
+  const ok = data && data.ok ? data : null;
+
+  return (
+    <section className={`ib-alerts ${open ? '' : 'closed'}`} aria-label="今日の注意点">
+      <div className="ib-alerts-head">
+        <span className="ib-ai-badge">AI</span>
+        <b>今日の注意点</b>
+        {ok && <span className="ib-meta">{ok.facts.monthLabel}・{ok.facts.scope}</span>}
+        {loading && <span className="ib-meta">確認中…</span>}
+        <span className="ib-alerts-tools">
+          <button type="button" className="ib-link" onClick={() => void load(true)} disabled={loading}>再評価</button>
+          <button type="button" className="ib-link" onClick={toggle}>{open ? '閉じる' : '開く'}</button>
+        </span>
+      </div>
+
+      {open && data && !data.ok && (
+        <p className="ib-meta">注意点を読み込めませんでした（{data.reason}）。</p>
+      )}
+
+      {open && ok && (
+        <>
+          {ok.ai ? (
+            <p className="ib-ai-text">
+              {ok.ai.text.split('\n').filter(Boolean).map((line, i) => <span key={i}>{line}</span>)}
+            </p>
+          ) : !ok.aiAvailable ? (
+            <p className="ib-meta">AIの一言は未設定です（ANTHROPIC_API_KEY）。下の注意点はルールで数えたものです。</p>
+          ) : null}
+
+          <div className="ib-kpis">
+            {ok.facts.kpis.map((k) => (
+              <span
+                key={k.metric}
+                className={`ib-kpi ${k.target != null && k.target > 0 ? (k.actual >= k.target ? 'ok' : 'behind') : ''}`}
+                title={`実績の出所：${k.source}`}
+              >
+                {k.metric} <b>{k.actual}</b>{k.target != null && <small>/{k.target}</small>}
+              </span>
+            ))}
+            <span className="ib-kpi" title="問い合わせ日で数えた件数">
+              問合せ <b>{ok.facts.inquiriesThisMonth}</b><small>（前月 {ok.facts.inquiriesPrevMonth}）</small>
+            </span>
+          </div>
+
+          <ul className="ib-alert-list">
+            {ok.alerts.map((a, i) => (
+              <li key={i} className={`lv-${a.level}`}>
+                {a.filter ? (
+                  <button type="button" onClick={() => onFilter(a.filter!)} title="押すとこの区分で一覧を絞り込む">{a.text}</button>
+                ) : (
+                  <span>{a.text}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
   );
 }
 
