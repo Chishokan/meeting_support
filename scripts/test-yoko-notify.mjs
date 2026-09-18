@@ -160,12 +160,11 @@ ok('通知文：金額訂正は至急・更新履歴・差分を含む', () => {
   assert.match(msg, /https:\/\/example\/link$/);
 });
 
-ok('通知文：確定は経理連絡事項の担当者記入部分を載せる', () => {
+ok('通知文：確定は依頼文と作成者・リンクだけ', () => {
   const msg = g.buildMessage_('確定', g.parseYoko_(confirmed), null, 'L');
   assert.match(msg, /^【要項 確定】/);
-  assert.match(msg, /請求対象：両方/);
-  assert.doesNotMatch(msg, /経理記入日/);
-  assert.equal((msg.match(/■ 講座担当が記入/g) || []).length, 1);
+  assert.doesNotMatch(msg, /請求対象/);     // 経理連絡事項の抜粋は載せない（リンク先で見る）
+  assert.match(msg, /作成者：安藤純平/);
 });
 
 ok('テンプレートのタブ名は飛ばす', () => {

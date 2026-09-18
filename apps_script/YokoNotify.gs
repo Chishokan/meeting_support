@@ -405,7 +405,6 @@ function buildMessage_(event, info, prev, link) {
     case '確定':
       head = '【要項 確定】' + info.title + kind;
       body.push('要項が「確定」になりました。＜経理連絡事項＞の経理記入欄（請求方法・引き落とし日・締日・計上月）の記入をお願いします。');
-      body.push('', '■ 講座担当が記入した経理連絡事項', info.keiriSection || '（記載なし）');
       break;
     case '金額訂正':
       head = '【至急】【要項 金額訂正】' + info.title + kind;
