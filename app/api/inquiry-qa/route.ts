@@ -4,7 +4,7 @@ import { MODEL, THINKING } from '@/lib/systemPrompt';
 import { buildInquiryQaPrompt } from '@/lib/inquiryQaPrompt';
 import {
   listInquiryBoard, statsByCampus, formatRows, formatStats,
-  splitByMonth, currentAndPreviousYm, ymLabel, trialsInMonth,
+  splitByMonth, currentAndPreviousYm, ymLabel, trialsInMonth, enrollmentsInMonth,
 } from '@/lib/inquiryBoard';
 import { listGoals, goalsFor, formatGoals, sameCampus, sortByCampusOrder } from '@/lib/goals';
 import { logInteraction } from '@/lib/log';
@@ -23,6 +23,21 @@ type Msg = { role: 'user' | 'assistant'; content: string };
 // 問合せ管理には生徒・保護者の個人情報が含まれるため、閲覧できる部門を限定する。
 // ※氏名は Apps Script でマスク済みだが、備考の自由記述までは機械的に消せない。
 const ALLOWED_DEPTS = ['小中等部', '総務・人事・支援・管理'];
+
+// 入塾日（問合せ管理 Web アプリで入力）を月で数えた入会数。
+// 行動計画の「今月入会」（手入力）とは別の参考値として渡す。入塾日が空の入塾行は数に入らないので、
+// その件数も添えて「どれだけ信用できる数字か」をAIが示せるようにする。
+function formatEnrollments(rows: Parameters<typeof enrollmentsInMonth>[0], current: string, previous: string): string {
+  const lines: string[] = [];
+  for (const ymStr of [current, previous]) {
+    const e = enrollmentsInMonth(rows, ymStr);
+    const body = [...e.byCampus.entries()].map(([c, n]) => `${c}${n}`).join('・') || '0件';
+    lines.push(`${ymLabel(ymStr)}：${body}`);
+  }
+  const missing = enrollmentsInMonth(rows, current).missingDate;
+  lines.push(`※結果=入塾なのに入塾日が未記入の行 ${missing}件（この行は上の数に入っていない）。`);
+  return lines.join('\n');
+}
 
 // 集計だけを返す（画面上部のカード用）。
 export async function GET() {
@@ -136,6 +151,9 @@ export async function POST(req: Request) {
     formatStats(statsByCampus(board.rows)),
     '',
     `※それ以前の月 ${split.older.length}件、日付を読み取れなかった行 ${split.unknown.length}件。`,
+    '',
+    '【入塾日から数えた入会（参考）】',
+    formatEnrollments(board.rows, ym.current, ym.previous),
   ].join('\n');
 
   // 目標（秋～冬行動計画）。読めなくてもQAは動く。

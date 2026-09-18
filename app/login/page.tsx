@@ -3,6 +3,16 @@
 import { useState } from 'react';
 import { STAFF } from '@/lib/staff';
 
+// ログイン後の行き先。問合せ管理（/inquiry-board）から来た人はそこへ戻す。
+// 外部 URL へ飛ばされないよう、"/" で始まる相対パスだけを受け付ける。
+function nextPath(): string {
+  try {
+    const n = new URLSearchParams(window.location.search).get('next') || '';
+    if (n.startsWith('/') && !n.startsWith('//')) return n;
+  } catch {}
+  return '/dashboard';
+}
+
 export default function LoginPage() {
   const [campus, setCampus] = useState(STAFF[0].campus);
   const [name, setName] = useState(STAFF[0].names[0]);
@@ -32,7 +42,7 @@ export default function LoginPage() {
         setBusy(false);
         return;
       }
-      window.location.href = '/dashboard';
+      window.location.href = nextPath();
     } catch {
       setErr('通信エラーが発生しました。');
       setBusy(false);

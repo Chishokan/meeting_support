@@ -1,9 +1,11 @@
-// 小中等部「問合せ管理」シートの読み取りと集計（問い合わせQA用）。
-// Apps Script の listInquiryBoard がマスク・除外を済ませて返すため、
-// このファイルに個人情報（実名・電話・住所・保護者名・メール）は入ってこない。
+// 小中等部「問合せ管理」の読み取りと集計（問い合わせQA用）。
+// 取得元は Apps Script の listInquiryBoard。問合せ管理 Web アプリ（/inquiry-board）の
+// 台帳「問合せ台帳」に1件でもあればそれを、無ければ旧スプレッドシート（校舎ごとのタブ）を読む。
+// どちらもマスク・除外を済ませて返すため、このファイルに個人情報（実名・電話・住所・保護者名・メール）は入ってこない。
 // ★列が増減したときは INQUIRY_COLUMNS（apps_script/Code.gs）と下の型を合わせる。
 
 import { fiscalPeriod } from './companyKnowledge';
+import { listRecords } from './inquiryStore';
 
 export type InquiryRow = {
   campus: string;   // 校舎（シート名）
@@ -21,6 +23,7 @@ export type InquiryRow = {
   agreed: string;   // 本人OK
   closeDate: string;// クローズ予定日
   result: string;   // 結果（入塾・講習会申込・見送り・空＝未決）
+  enrollDate: string; // 入塾日（問合せ管理 Web アプリで入力。旧スプレッドシートには無いので空）
   note: string;     // 備考（架電日時・検討中理由・見送り理由 等。200字で切ってある）
 };
 
@@ -33,10 +36,42 @@ function pick(r: Record<string, unknown>, key: string): string {
   return v == null ? '' : String(v).trim();
 }
 
-/** Apps Script から問合せ管理の行を取得する。個人情報は向こう側で落とされている。 */
+// 生徒氏名を「佐藤友次朗」→「佐○」にする（Apps Script の maskName_ と同じ）。
+function maskName(v: string): string {
+  const s = (v || '').replace(/[\s　]/g, '');
+  return s ? s.charAt(0) + '○' : '';
+}
+
+// 備考から問い合わせフォームの定型文を落とし、200字で切る（Apps Script の cleanNote_ と同じ）。
+function cleanNote(v: string): string {
+  let t = (v || '').replace(/[\r\n]+/g, ' ');
+  for (const cut of ['個人情報保護方針：', '個人情報保護方針:', '-- このメールは', '--　このメールは']) {
+    const at = t.indexOf(cut);
+    if (at !== -1) t = t.slice(0, at);
+  }
+  t = t.replace(/[\s　]+/g, ' ').trim();
+  return t.length > 200 ? t.slice(0, 200) + '…' : t;
+}
+
+/**
+ * Apps Script から問合せ管理の行を取得する。個人情報は向こう側で落とされている。
+ * APPS_SCRIPT_URL が無い開発環境では、問合せ管理 Web アプリのローカル保存（.data/）を
+ * 同じ形にマスクして返す（本番と同じ画面を手元で確認できるように）。
+ */
 export async function listInquiryBoard(): Promise<BoardResult> {
   const url = process.env.APPS_SCRIPT_URL;
-  if (!url) return { ok: false, reason: 'not_configured' };
+  if (!url) {
+    if (process.env.NODE_ENV === 'production') return { ok: false, reason: 'not_configured' };
+    const local = await listRecords();
+    if (!local.ok) return { ok: false, reason: 'not_configured' };
+    const rows: InquiryRow[] = local.items.map((r) => ({
+      campus: r.campus, no: String(r.no || ''), date: r.date, name: maskName(r.studentName),
+      school: r.school, grade: r.grade, source: r.source, term: r.term, contacted: r.contacted,
+      trialDate: r.trialDate, trial: r.trial, meetingDate: r.meetingDate, agreed: r.agreed,
+      closeDate: r.closeDate, result: r.result, enrollDate: r.enrollDate, note: cleanNote(r.note),
+    }));
+    return { ok: true, rows, campuses: [...new Set(rows.map((r) => r.campus))], fetchedAt: local.fetchedAt };
+  }
 
   try {
     const res = await fetch(url, {
@@ -65,6 +100,7 @@ export async function listInquiryBoard(): Promise<BoardResult> {
       agreed: pick(r, '本人OK'),
       closeDate: pick(r, 'クローズ予定日'),
       result: pick(r, '結果'),
+      enrollDate: pick(r, '入塾日'),
       note: pick(r, '備考'),
     }));
     return {
@@ -250,6 +286,35 @@ export function trialsInMonth(rows: InquiryRow[], ym: string, now: Date = new Da
   return out;
 }
 
+/**
+ * その月に「入塾した」件数を、入塾日の月で数える。
+ *
+ * 入塾日は問合せ管理 Web アプリ（/inquiry-board）で入力する列。旧スプレッドシートには無いため、
+ * 移行直後は空が多い。空の行は数えない（問い合わせ日で代用しない。README「今月入会」参照）。
+ * 入塾日が入っていない「結果=入塾」の行数も返し、数字がどれだけ信用できるかを一緒に示せるようにする。
+ */
+export function enrollmentsInMonth(
+  rows: InquiryRow[],
+  ym: string,
+  now: Date = new Date(),
+): { byCampus: Map<string, number>; missingDate: number } {
+  const { startYear } = fiscalPeriod(now);
+  const byCampus = new Map<string, number>();
+  let missingDate = 0;
+  for (const r of rows) {
+    if (!r.result.includes('入塾')) continue;
+    if (!r.enrollDate) {
+      missingDate++;
+      continue;
+    }
+    const p = parseRowDate(r.enrollDate, startYear);
+    if (!p || toYm(p) !== ym) continue;
+    const key = r.campus || '（校舎不明）';
+    byCampus.set(key, (byCampus.get(key) ?? 0) + 1);
+  }
+  return { byCampus, missingDate };
+}
+
 // ---- プロンプト用の整形 -------------------------------------------------
 
 function field(label: string, v: string): string {
@@ -275,6 +340,7 @@ export function formatRows(rows: InquiryRow[]): string {
         field('本人OK', r.agreed),
         field('クローズ予定', r.closeDate),
         `結果:${r.result || '未記入'}`,
+        field('入塾日', r.enrollDate),
         field('備考', r.note),
       ].filter(Boolean);
       return parts.join(' ｜ ');
