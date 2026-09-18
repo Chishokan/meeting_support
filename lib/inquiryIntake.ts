@@ -41,18 +41,22 @@ export type IntakeFields = {
  * ★WordPress 側でフォームの項目名を変えたらここに足す。
  */
 export const FIELD_ALIASES: Record<keyof IntakeFields, string[]> = {
+  // 実際の CF7 フォーム（例：「●中学生向け定期テスト対策」）のタグは
+  //   your-name（お子様名）/ your-parent（保護者名）/ your-school / your-class（学年）/ your-tel / your-email / your-message
   studentName: ['student_name', 'お子様名', 'お子さま名', '生徒氏名', '生徒名', 'your-name', 'name'],
-  kana: ['student_kana', 'ふりがな', 'フリガナ', 'お子様名ふりがな', 'your-kana', 'kana'],
-  guardianName: ['guardian_name', '保護者名', '保護者氏名', 'parent_name'],
-  guardianKana: ['guardian_kana', '保護者名ふりがな', '保護者ふりがな', 'parent_kana'],
-  postal: ['postal', 'zip', '郵便番号', 'your-zip'],
+  kana: ['student_kana', 'ふりがな', 'フリガナ', 'お子様名ふりがな', 'your-kana', 'your-furigana', 'kana'],
+  guardianName: ['guardian_name', '保護者名', '保護者氏名', 'your-parent', 'parent', 'parent_name'],
+  guardianKana: ['guardian_kana', '保護者名ふりがな', '保護者ふりがな', 'your-parent-kana', 'parent_kana'],
+  postal: ['postal', 'zip', '郵便番号', 'your-zip', 'your-postal'],
   address: ['address', '住所', 'your-address'],
   phone: ['phone', 'tel', '電話番号', 'your-tel', 'your-phone'],
   email: ['email', 'メールアドレス', 'your-email', 'mail'],
   school: ['school', '学校名', '学校', 'your-school'],
-  grade: ['grade', '学年', 'your-grade'],
-  course: ['course', '希望コース', 'コース', '希望講座', 'your-course'],
-  campus: ['campus', '受講校舎', '希望校舎', '校舎', 'your-campus'],
+  grade: ['grade', '学年', 'your-grade', 'your-class', 'class'],
+  // 講座ごとのフォームには希望コースの項目が無いことが多い。その場合はフォームに
+  // [hidden your-course "定期テスト対策"] を置くか、Webhook が送る _post_title（フォームを置いたページ名）を使う
+  course: ['course', '希望コース', 'コース', '希望講座', 'your-course', 'form_title', '_form_title', '_post_title'],
+  campus: ['campus', '受講校舎', '希望校舎', '校舎', 'your-campus', 'your-school-campus'],
   consult: ['consult', '相談事項', 'ご相談事項', 'your-consult'],
   message: ['message', 'お問い合わせ内容', 'お問合せ内容', 'お問い合わせ', 'your-message', 'content'],
   submissionId: ['submission_id', 'submissionId', 'id', 'entry_id', 'form_id_entry', '受付ID'],

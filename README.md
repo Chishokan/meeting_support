@@ -102,12 +102,19 @@ WordPress の問い合わせフォームの送信先（Webhook）にこのアプ
   phone / email / school / grade / course / campus / consult / message / submission_id）のどちらでも受け付ける。
   JSON・form-urlencoded・multipart のいずれでもよい
 
-WordPress 側の設定（Contact Form 7 の場合）:
+WordPress 側の設定（Contact Form 7 の場合。フォームごとに設定する）:
 1. プラグイン「CF7 to Webhook」（Contact Form to Any API 等でも可）を入れる
-2. 対象フォームの Webhook 設定で、送信先 URL に `https://<このアプリ>/api/inquiry-board/intake` を入れる
-3. ヘッダに `X-Intake-Token: <合言葉>` を足す（ヘッダ設定が無ければ URL 末尾に `?token=<合言葉>`）
+2. お問い合わせ → 対象フォーム → 「Webhook」タブで、送信先 URL に
+   `https://<このアプリ>/api/inquiry-board/intake?token=<合言葉>` を入れる（このプラグインはヘッダを付けられないため URL に付ける）
+3. 実際のフォームのタグは your-name（お子様名）/ your-parent（保護者名）/ your-school / your-class（学年）/
+   your-tel / your-email / your-message で、これらは対応表に入っている。
+   講座ごとのフォームには校舎・希望コースの項目が無いので、「フォーム」タブに
+   `[hidden your-campus "日宇校"]` `[hidden your-course "中学生向け定期テスト対策"]` のような hidden タグを足す
+   （複数校舎で共用するフォームなら `[select* your-campus "日野校" "駅前校" "大野校" "日宇校" "県中対策"]` を置く）。
+   無ければ「その他」に入り、備考に【校舎不明】が付く
 4. 送る項目名が上の一覧に無い名前なら、`FIELD_ALIASES` にその名前を足して push する
 5. テスト送信して `/inquiry-board` に出ることを確認。Vercel のログに `[INQUIRY_INTAKE]` が残る
+6. 「メール」タブの送信先（担当者への通知メール）はそのままでよい。取り込みはメールとは独立して動く
 
 取り込みの決まり（lib/inquiryIntake.ts の decideIntake）:
 - 媒体は「HP」、日付は受信日、結果は空（追客中）で登録する。希望コースから受講期を読み替える
