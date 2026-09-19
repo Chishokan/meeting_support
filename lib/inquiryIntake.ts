@@ -29,7 +29,7 @@ export type IntakeFields = {
   school: string;
   grade: string;
   course: string;   // 希望コース（模試・講習会・体験 など）
-  campus: string;   // 受講校舎（希望校舎）
+  campus: string;   // 受講校舎（希望校舎）。「オンライン」を含めばオンライン、「県中」「県立中」を含めば県中
   consult: string;  // 相談事項
   message: string;  // お問い合わせ内容
   submissionId: string; // フォーム側の送信ID（あれば二重登録防止に使う）
@@ -105,7 +105,8 @@ export function matchCampus(raw: string): string {
   if (s.includes('駅前')) return '駅前校';
   if (s.includes('大野')) return '大野校';
   if (s.includes('日宇')) return '日宇校';
-  if (s.includes('県中') || s.includes('県立中') || s.includes('オンライン')) return '県中対策';
+  if (s.includes('オンライン')) return 'オンライン';
+  if (s.includes('県中') || s.includes('県立中')) return '県中';
   for (const c of BOARD_CAMPUSES) if (s.includes(c)) return c;
   return '';
 }

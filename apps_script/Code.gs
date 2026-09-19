@@ -1212,6 +1212,9 @@ function importLegacyInquiryBoard() {
     var hr = findInquiryHeader_(values);
     if (hr === -1) continue;
     var campus = String(s.getName()).replace(/[\s　]/g, '');
+    // 台帳では「県中対策」を通塾の「県中」とオンラインの「オンライン」に分けている。
+    // 旧シートからは区別できないので「県中」に入れ、オンラインの人は担当者が校舎を直す。
+    if (campus === '県中対策') campus = '県中';
 
     var headers = values[hr];
     var colOf = {};

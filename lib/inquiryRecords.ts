@@ -9,8 +9,20 @@
 
 // ---- 選択肢（元シートのプルダウンをそのまま引き継ぐ） ---------------------
 
-/** 校舎（元シートのタブ名。並びは会議で見る順）。 */
-export const BOARD_CAMPUSES = ['日野校', '駅前校', '大野校', '日宇校', '県中対策', 'その他'] as const;
+/**
+ * 校舎（並びは会議で見る順）。
+ * 旧シートの「県中対策」タブは、通塾の「県中」とオンラインの「オンライン」に分けた。
+ * 旧データの「県中対策」は読み込み時に「県中」へ寄せる（normalizeCampus）。
+ */
+export const BOARD_CAMPUSES = ['日野校', '駅前校', '大野校', '日宇校', '県中', 'オンライン', 'その他'] as const;
+
+/** 旧表記の校舎名を今の表記に寄せる。「県中対策」→「県中」、「佐世保駅前校」→「駅前校」。 */
+export function normalizeCampus(v: string): string {
+  const s = (v || '').replace(/[\s　]/g, '');
+  if (s === '県中対策') return '県中';
+  if (s === '佐世保駅前校') return '駅前校';
+  return s;
+}
 
 /** 学年（元シートは全角数字で入っているものが多いので、全角に揃える）。 */
 export const GRADES = ['小１', '小２', '小３', '小４', '小５', '小６', '中１', '中２', '中３', '高１', '高２', '高３'] as const;
@@ -198,7 +210,7 @@ export function validateInput(raw: unknown, fallbackYear: number): ValidationRes
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const errors: string[] = [];
 
-  const campus = str(r.campus);
+  const campus = normalizeCampus(str(r.campus));
   if (!campus) errors.push('校舎を選んでください。');
 
   const studentName = str(r.studentName);

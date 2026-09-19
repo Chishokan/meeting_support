@@ -842,8 +842,10 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
         </div>
 
         <div className="dm-modal-body ib-form">
+          {/* 並びは「必須 → 架電に要る連絡先 → 追客の状況 → 備考 → その他」。
+              電話を受けながら上から順に埋め、追客の更新は2つ目の区画だけで済むようにしてある。 */}
           <section>
-            <h3>基本</h3>
+            <h3>基本（必須）</h3>
             <div className="ib-grid">
               <label>校舎 <span className="req">必須</span>
                 <select value={v.campus} onChange={(e) => set('campus', e.target.value)}>
@@ -852,15 +854,6 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
               </label>
               <label>問い合わせ日 <span className="req">必須</span>
                 <DateInput value={v.date} onChange={(x) => set('date', x)} />
-              </label>
-              <label>No.
-                <input
-                  type="number"
-                  min={0}
-                  value={v.no ?? ''}
-                  onChange={(e) => set('no', e.target.value === '' ? undefined : Number(e.target.value))}
-                  placeholder="空欄なら自動採番"
-                />
               </label>
               <label>生徒氏名 <span className="req">必須</span>
                 <input ref={firstRef} value={v.studentName} onChange={(e) => set('studentName', e.target.value)} placeholder="姓 名" />
@@ -877,26 +870,11 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
               <label>学校名
                 <input value={v.school} onChange={(e) => set('school', e.target.value)} placeholder="日野中" />
               </label>
-            </div>
-          </section>
-
-          <section>
-            <h3>きっかけ</h3>
-            <div className="ib-grid">
-              <label>媒体
-                <select value={v.source} onChange={(e) => set('source', e.target.value)}>
-                  <option value="">—</option>
-                  {withCurrent(SOURCES, v.source).map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
+              <label>電話番号
+                <input value={v.phone} onChange={(e) => set('phone', e.target.value)} inputMode="tel" placeholder="090-0000-0000" />
               </label>
-              <label>受講期
-                <select value={v.term} onChange={(e) => set('term', e.target.value)}>
-                  <option value="">—</option>
-                  {withCurrent(TERMS, v.term).map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </label>
-              <label>DM
-                <MarkSelect value={v.dm} onChange={(x) => set('dm', x)} />
+              <label>保護者名
+                <input value={v.guardianName} onChange={(e) => set('guardianName', e.target.value)} />
               </label>
             </div>
           </section>
@@ -910,6 +888,21 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
                   {withCurrent(CONTACTS, v.contacted).map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </label>
+              <label>媒体
+                <select value={v.source} onChange={(e) => set('source', e.target.value)}>
+                  <option value="">—</option>
+                  {withCurrent(SOURCES, v.source).map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+              <label>受講期
+                <select value={v.term} onChange={(e) => set('term', e.target.value)}>
+                  <option value="">—</option>
+                  {withCurrent(TERMS, v.term).map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+              <label>クローズ予定日
+                <DateInput value={v.closeDate} onChange={(x) => set('closeDate', x)} />
+              </label>
               <label>体験日
                 <DateInput value={v.trialDate} onChange={(x) => set('trialDate', x)} />
               </label>
@@ -921,9 +914,6 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
               </label>
               <label>本人OK
                 <MarkSelect value={v.agreed} onChange={(x) => set('agreed', x)} />
-              </label>
-              <label>クローズ予定日
-                <DateInput value={v.closeDate} onChange={(x) => set('closeDate', x)} />
               </label>
               <label>結果 <small>（空欄＝追客中）</small>
                 <select value={v.result} onChange={(e) => set('result', e.target.value)}>
@@ -948,13 +938,19 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
           </section>
 
           <section>
-            <h3>連絡先（保護者）</h3>
+            <h3>その他</h3>
             <div className="ib-grid">
-              <label>保護者名
-                <input value={v.guardianName} onChange={(e) => set('guardianName', e.target.value)} />
+              <label>DM
+                <MarkSelect value={v.dm} onChange={(x) => set('dm', x)} />
               </label>
-              <label>電話番号
-                <input value={v.phone} onChange={(e) => set('phone', e.target.value)} inputMode="tel" placeholder="090-0000-0000" />
+              <label>No.
+                <input
+                  type="number"
+                  min={0}
+                  value={v.no ?? ''}
+                  onChange={(e) => set('no', e.target.value === '' ? undefined : Number(e.target.value))}
+                  placeholder="空欄なら自動採番"
+                />
               </label>
               <label>メールアドレス
                 <input value={v.email} onChange={(e) => set('email', e.target.value)} inputMode="email" />

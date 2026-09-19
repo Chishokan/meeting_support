@@ -48,7 +48,7 @@ export async function listGoals(): Promise<GoalsResult> {
 
 // --- 校舎名の突き合わせ ---------------------------------------------------
 
-// 行動計画は「県中」、問合せ管理は「県中対策」のように表記が違う。
+// 行動計画は「県中」、旧問合せ管理は「県中対策」のように表記が違う（台帳は「県中」）。
 // 「校」「対策」と空白を落としてから、どちらかがどちらかを含めば同じ校舎とみなす。
 function normCampus(s: string): string {
   return (s || '').replace(/[\s　]/g, '').replace(/校$/, '').replace(/対策$/, '');
@@ -68,7 +68,7 @@ export function sameCampus(a: string, b: string): boolean {
  * シートのタブ順やデータの出現順に任せると、月によって並びが変わって読みにくい。
  * ここに無い名前は末尾へ（新しい校舎が増えても落ちないように）。
  */
-export const CAMPUS_ORDER = ['日野校', '駅前校', '大野校', '日宇校', '県中対策', 'その他'];
+export const CAMPUS_ORDER = ['日野校', '駅前校', '大野校', '日宇校', '県中', 'オンライン', 'その他'];
 
 export function campusRank(name: string): number {
   const i = CAMPUS_ORDER.findIndex((c) => sameCampus(c, name));
