@@ -371,6 +371,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
                 <th>DM</th>
                 <th>日付</th>
                 <th>生徒氏名</th>
+                <th>電話番号</th>
                 <th>学年</th>
                 <th>学校</th>
                 <th>媒体</th>
@@ -597,6 +598,9 @@ function BoardRow({ r, showCampus, inline, today, onOpen, onSave }: RowProps) {
           <b>{r.studentName || (r.guardianName ? `（保護者）${r.guardianName}` : '（未記入）')}</b>
           {r.kana && <small>{r.kana}</small>}
         </td>
+        <td data-label="電話番号" className="ib-tel" onClick={stop}>
+          <PhoneCell phone={r.phone} guardian={r.guardianName} />
+        </td>
         <td data-label="学年">{r.grade}</td>
         <td data-label="学校" className="ib-school">{r.school}</td>
         <td data-label="媒体">{r.source}</td>
@@ -639,6 +643,10 @@ function BoardRow({ r, showCampus, inline, today, onOpen, onSave }: RowProps) {
         <InlineText label="生徒氏名" value={draft.studentName} onCommit={(v) => commit({ studentName: v })} />
         {r.kana && <small>{r.kana}</small>}
       </td>
+      <td data-label="電話番号" className="ib-tel">
+        <InlineText label="電話番号" value={draft.phone} onCommit={(v) => commit({ phone: v })} />
+        {r.guardianName && <small>{r.guardianName}</small>}
+      </td>
       <td data-label="学年">{sel('grade', GRADES, '—', '学年')}</td>
       <td data-label="学校" className="ib-school"><InlineText label="学校" value={draft.school} onCommit={(v) => commit({ school: v })} /></td>
       <td data-label="媒体">{sel('source', SOURCES, '—', '媒体')}</td>
@@ -659,6 +667,24 @@ function BoardRow({ r, showCampus, inline, today, onOpen, onSave }: RowProps) {
         <InlineText label="備考" multiline value={draft.note} onCommit={(v) => commit({ note: v })} />
       </td>
     </tr>
+  );
+}
+
+/**
+ * 一覧の電話番号。押すとそのまま発信できる（スマホの tel: リンク。PC では電話アプリが入っていれば開く）。
+ * 保護者名があれば小さく添える（架電時に誰宛てか分かるように）。
+ */
+function PhoneCell({ phone, guardian }: { phone: string; guardian: string }) {
+  const digits = (phone || '').replace(/[^0-9+]/g, '');
+  return (
+    <>
+      {phone ? (
+        digits ? <a href={`tel:${digits}`} className="ib-tel-link" title="押すと発信">{phone}</a> : <span>{phone}</span>
+      ) : (
+        <span className="ib-tel-none">—</span>
+      )}
+      {guardian && <small>{guardian}</small>}
+    </>
   );
 }
 

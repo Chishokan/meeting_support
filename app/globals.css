@@ -1110,6 +1110,12 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .ib-name small, .ib-c small { display: block; font-size: 10.5px; color: #97a1ac; }
 .ib-dm { margin-left: 6px; font-size: 10px; font-weight: 700; color: #7a5c00; background: #fdf3d6; border-radius: 4px; padding: 1px 5px; vertical-align: 1px; }
 .ib-c { text-align: center; }
+.ib-tel { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ib-tel small { display: block; font-size: 10.5px; color: #97a1ac; }
+.ib-tel-link { color: var(--navy); text-decoration: none; border-bottom: 1px dotted #9db4c9; }
+.ib-tel-link:hover { border-bottom-style: solid; }
+.ib-tel-none { color: #b6bec7; }
+.ib-table.inline .ib-tel input { min-width: 128px; }
 .ib-over { color: #b03a2e; font-weight: 700; }
 .ib-school { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .ib-th-note { min-width: 200px; }
@@ -1176,6 +1182,8 @@ button.primary:disabled { opacity: .5; cursor: default; }
   .ib-table td.ib-name::before { display: none; }
   .ib-table td.ib-name b { font-size: 15px; }
   .ib-table td.ib-name small { display: inline; margin-left: 6px; }
+  .ib-table td.ib-tel small { display: inline; margin-left: 6px; }
+  .ib-tel-link { font-size: 15px; font-weight: 700; }
   .ib-table td.ib-c { text-align: left; }
   .ib-table td.ib-c small { display: inline; margin-left: 4px; }
   .ib-table td:empty { display: none; }
