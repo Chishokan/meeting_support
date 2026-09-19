@@ -1182,6 +1182,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
   .ib-table td.ib-name::before { display: none; }
   .ib-table td.ib-name b { font-size: 15px; }
   .ib-table td.ib-name small { display: inline; margin-left: 6px; }
+  .ib-table td.ib-tel { grid-column: 1 / -1; }
   .ib-table td.ib-tel small { display: inline; margin-left: 6px; }
   .ib-tel-link { font-size: 15px; font-weight: 700; }
   .ib-table td.ib-c { text-align: left; }
