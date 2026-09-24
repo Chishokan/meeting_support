@@ -8,7 +8,7 @@
 // 同じ人からの再送信の扱い（新規にせず備考へ追記）を持つ。フォームの項目名を変えたら FIELD_ALIASES を直す。
 
 import {
-  BOARD_CAMPUSES, emptyInput, normalizeGrade,
+  BOARD_CAMPUSES, UNASSIGNED_CAMPUS, emptyInput, normalizeGrade,
   type InquiryInput, type InquiryRecord,
 } from './inquiryRecords';
 
@@ -30,6 +30,7 @@ export type IntakeFields = {
   grade: string;
   course: string;   // 希望コース（模試・講習会・体験 など）
   campus: string;   // 受講校舎（希望校舎）。「オンライン」を含めばオンライン、「県中」「県立中」を含めば県中
+  referrer: string; // 紹介者
   consult: string;  // 相談事項
   message: string;  // お問い合わせ内容
   submissionId: string; // フォーム側の送信ID（あれば二重登録防止に使う）
@@ -57,6 +58,7 @@ export const FIELD_ALIASES: Record<keyof IntakeFields, string[]> = {
   // [hidden your-course "定期テスト対策"] を置くか、Webhook が送る _post_title（フォームを置いたページ名）を使う
   course: ['course', '希望コース', 'コース', '希望講座', 'your-course', 'form_title', '_form_title', '_post_title'],
   campus: ['campus', '受講校舎', '希望校舎', '校舎', 'your-campus', 'your-school-campus'],
+  referrer: ['referrer', '紹介者', 'ご紹介者', '紹介者名', 'your-referrer'],
   consult: ['consult', '相談事項', 'ご相談事項', 'your-consult'],
   message: ['message', 'お問い合わせ内容', 'お問合せ内容', 'お問い合わせ', 'your-message', 'content'],
   submissionId: ['submission_id', 'submissionId', 'id', 'entry_id', 'form_id_entry', '受付ID'],
@@ -96,7 +98,7 @@ export function readFields(payload: IntakePayload): IntakeFields {
 
 /**
  * 受講校舎の文言 → 台帳の校舎。「佐世保駅前校」→「駅前校」など部分一致で寄せる。
- * 分からなければ '' を返し、呼び出し側が「その他」に入れて備考に【校舎不明】と書く。
+ * 分からなければ '' を返し、呼び出し側が「未分類」に入れて備考に【校舎不明】と書く。
  */
 export function matchCampus(raw: string): string {
   const s = (raw || '').replace(/[\s　]/g, '');
@@ -176,7 +178,7 @@ export function buildNoteChunk(f: IntakeFields, todayIso: string): string {
  *   （旧メール転記の「既存行のため備考に追記（他列は変更なし）」と同じ扱い。
  *     見送り済みでも新規行にはせず追記する。担当者が結果を見直せばよい）
  * - 高校生は小中等部の対象外だが、捨てずに「その他」に入れて備考に【高校生】と書く
- * - 校舎が読めなければ「その他」に入れて備考に【校舎不明】と書く
+ * - 校舎が読めなければ「未分類」に入れて備考に【校舎不明】と書く（担当者が校舎を振り分ける）
  */
 export function decideIntake(f: IntakeFields, existing: InquiryRecord[], todayIso: string): IntakeDecision {
   if (!f.studentName && !f.guardianName && !f.phone && !f.email) return { action: 'skip', reason: 'empty' };
@@ -191,7 +193,7 @@ export function decideIntake(f: IntakeFields, existing: InquiryRecord[], todayIs
   if (isHighSchool) markers.push('【高校生】高等部へ引き継ぎ');
   if (!campus) {
     markers.push(f.campus ? `【校舎不明】受講校舎の入力:${f.campus}` : '【校舎不明】受講校舎の入力なし');
-    campus = 'その他';
+    campus = UNASSIGNED_CAMPUS;
   }
 
   const chunk = buildNoteChunk(f, todayIso);
@@ -219,6 +221,7 @@ export function decideIntake(f: IntakeFields, existing: InquiryRecord[], todayIs
       email: target.email || f.email,
       school: target.school || f.school,
       grade: target.grade || grade,
+      referrer: target.referrer || f.referrer,
       note: [chunk, ...markers, target.note].filter(Boolean).join('\n'),
     };
     return { action: 'append', target, input, chunk };
@@ -233,6 +236,7 @@ export function decideIntake(f: IntakeFields, existing: InquiryRecord[], todayIs
     grade,
     phone: f.phone,
     source: 'HP',
+    referrer: f.referrer,
     term: matchTerm(f.course),
     note: [chunk, ...markers].join('\n'),
     guardianName: f.guardianKana && f.guardianName ? `${f.guardianName}（${f.guardianKana}）` : f.guardianName,

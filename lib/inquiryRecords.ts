@@ -14,7 +14,10 @@
  * 旧シートの「県中対策」タブは、通塾の「県中」とオンラインの「オンライン」に分けた。
  * 旧データの「県中対策」は読み込み時に「県中」へ寄せる（normalizeCampus）。
  */
-export const BOARD_CAMPUSES = ['日野校', '駅前校', '大野校', '日宇校', '県中', 'オンライン', 'その他'] as const;
+export const BOARD_CAMPUSES = ['日野校', '駅前校', '大野校', '日宇校', '県中', 'オンライン', 'その他', '未分類'] as const;
+
+/** 校舎が決まっていない問い合わせの置き場。HP フォームで校舎が読めなかった分もここに入る。 */
+export const UNASSIGNED_CAMPUS = '未分類';
 
 /** 旧表記の校舎名を今の表記に寄せる。「県中対策」→「県中」、「佐世保駅前校」→「駅前校」。 */
 export function normalizeCampus(v: string): string {
@@ -55,6 +58,7 @@ export type InquiryRecord = {
   grade: string;         // 学年
   phone: string;         // 電話番号
   source: string;        // 媒体
+  referrer: string;      // 紹介者（媒体が友人紹介・兄弟生・保護者紹介のとき、誰の紹介か）
   term: string;          // 受講期
   contacted: string;     // 連絡（済／不通／空）
   trialDate: string;     // 体験日
@@ -94,6 +98,7 @@ export const RECORD_FIELDS: { key: keyof InquiryRecord; header: string }[] = [
   { key: 'grade', header: '学年' },
   { key: 'phone', header: '電話番号' },
   { key: 'source', header: '媒体' },
+  { key: 'referrer', header: '紹介者' },
   { key: 'term', header: '受講期' },
   { key: 'contacted', header: '連絡' },
   { key: 'trialDate', header: '体験日' },
@@ -117,14 +122,14 @@ export const RECORD_FIELDS: { key: keyof InquiryRecord; header: string }[] = [
 ];
 
 const TEXT_MAX: Partial<Record<keyof InquiryRecord, number>> = {
-  studentName: 60, kana: 80, school: 60, phone: 40, note: 4000,
+  studentName: 60, kana: 80, school: 60, phone: 40, note: 4000, referrer: 60,
   guardianName: 60, postal: 12, address: 200, email: 120,
 };
 
 export function emptyInput(campus: string): InquiryInput {
   return {
     campus, date: '', studentName: '', kana: '', school: '', grade: '', phone: '',
-    source: '', term: '', contacted: '', trialDate: '', trial: '', meetingDate: '',
+    source: '', referrer: '', term: '', contacted: '', trialDate: '', trial: '', meetingDate: '',
     agreed: '', closeDate: '', result: '', enrollDate: '', note: '',
     guardianName: '', postal: '', address: '', email: '', dm: '', intakeId: '',
   };
@@ -229,6 +234,7 @@ export function validateInput(raw: unknown, fallbackYear: number): ValidationRes
     grade: normalizeGrade(str(r.grade)),
     phone: str(r.phone),
     source: str(r.source),
+    referrer: str(r.referrer),
     term: str(r.term),
     contacted: str(r.contacted),
     trialDate: normalizeDate(str(r.trialDate), fallbackYear),

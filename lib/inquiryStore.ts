@@ -10,7 +10,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { RECORD_FIELDS, normalizeCampus, type InquiryInput, type InquiryRecord } from './inquiryRecords';
+import { RECORD_FIELDS, UNASSIGNED_CAMPUS, normalizeCampus, type InquiryInput, type InquiryRecord } from './inquiryRecords';
 
 export type ListResult =
   | { ok: true; items: InquiryRecord[]; fetchedAt: string; backend: 'sheet' | 'local' }
@@ -37,7 +37,7 @@ export function fromSheetRow(r: Record<string, unknown>): InquiryRecord {
     out[f.key] = f.key === 'no' ? Number(v ?? 0) || 0 : v == null ? '' : String(v).trim();
   }
   // 旧シートから移した行の「県中対策」は「県中」として扱う
-  out.campus = normalizeCampus(String(out.campus ?? ''));
+  out.campus = normalizeCampus(String(out.campus ?? '')) || UNASSIGNED_CAMPUS;
   return out as InquiryRecord;
 }
 
@@ -82,7 +82,7 @@ async function readLocal(): Promise<InquiryRecord[]> {
   try {
     const raw = await fs.readFile(LOCAL_FILE, 'utf8');
     const j = JSON.parse(raw);
-    return Array.isArray(j) ? (j as InquiryRecord[]).map((r) => ({ ...r, campus: normalizeCampus(r.campus) })) : [];
+    return Array.isArray(j) ? (j as InquiryRecord[]).map((r) => ({ ...r, campus: normalizeCampus(r.campus) || UNASSIGNED_CAMPUS })) : [];
   } catch {
     return [];
   }

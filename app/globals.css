@@ -1045,6 +1045,13 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .ib-tab:hover { background: #eaf1f8; }
 .ib-tab.active { color: #fff; background: var(--navy); border-color: var(--navy); }
 .ib-tab-n { font-size: 11px; font-weight: 700; opacity: .7; }
+/* 表示区分（追客／入塾済み／すべて）。校舎タブの下に小さく置く */
+.ib-views { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 12px; background: #fff; }
+.ib-view { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: #667; background: #fff; border: none; padding: 6px 12px; cursor: pointer; font-family: inherit; }
+.ib-view + .ib-view { border-left: 1px solid var(--line); }
+.ib-view:hover { background: #f2f5f9; }
+.ib-view.active { color: var(--navy); background: #eaf1f8; }
+.ib-ref { display: block; font-size: 10.5px; color: #97a1ac; }
 .ib-tab.active .ib-tab-n { opacity: .85; }
 
 .ib-note {
@@ -1184,6 +1191,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
   .ib-table td.ib-name small { display: inline; margin-left: 6px; }
   .ib-table td.ib-tel { grid-column: 1 / -1; }
   .ib-table td.ib-tel small { display: inline; margin-left: 6px; }
+  .ib-ref { display: inline; margin-left: 6px; }
   .ib-tel-link { font-size: 15px; font-weight: 700; }
   .ib-table td.ib-c { text-align: left; }
   .ib-table td.ib-c small { display: inline; margin-left: 4px; }

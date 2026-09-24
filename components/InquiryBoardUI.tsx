@@ -39,6 +39,15 @@ const REASON_TEXT: Record<string, string> = {
 
 const STORAGE_KEY = 'ib_campus';
 const INLINE_KEY = 'ib_inline';
+const VIEW_KEY = 'ib_view';
+
+// 表示区分。問い合わせ管理の画面なので、入塾した人は既定で一覧から外す（「入塾済み」で見る）。
+type View = 'active' | 'joined' | 'all';
+const VIEWS: { key: View; label: string; desc: string }[] = [
+  { key: 'active', label: '追客', desc: '入塾した人を除く' },
+  { key: 'joined', label: '入塾済み', desc: '結果が入塾の人だけ' },
+  { key: 'all', label: 'すべて', desc: '区分なし' },
+];
 const ALL = 'すべて';
 
 type SortKey = 'date' | 'no';
@@ -82,6 +91,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
   const [sort, setSort] = useState<SortKey>('date');
   const [showStats, setShowStats] = useState(false);
   const [inlineEdit, setInlineEdit] = useState(false);
+  const [view, setView] = useState<View>('active');
   const [flash, setFlash] = useState('');
   // 台帳が変わるたびに増やす。アラートの再取得のきっかけ
   const [version, setVersion] = useState(0);
@@ -96,8 +106,15 @@ export default function InquiryBoardUI({ name }: { name: string }) {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved && (saved === ALL || (BOARD_CAMPUSES as readonly string[]).includes(saved))) setCampus(saved);
       if (localStorage.getItem(INLINE_KEY) === '1') setInlineEdit(true);
+      const v = localStorage.getItem(VIEW_KEY);
+      if (v === 'active' || v === 'joined' || v === 'all') setView(v);
     } catch {}
   }, []);
+  function changeView(v: View) {
+    setView(v);
+    if (v !== 'joined' && status === 'joined') setStatus('');
+    try { localStorage.setItem(VIEW_KEY, v); } catch {}
+  }
   function toggleInline() {
     setInlineEdit((v) => {
       try { localStorage.setItem(INLINE_KEY, v ? '0' : '1'); } catch {}
@@ -139,6 +156,13 @@ export default function InquiryBoardUI({ name }: { name: string }) {
     [items, campus],
   );
 
+  // 表示区分を掛けた行。件数カードと一覧はこれを元にする（集計だけは区分を掛けない）
+  const viewRows = useMemo(() => {
+    if (view === 'all') return campusRows;
+    if (view === 'joined') return campusRows.filter((r) => statusOf(r.result) === 'joined');
+    return campusRows.filter((r) => statusOf(r.result) !== 'joined');
+  }, [campusRows, view]);
+
   const months = useMemo(() => {
     const set = new Set<string>();
     for (const r of campusRows) {
@@ -148,7 +172,8 @@ export default function InquiryBoardUI({ name }: { name: string }) {
     return [...set].sort().reverse();
   }, [campusRows]);
 
-  const shown = useMemo(() => {
+  // 区分を掛ける前の絞り込み結果（学年別集計に使う。入塾を除いた集計では入塾率が出せないため）
+  const statsRows = useMemo(() => {
     const q = query.trim().toLowerCase();
     const rows = campusRows.filter((r) => {
       if (status) {
@@ -160,7 +185,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
       if (source && r.source !== source) return false;
       if (month && ymOf(r.date) !== month) return false;
       if (q) {
-        const hay = [r.studentName, r.kana, r.school, r.guardianName, r.phone, r.note, r.result, r.source, r.campus, String(r.no)]
+        const hay = [r.studentName, r.kana, r.school, r.guardianName, r.phone, r.note, r.result, r.source, r.referrer, r.campus, String(r.no)]
           .join(' ')
           .toLowerCase();
         if (!hay.includes(q)) return false;
@@ -181,9 +206,15 @@ export default function InquiryBoardUI({ name }: { name: string }) {
     return rows;
   }, [campusRows, query, status, grade, source, month, sort, today]);
 
+  const shown = useMemo(() => {
+    if (view === 'all') return statsRows;
+    if (view === 'joined') return statsRows.filter((r) => statusOf(r.result) === 'joined');
+    return statsRows.filter((r) => statusOf(r.result) !== 'joined');
+  }, [statsRows, view]);
+
   const counts = useMemo(() => {
-    const c = { total: campusRows.length, open: 0, joined: 0, applied: 0, declined: 0, untouched: 0, overdue: 0 };
-    for (const r of campusRows) {
+    const c = { total: viewRows.length, open: 0, joined: 0, applied: 0, declined: 0, untouched: 0, overdue: 0 };
+    for (const r of viewRows) {
       const st = statusOf(r.result);
       if (st === 'open') c.open++;
       else if (st === 'joined') c.joined++;
@@ -193,9 +224,9 @@ export default function InquiryBoardUI({ name }: { name: string }) {
       if (isOverdue(r, today)) c.overdue++;
     }
     return c;
-  }, [campusRows, today]);
+  }, [viewRows, today]);
 
-  const stats = useMemo(() => statsByGrade(shown), [shown]);
+  const stats = useMemo(() => statsByGrade(statsRows), [statsRows]);
 
   // ---- 保存後の反映 ------------------------------------------------------
 
@@ -268,6 +299,26 @@ export default function InquiryBoardUI({ name }: { name: string }) {
         ))}
       </div>
 
+      <div className="ib-views" role="tablist" aria-label="表示区分">
+        {VIEWS.map((vw) => (
+          <button
+            key={vw.key}
+            role="tab"
+            aria-selected={view === vw.key}
+            className={`ib-view ${view === vw.key ? 'active' : ''}`}
+            title={vw.desc}
+            onClick={() => changeView(vw.key)}
+          >
+            {vw.label}
+            <span className="ib-tab-n">
+              {vw.key === 'all' ? campusRows.length
+                : vw.key === 'joined' ? campusRows.filter((r) => statusOf(r.result) === 'joined').length
+                : campusRows.filter((r) => statusOf(r.result) !== 'joined').length}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {note && <div className="ib-note">{note}</div>}
       {backend === 'local' && (
         <div className="ib-note ib-note-dev">開発モード：この端末の .data/inquiry-board.json に保存しています（スプレッドシート未接続）。</div>
@@ -277,7 +328,10 @@ export default function InquiryBoardUI({ name }: { name: string }) {
         <AlertPanel
           campus={campus}
           version={version}
-          onFilter={(f) => setStatus((cur) => (cur === f ? '' : f))}
+          onFilter={(f) => {
+            if (f === 'joined' && view === 'active') changeView('joined');
+            setStatus((cur) => (cur === f ? '' : f));
+          }}
         />
       )}
 
@@ -288,9 +342,11 @@ export default function InquiryBoardUI({ name }: { name: string }) {
         <button className={`ib-sum ${status === 'open' ? 'active' : ''}`} onClick={() => setStatus(status === 'open' ? '' : 'open')}>
           <b>{counts.open}</b><span>追客中</span>
         </button>
-        <button className={`ib-sum ${status === 'joined' ? 'active' : ''}`} onClick={() => setStatus(status === 'joined' ? '' : 'joined')}>
-          <b>{counts.joined}</b><span>入塾</span>
-        </button>
+        {view !== 'active' && (
+          <button className={`ib-sum ${status === 'joined' ? 'active' : ''}`} onClick={() => setStatus(status === 'joined' ? '' : 'joined')}>
+            <b>{counts.joined}</b><span>入塾</span>
+          </button>
+        )}
         <button className={`ib-sum ${status === 'applied' ? 'active' : ''}`} onClick={() => setStatus(status === 'applied' ? '' : 'applied')}>
           <b>{counts.applied}</b><span>申込</span>
         </button>
@@ -341,11 +397,11 @@ export default function InquiryBoardUI({ name }: { name: string }) {
         <button className="ib-ghost" onClick={() => void load()} disabled={loading}>{loading ? '読込中…' : '更新'}</button>
       </div>
 
-      {showStats && <StatsPanel stats={stats} count={shown.length} filtered={filtered} />}
+      {showStats && <StatsPanel stats={stats} count={statsRows.length} filtered={filtered} />}
 
       <div className="ib-list-head">
         <span>
-          {filtered ? `${shown.length}件（${campusRows.length}件中）` : `${shown.length}件`}
+          {filtered ? `${shown.length}件（${viewRows.length}件中）` : `${shown.length}件`}
           {filtered && (
             <button className="ib-link" onClick={() => { setQuery(''); setStatus(''); setGrade(''); setSource(''); setMonth(''); }}>
               絞り込みを解除
@@ -603,7 +659,7 @@ function BoardRow({ r, showCampus, inline, today, onOpen, onSave }: RowProps) {
         </td>
         <td data-label="学年">{r.grade}</td>
         <td data-label="学校" className="ib-school">{r.school}</td>
-        <td data-label="媒体">{r.source}</td>
+        <td data-label="媒体">{r.source}{r.referrer && <small className="ib-ref">紹介：{r.referrer}</small>}</td>
         <td data-label="受講期">{r.term}</td>
         <td data-label="連絡" className="ib-c">{r.contacted}</td>
         <td data-label="体験" className="ib-c">{r.trial}{r.trialDate && <small>{shortDate(r.trialDate)}</small>}</td>
@@ -649,7 +705,12 @@ function BoardRow({ r, showCampus, inline, today, onOpen, onSave }: RowProps) {
       </td>
       <td data-label="学年">{sel('grade', GRADES, '—', '学年')}</td>
       <td data-label="学校" className="ib-school"><InlineText label="学校" value={draft.school} onCommit={(v) => commit({ school: v })} /></td>
-      <td data-label="媒体">{sel('source', SOURCES, '—', '媒体')}</td>
+      <td data-label="媒体">
+        <span className="ib-stack">
+          {sel('source', SOURCES, '—', '媒体')}
+          <InlineText label="紹介者" value={draft.referrer} onCommit={(v) => commit({ referrer: v })} />
+        </span>
+      </td>
       <td data-label="受講期">{sel('term', TERMS, '—', '受講期')}</td>
       <td data-label="連絡">{sel('contacted', CONTACTS, '—', '連絡')}</td>
       <td data-label="体験">
@@ -893,6 +954,9 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
                   <option value="">—</option>
                   {withCurrent(SOURCES, v.source).map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
+              </label>
+              <label>紹介者 <small>（紹介のとき）</small>
+                <input value={v.referrer} onChange={(e) => set('referrer', e.target.value)} placeholder="紹介してくれた生徒・保護者" />
               </label>
               <label>受講期
                 <select value={v.term} onChange={(e) => set('term', e.target.value)}>
