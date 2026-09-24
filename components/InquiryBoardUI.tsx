@@ -477,13 +477,20 @@ export default function InquiryBoardUI({ name }: { name: string }) {
 // ---- 画面上部の注意点（AIアラート） ------------------------------------------
 //
 // /api/inquiry-board/alerts を校舎ごとに読む。台帳を保存するたび（version が変わるたび）に取り直す。
-// AI の一言はサーバ側で 15 分キャッシュされるので、連続して開いても API 代はかさまない。
+// ルールの行（件数・#No.）は毎回いまの台帳から数え直す。AI の一言（3行）は 1日1回まとめて生成され
+// その日は変わらない（generatedAt にその時刻が入る）。
 
 type AlertsRes =
-  | { ok: true; alerts: Alert[]; ai: { text: string; cached: boolean } | null; aiAvailable: boolean; facts: { monthLabel: string; scope: string; kpis: KpiLine[]; inquiriesThisMonth: number; inquiriesPrevMonth: number } }
+  | { ok: true; alerts: Alert[]; ai: { text: string; generatedAt: string; date: string } | null; aiAvailable: boolean; facts: { monthLabel: string; scope: string; kpis: KpiLine[]; inquiriesThisMonth: number; inquiriesPrevMonth: number } }
   | { ok: false; reason: string };
 
 const ALERTS_OPEN_KEY = 'ib_alerts_open';
+
+/** 「2026/09/24 07:02」→「7:02」。形式が違えばそのまま返す。 */
+function timeOf(ts: string): string {
+  const m = /(\d{1,2}):(\d{2})$/.exec(ts || '');
+  return m ? `${Number(m[1])}:${m[2]}` : ts;
+}
 
 function AlertPanel({ campus, version, onFilter }: { campus: string; version: number; onFilter: (f: NonNullable<Alert['filter']>) => void }) {
   const [data, setData] = useState<AlertsRes | null>(null);
@@ -497,10 +504,10 @@ function AlertPanel({ campus, version, onFilter }: { campus: string; version: nu
     setOpen((v) => { try { localStorage.setItem(ALERTS_OPEN_KEY, v ? '0' : '1'); } catch {} return !v; });
   }
 
-  const load = useCallback(async (refresh = false) => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/inquiry-board/alerts?campus=${encodeURIComponent(campus)}${refresh ? '&refresh=1' : ''}`, { cache: 'no-store' });
+      const res = await fetch(`/api/inquiry-board/alerts?campus=${encodeURIComponent(campus)}`, { cache: 'no-store' });
       const j = (await res.json().catch(() => ({ ok: false, reason: 'upstream_error' }))) as AlertsRes;
       setData(j);
     } catch {
@@ -524,9 +531,9 @@ function AlertPanel({ campus, version, onFilter }: { campus: string; version: nu
         <span className="ib-ai-badge">AI</span>
         <b>今日の注意点</b>
         {ok && <span className="ib-meta">{ok.facts.monthLabel}・{ok.facts.scope}</span>}
+        {ok?.ai && <span className="ib-meta" title="AIの一言は1日1回まとめて生成し、その日は変わりません。件数の行は保存のたびに数え直します">本日 {timeOf(ok.ai.generatedAt)} の評価</span>}
         {loading && <span className="ib-meta">確認中…</span>}
         <span className="ib-alerts-tools">
-          <button type="button" className="ib-link" onClick={() => void load(true)} disabled={loading}>再評価</button>
           <button type="button" className="ib-link" onClick={toggle}>{open ? '閉じる' : '開く'}</button>
         </span>
       </div>
@@ -546,7 +553,9 @@ function AlertPanel({ campus, version, onFilter }: { campus: string; version: nu
             ))
           ) : !ok.aiAvailable ? (
             <div className="ib-line muted" role="listitem"><span className="ib-dot" /><span>AIの一言は未設定です（ANTHROPIC_API_KEY）。以下はルールで数えた注意点です。</span></div>
-          ) : null}
+          ) : (
+            <div className="ib-line muted" role="listitem"><span className="ib-dot" /><span>本日のAIの一言はまだありません（次に開いたときに生成します）。以下はルールで数えた注意点です。</span></div>
+          )}
 
           <div className="ib-line kpi" role="listitem">
             <span className="ib-dot" />

@@ -69,6 +69,11 @@ var INQUIRY_DB_HEADERS = [
   '連絡', '体験日', '体験', '入塾提案面談日', '本人OK', 'クローズ予定日', '結果', '入塾日', '備考',
   '保護者名', '郵便番号', '住所', 'メールアドレス', 'DM', '受付ID', '作成日時', '作成者', '更新日時', '更新者', '削除',
 ];
+// 「今日の注意点」の AI の一言を日付×対象で残すタブ（台帳と同じスプレッドシートに作る）。
+// 1日1回まとめて生成し、その日は書き換えない。個人情報は入らない（氏名は「田○」にマスク済み）。
+var AI_NOTES_SHEET = 'AI注意点';
+var AI_NOTES_HEADERS = ['日付', '対象', '本文', '生成日時'];
+var AI_NOTES_KEEP_DAYS = 90;
 
 // 「目標管理」が読む中等部会議議事録スプレッドシートID。
 // 目標・実績は下の GOALS_SHEET_NAME のタブにある。空なら目標対比は表示されない。
@@ -193,6 +198,14 @@ function doPost(e) {
 
     if (action === 'deleteInquiryRecord') {
       return json_(deleteInquiryRecord_(data));
+    }
+
+    if (action === 'getDailyAiNotes') {
+      return json_(getDailyAiNotes_(data));
+    }
+
+    if (action === 'saveDailyAiNotes') {
+      return json_(saveDailyAiNotes_(data));
     }
 
     if (action === 'listGoals') {
@@ -1143,6 +1156,89 @@ function deleteInquiryRecord_(data) {
     sh.getRange(row, col['更新日時'] + 1).setValue(nowJp_());
     sh.getRange(row, col['更新者'] + 1).setValue(String(data.user || ''));
     return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed:' + err };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---- 「今日の注意点」AI の一言（1日1回生成・その日は固定） ------------------
+
+function aiNotesSheet_() {
+  var id = INQUIRY_DB_ID || SPREADSHEET_ID;
+  var ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(AI_NOTES_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(AI_NOTES_SHEET);
+    sh.appendRow(AI_NOTES_HEADERS);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, sh.getMaxRows(), AI_NOTES_HEADERS.length).setNumberFormat('@');
+  } else if (sh.getLastRow() === 0) {
+    sh.appendRow(AI_NOTES_HEADERS);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, sh.getMaxRows(), AI_NOTES_HEADERS.length).setNumberFormat('@');
+  }
+  return sh;
+}
+
+// その日の一言を全対象ぶん返す。{ date: 'YYYY-MM-DD' }
+function getDailyAiNotes_(data) {
+  var date = String(data.date || '').trim();
+  if (!date) return { ok: false, reason: 'bad_date', items: [] };
+  var sh;
+  try {
+    sh = aiNotesSheet_();
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed', items: [] };
+  }
+  if (sh.getLastRow() < 2) return { ok: true, items: [] };
+  var values = sh.getDataRange().getValues();
+  var items = [];
+  for (var r = 1; r < values.length; r++) {
+    var row = values[r];
+    if (dbCellStr_(row[0]) !== date) continue;
+    items.push({ '日付': date, '対象': dbCellStr_(row[1]), '本文': dbCellStr_(row[2]), '生成日時': dbCellStr_(row[3]) });
+  }
+  return { ok: true, items: items };
+}
+
+// 一言を保存する。{ notes: [{ 日付, 対象, 本文, 生成日時 }] } 同じ日付×対象があれば上書き。
+// 古い行（AI_NOTES_KEEP_DAYS より前）は保存のついでに消す。
+function saveDailyAiNotes_(data) {
+  var notes = data.notes || [];
+  if (!notes.length) return { ok: true, saved: 0 };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = aiNotesSheet_();
+    var values = sh.getLastRow() < 2 ? [] : sh.getRange(2, 1, sh.getLastRow() - 1, AI_NOTES_HEADERS.length).getValues();
+    var cutoff = Utilities.formatDate(new Date(Date.now() - AI_NOTES_KEEP_DAYS * 86400000), 'Asia/Tokyo', 'yyyy-MM-dd');
+    var kept = [];
+    var index = {};
+    for (var r = 0; r < values.length; r++) {
+      var d = dbCellStr_(values[r][0]);
+      if (!d || d < cutoff) continue;
+      index[d + '|' + dbCellStr_(values[r][1])] = kept.length;
+      kept.push([d, dbCellStr_(values[r][1]), dbCellStr_(values[r][2]), dbCellStr_(values[r][3])]);
+    }
+    var saved = 0;
+    for (var i = 0; i < notes.length; i++) {
+      var n = notes[i] || {};
+      var date = String(n['日付'] || '').trim();
+      var scope = String(n['対象'] || '').trim();
+      var text = String(n['本文'] || '').trim();
+      if (!date || !scope || !text) continue;
+      var row = [date, scope, text, String(n['生成日時'] || nowJp_())];
+      var k = date + '|' + scope;
+      if (index[k] !== undefined) kept[index[k]] = row;
+      else { index[k] = kept.length; kept.push(row); }
+      saved++;
+    }
+    // 2行目以降を丸ごと書き直す（行数が少ないので単純に）
+    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, AI_NOTES_HEADERS.length).clearContent();
+    if (kept.length) sh.getRange(2, 1, kept.length, AI_NOTES_HEADERS.length).setNumberFormat('@').setValues(kept);
+    return { ok: true, saved: saved };
   } catch (err) {
     return { ok: false, reason: 'db_open_failed:' + err };
   } finally {

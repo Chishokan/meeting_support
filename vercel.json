@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/inquiry-board/alerts/daily", "schedule": "0 22 * * *" }
+  ]
+}
