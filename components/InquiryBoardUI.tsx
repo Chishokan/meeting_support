@@ -925,10 +925,10 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
               <label>問い合わせ日 <span className="req">必須</span>
                 <DateInput value={v.date} onChange={(x) => set('date', x)} />
               </label>
-              <label>生徒氏名 <span className="req">必須</span>
+              <label className="full">生徒氏名 <span className="req">必須</span>
                 <input ref={firstRef} value={v.studentName} onChange={(e) => set('studentName', e.target.value)} placeholder="姓 名" />
               </label>
-              <label>ふりがな
+              <label className="full">ふりがな
                 <input value={v.kana} onChange={(e) => set('kana', e.target.value)} />
               </label>
               <label>学年
@@ -937,13 +937,13 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
                   {withCurrent(GRADES, v.grade).map((g) => <option key={g} value={g}>{g}</option>)}
                 </select>
               </label>
-              <label>学校名
+              <label className="full">学校名
                 <input value={v.school} onChange={(e) => set('school', e.target.value)} placeholder="日野中" />
               </label>
-              <label>電話番号
+              <label className="full">電話番号
                 <input value={v.phone} onChange={(e) => set('phone', e.target.value)} inputMode="tel" placeholder="090-0000-0000" />
               </label>
-              <label>保護者名
+              <label className="full">保護者名
                 <input value={v.guardianName} onChange={(e) => set('guardianName', e.target.value)} />
               </label>
             </div>
@@ -964,7 +964,7 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
                   {withCurrent(SOURCES, v.source).map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </label>
-              <label>紹介者 <small>（紹介のとき）</small>
+              <label className="full">紹介者 <small>（紹介のとき）</small>
                 <input value={v.referrer} onChange={(e) => set('referrer', e.target.value)} placeholder="紹介してくれた生徒・保護者" />
               </label>
               <label>受講期
@@ -988,13 +988,13 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
               <label>本人OK
                 <MarkSelect value={v.agreed} onChange={(x) => set('agreed', x)} />
               </label>
-              <label>結果 <small>（空欄＝追客中）</small>
+              <label className="full">結果 <small>（空欄＝追客中）</small>
                 <select value={v.result} onChange={(e) => set('result', e.target.value)}>
                   <option value="">追客中（未決）</option>
                   {withCurrent(RESULTS, v.result).map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </label>
-              <label className={needsEnrollDate ? 'attention' : ''}>入塾日
+              <label className={`full ${needsEnrollDate ? 'attention' : ''}`}>入塾日
                 <DateInput value={v.enrollDate} onChange={(x) => set('enrollDate', x)} />
                 {needsEnrollDate && <small className="ib-attn">結果が入塾のときは入塾日を入れてください（「今月入会」の集計に使います）。</small>}
               </label>
@@ -1025,7 +1025,7 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
                   placeholder="空欄なら自動採番"
                 />
               </label>
-              <label>メールアドレス
+              <label className="full">メールアドレス
                 <input value={v.email} onChange={(e) => set('email', e.target.value)} inputMode="email" />
               </label>
               <label>郵便番号
