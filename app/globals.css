@@ -911,6 +911,9 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .dm-modal {
   background: #fff; border-radius: 12px; width: min(820px, 100%); max-height: 88vh;
   display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  /* min-width: 0 が無いと、Safari で中身の最小幅（日付欄など）に引きずられて画面より広くなり、
+     中央寄せのため左右が切れる */
+  min-width: 0; max-width: 100%;
 }
 .dm-modal-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
@@ -1176,7 +1179,8 @@ button.primary:disabled { opacity: .5; cursor: default; }
    - 日付・選択肢などの短い欄は 2 列、氏名・電話・住所などの長い欄（.full）は 1 列
    - 見出し（校舎 必須）を 1 行に。フッターのボタンは大きく横いっぱいに */
 @media (max-width: 620px) {
-  .dm-modal.ib-modal { height: 100vh; height: 100dvh; max-height: 100dvh; }
+  .dm-modal.ib-modal { width: 100%; height: 100vh; height: 100dvh; max-height: 100dvh; }
+  .ib-modal .dm-modal-body { overflow-x: hidden; }
   .ib-modal .dm-modal-head { padding: 12px 14px 10px; align-items: center; }
   .ib-modal .dm-modal-head h2 { font-size: 16px; margin: 2px 0 0; }
   .ib-modal .dm-modal-sub { font-size: 11px; line-height: 1.4; }
@@ -1184,13 +1188,17 @@ button.primary:disabled { opacity: .5; cursor: default; }
   .ib-modal .dm-modal-body { padding: 12px 14px 20px; }
   .ib-form section { margin-bottom: 18px; }
   .ib-form h3 { font-size: 13px; margin-bottom: 10px; }
-  .ib-grid { grid-template-columns: 1fr 1fr; gap: 12px 10px; }
+  .ib-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 10px; }
   .ib-grid label { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 6px 4px; font-size: 13px; min-width: 0; }
   .ib-grid label.full, .ib-grid label.wide { grid-column: 1 / -1; }
   .ib-grid label .req { font-size: 11px; margin-left: 0; }
   .ib-grid label small { font-size: 11px; }
-  .ib-grid label > input, .ib-grid label > select, .ib-grid label > .ib-date-text, .ib-grid label > small.ib-attn { flex: 1 0 100%; width: 100%; }
-  .ib-grid input, .ib-grid select { font-size: 16px; padding: 10px 12px; min-height: 46px; border-radius: 10px; }
+  .ib-grid label > input, .ib-grid label > select, .ib-grid label > .ib-date-text, .ib-grid label > small.ib-attn { flex: 1 0 100%; width: 100%; min-width: 0; max-width: 100%; }
+  .ib-grid input, .ib-grid select { font-size: 16px; padding: 10px 12px; min-height: 46px; border-radius: 10px; min-width: 0; max-width: 100%; }
+  /* iPhone の Safari は日付欄を固有の幅で描き、縮まない。見た目を外して幅を効かせる（タップすれば日付の選択は今までどおり出る） */
+  .ib-grid input[type="date"], .ib-date-text input { -webkit-appearance: none; appearance: none; display: block; line-height: 1.3; }
+  .ib-grid input[type="date"]::-webkit-date-and-time-value { text-align: left; min-height: 1.3em; }
+  .ib-form textarea { max-width: 100%; }
   .ib-grid select { -webkit-appearance: none; appearance: none; background: #fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%234b535c' stroke-width='2'/></svg>") no-repeat right 12px center; padding-right: 32px; }
   .ib-date-text { gap: 8px; }
   .ib-date-text input { min-width: 0; }
