@@ -20,7 +20,7 @@ export type DeleteResult = { ok: true } | { ok: false; reason: string };
 
 // ---- 共通 ---------------------------------------------------------------
 
-function nowJp(): string {
+export function nowJp(): string {
   const parts = new Intl.DateTimeFormat('ja-JP', {
     timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hour12: false,
@@ -54,9 +54,10 @@ function useLocal(): boolean {
 
 // ---- Apps Script ---------------------------------------------------------
 
-type GasResult = { ok?: boolean; reason?: string; items?: unknown[]; item?: Record<string, unknown>; fetchedAt?: string };
+export type GasResult = { ok?: boolean; reason?: string; items?: unknown[]; item?: Record<string, unknown>; fetchedAt?: string };
 
-async function callGas(payload: Record<string, unknown>): Promise<GasResult> {
+/** Apps Script を叩く共通口。lib/aiNotesStore.ts など台帳以外の保存もここを通る。 */
+export async function callGas(payload: Record<string, unknown>): Promise<GasResult> {
   const url = process.env.APPS_SCRIPT_URL;
   if (!url) return { ok: false, reason: 'not_configured' };
   try {

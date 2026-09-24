@@ -911,6 +911,9 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .dm-modal {
   background: #fff; border-radius: 12px; width: min(820px, 100%); max-height: 88vh;
   display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  /* min-width: 0 が無いと、Safari で中身の最小幅（日付欄など）に引きずられて画面より広くなり、
+     中央寄せのため左右が切れる */
+  min-width: 0; max-width: 100%;
 }
 .dm-modal-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
@@ -1170,6 +1173,50 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .ib-delete { padding: 9px 14px; font-size: 13px; color: #b03a2e; background: #fff; border: 1px solid #f3c6c0; border-radius: 8px; cursor: pointer; }
 .ib-delete:hover { background: #fdecea; }
 .ib-cancel:disabled, .ib-delete:disabled { opacity: .5; cursor: default; }
+
+/* スマホ：登録・編集フォームを片手で入力しやすい大きさに
+   - 入力欄は 16px（iOS は 16px 未満だとフォーカス時に画面が拡大される）・高さ 46px（指で押せる大きさ）
+   - 日付・選択肢などの短い欄は 2 列、氏名・電話・住所などの長い欄（.full）は 1 列
+   - 見出し（校舎 必須）を 1 行に。フッターのボタンは大きく横いっぱいに */
+@media (max-width: 620px) {
+  .dm-modal.ib-modal { width: 100%; height: 100vh; height: 100dvh; max-height: 100dvh; }
+  .ib-modal .dm-modal-body { overflow-x: hidden; }
+  .ib-modal .dm-modal-head, .ib-modal .dm-modal-foot, .ib-form section, .ib-grid, .ib-grid label { min-width: 0; max-width: 100%; }
+  .ib-modal .dm-modal-head > div { min-width: 0; }
+  /* フッターのボタン列が画面幅に収まらないときは折り返す（Safari は縮めずにはみ出すため） */
+  .ib-modal .dm-modal-foot { flex-wrap: wrap; }
+  .ib-modal .dm-modal-foot > button { min-width: 0; }
+  /* 一覧の画面自体が横にはみ出さないように（はみ出すと上に重ねた枠まで右に押し出される） */
+  .ib { max-width: 100vw; overflow-x: clip; }
+  .ib-modal .dm-modal-head { padding: 12px 14px 10px; align-items: center; }
+  .ib-modal .dm-modal-head h2 { font-size: 16px; margin: 2px 0 0; }
+  .ib-modal .dm-modal-sub { font-size: 11px; line-height: 1.4; }
+  .ib-modal .dm-modal-close { width: 44px; height: 44px; margin: -6px -8px -6px 0; font-size: 30px; }
+  .ib-modal .dm-modal-body { padding: 12px 14px 20px; }
+  .ib-form section { margin-bottom: 18px; }
+  .ib-form h3 { font-size: 13px; margin-bottom: 10px; }
+  .ib-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 10px; }
+  .ib-grid label { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 6px 4px; font-size: 13px; min-width: 0; }
+  .ib-grid label.full, .ib-grid label.wide { grid-column: 1 / -1; }
+  .ib-grid label .req { font-size: 11px; margin-left: 0; }
+  .ib-grid label small { font-size: 11px; }
+  .ib-grid label > input, .ib-grid label > select, .ib-grid label > .ib-date-text, .ib-grid label > small.ib-attn { flex: 1 0 100%; width: 100%; min-width: 0; max-width: 100%; }
+  .ib-grid input, .ib-grid select { font-size: 16px; padding: 10px 12px; min-height: 46px; border-radius: 10px; min-width: 0; max-width: 100%; }
+  /* iPhone の Safari は日付欄を固有の幅で描き、縮まない。見た目を外して幅を効かせる（タップすれば日付の選択は今までどおり出る） */
+  .ib-grid input[type="date"], .ib-date-text input { -webkit-appearance: none; appearance: none; display: block; line-height: 1.3; }
+  .ib-grid input[type="date"]::-webkit-date-and-time-value { text-align: left; min-height: 1.3em; }
+  .ib-form textarea { max-width: 100%; }
+  .ib-grid select { -webkit-appearance: none; appearance: none; background: #fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%234b535c' stroke-width='2'/></svg>") no-repeat right 12px center; padding-right: 32px; }
+  .ib-date-text { gap: 8px; }
+  .ib-date-text input { min-width: 0; }
+  .ib-date-text .ib-link { font-size: 14px; padding: 10px 6px; }
+  .ib-form textarea { font-size: 16px; min-height: 120px; border-radius: 10px; }
+  .ib-errors { font-size: 14px; }
+  .ib-modal .dm-modal-foot { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); gap: 8px; }
+  .ib-foot-hint { display: none; }
+  .ib-modal .ib-cancel, .ib-modal .dm-modal-done { flex: 1; padding: 13px 10px; font-size: 15px; border-radius: 10px; }
+  .ib-modal .ib-delete { padding: 13px 12px; font-size: 14px; border-radius: 10px; }
+}
 
 /* スマホ：表をカードに崩す */
 @media (max-width: 900px) {
