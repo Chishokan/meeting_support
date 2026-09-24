@@ -48,7 +48,7 @@ export async function listGoals(): Promise<GoalsResult> {
 
 // --- 校舎名の突き合わせ ---------------------------------------------------
 
-// 行動計画は「県中」、問合せ管理は「県中対策」のように表記が違う。
+// 行動計画は「県中」、旧問合せ管理は「県中対策」のように表記が違う（台帳は「県中」）。
 // 「校」「対策」と空白を落としてから、どちらかがどちらかを含めば同じ校舎とみなす。
 function normCampus(s: string): string {
   return (s || '').replace(/[\s　]/g, '').replace(/校$/, '').replace(/対策$/, '');
@@ -68,7 +68,7 @@ export function sameCampus(a: string, b: string): boolean {
  * シートのタブ順やデータの出現順に任せると、月によって並びが変わって読みにくい。
  * ここに無い名前は末尾へ（新しい校舎が増えても落ちないように）。
  */
-export const CAMPUS_ORDER = ['日野校', '駅前校', '大野校', '日宇校', '県中対策', 'その他'];
+export const CAMPUS_ORDER = ['日野校', '駅前校', '大野校', '日宇校', '県中', 'オンライン', 'その他'];
 
 export function campusRank(name: string): number {
   const i = CAMPUS_ORDER.findIndex((c) => sameCampus(c, name));
@@ -93,7 +93,10 @@ export function sortByCampusOrder<T extends { campus: string }>(rows: T[]): T[] 
  *   実データで確認すると、入塾42件の問い合わせ日は5月7件・6月13件・7月15件に集中し、
  *   9月に問い合わせた行の入塾は0件。9月に入会した人の行は5〜7月にある。
  *   備考に「6/2入会」と書かれている行は42件中1件だけで、抽出もできない。
- *   → シートに入塾日の列が追加されるまでは、行動計画の手入力値を使う。
+ *   → 問合せ管理 Web アプリ（/inquiry-board）には「入塾日」列を設けた（enrollmentsInMonth）。
+ *     ただし旧シートから移した行は入塾日が空なので、担当者が埋め終わるまでは自動計算に切り替えず、
+ *     行動計画の手入力値を使う。切り替えるときは AUTO_METRICS に '入会' を足し、
+ *     goalsFor に入塾日の件数を渡す。
  *
  * 「体験」は体験日の列があるので、体験日の月で数えれば一致する（trialsInMonth）。
  */

@@ -1018,3 +1018,262 @@ button.primary:disabled { opacity: .5; cursor: default; }
   .composer textarea { height: 88px; min-height: 66px; }
   .messages { padding-bottom: 200px; }
 }
+
+/* ============ 問合せ管理（/inquiry-board）============
+   会議DXのメニューには載せない独立画面。サイドバー無し・専用ヘッダ。 */
+.board-shell { min-height: 100vh; display: flex; flex-direction: column; }
+.board-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 20px; background: var(--navy); color: #fff; position: sticky; top: 0; z-index: 20;
+}
+.board-brand { display: flex; align-items: baseline; gap: 10px; }
+.board-title { font-weight: 800; font-size: 15px; }
+.board-sub { font-size: 11px; opacity: .75; }
+.board-who { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.board-logout {
+  background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.5);
+  border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer;
+}
+.board-main { flex: 1; min-width: 0; }
+
+.ib { padding: 14px 20px 60px; max-width: 1600px; margin: 0 auto; }
+.ib-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.ib-tab {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #667;
+  background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; cursor: pointer;
+}
+.ib-tab:hover { background: #eaf1f8; }
+.ib-tab.active { color: #fff; background: var(--navy); border-color: var(--navy); }
+.ib-tab-n { font-size: 11px; font-weight: 700; opacity: .7; }
+/* 表示区分（追客／入塾済み／すべて）。校舎タブの下に小さく置く */
+.ib-views { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 12px; background: #fff; }
+.ib-view { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: #667; background: #fff; border: none; padding: 6px 12px; cursor: pointer; font-family: inherit; }
+.ib-view + .ib-view { border-left: 1px solid var(--line); }
+.ib-view:hover { background: #f2f5f9; }
+.ib-view.active { color: var(--navy); background: #eaf1f8; }
+.ib-ref { display: block; font-size: 10.5px; color: #97a1ac; }
+.ib-tab.active .ib-tab-n { opacity: .85; }
+
+.ib-note {
+  margin: 0 0 12px; padding: 9px 12px; font-size: 13px; color: #8a6d1a;
+  background: #fdf3d6; border: 1px solid #f0dfa8; border-radius: 8px;
+}
+.ib-note-dev { color: #2e6b4f; background: #eaf6ef; border-color: #cfe8db; }
+
+/* 件数のカード（押すとその区分で絞り込む） */
+.ib-summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.ib-sum {
+  flex: 1; min-width: 92px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer;
+  font-family: inherit; text-align: left;
+}
+.ib-sum b { font-size: 22px; font-weight: 800; color: var(--navy); line-height: 1; }
+.ib-sum span { font-size: 11px; color: #8a94a0; }
+.ib-sum.warn b { color: #8a6d1a; }
+.ib-sum.danger b { color: #b03a2e; }
+.ib-sum:hover { background: #f7f9fb; }
+.ib-sum.active { border-color: var(--navy); box-shadow: inset 0 0 0 1px var(--navy); }
+
+.ib-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.ib-toolbar select, .ib-search {
+  padding: 8px 10px; font-size: 13px; border: 1px solid #cdd3da; border-radius: 8px; background: #fff; width: auto;
+}
+.ib-search { flex: 1; min-width: 180px; }
+.ib-primary {
+  padding: 9px 16px; font-size: 13px; font-weight: 700; color: #fff; background: var(--navy);
+  border: none; border-radius: 8px; cursor: pointer; white-space: nowrap;
+}
+.ib-ghost {
+  padding: 8px 12px; font-size: 13px; color: var(--navy); background: #fff;
+  border: 1px solid #cdd8e3; border-radius: 8px; cursor: pointer; white-space: nowrap;
+}
+.ib-ghost:hover { background: #f2f5f9; }
+.ib-ghost:disabled, .ib-primary:disabled { opacity: .5; cursor: default; }
+.ib-link { background: none; border: none; color: var(--navy); font-size: 12px; cursor: pointer; padding: 0 6px; font-family: inherit; text-decoration: underline; }
+
+.ib-list-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; color: #4b535c; margin: 4px 0 6px; }
+.ib-meta { font-size: 12px; color: #97a1ac; }
+.ib-empty { font-size: 13px; color: #8a94a0; padding: 24px 0; text-align: center; }
+.ib-hint { font-size: 12px; color: #8a94a0; margin: 8px 0 0; line-height: 1.6; }
+
+/* 一覧 */
+.ib-table-wrap { overflow-x: auto; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+.ib-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ib-table th {
+  position: sticky; top: 0; background: #f7f9fb; color: #667; font-size: 11.5px; font-weight: 700;
+  text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; z-index: 1;
+}
+.ib-table td { padding: 8px 8px; border-bottom: 1px solid #f0f2f5; vertical-align: top; white-space: nowrap; }
+.ib-table tr:last-child td { border-bottom: none; }
+.ib-row { cursor: pointer; }
+.ib-row:hover td { background: #f7f9fb; }
+.ib-row:focus { outline: 2px solid #cfe0ee; outline-offset: -2px; }
+.ib-row.untouched td:first-child { box-shadow: inset 3px 0 0 #e6c14a; }
+.ib-row.overdue td:first-child { box-shadow: inset 3px 0 0 #c0392b; }
+.ib-row.st-declined td { color: #8a94a0; }
+.ib-no { color: #8a94a0; }
+.ib-date { font-variant-numeric: tabular-nums; }
+.ib-name b { font-weight: 700; }
+.ib-name small, .ib-c small { display: block; font-size: 10.5px; color: #97a1ac; }
+.ib-dm { margin-left: 6px; font-size: 10px; font-weight: 700; color: #7a5c00; background: #fdf3d6; border-radius: 4px; padding: 1px 5px; vertical-align: 1px; }
+.ib-c { text-align: center; }
+.ib-tel { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ib-tel small { display: block; font-size: 10.5px; color: #97a1ac; }
+.ib-tel-link { color: var(--navy); text-decoration: none; border-bottom: 1px dotted #9db4c9; }
+.ib-tel-link:hover { border-bottom-style: solid; }
+.ib-tel-none { color: #b6bec7; }
+.ib-table.inline .ib-tel input { min-width: 128px; }
+.ib-over { color: #b03a2e; font-weight: 700; }
+.ib-school { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.ib-th-note { min-width: 200px; }
+.ib-note-cell { white-space: normal; min-width: 200px; max-width: 420px; color: #4b535c; font-size: 12px; line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ib-badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+.ib-badge.st-open { color: #1f4e78; background: #eaf1f8; border: 1px solid #cfe0ee; }
+.ib-badge.st-joined { color: #2e6b4f; background: #eaf6ef; border: 1px solid #cfe8db; }
+.ib-badge.st-applied { color: #5b3f9e; background: #efeaf8; border: 1px solid #dccdf0; }
+.ib-badge.st-considering { color: #8a6d1a; background: #fdf3d6; border: 1px solid #f0dfa8; }
+.ib-badge.st-declined { color: #667; background: #f0f2f5; border: 1px solid #e3e6ea; }
+.ib-badge.st-other { color: #b03a2e; background: #fdecea; border: 1px solid #f3c6c0; }
+
+/* 集計 */
+.ib-stats { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+.ib-stats-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.ib-stats h2 { font-size: 14px; margin: 0; }
+.ib-stats .ib-table-wrap { border: none; border-radius: 0; }
+.ib-stat-table { border-collapse: collapse; font-size: 13px; min-width: 560px; }
+.ib-stat-table th { font-size: 11.5px; color: #667; text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.ib-stat-table th:first-child { text-align: left; }
+.ib-stat-table td { text-align: right; padding: 5px 10px; border-bottom: 1px solid #f0f2f5; font-variant-numeric: tabular-nums; }
+.ib-stat-table td:first-child { text-align: left; }
+.ib-stat-table tr.group td { background: #f7f9fb; font-weight: 700; }
+.ib-stat-table tr.total td { background: #eaf1f8; font-weight: 800; color: var(--navy); }
+
+/* 登録・編集フォーム（会議DXのポップアップ枠 dm-modal-* を流用） */
+.ib-modal { width: min(900px, 100%); }
+.ib-form section { margin-bottom: 16px; }
+.ib-form h3 { font-size: 12px; font-weight: 700; color: var(--navy); margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.ib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 14px; }
+.ib-grid label { display: flex; flex-direction: column; gap: 4px; margin: 0; font-size: 12px; font-weight: 700; color: #4b535c; }
+.ib-grid label.wide { grid-column: 1 / -1; }
+.ib-grid label small { font-weight: 400; color: #97a1ac; }
+.ib-grid label .req { font-size: 10px; font-weight: 700; color: #b03a2e; margin-left: 4px; }
+.ib-grid input, .ib-grid select { width: 100%; padding: 8px 10px; font-size: 14px; border: 1px solid #cdd3da; border-radius: 8px; background: #fff; font-family: inherit; }
+.ib-grid label.attention input { border-color: #e6c14a; background: #fffbe9; }
+.ib-attn { color: #8a6d1a !important; line-height: 1.5; }
+.ib-date-text { display: flex; align-items: center; gap: 4px; }
+.ib-form textarea { width: 100%; min-height: 110px; resize: vertical; padding: 10px 12px; font-size: 14px; line-height: 1.6; border: 1px solid #cdd3da; border-radius: 8px; font-family: inherit; }
+.ib-errors { margin: 0; padding: 10px 14px 10px 28px; background: #fdecea; border: 1px solid #f3c6c0; border-radius: 8px; color: #b03a2e; font-size: 13px; line-height: 1.7; }
+.ib-foot { justify-content: flex-start; }
+.ib-foot-hint { margin-left: auto; font-size: 11px; color: #97a1ac; }
+.ib-cancel { padding: 9px 16px; font-size: 13px; color: #444; background: #fff; border: 1px solid #cdd3da; border-radius: 8px; cursor: pointer; }
+.ib-delete { padding: 9px 14px; font-size: 13px; color: #b03a2e; background: #fff; border: 1px solid #f3c6c0; border-radius: 8px; cursor: pointer; }
+.ib-delete:hover { background: #fdecea; }
+.ib-cancel:disabled, .ib-delete:disabled { opacity: .5; cursor: default; }
+
+/* スマホ：表をカードに崩す */
+@media (max-width: 900px) {
+  .ib { padding: 12px 12px 60px; }
+  .ib-table-wrap { border: none; background: transparent; overflow: visible; }
+  .ib-table thead { display: none; }
+  .ib-table, .ib-table tbody, .ib-table tr, .ib-table td { display: block; }
+  .ib-table tr {
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 8px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px;
+  }
+  .ib-row.untouched { border-left: 3px solid #e6c14a; }
+  .ib-row.overdue { border-left: 3px solid #c0392b; }
+  .ib-table td { border: none; padding: 3px 0; white-space: normal; font-size: 13px; }
+  .ib-table td::before { content: attr(data-label); display: inline-block; min-width: 4.5em; font-size: 10.5px; color: #97a1ac; margin-right: 6px; }
+  .ib-table td.ib-name, .ib-table td.ib-note-cell { grid-column: 1 / -1; }
+  .ib-table td.ib-name::before { display: none; }
+  .ib-table td.ib-name b { font-size: 15px; }
+  .ib-table td.ib-name small { display: inline; margin-left: 6px; }
+  .ib-table td.ib-tel { grid-column: 1 / -1; }
+  .ib-table td.ib-tel small { display: inline; margin-left: 6px; }
+  .ib-ref { display: inline; margin-left: 6px; }
+  .ib-tel-link { font-size: 15px; font-weight: 700; }
+  .ib-table td.ib-c { text-align: left; }
+  .ib-table td.ib-c small { display: inline; margin-left: 4px; }
+  .ib-table td:empty { display: none; }
+  .ib-row.untouched td:first-child, .ib-row.overdue td:first-child { box-shadow: none; }
+  .ib-school { max-width: none; }
+  .ib-note-cell { -webkit-line-clamp: 3; }
+  .ib-sum { min-width: 72px; padding: 8px 10px; }
+  .ib-sum b { font-size: 18px; }
+  .board-head { padding: 10px 12px; }
+  .board-sub, .board-user { display: none; }
+}
+
+/* 問合せ管理: 一覧上の直接編集 */
+.ib-note-err { color: #b03a2e; background: #fdecea; border-color: #f3c6c0; }
+.ib-toggle.active { color: #fff; background: var(--navy); border-color: var(--navy); }
+.ib-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; vertical-align: middle; }
+.ib-seg button { font-size: 12px; line-height: 1.4; padding: 2px 9px; background: #fff; border: none; color: #b6bec7; cursor: pointer; font-family: inherit; }
+.ib-seg button + button { border-left: 1px solid var(--line); }
+.ib-seg button:hover { background: #f2f5f9; color: #667; }
+.ib-seg button.on { background: #eaf6ef; color: #2e6b4f; font-weight: 700; }
+.ib-seg button.on.x { background: #f0f2f5; color: #556; }
+.ib-seg button:disabled { opacity: .6; cursor: default; }
+.ib-table.inline td { padding: 5px 6px; vertical-align: middle; }
+.ib-table.inline input, .ib-table.inline select, .ib-table.inline textarea {
+  font-size: 12.5px; padding: 5px 6px; border: 1px solid #cdd3da; border-radius: 6px; background: #fff;
+  font-family: inherit; width: 100%; min-width: 0; color: inherit;
+}
+.ib-table.inline input[type="date"] { width: 132px; }
+.ib-table.inline select { width: auto; max-width: 150px; }
+.ib-table.inline .ib-name input { min-width: 130px; }
+.ib-table.inline .ib-school input { min-width: 110px; }
+.ib-table.inline .ib-note-cell { display: table-cell; max-width: none; min-width: 260px; overflow: visible; -webkit-line-clamp: unset; }
+.ib-table.inline textarea { min-width: 260px; resize: vertical; line-height: 1.5; }
+.ib-table.inline .ib-over input { border-color: #f3c6c0; color: #b03a2e; font-weight: 700; }
+.ib-stack { display: flex; flex-direction: column; gap: 3px; }
+.ib-act { white-space: nowrap; }
+.ib-act small { display: block; margin-top: 3px; font-size: 10.5px; color: #97a1ac; }
+.ib-act small.ok { color: #2e6b4f; }
+.ib-act small.err { color: #b03a2e; }
+.ib-ghost.sm { padding: 4px 9px; font-size: 12px; }
+@media (max-width: 900px) {
+  .ib-table.inline .ib-note-cell { display: block; min-width: 0; }
+  .ib-table.inline textarea { min-width: 0; }
+  .ib-table.inline input[type="date"] { width: 100%; }
+  .ib-table.inline select { max-width: none; width: 100%; }
+  .ib-table td.ib-act { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
+  .ib-table td.ib-act::before { display: none; }
+  .ib-table td.ib-act small { margin: 0; }
+}
+
+/* 問合せ管理: 画面上部の注意点（AIアラート）
+   1つの枠の中に1項目1行で並べ、高さを抑えてスクロールさせる（一覧が押し下げられないように） */
+.ib-alerts { background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--navy); border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; }
+.ib-alerts-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+.ib-alerts-tools { margin-left: auto; display: flex; gap: 4px; }
+.ib-ai-badge { font-size: 10px; font-weight: 800; letter-spacing: .04em; color: #fff; background: var(--navy); border-radius: 5px; padding: 2px 6px; }
+.ib-alerts-box {
+  margin-top: 8px; max-height: 172px; overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid var(--line); border-radius: 8px; background: #fbfcfd; padding: 2px 12px;
+}
+.ib-line { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; border-bottom: 1px solid #eef1f4; font-size: 13px; line-height: 1.5; color: #2a2f36; }
+.ib-line:last-child { border-bottom: none; }
+.ib-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; background: #b6bec7; }
+.ib-line.ai .ib-dot { background: var(--navy); }
+.ib-line.ai.lead { font-weight: 700; color: var(--navy); font-size: 14px; }
+.ib-line.muted { color: #8a94a0; }
+.ib-line.lv-danger { color: #7a1f16; } .ib-line.lv-danger .ib-dot { background: #c0392b; }
+.ib-line.lv-warn { color: #5c4a12; }   .ib-line.lv-warn .ib-dot { background: #e6c14a; }
+.ib-line.lv-info { color: #1f4e78; }   .ib-line.lv-info .ib-dot { background: #1f4e78; }
+.ib-line.lv-good { color: #2e6b4f; }   .ib-line.lv-good .ib-dot { background: #2e7d5b; }
+.ib-line button { background: none; border: none; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.ib-line button:hover { text-decoration-style: solid; }
+.ib-line.kpi { align-items: center; flex-wrap: wrap; gap: 6px; }
+.ib-line.kpi .ib-dot { margin-top: 0; }
+.ib-kpi { display: inline-flex; align-items: baseline; gap: 3px; font-size: 11.5px; color: #667; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-variant-numeric: tabular-nums; }
+.ib-kpi b { font-size: 13px; color: var(--navy); }
+.ib-kpi small { font-size: 10.5px; color: #97a1ac; }
+.ib-kpi.ok { background: #eaf6ef; border-color: #cfe8db; color: #2e6b4f; }
+.ib-kpi.ok b { color: #2e6b4f; }
+.ib-kpi.behind { background: #fdf3d6; border-color: #f0dfa8; color: #8a6d1a; }
+.ib-kpi.behind b { color: #8a6d1a; }
+@media (max-width: 900px) {
+  .ib-alerts-box { max-height: 150px; }
+}
