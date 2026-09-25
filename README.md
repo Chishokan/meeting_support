@@ -134,6 +134,10 @@ WordPress 側の設定（Contact Form 7 の場合。フォームごとに設定�
 4. 送る項目名が上の一覧に無い名前なら、`FIELD_ALIASES` にその名前を足して push する
 5. テスト送信して `/inquiry-board` に出ることを確認。Vercel のログに `[INQUIRY_INTAKE]` が残る
 6. 「メール」タブの送信先（担当者への通知メール）はそのままでよい。取り込みはメールとは独立して動く
+7. 取り込みに失敗しても（合言葉の違い・台帳に書けない等）受け口は HTTP 200 で `{ ok:false, reason }` を返す。
+   CF7 to Webhook は 200 番台以外が返るとフォームの送信結果を「送信に失敗しました」に変えてしまうため。
+   失敗は Vercel のログに `[INQUIRY_INTAKE_ERROR]` で残るので、台帳に出ないときはそこを見る
+   （`reason: invalid_token` なら URL の token と Vercel の `INQUIRY_INTAKE_TOKEN` が一致していない）
 
 取り込みの決まり（lib/inquiryIntake.ts の decideIntake）:
 - 媒体は「HP」、日付は受信日、結果は空（追客中）で登録する。希望コースから受講期を読み替える
