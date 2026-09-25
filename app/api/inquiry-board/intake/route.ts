@@ -66,6 +66,11 @@ function todayIso(): string {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
+/** 受信時刻（日本時間の HH:MM）。備考の1行に入れて、同じ日に複数回来ても見分けられるようにする。 */
+function nowHm(): string {
+  return new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+}
+
 async function handle(req: Request): Promise<Response> {
   if (!process.env.INQUIRY_INTAKE_TOKEN) {
     return Response.json({ ok: false, reason: 'intake_not_configured' }, { status: 503 });
@@ -76,13 +81,17 @@ async function handle(req: Request): Promise<Response> {
   const given = req.headers.get('x-intake-token') || url.searchParams.get('token') || String(payload.token ?? '');
   if (!tokenOk(given)) return Response.json({ ok: false, reason: 'invalid_token' }, { status: 401 });
   delete payload.token;
+  // Webhook URL に付けた項目（&form=資料請求 など）も受け取る。本文に同じ名前があれば本文を優先
+  url.searchParams.forEach((v, k) => {
+    if (k !== 'token' && payload[k] == null) payload[k] = v;
+  });
 
   const fields = readFields(payload);
 
   const list = await listRecords();
   if (!list.ok) return Response.json({ ok: false, reason: list.reason }, { status: 502 });
 
-  const decision = decideIntake(fields, list.items, todayIso());
+  const decision = decideIntake(fields, list.items, todayIso(), nowHm());
 
   if (decision.action === 'skip') {
     console.log('[INQUIRY_INTAKE]', JSON.stringify({ action: 'skip', reason: decision.reason, submissionId: fields.submissionId }));
@@ -95,13 +104,13 @@ async function handle(req: Request): Promise<Response> {
   if (decision.action === 'append') {
     const r = await updateRecord(decision.target.id, v.value, INTAKE_USER);
     if (!r.ok) return Response.json({ ok: false, reason: r.reason }, { status: 502 });
-    console.log('[INQUIRY_INTAKE]', JSON.stringify({ action: 'append', campus: r.item.campus, no: r.item.no }));
+    console.log('[INQUIRY_INTAKE]', JSON.stringify({ action: 'append', campus: r.item.campus, no: r.item.no, form: fields.formName }));
     return Response.json({ ok: true, action: 'append', campus: r.item.campus, no: r.item.no, id: r.item.id });
   }
 
   const r = await createRecord(v.value, INTAKE_USER);
   if (!r.ok) return Response.json({ ok: false, reason: r.reason }, { status: 502 });
-  console.log('[INQUIRY_INTAKE]', JSON.stringify({ action: 'create', campus: r.item.campus, no: r.item.no }));
+  console.log('[INQUIRY_INTAKE]', JSON.stringify({ action: 'create', campus: r.item.campus, no: r.item.no, form: fields.formName }));
   return Response.json({ ok: true, action: 'create', campus: r.item.campus, no: r.item.no, id: r.item.id });
 }
 
