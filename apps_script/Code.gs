@@ -23,6 +23,11 @@
  *   - action:'listInquiryRecords' / 'saveInquiryRecord' / 'deleteInquiryRecord'
  *                               … 問合せ管理 Web アプリ（/inquiry-board）の台帳 → スプレッドシート「問合せ台帳」（INQUIRY_DB_ID）に1件1行
  *     ※ 旧スプレッドシートの行を台帳へ移すときは、GAS エディタで importLegacyInquiryBoard() を一度実行する（何度実行しても二重登録しない）。
+ *   - action:'listInquiryMails' / 'markInquiryMailsDone'
+ *                               … 問合せ管理の「最新状況取り込み」ボタン用。HP フォームの通知メール（MAIL_IMPORT_FROM から届くもの）を
+ *                                 Gmail から読み、まだ取り込んでいない分を返す／取り込んだ分を「メール取込済」タブに記録してラベルを付ける
+ *     ※ GmailApp を使うので、このスクリプトは問い合わせメールが届く Gmail のアカウントでデプロイすること。
+ *       この action を足した版を初めてデプロイするときに Gmail の読み取り許可を求められる。
  *   - action:'listGoals'        … 目標管理用 → 中等部会議議事録（GOALS_BOOK_ID）の「秋～冬行動計画」タブから月×校舎×指標の目標／実績を返す
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
  *
@@ -74,6 +79,20 @@ var INQUIRY_DB_HEADERS = [
 var AI_NOTES_SHEET = 'AI注意点';
 var AI_NOTES_HEADERS = ['日付', '対象', '本文', '生成日時'];
 var AI_NOTES_KEEP_DAYS = 90;
+
+// 「最新状況取り込み」ボタン（Gmail の通知メール → 台帳）の設定。
+// 送信元がこのアドレスのメールだけを読む。本文の読み取りと台帳への当てはめはアプリ側（lib/inquiryIntake.ts）。
+var MAIL_IMPORT_FROM = 'hp-info@chishokan.co.jp';
+// この日（'YYYY-MM-DD'）以降に届いたメールだけを取り込む。切り替えた日を入れる
+// （それより前の分は旧メール転記で旧シートに入り、移行済みのため）。空なら直近 MAIL_IMPORT_DEFAULT_DAYS 日。
+var MAIL_IMPORT_SINCE = '';
+var MAIL_IMPORT_DEFAULT_DAYS = 3;
+// 取り込んだメールのスレッドに付ける Gmail のラベル（目印。取り込み済みかどうかの判定は下のタブで行う。
+// Gmail のラベルはスレッド単位で、同じ件名の申込が1スレッドにまとまるため）
+var MAIL_IMPORT_LABEL = '問合せ台帳取込済';
+// 取り込んだメールを1通1行で残すタブ（台帳と同じスプレッドシートに作る）。結果に「登録」「追記」「対象外」などが入る
+var MAIL_IMPORT_SHEET = 'メール取込済';
+var MAIL_IMPORT_HEADERS = ['メールID', '受信日時', '件名', '結果', '取込日時'];
 
 // 「目標管理」が読む中等部会議議事録スプレッドシートID。
 // 目標・実績は下の GOALS_SHEET_NAME のタブにある。空なら目標対比は表示されない。
@@ -206,6 +225,14 @@ function doPost(e) {
 
     if (action === 'saveDailyAiNotes') {
       return json_(saveDailyAiNotes_(data));
+    }
+
+    if (action === 'listInquiryMails') {
+      return json_(listInquiryMails_(data));
+    }
+
+    if (action === 'markInquiryMailsDone') {
+      return json_(markInquiryMailsDone_(data));
     }
 
     if (action === 'listGoals') {
@@ -1239,6 +1266,116 @@ function saveDailyAiNotes_(data) {
     if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, AI_NOTES_HEADERS.length).clearContent();
     if (kept.length) sh.getRange(2, 1, kept.length, AI_NOTES_HEADERS.length).setNumberFormat('@').setValues(kept);
     return { ok: true, saved: saved };
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed:' + err };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---- 「最新状況取り込み」：HP フォームの通知メール（Gmail）→ 台帳 ---------------------
+// GAS はメールを探して返す・取り込んだ印を付けるだけ。本文の読み取りと台帳への登録はアプリが行う
+// （Webhook 取り込みと同じ lib/inquiryIntake.ts の決まりで登録・追記するため）。
+
+function mailImportSheet_() {
+  var id = INQUIRY_DB_ID || SPREADSHEET_ID;
+  var ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(MAIL_IMPORT_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(MAIL_IMPORT_SHEET);
+    sh.appendRow(MAIL_IMPORT_HEADERS);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, sh.getMaxRows(), MAIL_IMPORT_HEADERS.length).setNumberFormat('@');
+  } else if (sh.getLastRow() === 0) {
+    sh.appendRow(MAIL_IMPORT_HEADERS);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, sh.getMaxRows(), MAIL_IMPORT_HEADERS.length).setNumberFormat('@');
+  }
+  return sh;
+}
+
+function mailImportSince_() {
+  if (MAIL_IMPORT_SINCE) {
+    var d = new Date(MAIL_IMPORT_SINCE + 'T00:00:00+09:00');
+    if (!isNaN(d.getTime())) return d;
+  }
+  return new Date(Date.now() - MAIL_IMPORT_DEFAULT_DAYS * 86400000);
+}
+
+// まだ取り込んでいない通知メールを古い順に返す。{ limit } 1回に返す通数（既定 10・最大 50）
+// 返す形：{ ok, items: [{ id, threadId, date(ISO), subject, body }], pending: 未取り込みの総数 }
+function listInquiryMails_(data) {
+  var limit = Math.min(Math.max(Number(data.limit) || 10, 1), 50);
+  try {
+    var sh = mailImportSheet_();
+    var done = {};
+    if (sh.getLastRow() > 1) {
+      var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+      for (var i = 0; i < ids.length; i++) done[String(ids[i][0])] = true;
+    }
+    var since = mailImportSince_();
+    // Gmail の after: は日付単位なので1日前から探し、受信日時で絞り直す
+    var after = Utilities.formatDate(new Date(since.getTime() - 86400000), 'Asia/Tokyo', 'yyyy/MM/dd');
+    var threads = GmailApp.search('from:' + MAIL_IMPORT_FROM + ' after:' + after, 0, 200);
+    var found = [];
+    for (var t = 0; t < threads.length; t++) {
+      var msgs = threads[t].getMessages();
+      for (var m = 0; m < msgs.length; m++) {
+        var msg = msgs[m];
+        if (done[msg.getId()]) continue;
+        if (String(msg.getFrom()).toLowerCase().indexOf(MAIL_IMPORT_FROM.toLowerCase()) === -1) continue;
+        if (msg.getDate().getTime() < since.getTime()) continue;
+        found.push(msg);
+      }
+    }
+    found.sort(function (a, b) { return a.getDate().getTime() - b.getDate().getTime(); });
+    var items = [];
+    for (var k = 0; k < found.length && k < limit; k++) {
+      var x = found[k];
+      items.push({
+        id: x.getId(),
+        threadId: x.getThread().getId(),
+        date: x.getDate().toISOString(),
+        subject: x.getSubject(),
+        body: x.getPlainBody(),
+      });
+    }
+    return { ok: true, items: items, pending: found.length };
+  } catch (err) {
+    return { ok: false, reason: 'gmail_failed:' + err, items: [] };
+  }
+}
+
+// 取り込んだメールを記録し、スレッドにラベルを付ける。
+// { items: [{ id, threadId, date, subject, result }] }
+function markInquiryMailsDone_(data) {
+  var items = data.items || [];
+  if (!items.length) return { ok: true, saved: 0 };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = mailImportSheet_();
+    var rows = [];
+    var threadIds = {};
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i] || {};
+      if (!it.id) continue;
+      rows.push([String(it.id), nowJp_(it.date), String(it.subject || ''), String(it.result || ''), nowJp_()]);
+      if (it.threadId) threadIds[String(it.threadId)] = true;
+    }
+    if (rows.length) {
+      sh.getRange(sh.getLastRow() + 1, 1, rows.length, MAIL_IMPORT_HEADERS.length).setNumberFormat('@').setValues(rows);
+    }
+    try {
+      var label = GmailApp.getUserLabelByName(MAIL_IMPORT_LABEL) || GmailApp.createLabel(MAIL_IMPORT_LABEL);
+      for (var tid in threadIds) {
+        var th = GmailApp.getThreadById(tid);
+        if (th) th.addLabel(label);
+      }
+    } catch (e) {
+      // ラベルは目印だけなので、付けられなくても記録は残す
+    }
+    return { ok: true, saved: rows.length };
   } catch (err) {
     return { ok: false, reason: 'db_open_failed:' + err };
   } finally {

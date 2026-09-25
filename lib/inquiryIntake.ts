@@ -35,6 +35,8 @@ export type IntakeFields = {
   message: string;  // お問い合わせ内容
   submissionId: string; // フォーム側の送信ID（あれば二重登録防止に使う）
   formName: string; // どのフォームから来たか（資料請求・テスト対策 など）。Webhook URL の ?form= で渡す
+  preferredDate: string; // 希望日時（模試・体験の日時など）
+  siblings: string;      // 兄弟のお名前
 };
 
 /**
@@ -45,7 +47,7 @@ export type IntakeFields = {
 export const FIELD_ALIASES: Record<keyof IntakeFields, string[]> = {
   // 実際の CF7 フォーム（例：「●中学生向け定期テスト対策」）のタグは
   //   your-name（お子様名）/ your-parent（保護者名）/ your-school / your-class（学年）/ your-tel / your-email / your-message
-  studentName: ['student_name', 'お子様名', 'お子さま名', '生徒氏名', '生徒名', 'your-name', 'name'],
+  studentName: ['student_name', 'お子様名', 'お子さま名', 'お子様のお名前', 'お子さまのお名前', '生徒氏名', '生徒名', 'your-name', 'name'],
   kana: ['student_kana', 'ふりがな', 'フリガナ', 'お子様名ふりがな', 'your-kana', 'your-furigana', 'kana'],
   guardianName: ['guardian_name', '保護者名', '保護者氏名', 'your-parent', 'parent', 'parent_name'],
   guardianKana: ['guardian_kana', '保護者名ふりがな', '保護者ふりがな', 'your-parent-kana', 'parent_kana'],
@@ -59,13 +61,15 @@ export const FIELD_ALIASES: Record<keyof IntakeFields, string[]> = {
   // [hidden your-course "定期テスト対策"] を置くか、Webhook が送る _post_title（フォームを置いたページ名）を使う
   course: ['course', '希望コース', 'コース', '希望講座', 'your-course'],
   campus: ['campus', '受講校舎', '希望校舎', '校舎', 'your-campus', 'your-school-campus'],
-  referrer: ['referrer', '紹介者', 'ご紹介者', '紹介者名', 'your-referrer'],
+  referrer: ['referrer', '紹介者', 'ご紹介者', '紹介者名', 'ご紹介友人名', '紹介友人名', 'your-referrer'],
   consult: ['consult', '相談事項', 'ご相談事項', 'your-consult'],
   message: ['message', 'お問い合わせ内容', 'お問合せ内容', 'お問い合わせ', 'your-message', 'content'],
   submissionId: ['submission_id', 'submissionId', 'id', 'entry_id', 'form_id_entry', '受付ID'],
   // CF7 to Webhook はフォーム名を送らないので、Webhook URL に &form=資料請求 のように付ける
   // （Special Mail Tags に [_post_title] を入れた場合はページ名を使う）
   formName: ['form', 'form_name', 'フォーム名', 'form_title', '_form_title', '_contact_form_title', '_post_title'],
+  preferredDate: ['preferred_date', '希望日時', '希望日', 'your-date'],
+  siblings: ['siblings', '兄弟のお名前', 'ご兄弟のお名前', '兄弟姉妹のお名前', 'your-sibling'],
 };
 
 function text(v: unknown): string {
@@ -75,9 +79,12 @@ function text(v: unknown): string {
   return String(v).trim();
 }
 
-/** キーの表記ゆれ（大小・空白・ハイフン/アンダースコア）を吸収して引く。 */
+/**
+ * キーの表記ゆれ（大小・空白・ハイフン/アンダースコア）を吸収して引く。
+ * 末尾の括弧書き（「ご相談事項（複数選択可）」の「（複数選択可）」）も落とす。
+ */
 function normKey(k: string): string {
-  return k.toLowerCase().replace(/[\s　_\-]/g, '');
+  return k.toLowerCase().replace(/[\s　_\-]/g, '').replace(/[（(][^（）()]*[）)]$/, '');
 }
 
 export function readFields(payload: IntakePayload): IntakeFields {
@@ -96,6 +103,39 @@ export function readFields(payload: IntakePayload): IntakeFields {
   const out = {} as IntakeFields;
   for (const key of Object.keys(FIELD_ALIASES) as (keyof IntakeFields)[]) out[key] = pick(FIELD_ALIASES[key]);
   return out;
+}
+
+// ---- 通知メールの読み取り（Gmail 取り込み用） ----------------------------------
+
+/**
+ * 通知メールの本文「お子様名：山田太郎」の並び → 項目名＝キーの形。
+ * 項目名として知っているもの（FIELD_ALIASES）で始まる行だけを新しい項目とみなし、それ以外の行は
+ * 直前の項目の続き（お問い合わせ内容の2行目以降など）として足す。本文中の「時間：夕方」のような行で
+ * 内容が切れないようにするため。末尾の「--」「このメールは…から送信されました」以降は読まない。
+ */
+export function parseMailBody(body: string): IntakePayload {
+  const known = new Set<string>();
+  for (const list of Object.values(FIELD_ALIASES)) for (const a of list) known.add(normKey(a));
+  const out: Record<string, string> = {};
+  let cur = '';
+  for (const raw of (body || '').replace(/\r\n?/g, '\n').split('\n')) {
+    const line = raw.replace(/\s+$/, '');
+    if (/^--\s*$/.test(line) || /^このメールは/.test(line.trim())) break;
+    const m = /^\s*([^：:]{1,30})[：:]\s*(.*)$/.exec(line);
+    if (m && known.has(normKey(m[1]))) {
+      cur = m[1].trim();
+      out[cur] = m[2].trim();
+      continue;
+    }
+    if (cur) out[cur] = out[cur] ? `${out[cur]}\n${line.trim()}` : line.trim();
+  }
+  for (const k of Object.keys(out)) out[k] = out[k].trim();
+  return out;
+}
+
+/** 件名「【智翔館HP】秋期講習お申込（中学生）」→ フォーム名「秋期講習お申込（中学生）」。 */
+export function formNameFromSubject(subject: string): string {
+  return (subject || '').replace(/^\s*(re|fwd?)\s*[:：]\s*/i, '').replace(/^【[^】]*】\s*/, '').trim();
 }
 
 // ---- 読み替え ------------------------------------------------------------------
@@ -172,8 +212,10 @@ export function buildNoteChunk(f: IntakeFields, todayIso: string, timeHm = ''): 
   const head = `${m}/${d}${timeHm ? ` ${timeHm}` : ''} HPフォーム${f.formName ? `:${f.formName}` : ''}`;
   const parts = [
     f.course ? `希望コース:${f.course}` : '',
+    f.preferredDate ? `希望日時:${f.preferredDate}` : '',
     f.consult ? `相談事項:${stripFormBoilerplate(f.consult)}` : '',
     f.message ? `内容:${stripFormBoilerplate(f.message)}` : '',
+    f.siblings ? `兄弟:${f.siblings}` : '',
   ].filter(Boolean);
   return `[${head}] ${parts.join(' ／ ') || '（本文なし）'}`;
 }
@@ -248,7 +290,8 @@ export function decideIntake(f: IntakeFields, existing: InquiryRecord[], todayIs
     phone: f.phone,
     source: 'HP',
     referrer: f.referrer,
-    term: matchTerm(f.course || f.formName),
+    // 「秋期講習お申込」フォームの希望コース「サイトク（前期）」のように、講習かどうかはフォーム名にしか出ないことがある
+    term: matchTerm([f.course, f.formName].filter(Boolean).join(' ')),
     note: [chunk, ...markers].join('\n'),
     guardianName: f.guardianKana && f.guardianName ? `${f.guardianName}（${f.guardianKana}）` : f.guardianName,
     postal: f.postal,

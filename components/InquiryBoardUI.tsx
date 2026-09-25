@@ -21,6 +21,20 @@ import {
 } from '@/lib/inquiryRecords';
 import { useModalDismiss } from '@/lib/useModalDismiss';
 import type { Alert, KpiLine } from '@/lib/inquiryAlerts';
+import type { MailImportLine, MailImportResult } from '@/lib/inquiryMailImport';
+
+type MailImportRes = MailImportResult;
+
+/** メール取り込みの失敗理由 → 画面の文。GAS が古い（action が無い）と items が返らず upstream_error になる。 */
+function mailImportReason(reason: string): string {
+  if (reason.startsWith('gmail_failed')) {
+    return 'Gmail を読めませんでした。Apps Script を問い合わせメールが届くアカウントでデプロイし、Gmail の許可を出してください。';
+  }
+  if (reason === 'upstream_error') {
+    return 'メールを読み込めませんでした。Apps Script（apps_script/Code.gs）を最新にして再デプロイしてください。';
+  }
+  return REASON_TEXT[reason] ?? `メールを読み込めませんでした（${reason}）。`;
+}
 
 type ListRes =
   | { ok: true; items: InquiryRecord[]; fetchedAt: string; backend: 'sheet' | 'local' }
@@ -93,6 +107,9 @@ export default function InquiryBoardUI({ name }: { name: string }) {
   const [inlineEdit, setInlineEdit] = useState(false);
   const [view, setView] = useState<View>('active');
   const [flash, setFlash] = useState('');
+  // 「最新状況取り込み」（Gmail の通知メール → 台帳）の実行中フラグと結果
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<{ text: string; err: boolean; lines: MailImportLine[] } | null>(null);
   // 台帳が変わるたびに増やす。アラートの再取得のきっかけ
   const [version, setVersion] = useState(0);
 
@@ -148,6 +165,34 @@ export default function InquiryBoardUI({ name }: { name: string }) {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Gmail に届いた HP フォームの通知メールを台帳に取り込む。1回10通までなので、残りがあれば続けて呼ぶ
+  const importMails = useCallback(async () => {
+    setImporting(true);
+    setImportMsg(null);
+    let created = 0, appended = 0, skipped = 0, failed = 0;
+    const lines: MailImportLine[] = [];
+    let error = '';
+    try {
+      for (let round = 0; round < 10; round++) {
+        const res = await fetch('/api/inquiry-board/mail-import', { method: 'POST' });
+        const j = (await res.json().catch(() => ({ ok: false, reason: 'upstream_error' }))) as MailImportRes;
+        if (!j.ok) { error = mailImportReason(j.reason); break; }
+        created += j.created; appended += j.appended; skipped += j.skipped; failed += j.failed;
+        lines.push(...j.lines);
+        if (j.remaining <= 0) break;
+      }
+    } catch {
+      error = REASON_TEXT.network_error;
+    }
+    const counted = created + appended + skipped + failed;
+    const summary = counted
+      ? `新規 ${created}件・追記 ${appended}件${skipped ? `・対象外/取込済 ${skipped}件` : ''}${failed ? `・失敗 ${failed}件` : ''}`
+      : '新しい問い合わせメールはありませんでした。';
+    setImportMsg({ text: error ? `${counted ? `${summary}。` : ''}${error}` : summary, err: !!error || failed > 0, lines });
+    setImporting(false);
+    if (created + appended) void load();
+  }, [load]);
 
   // ---- 絞り込み -----------------------------------------------------------
 
@@ -364,6 +409,14 @@ export default function InquiryBoardUI({ name }: { name: string }) {
       <div className="ib-toolbar">
         <button className="ib-primary" onClick={() => setEditing('new')}>＋ 新規登録</button>
         <button
+          className="ib-ghost"
+          onClick={() => void importMails()}
+          disabled={importing}
+          title="Gmail に届いた HP フォームの問い合わせメールのうち、まだ台帳に入っていない分を取り込む"
+        >
+          {importing ? '取り込み中…' : '最新状況取り込み'}
+        </button>
+        <button
           className={`ib-ghost ib-toggle ${inlineEdit ? 'active' : ''}`}
           onClick={toggleInline}
           title="一覧の各セルをその場で書き換える。セルを離れると保存される"
@@ -411,6 +464,20 @@ export default function InquiryBoardUI({ name }: { name: string }) {
         {fetchedAt && <span className="ib-meta">取得 {fmtTs(fetchedAt)}</span>}
       </div>
       {flash && <div className="ib-note ib-note-err">{flash}</div>}
+      {importMsg && (
+        <div className={`ib-note ${importMsg.err ? 'ib-note-err' : 'ib-note-dev'}`}>
+          メール取り込み：{importMsg.text}
+          {importMsg.lines.length > 0 && (
+            <details>
+              <summary>内訳</summary>
+              <ul className="ib-import-lines">
+                {importMsg.lines.map((l, i) => <li key={i}>{l.date}　{l.subject}　→ {l.detail}</li>)}
+              </ul>
+            </details>
+          )}
+          <button type="button" className="ib-link" onClick={() => setImportMsg(null)}>閉じる</button>
+        </div>
+      )}
 
       {loading && !items.length ? (
         <p className="ib-empty">読み込み中…</p>

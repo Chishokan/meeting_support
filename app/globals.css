@@ -1324,3 +1324,6 @@ button.primary:disabled { opacity: .5; cursor: default; }
 @media (max-width: 900px) {
   .ib-alerts-box { max-height: 150px; }
 }
+
+/* 問合せ管理：「最新状況取り込み」の結果の内訳 */
+.ib-import-lines { margin: 6px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.7; max-height: 220px; overflow-y: auto; }

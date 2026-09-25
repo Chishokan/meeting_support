@@ -141,6 +141,28 @@ WordPress 側の設定（Contact Form 7 の場合。フォームごとに設定�
    失敗は Vercel のログに `[INQUIRY_INTAKE_ERROR]` で残るので、台帳に出ないときはそこを見る
    （`reason: invalid_token` なら URL の token と Vercel の `INQUIRY_INTAKE_TOKEN` が一致していない）
 
+### Gmail の通知メールからの取り込み（「最新状況取り込み」ボタン）
+Webhook の代わりに、担当者の Gmail に届く通知メール（送信元 hp-info@chishokan.co.jp）から取り込む方法。
+`/inquiry-board` の「最新状況取り込み」ボタンを押すと、まだ取り込んでいないメールを台帳に登録・追記する。
+
+- 流れ：ボタン → `POST /api/inquiry-board/mail-import`（lib/inquiryMailImport.ts）→ Apps Script の `listInquiryMails` が
+  Gmail から未取り込みのメールを返す → 本文を `parseMailBody` で読み、下の決まり（decideIntake）で登録・追記 →
+  `markInquiryMailsDone` が「メール取込済」タブに1通1行で記録し、Gmail のスレッドにラベル「問合せ台帳取込済」を付ける
+- 1回10通ずつ。残りがあれば画面が続けて呼ぶ。結果は画面に「新規 n件・追記 n件」と内訳で出る
+- フォーム名は件名から取る（「【智翔館HP】秋期講習お申込（中学生）」→「秋期講習お申込（中学生）」）。
+  備考の1行の日時はメールの受信日時
+- 件名に「採用」「求人」「応募」「エントリー」等を含むもの、お子様名・保護者名の無いものは「対象外」として記録だけする
+- 何度押しても二重登録しない（「メール取込済」タブにあるメールは読まない。記録が漏れても受付ID `gmail:<メールID>` と
+  備考の同じ行で飛ばす）
+
+セットアップ:
+1. apps_script/Code.gs を最新にし、**問い合わせメールが届く Gmail のアカウントで**再デプロイする。
+   Gmail を読む処理が増えたので、デプロイのときに Gmail の許可を求められる
+2. Code.gs の `MAIL_IMPORT_SINCE` に切り替えた日（例 `'2026-09-26'`）を入れる。それより前のメールは読まない
+   （空なら直近3日）。旧メール転記で旧シートに入った分を二重に入れないため
+3. WordPress の Webhook（CF7 to Webhook の「Integrate」）は外す。両方動かすと同じ問い合わせが2回入る
+4. 旧メール転記の Apps Script（ラベル「問い合わせ登録済み」を付けているもの）も止める
+
 取り込みの決まり（lib/inquiryIntake.ts の decideIntake）:
 - 媒体は「HP」、日付は受信日、結果は空（追客中）で登録する。希望コースから受講期を読み替える
   （「模試」→模試、「講習」→講習会、「体験・イベント」→その他イベント、それ以外→通常）
