@@ -95,6 +95,7 @@ export function readFields(payload: IntakePayload): IntakeFields {
   };
   const out = {} as IntakeFields;
   for (const key of Object.keys(FIELD_ALIASES) as (keyof IntakeFields)[]) out[key] = pick(FIELD_ALIASES[key]);
+  out.phone = normalizePhone(out.phone);
   return out;
 }
 
@@ -150,6 +151,22 @@ export function stripFormBoilerplate(s: string): string {
 
 function digits(s: string): string {
   return (s || '').replace(/[^0-9]/g, '');
+}
+
+/**
+ * フォームから来た電話番号を整える。
+ * - 全角数字・全角ハイフンを半角に
+ * - 先頭の 0 が落ちているもの（9〜10桁で 0 始まりでない）は 0 を補う。
+ *   日本の電話番号は必ず 0 始まりなので、途中で数値扱いされて 0 が落ちたケースの復元。
+ */
+export function normalizePhone(raw: string): string {
+  let s = (raw || '').trim()
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[－ー‐―]/g, '-')
+    .replace(/[\s　]+/g, '');
+  const d = digits(s);
+  if (/^[0-9-]+$/.test(s) && (d.length === 9 || d.length === 10) && !d.startsWith('0')) s = '0' + s;
+  return s;
 }
 
 function nameKey(s: string): string {
@@ -209,13 +226,21 @@ export function decideIntake(f: IntakeFields, existing: InquiryRecord[], todayIs
   const chunk = buildNoteChunk(f, todayIso, timeHm);
   const key = nameKey(f.studentName);
   const tel = digits(f.phone);
+  const samePhone = (r: InquiryRecord) => tel.length >= 10 && digits(r.phone) === tel;
   // 氏名があれば氏名で探す。電話番号だけで寄せると兄弟（同じ番号）の行に追記してしまうので、
   // 電話番号で探すのは氏名が無いときだけ。
-  const target = existing.find((r) => {
-    if (r.campus !== campus) return false;
-    if (key) return nameKey(r.studentName) === key;
-    return tel.length >= 10 && digits(r.phone) === tel;
-  });
+  // 同じ氏名は校舎が違っても同一人物として扱う（校舎の選び直し・未分類からの振り分け・別校舎で登録済み等）。
+  // 同じ校舎 → 電話番号も一致 → 氏名一致が1件だけ、の順で決める。
+  let target: InquiryRecord | undefined;
+  if (key) {
+    const byName = existing.filter((r) => nameKey(r.studentName) === key);
+    target = byName.find((r) => r.campus === campus) ?? byName.find(samePhone) ?? (byName.length === 1 ? byName[0] : undefined);
+    if (target && target.campus !== campus && campus !== UNASSIGNED_CAMPUS) {
+      markers.push(`【校舎違い】フォームの受講校舎:${campus}（台帳は ${target.campus}）`);
+    }
+  } else {
+    target = existing.find((r) => r.campus === campus && samePhone(r));
+  }
 
   if (target) {
     if (target.note.includes(chunk)) return { action: 'skip', reason: 'already_noted' };
