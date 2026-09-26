@@ -36,6 +36,7 @@ export default function PortalPage() {
           );
         })}
       </div>
+      <p className="portal-version">智翔館アプリ v{process.env.NEXT_PUBLIC_APP_VERSION}</p>
     </div>
   );
 }
