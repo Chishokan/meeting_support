@@ -5,6 +5,7 @@ import { SEGMENT_SECONDS, fmtDuration, splitAudioFile } from '@/lib/audioChunk';
 import { templateOutline } from '@/lib/deptMinutesTemplate';
 import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
 import MinutesDetail from '@/components/MinutesDetail';
+import { DRAFT_KEY as STORE_KEY, draftFromRow } from '@/lib/deptMinutesDraft';
 import type { DecisionRow, MinutesRow } from '@/app/api/dept-minutes/list/route';
 
 // 録音は1区間ずつ独立したファイルにして、会議中から順に文字起こししていく。
@@ -16,7 +17,6 @@ const REC_SEGMENT_SECONDS = SEGMENT_SECONDS;
 
 const REC_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
 
-const STORE_KEY = 'chishokan_dept_minutes_v1';
 
 type Meta = { title: string; date: string; place: string; attendees: string; agenda: string };
 type Source = 'record' | 'file' | 'paste';
@@ -101,6 +101,9 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [meetings, setMeetings] = useState<MinutesRow[]>([]);
   const [panelTab, setPanelTab] = useState<'meetings' | 'decisions'>('meetings');
   const [openMeeting, setOpenMeeting] = useState<MinutesRow | null>(null);
+  // 保存済みの議事録を［修正］で開いているときだけ入る。
+  // これを付けて保存すると新しい行を作らず、元の議事録を上書きする。
+  const [editingId, setEditingId] = useState('');
   const [decFilter, setDecFilter] = useState('');
   const [showTemplate, setShowTemplate] = useState(false);
   // 文字起こしは普段は隠しておく（必要なときだけ開く）。
@@ -125,6 +128,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         if (j?.meta) setMeta({ ...EMPTY_META, ...j.meta });
         if (typeof j?.transcript === 'string') setTranscript(j.transcript);
         if (typeof j?.memo === 'string') setMemo(j.memo);
+        if (typeof j?.editingId === 'string') setEditingId(j.editingId);
         if (typeof j?.draft === 'string') setDraft(j.draft);
       }
     } catch {}
@@ -134,9 +138,9 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   useEffect(() => {
     if (!loaded.current) return;
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ meta, transcript, memo, draft }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ meta, transcript, memo, draft, editingId }));
     } catch {}
-  }, [meta, transcript, memo, draft]);
+  }, [meta, transcript, memo, draft, editingId]);
 
   // ---- 文字起こしが使える設定か ----
   useEffect(() => {
@@ -412,12 +416,18 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     if (generating) return;
     const text = transcript.trim();
     const memoText = memo.trim();
-    // 録音が無くメモだけの会議もあるので、どちらか一方あれば作れる。
-    if (!text && !memoText) {
+    if (mode === 'revise') {
+      if (!instruction.trim()) return;
+      // 保存済みの議事録を［修正］で開いたときは文字起こしが無い。議事録本文が材料になる。
+      if (!draft.trim()) {
+        setErr('先に議事録を作成してください。');
+        return;
+      }
+    } else if (!text && !memoText) {
+      // 録音が無くメモだけの会議もあるので、どちらか一方あれば作れる。
       setErr('先に会議の音声か議事録メモを用意してください。');
       return;
     }
-    if (mode === 'revise' && !instruction.trim()) return;
     setErr('');
     setNote('');
     setGenerating(true);
@@ -456,11 +466,17 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       const res = await fetch('/api/dept-minutes/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meta, content: draft }),
+        body: JSON.stringify({ meta, content: draft, id: editingId }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) {
-        setNote(`保存しました（決定事項 ${j.decisions ?? 0} 件を全社共有に登録）。`);
+        setNote(
+          j.updated
+            ? `保存しました（元の議事録を上書き／決定事項 ${j.decisions ?? 0} 件を入れ替え）。`
+            : `保存しました（決定事項 ${j.decisions ?? 0} 件を全社共有に登録）。`,
+        );
+        // 続けて直せるよう、保存後も同じ議事録を編集中のままにする。
+        if (j.id) setEditingId(String(j.id));
         void loadSaved();
       } else if (j?.reason === 'not_configured') {
         setNote('スプレッドシート連携が未設定のため、この端末にのみ保存しました。');
@@ -476,6 +492,27 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     }
   }
 
+  // 保存済みの議事録を［修正］で編集画面へ読み込む。
+  // 上書き保存できるよう editingId を持ったままにする。
+  function startEdit(row: MinutesRow) {
+    if (draft.trim() && !confirm('編集中の議事録を破棄して、保存済みの議事録を読み込みますか？')) return;
+    const d = draftFromRow(row);
+    setMeta({ ...EMPTY_META, ...d.meta });
+    setTranscript(d.transcript);
+    setMemo(d.memo);
+    setDraft(d.draft);
+    setEditingId(d.editingId);
+    setOpenMeeting(null);
+    setErr('');
+    setNote(
+      d.editingId
+        ? '保存済みの議事録を読み込みました。直して「確認しました・保存する」を押すと上書きされます。'
+        : '保存済みの議事録を読み込みました。※この議事録には識別子が無いため、保存すると新しい記録として追加されます。',
+    );
+    // 議事録の欄（手順3）まで送る。
+    setTimeout(() => document.querySelector('.dm-draft')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
+  }
+
   function reset() {
     if (!confirm('入力中の会議情報・文字起こし・議事録をすべて消して、新しい会議を始めますか？')) return;
     stopRecording();
@@ -485,6 +522,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     setTranscript('');
     setMemo('');
     setDraft('');
+    setEditingId('');
     setInstruction('');
     setNote('');
     setErr('');
@@ -939,7 +977,11 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
 
       {/* 議事録の詳細（ポップアップ）。ダッシュボードと同じ部品を使う。 */}
       {openMeeting && (
-        <MinutesDetail row={openMeeting} onClose={() => setOpenMeeting(null)} />
+        <MinutesDetail
+          row={openMeeting}
+          onClose={() => setOpenMeeting(null)}
+          onEdit={() => startEdit(openMeeting)}
+        />
       )}
     </div>
   );

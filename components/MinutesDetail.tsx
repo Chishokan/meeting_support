@@ -16,9 +16,12 @@ function fmtDate(s: string) {
 export default function MinutesDetail({
   row,
   onClose,
+  onEdit,
 }: {
   row: MinutesRow;
   onClose: () => void;
+  // 渡されたときだけ［修正］を出す。押すと編集画面へこの議事録を読み込む。
+  onEdit?: () => void;
 }) {
   // 開いているあいだは Esc で閉じられるようにする。
   // Esc で閉じる／開いているあいだ後ろのページを動かさない
@@ -56,6 +59,9 @@ export default function MinutesDetail({
         </div>
 
         <div className="dm-modal-foot">
+          {onEdit && (
+            <button className="dm-modal-edit" onClick={onEdit}>修正する</button>
+          )}
           <button
             className="dm-copy"
             onClick={() =>

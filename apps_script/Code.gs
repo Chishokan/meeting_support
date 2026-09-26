@@ -583,38 +583,83 @@ function listShareItems_(data) {
   return { ok: true, items: items };
 }
 
-var DEPT_MINUTES_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '場所', '出席者', '予定議題', '議事録', '会議の質チェック'];
-var DEPT_DECISION_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '件名', '内容', '理由・背景', '担当', '期限', '関係部門'];
+// ★末尾に「議事録ID」を足してある。既存シートには下の ensure で自動で見出しが足される。
+//   このIDがあることで、あとから同じ議事録を直して保存し直せる（新しい行が増えない）。
+var DEPT_MINUTES_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '場所', '出席者', '予定議題', '議事録', '会議の質チェック', '議事録ID'];
+var DEPT_DECISION_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '件名', '内容', '理由・背景', '担当', '期限', '関係部門', '議事録ID'];
+
+// シートを用意し、見出しの不足分（あとから足した「議事録ID」など）を補う。
+function sheetWithHeaders_(name, headers) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(headers);
+    return sh;
+  }
+  var cur = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+  for (var c = 0; c < headers.length; c++) {
+    if (!cur[c]) sh.getRange(1, c + 1).setValue(headers[c]);
+  }
+  return sh;
+}
+
+// 指定列の値が id と一致する行番号を返す（見つからなければ 0）。
+function findRowById_(sh, col, id) {
+  if (!id || sh.getLastRow() < 2) return 0;
+  var values = sh.getRange(2, col, sh.getLastRow() - 1, 1).getValues();
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0]) === String(id)) return i + 2;
+  }
+  return 0;
+}
 
 // 「部門会議議事録」メニューの保存。
 //  ・「部門会議議事録」シートに1会議1行（議事録本文と会議の質チェックを丸ごと保存）
 //  ・「部門決定事項」シートに1決定1行（部門をまたいで決め事を一覧するためのもと）
 // 決定事項の切り出しは Next 側（lib/deptMinutesParse.ts）で済ませて data.decisions に入れて送られてくる。
+//
+// data.id があれば、その議事録を「直して保存し直した」とみなして元の行を上書きする。
+// そのとき、ぶら下がっていた決定事項の行も入れ替える（古い決定が残らないようにするため）。
 function saveDeptMinutes_(data) {
   var ts = data.ts || nowIso_();
-  appendRow_(
-    '部門会議議事録',
-    DEPT_MINUTES_HEADERS,
-    [
-      ts, data.campus || '', data.user || '', data.title || '', data.date || '',
-      data.place || '', data.attendees || '', data.agenda || '',
-      data.minutes || '', data.quality || ''
-    ]
-  );
+  var sh = sheetWithHeaders_('部門会議議事録', DEPT_MINUTES_HEADERS);
+  var idCol = DEPT_MINUTES_HEADERS.length; // 「議事録ID」は末尾
+  var row = findRowById_(sh, idCol, data.id);
+  var id = row ? String(data.id) : (data.id ? String(data.id) : Utilities.getUuid());
+
+  // 上書きのときは元の「日時」を残す（同じ会議なので、記録日は最初の保存日のままにする）。
+  var firstTs = row ? sh.getRange(row, 1).getValue() : ts;
+  var values = [
+    firstTs, data.campus || '', data.user || '', data.title || '', data.date || '',
+    data.place || '', data.attendees || '', data.agenda || '',
+    data.minutes || '', data.quality || '', id
+  ];
+  if (row) {
+    sh.getRange(row, 1, 1, values.length).setValues([values]);
+  } else {
+    sh.appendRow(values);
+  }
+
+  // 決定事項は入れ替え（この議事録IDの行を消してから入れ直す）。
+  var dsh = sheetWithHeaders_('部門決定事項', DEPT_DECISION_HEADERS);
+  var dIdCol = DEPT_DECISION_HEADERS.length;
+  if (row && dsh.getLastRow() >= 2) {
+    var dv = dsh.getRange(2, dIdCol, dsh.getLastRow() - 1, 1).getValues();
+    // 下から消す（消すたびに行番号がずれるため）。
+    for (var k = dv.length - 1; k >= 0; k--) {
+      if (String(dv[k][0]) === id) dsh.deleteRow(k + 2);
+    }
+  }
 
   var decisions = data.decisions || [];
   for (var i = 0; i < decisions.length; i++) {
     var d = decisions[i] || {};
-    appendRow_(
-      '部門決定事項',
-      DEPT_DECISION_HEADERS,
-      [
-        ts, data.campus || '', data.user || '', data.title || '', data.date || '',
-        d.title || '', d.detail || '', d.reason || '', d.owner || '', d.due || '', d.related || ''
-      ]
-    );
+    dsh.appendRow([
+      firstTs, data.campus || '', data.user || '', data.title || '', data.date || '',
+      d.title || '', d.detail || '', d.reason || '', d.owner || '', d.due || '', d.related || '', id
+    ]);
   }
-  return { ok: true, decisions: decisions.length };
+  return { ok: true, decisions: decisions.length, id: id, updated: row > 0 };
 }
 
 // 部門会議議事録の一覧（新しい順・最大100件）。
@@ -630,7 +675,8 @@ function listDeptMinutes_(data) {
       ts: cellStr_(r[0]), campus: String(r[1] == null ? '' : r[1]), user: String(r[2] == null ? '' : r[2]),
       title: String(r[3] == null ? '' : r[3]), date: cellStr_(r[4]), place: String(r[5] == null ? '' : r[5]),
       attendees: String(r[6] == null ? '' : r[6]), agenda: String(r[7] == null ? '' : r[7]),
-      minutes: String(r[8] == null ? '' : r[8]), quality: String(r[9] == null ? '' : r[9])
+      minutes: String(r[8] == null ? '' : r[8]), quality: String(r[9] == null ? '' : r[9]),
+      id: String(r[10] == null ? '' : r[10])
     });
   }
   items.reverse();

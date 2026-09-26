@@ -27,8 +27,12 @@ export async function POST(req: Request) {
   const url = process.env.APPS_SCRIPT_URL;
   if (!url) return Response.json({ ok: false, reason: 'not_configured', decisions: decisions.length });
 
+  // 既存の議事録を直して保存し直すときだけ id が付く（付いていなければ新規）。
+  const id = String(body?.id ?? '');
+
   const payload = {
     action: 'saveDeptMinutes',
+    id,
     token: process.env.APPS_SCRIPT_TOKEN || '',
     ts: new Date().toISOString(),
     campus: session.campus,
@@ -52,7 +56,12 @@ export async function POST(req: Request) {
     // GAS(ContentService)は失敗時も HTTP 200 を返すため、本文の ok/reason を必ず確認する。
     const j = await res.json().catch(() => null);
     if (res.ok && j && j.ok === true) {
-      return Response.json({ ok: true, decisions: decisions.length });
+      return Response.json({
+        ok: true,
+        decisions: decisions.length,
+        id: String(j.id ?? ''),
+        updated: j.updated === true,
+      });
     }
     return Response.json({ ok: false, reason: (j && j.reason) || 'upstream_error' }, { status: 502 });
   } catch {

@@ -108,6 +108,13 @@ function metaBlock(meta: MeetingMeta): string {
   ].join('\n');
 }
 
+// 文字起こしのブロック。保存済みの議事録を直すときは無いこともある。
+function transcriptBlock(transcript: string): string[] {
+  const t = transcript.trim();
+  if (!t) return [];
+  return ['', '【会議の文字起こし（録音から自動生成。誤変換あり）】', t];
+}
+
 // 会議中に人が取ったメモ。あれば文字起こしと一緒に渡す。
 // 人が「残そう」と判断して書いたものなので、文字起こしより信頼できる前提で扱わせる。
 function memoBlock(memo: string): string[] {
@@ -124,9 +131,7 @@ function memoBlock(memo: string): string[] {
 export function buildDraftRequest(meta: MeetingMeta, transcript: string, memo = ''): string {
   return [
     metaBlock(meta),
-    '',
-    '【会議の文字起こし（録音から自動生成。誤変換あり）】',
-    transcript.trim(),
+    ...transcriptBlock(transcript),
     ...memoBlock(memo),
     '',
     '上の内容から、指示どおり2ブロックを出力してください。',
@@ -143,11 +148,10 @@ export function buildReviseRequest(
 ): string {
   return [
     metaBlock(meta),
-    '',
-    '【会議の文字起こし（録音から自動生成。誤変換あり）】',
-    transcript.trim(),
+    ...transcriptBlock(transcript),
     ...memoBlock(memo),
     '',
+    // 保存済みの議事録を直すときは文字起こしが無い。そのときはこの本文だけが材料になる。
     '【現在の議事録（利用者が編集済みの場合あり）】',
     draft.trim(),
     '',

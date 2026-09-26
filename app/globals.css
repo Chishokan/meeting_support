@@ -941,6 +941,13 @@ button.primary:disabled { opacity: .5; cursor: default; }
   display: flex; align-items: center; justify-content: flex-end; gap: 10px;
   padding: 12px 20px; border-top: 1px solid var(--line);
 }
+/* 詳細ポップアップの［修正する］。閉じる系より左に置き、主action とは色を分ける。 */
+.dm-modal-edit {
+  margin-right: auto; padding: 9px 20px; font-size: 13px; font-weight: 700;
+  color: var(--navy); background: #eef3f8; border: 1px solid #cfe0ee;
+  border-radius: 8px; cursor: pointer;
+}
+.dm-modal-edit:hover { background: #e3edf7; }
 .dm-modal-done {
   padding: 9px 20px; font-size: 13px; font-weight: 700; color: #fff;
   background: var(--navy); border: none; border-radius: 8px; cursor: pointer;
@@ -1214,7 +1221,14 @@ button.primary:disabled { opacity: .5; cursor: default; }
   .ib-errors { font-size: 14px; }
   .ib-modal .dm-modal-foot { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); gap: 8px; }
   .ib-foot-hint { display: none; }
-  .ib-modal .ib-cancel, .ib-modal .dm-modal-done { flex: 1; padding: 13px 10px; font-size: 15px; border-radius: 10px; }
+  .ib-modal .ib-cancel, .ib-modal /* 詳細ポップアップの［修正する］。閉じる系より左に置き、主action とは色を分ける。 */
+.dm-modal-edit {
+  margin-right: auto; padding: 9px 20px; font-size: 13px; font-weight: 700;
+  color: var(--navy); background: #eef3f8; border: 1px solid #cfe0ee;
+  border-radius: 8px; cursor: pointer;
+}
+.dm-modal-edit:hover { background: #e3edf7; }
+.dm-modal-done { flex: 1; padding: 13px 10px; font-size: 15px; border-radius: 10px; }
   .ib-modal .ib-delete { padding: 13px 12px; font-size: 14px; border-radius: 10px; }
 }
 
