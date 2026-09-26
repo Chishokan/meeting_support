@@ -19,7 +19,7 @@
 import { timingSafeEqual } from 'crypto';
 import { readFields, decideIntake, type IntakePayload } from '@/lib/inquiryIntake';
 import { validateInput } from '@/lib/inquiryRecords';
-import { fiscalPeriod, jstDate } from '@/lib/companyKnowledge';
+import { fiscalPeriod, jstDate } from '@/lib/core/companyKnowledge';
 import { createRecord, listRecords, updateRecord } from '@/lib/inquiryStore';
 
 export const runtime = 'nodejs';

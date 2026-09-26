@@ -1,7 +1,7 @@
 // 要項QA のプロンプト。確定済みの要項ファイルだけを根拠に答える。
 // ★挙動を直す場合はこのファイルを編集 → git push（Vercel が自動再デプロイ）。
 
-import { withCompanyKnowledge } from './companyKnowledge';
+import { withCompanyKnowledge } from './core/companyKnowledge';
 
 const YOKO_INSTRUCTIONS = `
 あなたは「株式会社智翔館 要項アシスタント」です。質問者は「{{事業部}} / {{担当}}」。

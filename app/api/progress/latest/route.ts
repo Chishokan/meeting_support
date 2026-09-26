@@ -1,4 +1,4 @@
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import { parseProgressItems, parseProgressNote } from '@/lib/progressPrompt';
 
 export const runtime = 'nodejs';

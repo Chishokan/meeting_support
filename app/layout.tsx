@@ -1,5 +1,6 @@
 import './globals.css';
 import type { ReactNode } from 'react';
+import EnvBanner from '@/components/EnvBanner';
 
 export const metadata = {
   title: '智翔館 会議DX（テスト版）',
@@ -9,7 +10,10 @@ export const metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ja">
-      <body>{children}</body>
+      <body>
+        <EnvBanner />
+        {children}
+      </body>
     </html>
   );
 }

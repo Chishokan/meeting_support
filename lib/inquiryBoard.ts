@@ -4,7 +4,7 @@
 // どちらもマスク・除外を済ませて返すため、このファイルに個人情報（実名・電話・住所・保護者名・メール）は入ってこない。
 // ★列が増減したときは INQUIRY_COLUMNS（apps_script/Code.gs）と下の型を合わせる。
 
-import { fiscalPeriod } from './companyKnowledge';
+import { fiscalPeriod } from './core/companyKnowledge';
 import { listRecords } from './inquiryStore';
 
 export type InquiryRow = {

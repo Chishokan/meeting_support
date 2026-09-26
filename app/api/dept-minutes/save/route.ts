@@ -1,4 +1,4 @@
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import { extractDecisions, extractMinutes, extractQuality } from '@/lib/deptMinutesParse';
 
 export const runtime = 'nodejs';

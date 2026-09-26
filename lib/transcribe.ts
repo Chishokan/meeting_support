@@ -173,7 +173,7 @@ export async function transcribeAudio(file: Blob, filename: string): Promise<Tra
   const url = `${base}/models/${model}:generateContent`;
 
   const data = Buffer.from(await file.arrayBuffer()).toString('base64');
-  // 社内用語のヒントはナレッジ（GLOSSARY.md / companyKnowledge.ts）から毎回組み立てる。
+  // 社内用語のヒントはナレッジ（GLOSSARY.md / 10_理念・方針/COMPANY.md）から毎回組み立てる。
   // 読めなくても文字起こし自体は止めない。
   let vocab = '';
   try {

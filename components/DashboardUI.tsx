@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { STAFF } from '@/lib/staff';
+import { STAFF } from '@/lib/core/staff';
 import YokoCard, { type YokoCardData } from '@/components/YokoCard';
 import MinutesDetail from '@/components/MinutesDetail';
 import { draftFromRow, stashDraft } from '@/lib/deptMinutesDraft';

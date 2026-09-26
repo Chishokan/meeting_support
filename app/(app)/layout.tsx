@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import Sidebar from '@/components/Sidebar';
 
 export default function AppLayout({ children }: { children: ReactNode }) {
