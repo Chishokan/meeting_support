@@ -1533,3 +1533,25 @@ a.portal-card:hover { border-color: var(--navy); box-shadow: 0 2px 10px rgba(31,
 .mp-grid th.mp-day { z-index: 2; background: #f7f9fb; }
 .mp-grid tr.today td.mp-day { background: #fffbea; }
 .mp-grid tr.holiday .mp-week-cell { background: #e05a4f; }
+/* 配布物 */
+.mp-note.warn { color: #a0402c; background: #fdece8; border-color: #f2c4b8; }
+.mp-low td { background: #fff6f3; }
+.mp-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-top: 6px; }
+.mp-panels .mp-card { margin: 0; }
+.mp-panels .mp-h2 { margin-top: 0; }
+.mp-panels .mp-form { padding: 0; }
+.mp-panels .mp-btn.primary { margin-top: 12px; align-self: flex-start; }
+/* AIの計画案 */
+.mp-btn.ai { border-color: #b9a3e3; color: #5b3fa0; background: #f6f2fd; font-weight: 700; }
+.mp-btn.ai:hover { background: #ede5fb; }
+.mp-modal.wide { width: min(720px, 100%); }
+.mp-plan-summary { font-size: 13.5px; line-height: 1.7; background: #f6f2fd; border-radius: 8px; padding: 10px 12px; margin: 6px 0 8px; }
+.mp-plan-item { display: flex !important; gap: 10px; align-items: flex-start; padding: 9px 4px; border-bottom: 1px solid #eef1f4; font-size: 13.5px; font-weight: 400 !important; cursor: pointer; }
+.mp-plan-item input { width: auto; margin-top: 3px; }
+.mp-plan-item.off { opacity: .45; }
+.mp-plan-main { display: flex; flex-direction: column; gap: 2px; }
+.mp-plan-sub { font-size: 12px; color: #667; }
+.mp-plan-why { font-size: 12px; color: #5b3fa0; }
+/* 共通の button.primary（幅100%）を門配管理のボタンでは打ち消す */
+button.mp-btn.primary { width: auto; margin-top: 0; padding: 6px 14px; font-size: 13px; }
+.mp-panels button.mp-btn.primary { margin-top: 12px; padding: 8px 18px; }

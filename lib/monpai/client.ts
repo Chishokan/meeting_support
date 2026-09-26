@@ -13,6 +13,11 @@ export const REASON_TEXT: Record<string, string> = {
   network_error: '保存先に接続できませんでした。',
   not_found: 'この記録は見つかりませんでした（削除された可能性があります）。',
   unauthorized: 'ログインが切れました。ログインし直してください。',
+  ai_not_configured: 'AIの設定（ANTHROPIC_API_KEY）がありません。',
+  ai_error: 'AIの呼び出しに失敗しました。少し時間をおいてもう一度試してください。',
+  ai_bad_output: 'AIの案を読み取れませんでした。もう一度試してください。',
+  ai_refused: 'AIが案の作成を断りました。',
+  no_schools: 'この地区の学校が学校マスタに登録されていません。',
 };
 
 export const reasonText = (r: string) => REASON_TEXT[r] ?? `読み書きに失敗しました（${r}）。`;
@@ -46,4 +51,36 @@ export async function deleteRecordApi(id: string): Promise<{ ok: boolean; reason
   const j = await fetch(`/api/monpai/records?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
     .then((r) => r.json()).catch(() => null);
   return j?.ok ? { ok: true } : { ok: false, reason: j?.reason ?? 'network_error' };
+}
+
+export type StockRow = import('./model').MaterialStock;
+export type MovementRow = import('./model').MaterialMovement;
+
+export async function fetchMaterials(): Promise<{ ok: true; items: StockRow[]; movements: MovementRow[] } | { ok: false; reason: string }> {
+  const j = await fetch('/api/monpai/materials', { cache: 'no-store' }).then((r) => r.json()).catch(() => null);
+  if (!j?.ok) return { ok: false, reason: j?.reason ?? 'network_error' };
+  return { ok: true, items: j.items, movements: j.movements };
+}
+
+export async function postMaterial(body: Record<string, unknown>): Promise<{ ok: boolean; reason?: string; errors?: string[] }> {
+  const j = await fetch('/api/monpai/materials', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then((r) => r.json()).catch(() => null);
+  return j?.ok ? { ok: true } : { ok: false, reason: j?.reason ?? 'network_error', errors: j?.errors };
+}
+
+export type PlanItem = import('./plan').PlanItem;
+
+export async function draftPlanApi(district: string, month: string): Promise<
+  { ok: true; summary: string; items: PlanItem[]; dropped: number } | { ok: false; reason: string }
+> {
+  const j = await fetch('/api/monpai/plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ district, month }),
+  }).then((r) => r.json()).catch(() => null);
+  if (!j?.ok) return { ok: false, reason: j?.reason ?? 'network_error' };
+  return j;
 }

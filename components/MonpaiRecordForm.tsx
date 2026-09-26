@@ -10,11 +10,12 @@ import { deleteRecordApi, reasonText, saveRecordApi } from '@/lib/monpai/client'
 export type Draft = Partial<MonpaiRecord> & { date: string; district: string; school: string };
 
 export default function MonpaiRecordForm({
-  draft, schools, staffNames, onClose, onSaved, onDeleted,
+  draft, schools, staffNames, materialNames = [], onClose, onSaved, onDeleted,
 }: {
   draft: Draft;
   schools: School[]; // この地区の学校
   staffNames: string[];
+  materialNames?: string[];
   onClose: () => void;
   onSaved: (r: MonpaiRecord) => void;
   onDeleted: (id: string) => void;
@@ -90,7 +91,8 @@ export default function MonpaiRecordForm({
             <label>担当2<input list="mp-staff" value={f.staff2} onChange={(e) => set('staff2', e.target.value)} /></label>
           </div>
           <datalist id="mp-staff">{staffNames.map((n) => <option key={n} value={n} />)}</datalist>
-          <label>配布物・ノベルティ<input value={f.material} placeholder="例 冬期講習チラシ＋ノート" onChange={(e) => set('material', e.target.value)} /></label>
+          <label>配布物・ノベルティ<input list="mp-materials" value={f.material} placeholder="例 冬期講習チラシ、ノート（複数は「、」で区切る）" onChange={(e) => set('material', e.target.value)} /></label>
+          <datalist id="mp-materials">{materialNames.map((n) => <option key={n} value={n} />)}</datalist>
           <div className="mp-form-row">
             <label>計画部数<input type="number" min={0} inputMode="numeric" value={f.planned} onChange={(e) => set('planned', e.target.value)} /></label>
             <label>実施部数<input type="number" min={0} inputMode="numeric" value={f.done} placeholder="配ったら入力" onChange={(e) => set('done', e.target.value)} /></label>
