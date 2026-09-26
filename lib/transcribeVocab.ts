@@ -6,7 +6,7 @@
 //
 // 【用語の追加はコードではなくナレッジ側で】
 //   1. knowledge/00_index/GLOSSARY.md の表に1行足す ← 普段はこちら
-//   2. lib/companyKnowledge.ts の「（用語の定義）」に足す（AIの理解そのものを変えたいとき）
+//   2. knowledge/10_理念・方針/COMPANY.md の「（用語の定義）」に足す（AIの理解そのものを変えたいとき）
 //   どちらに足しても、次のデプロイから文字起こしに効く。
 //
 // ※ GLOSSARY.md はコードから辿れないため、next.config.mjs の
@@ -66,7 +66,7 @@ export function parseGlossary(md: string): Term[] {
   return out;
 }
 
-// lib/companyKnowledge.ts の「（用語の定義）」以降から「用語＝説明」を拾う。
+// COMPANY.md（lib/companyKnowledge.ts 経由）の「（用語の定義）」以降から「用語＝説明」を拾う。
 // 1行に複数の定義が並ぶ書き方（「県一斉＝長崎県一斉模試／実判＝実力判定テスト」）があるので、
 // ／ と 。 で区切ってから1つずつ読む。「＝」を含まない断片は説明の続きなので捨てる。
 export function parseCompanyTerms(text: string): Term[] {
