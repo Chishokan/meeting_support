@@ -52,6 +52,7 @@ export default function Sidebar({ name, campus }: { name: string; campus: string
 
       <aside className={`sidebar ${open ? 'open' : ''}`}>
         <div className="sidebar-brand">
+          <Link href="/" className="sidebar-back" onClick={() => setOpen(false)}>← メニューへ</Link>
           <div className="brand-title">智翔館 会議DX</div>
           <div className="brand-sub">会議事前準備アシスタント</div>
         </div>
