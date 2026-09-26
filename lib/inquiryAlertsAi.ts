@@ -9,7 +9,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BOARD_CAMPUSES, type InquiryRecord } from './inquiryRecords';
 import { buildFacts, formatFactsForAi, type AlertFacts } from './inquiryAlerts';
-import { withCompanyKnowledge } from './companyKnowledge';
+import { withCompanyKnowledge } from './core/companyKnowledge';
 import { MODEL, THINKING } from './systemPrompt';
 import { nowJp } from './inquiryStore';
 import { getAiNotes, saveAiNotes, type AiNote } from './aiNotesStore';

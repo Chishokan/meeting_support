@@ -1,5 +1,5 @@
-import { getSession } from '@/lib/auth';
-import { ADMIN_CAMPUS, STAFF } from '@/lib/staff';
+import { getSession } from '@/lib/core/auth';
+import { ADMIN_CAMPUS, STAFF } from '@/lib/core/staff';
 import { DEFAULT_PROGRESS_DEPT_ITEMS } from '@/lib/progressPrompt';
 
 export const runtime = 'nodejs';

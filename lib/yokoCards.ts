@@ -16,8 +16,8 @@
 // - 読み取れなかった項目は推測で埋めず「未定」「未記入」と出す。
 //   カードに嘘の金額・日程が出ると、そのまま保護者に伝わる。
 
-import type { KnowledgeDoc } from './knowledgeDocs';
-import { jstDate } from './companyKnowledge';
+import type { KnowledgeDoc } from './core/knowledgeDocs';
+import { jstDate } from './core/companyKnowledge';
 
 /** 「まもなく実施」とみなす日数。開始がこの日数以内ならカードを出す。 */
 export const SOON_DAYS = 30;

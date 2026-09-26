@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import NumbersUI from '@/components/NumbersUI';
 
 export default function NumbersPage() {

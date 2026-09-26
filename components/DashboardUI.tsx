@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { STAFF } from '@/lib/staff';
+import { STAFF } from '@/lib/core/staff';
 import YokoCard, { type YokoCardData } from '@/components/YokoCard';
 import MinutesDetail from '@/components/MinutesDetail';
+import { draftFromRow, stashDraft } from '@/lib/deptMinutesDraft';
 import ShareItemDetail from '@/components/ShareItemDetail';
 import ProgressDetail from '@/components/ProgressDetail';
 import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
@@ -421,7 +422,15 @@ export default function DashboardUI({
 
         {/* 議事録の詳細（ポップアップ）。議事録画面と同じ部品を使う。 */}
         {openMinutes && (
-          <MinutesDetail row={openMinutes} onClose={() => setOpenMinutes(null)} />
+          <MinutesDetail
+            row={openMinutes}
+            onClose={() => setOpenMinutes(null)}
+            // 編集画面はダッシュボードに無いので、内容を渡してから議事録の画面へ移る。
+            onEdit={() => {
+              stashDraft(draftFromRow(openMinutes));
+              window.location.href = '/dept-minutes';
+            }}
+          />
         )}
         {openShare && (
           <ShareItemDetail row={openShare} onClose={() => setOpenShare(null)} />

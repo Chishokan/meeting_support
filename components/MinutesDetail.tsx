@@ -13,12 +13,24 @@ function fmtDate(s: string) {
   return m ? `${Number(m[2])}/${Number(m[3])}` : s;
 }
 
+// 修正日時は時刻まで見せる（同じ日に何度も直すことがあるため）。
+// GAS からは '2026-09-26T14:30:00' の形で来る。
+function fmtStamp(s: string) {
+  const d = s.match(/(\d{1,4})[/-](\d{1,2})[/-](\d{1,2})/);
+  const t = s.match(/(\d{1,2}):(\d{2})/);
+  if (!d) return s;
+  return `${Number(d[2])}/${Number(d[3])}${t ? ` ${t[1].padStart(2, '0')}:${t[2]}` : ''}`;
+}
+
 export default function MinutesDetail({
   row,
   onClose,
+  onEdit,
 }: {
   row: MinutesRow;
   onClose: () => void;
+  // 渡されたときだけ［修正］を出す。押すと編集画面へこの議事録を読み込む。
+  onEdit?: () => void;
 }) {
   // 開いているあいだは Esc で閉じられるようにする。
   // Esc で閉じる／開いているあいだ後ろのページを動かさない
@@ -41,6 +53,12 @@ export default function MinutesDetail({
             </div>
             <h2>{row.title || '（会議名なし）'}</h2>
             {row.attendees && <div className="dm-modal-sub">出席者：{row.attendees}</div>}
+            {/* 直して保存し直した議事録だけ、誰がいつ直したかを出す */}
+            {row.editedBy && (
+              <div className="dm-modal-edited">
+                修正：{fmtStamp(row.editedAt)}　{row.editedBy}
+              </div>
+            )}
           </div>
           <button className="dm-modal-close" onClick={onClose} aria-label="閉じる">×</button>
         </div>
@@ -56,6 +74,9 @@ export default function MinutesDetail({
         </div>
 
         <div className="dm-modal-foot">
+          {onEdit && (
+            <button className="dm-modal-edit" onClick={onEdit}>修正する</button>
+          )}
           <button
             className="dm-copy"
             onClick={() =>

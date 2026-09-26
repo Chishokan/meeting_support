@@ -34,6 +34,7 @@ export type IntakeFields = {
   consult: string;  // 相談事項
   message: string;  // お問い合わせ内容
   submissionId: string; // フォーム側の送信ID（あれば二重登録防止に使う）
+  formName: string; // どのフォームから来たか（資料請求・テスト対策 など）。Webhook URL の ?form= で渡す
 };
 
 /**
@@ -56,12 +57,15 @@ export const FIELD_ALIASES: Record<keyof IntakeFields, string[]> = {
   grade: ['grade', '学年', 'your-grade', 'your-class', 'class'],
   // 講座ごとのフォームには希望コースの項目が無いことが多い。その場合はフォームに
   // [hidden your-course "定期テスト対策"] を置くか、Webhook が送る _post_title（フォームを置いたページ名）を使う
-  course: ['course', '希望コース', 'コース', '希望講座', 'your-course', 'form_title', '_form_title', '_post_title'],
+  course: ['course', '希望コース', 'コース', '希望講座', 'your-course'],
   campus: ['campus', '受講校舎', '希望校舎', '校舎', 'your-campus', 'your-school-campus'],
   referrer: ['referrer', '紹介者', 'ご紹介者', '紹介者名', 'your-referrer'],
   consult: ['consult', '相談事項', 'ご相談事項', 'your-consult'],
   message: ['message', 'お問い合わせ内容', 'お問合せ内容', 'お問い合わせ', 'your-message', 'content'],
   submissionId: ['submission_id', 'submissionId', 'id', 'entry_id', 'form_id_entry', '受付ID'],
+  // CF7 to Webhook はフォーム名を送らないので、Webhook URL に &form=資料請求 のように付ける
+  // （Special Mail Tags に [_post_title] を入れた場合はページ名を使う）
+  formName: ['form', 'form_name', 'フォーム名', 'form_title', '_form_title', '_contact_form_title', '_post_title'],
 };
 
 function text(v: unknown): string {
@@ -176,28 +180,34 @@ export type IntakeDecision =
   | { action: 'append'; target: InquiryRecord; input: InquiryInput; chunk: string }
   | { action: 'skip'; reason: 'duplicate_submission' | 'already_noted' | 'empty' };
 
-/** 備考に追記する1行。「[9/18 HPフォーム] 希望コース:… ／ 相談事項:… ／ 内容:…」 */
-export function buildNoteChunk(f: IntakeFields, todayIso: string): string {
+/**
+ * 備考に書く1行。「[9/18 14:05 HPフォーム:資料請求] 希望コース:… ／ 相談事項:… ／ 内容:…」
+ * 時刻とフォーム名を入れるので、同じ人が別のフォームや別の時間に送った分はそれぞれ残る。
+ */
+export function buildNoteChunk(f: IntakeFields, todayIso: string, timeHm = ''): string {
   const [, m, d] = todayIso.split('-').map(Number);
+  const head = `${m}/${d}${timeHm ? ` ${timeHm}` : ''} HPフォーム${f.formName ? `:${f.formName}` : ''}`;
   const parts = [
     f.course ? `希望コース:${f.course}` : '',
     f.consult ? `相談事項:${stripFormBoilerplate(f.consult)}` : '',
     f.message ? `内容:${stripFormBoilerplate(f.message)}` : '',
   ].filter(Boolean);
-  return `[${m}/${d} HPフォーム] ${parts.join(' ／ ') || '（本文なし）'}`;
+  return `[${head}] ${parts.join(' ／ ') || '（本文なし）'}`;
 }
 
 /**
  * フォームの内容を、新規登録にするか既存の行への追記にするか決める。
  *
  * - 送信ID が既に台帳にあれば skip（WordPress 側の再送・二重送信）
- * - 同じ校舎に同じ氏名の行（氏名が無ければ同じ電話番号の行）があれば、その行の備考に追記する
+ * - 同じ校舎に同じ氏名の行（氏名が無ければ同じ電話番号の行）があれば、その行の備考の先頭に追記する
+ *   （資料請求のあとテスト対策に申し込む、のように同じ人から何度来ても、送信ごとに1行ずつ積み上がる。
+ *     同じ分・同じフォーム・同じ内容の行が既にあるときだけ、二重送信とみなして skip）
  *   （旧メール転記の「既存行のため備考に追記（他列は変更なし）」と同じ扱い。
  *     見送り済みでも新規行にはせず追記する。担当者が結果を見直せばよい）
  * - 高校生は小中等部の対象外だが、捨てずに「その他」に入れて備考に【高校生】と書く
  * - 校舎が読めなければ「未分類」に入れて備考に【校舎不明】と書く（担当者が校舎を振り分ける）
  */
-export function decideIntake(f: IntakeFields, existing: InquiryRecord[], todayIso: string): IntakeDecision {
+export function decideIntake(f: IntakeFields, existing: InquiryRecord[], todayIso: string, timeHm = ''): IntakeDecision {
   if (!f.studentName && !f.guardianName && !f.phone && !f.email) return { action: 'skip', reason: 'empty' };
   if (f.submissionId && existing.some((r) => r.intakeId && r.intakeId === f.submissionId)) {
     return { action: 'skip', reason: 'duplicate_submission' };
@@ -213,7 +223,7 @@ export function decideIntake(f: IntakeFields, existing: InquiryRecord[], todayIs
     campus = UNASSIGNED_CAMPUS;
   }
 
-  const chunk = buildNoteChunk(f, todayIso);
+  const chunk = buildNoteChunk(f, todayIso, timeHm);
   const key = nameKey(f.studentName);
   const tel = digits(f.phone);
   const samePhone = (r: InquiryRecord) => tel.length >= 10 && digits(r.phone) === tel;
@@ -247,7 +257,8 @@ export function decideIntake(f: IntakeFields, existing: InquiryRecord[], todayIs
       school: target.school || f.school,
       grade: target.grade || grade,
       referrer: target.referrer || f.referrer,
-      note: [chunk, ...markers, target.note].filter(Boolean).join('\n'),
+      // 【校舎不明】などの印は、既に同じものが書いてあれば重ねない
+      note: [chunk, ...markers.filter((mk) => !target.note.includes(mk)), target.note].filter(Boolean).join('\n'),
     };
     return { action: 'append', target, input, chunk };
   }
@@ -262,7 +273,7 @@ export function decideIntake(f: IntakeFields, existing: InquiryRecord[], todayIs
     phone: f.phone,
     source: 'HP',
     referrer: f.referrer,
-    term: matchTerm(f.course),
+    term: matchTerm(f.course || f.formName),
     note: [chunk, ...markers].join('\n'),
     guardianName: f.guardianKana && f.guardianName ? `${f.guardianName}（${f.guardianKana}）` : f.guardianName,
     postal: f.postal,

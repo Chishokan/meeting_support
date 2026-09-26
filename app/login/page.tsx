@@ -1,16 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { STAFF } from '@/lib/staff';
+import { STAFF } from '@/lib/core/staff';
 
-// ログイン後の行き先。問合せ管理（/inquiry-board）から来た人はそこへ戻す。
+// ログイン後の行き先。既定は総合画面（/）。問合せ管理（/inquiry-board）から来た人はそこへ戻す。
 // 外部 URL へ飛ばされないよう、"/" で始まる相対パスだけを受け付ける。
 function nextPath(): string {
   try {
     const n = new URLSearchParams(window.location.search).get('next') || '';
     if (n.startsWith('/') && !n.startsWith('//')) return n;
   } catch {}
-  return '/dashboard';
+  return '/';
 }
 
 export default function LoginPage() {
@@ -52,7 +52,7 @@ export default function LoginPage() {
   return (
     <div className="wrap">
       <form className="card" onSubmit={submit}>
-        <h1>智翔館 会議DX</h1>
+        <h1>智翔館アプリ</h1>
         <p className="sub">テスト運用中：お名前を選んで始めてください</p>
 
         <label>事業部</label>

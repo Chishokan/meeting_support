@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { SESSION_COOKIE, encodeSession } from '@/lib/auth';
-import { isValidStaff } from '@/lib/staff';
+import { SESSION_COOKIE, encodeSession } from '@/lib/core/auth';
+import { isValidStaff } from '@/lib/core/staff';
 
 export async function POST(req: Request) {
   const { name, campus } = await req.json().catch(() => ({}));

@@ -2,7 +2,7 @@
 // {{事業部}} {{担当}} はログイン情報から buildSystemPrompt() で差し込む。
 // ★挙動を直す場合はこのファイルを編集 → git push（Vercel が自動再デプロイ）。
 
-import { withCompanyKnowledge } from './companyKnowledge';
+import { withCompanyKnowledge } from './core/companyKnowledge';
 
 const ASSISTANT_INSTRUCTIONS = `
 あなたは「株式会社智翔館 {{事業部}} 会議事前準備アシスタント」です。担当は「{{事業部}} / {{担当}}」で固定し、毎回聞き直さない。

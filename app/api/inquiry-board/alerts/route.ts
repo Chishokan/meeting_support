@@ -7,11 +7,11 @@
 // その日の分がまだ無ければ、最初に開かれたときにまとめて生成する（cron の保険）。
 // AI が使えないとき（キー未設定・エラー）は ai: null で返し、画面はルールの行だけを出す。
 
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import { canUseInquiryBoard } from '@/lib/inquiryBoardAccess';
 import { listRecords } from '@/lib/inquiryStore';
 import { listGoals } from '@/lib/goals';
-import { jstDate } from '@/lib/companyKnowledge';
+import { jstDate } from '@/lib/core/companyKnowledge';
 import { buildFacts, ruleAlerts, type Alert } from '@/lib/inquiryAlerts';
 import { ALL_SCOPE, aiAvailable, ensureDailyNotes } from '@/lib/inquiryAlertsAi';
 

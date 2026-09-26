@@ -1,11 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import { buildSystemPrompt, MODEL, THINKING } from '@/lib/systemPrompt';
 import { buildSummerPrompt } from '@/lib/summerPrompt';
 import { listNumbers } from '@/lib/numbersStore';
 import { formatEntries, latestByCampus } from '@/lib/summerNumbers';
-import { logInteraction } from '@/lib/log';
-import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
+import { logInteraction } from '@/lib/core/log';
+import { sanitizeHistory, stripRoleBleed } from '@/lib/core/sanitize';
 
 // モデルが偽の user/assistant ターン（崩れた us/use/usb を含む）を書き始めたら即停止させる。
 const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
