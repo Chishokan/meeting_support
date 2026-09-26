@@ -7,8 +7,8 @@
 // 生徒・保護者の個人情報を扱うため、閲覧・編集できる部門を小中等部と管理部門に限定する
 // （画面 app/(board)/inquiry-board/layout.tsx と同じ判定）。
 
-import { getSession } from '@/lib/auth';
-import { fiscalPeriod } from '@/lib/companyKnowledge';
+import { getSession } from '@/lib/core/auth';
+import { fiscalPeriod } from '@/lib/core/companyKnowledge';
 import { validateInput } from '@/lib/inquiryRecords';
 import { createRecord, deleteRecord, listRecords, updateRecord } from '@/lib/inquiryStore';
 import { canUseInquiryBoard } from '@/lib/inquiryBoardAccess';

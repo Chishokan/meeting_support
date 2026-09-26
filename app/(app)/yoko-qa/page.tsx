@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import YokoQaUI from '@/components/YokoQaUI';
 
 // 要項は保護者対応で全部門が使うため、部門の制限はしない（個人情報を含まない）。

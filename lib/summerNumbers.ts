@@ -2,7 +2,7 @@
 // 会議AIの「夏の結果報告」は、ここで登録された数値を読み取るだけで、数値を尋ねない。
 // ★聞く項目・並び順を変えたいときは NUMBER_FIELDS を編集する（スプレッドシートの見出しも連動する）。
 
-import { STAFF } from './staff';
+import { STAFF } from './core/staff';
 
 // short は一覧表示だけで使う短縮名（label はシート見出しに使うので変更しない）。
 export type NumberCol = { key: string; label: string; short?: string; placeholder?: string };

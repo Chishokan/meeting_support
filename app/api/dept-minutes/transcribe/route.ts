@@ -1,4 +1,4 @@
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import { checkTranscribeSetup, isTranscribeConfigured, transcribeAudio } from '@/lib/transcribe';
 
 export const runtime = 'nodejs';

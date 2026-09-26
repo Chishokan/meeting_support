@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { STAFF } from '@/lib/staff';
+import { STAFF } from '@/lib/core/staff';
 
 // ログイン後の行き先。問合せ管理（/inquiry-board）から来た人はそこへ戻す。
 // 外部 URL へ飛ばされないよう、"/" で始まる相対パスだけを受け付ける。

@@ -8,11 +8,11 @@
 // CRON_SECRET が未設定のときは cron からの呼び出しを受け付けない（ログイン経由だけ）。
 
 import { timingSafeEqual } from 'crypto';
-import { getSession } from '@/lib/auth';
-import { ADMIN_CAMPUS } from '@/lib/staff';
+import { getSession } from '@/lib/core/auth';
+import { ADMIN_CAMPUS } from '@/lib/core/staff';
 import { listRecords } from '@/lib/inquiryStore';
 import { listGoals } from '@/lib/goals';
-import { jstDate } from '@/lib/companyKnowledge';
+import { jstDate } from '@/lib/core/companyKnowledge';
 import { aiAvailable, runDaily } from '@/lib/inquiryAlertsAi';
 
 export const runtime = 'nodejs';

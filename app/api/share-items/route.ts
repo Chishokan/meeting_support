@@ -1,4 +1,4 @@
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import type { ShareKind } from '@/lib/shareItems';
 
 export const runtime = 'nodejs';

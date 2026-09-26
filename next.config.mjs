@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // knowledge/ の Markdown を import すると、中身が文字列としてコードに埋め込まれる
-  //（lib/companyKnowledge.ts が COMPANY.md を読むのに使う）。
+  //（lib/core/companyKnowledge.ts が COMPANY.md を読むのに使う）。
   // 実行時にファイルを読まないので、下の outputFileTracingIncludes に足さなくても本番で読める。
   webpack(config) {
     config.module.rules.push({ test: /\.md$/, type: 'asset/source' });

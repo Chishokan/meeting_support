@@ -1,4 +1,4 @@
-import { getSession, type Session } from '@/lib/auth';
+import { getSession, type Session } from '@/lib/core/auth';
 import { extractSuccessCases } from '@/lib/successCases';
 import { extractShareItems } from '@/lib/shareItems';
 

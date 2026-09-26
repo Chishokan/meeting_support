@@ -4,7 +4,7 @@
 // 数値を担当しない授業担当職員は、冒頭の1問で分岐して「夏期講習会の振り返り」だけを行う。
 // ★挙動を直す場合はこのファイルを編集 → git push（Vercel が自動再デプロイ）。
 
-import { withCompanyKnowledge } from './companyKnowledge';
+import { withCompanyKnowledge } from './core/companyKnowledge';
 
 import { campusesFor } from './summerNumbers';
 

@@ -1,4 +1,4 @@
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import { redirect } from 'next/navigation';
 import InquiryBoardUI from '@/components/InquiryBoardUI';
 
