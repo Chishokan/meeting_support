@@ -1,5 +1,11 @@
+import { readFileSync } from 'node:fs';
+
+// 画面に出すバージョン（package.json の version）。リリース手順は docs/release.md。
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: { NEXT_PUBLIC_APP_VERSION: version },
   // knowledge/ の Markdown を import すると、中身が文字列としてコードに埋め込まれる
   //（lib/core/companyKnowledge.ts が COMPANY.md を読むのに使う）。
   // 実行時にファイルを読まないので、下の outputFileTracingIncludes に足さなくても本番で読める。
