@@ -6,6 +6,9 @@
  *   - action:'monpaiList'   … 「門配記録」のうち指定した月（months）の行を返す
  *   - action:'monpaiSave'   … 「門配記録」に1行追加、または ID が同じ行を上書き
  *   - action:'monpaiDelete' … 「削除」列に 1 を立てる（行は消さない。誤操作から戻せるように）
+ *   - action:'monpaiMaterials'   … 「配布物」「配布物入出庫」と、実績の配布数（在庫はアプリ側で計算）
+ *   - action:'monpaiSaveMaterial' … 「配布物」に1品追加、または品名が同じ行を上書き
+ *   - action:'monpaiAddMovement'  … 「配布物入出庫」に1行追加（入庫はプラス、廃棄・調整はマイナス）
  *
  * 【セットアップ手順】（本番用と dev 用で2回行う）
  * 1. 新しいスプレッドシートを作る（例「門配管理（本番）」「門配管理（dev）」）
@@ -24,6 +27,9 @@
  * 【シートの手入力】
  * - 学校マスタ：地区／学校名／種別（中・小）／生徒数（中＝全校、小＝小2〜6）／並び順／備考
  * - 月別設定  ：月（2026-10）／学校名（空なら全校）／率（50 や 50% で 50%）／募集期（1 で募集期）
+ * - 配布物    ：品名／種類／準備担当／発注目安／備考（アプリの「配布物」画面からも登録できる）
+ * ※ v0.4.0 でシートを追加した。既存のプロジェクトはコードを貼り替えて「新バージョン」でデプロイし直す
+ *   （「配布物」「配布物入出庫」のシートは最初に使ったときに自動でできる）
  */
 
 var TOKEN = ''; // 例 'monpai-2026'。空なら検証しない（本番では必ず設定する）
@@ -32,6 +38,10 @@ var SCHOOL_SHEET = '学校マスタ';
 var SCHOOL_HEADERS = ['地区', '学校名', '種別', '生徒数', '並び順', '備考'];
 var SETTING_SHEET = '月別設定';
 var SETTING_HEADERS = ['月', '学校名', '率', '募集期'];
+var MATERIAL_SHEET = '配布物';
+var MATERIAL_HEADERS = ['品名', '種類', '準備担当', '発注目安', '備考'];
+var MOVEMENT_SHEET = '配布物入出庫';
+var MOVEMENT_HEADERS = ['日付', '品名', '数量', 'メモ', '登録者', '登録日時'];
 var RECORD_SHEET = '門配記録';
 // ★lib/monpai/store.ts の RECORD_HEADERS と同じ順に保つ。末尾の「削除」はアプリには見せない。
 var RECORD_HEADERS = [
@@ -48,6 +58,9 @@ function doPost(e) {
       case 'monpaiList': return json_(list_(data));
       case 'monpaiSave': return json_(save_(data));
       case 'monpaiDelete': return json_(remove_(data));
+      case 'monpaiMaterials': return json_(materials_());
+      case 'monpaiSaveMaterial': return json_(saveMaterial_(data));
+      case 'monpaiAddMovement': return json_(addMovement_(data));
       default: return json_({ ok: false, reason: 'unknown_action' });
     }
   } catch (err) {
@@ -204,6 +217,62 @@ function remove_(data) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ---- 配布物・ノベルティ -------------------------------------------------------
+
+function materials_() {
+  var strip = function (o) { delete o._row; return o; };
+  // 在庫の計算に使うのは「配布物」と「実施部数」だけ。報告済み（実施部数あり）の行に絞って返す。
+  var usage = rows_(sheet_(RECORD_SHEET, RECORD_HEADERS), RECORD_HEADERS)
+    .filter(function (o) { return o['ID'] && o['削除'] !== '1' && o['配布物'] && o['実施部数'] !== ''; })
+    .map(function (o) { return { '配布物': o['配布物'], '実施部数': o['実施部数'] }; });
+  return {
+    ok: true,
+    items: rows_(sheet_(MATERIAL_SHEET, MATERIAL_HEADERS), MATERIAL_HEADERS).map(strip),
+    movements: rows_(sheet_(MOVEMENT_SHEET, MOVEMENT_HEADERS), MOVEMENT_HEADERS).map(strip),
+    usage: usage,
+  };
+}
+
+function saveMaterial_(data) {
+  var item = data.item || {};
+  var name = String(item['品名'] || '').trim();
+  if (!name) return { ok: false, reason: 'bad_name' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = sheet_(MATERIAL_SHEET, MATERIAL_HEADERS);
+    var col = colMap_(sh);
+    var width = Math.max(sh.getLastColumn(), MATERIAL_HEADERS.length);
+    var row = [];
+    for (var i = 0; i < width; i++) row.push('');
+    MATERIAL_HEADERS.forEach(function (h) { row[col[h]] = item[h] == null ? '' : String(item[h]); });
+    var found = -1;
+    if (sh.getLastRow() >= 2) {
+      var names = sh.getRange(2, col['品名'] + 1, sh.getLastRow() - 1, 1).getValues();
+      for (var r = 0; r < names.length; r++) if (String(names[r][0]).trim() === name) { found = r + 2; break; }
+    }
+    if (found === -1) sh.appendRow(row);
+    else sh.getRange(found, 1, 1, width).setValues([row]);
+    return { ok: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function addMovement_(data) {
+  var m = data.movement || {};
+  if (!String(m['品名'] || '').trim() || !Number(m['数量'])) return { ok: false, reason: 'invalid' };
+  var sh = sheet_(MOVEMENT_SHEET, MOVEMENT_HEADERS);
+  var col = colMap_(sh);
+  var width = Math.max(sh.getLastColumn(), MOVEMENT_HEADERS.length);
+  var row = [];
+  for (var i = 0; i < width; i++) row.push('');
+  m['登録日時'] = nowJp_();
+  MOVEMENT_HEADERS.forEach(function (h) { row[col[h]] = m[h] == null ? '' : String(m[h]); });
+  sh.appendRow(row);
+  return { ok: true };
 }
 
 // ---- 初期値 -----------------------------------------------------------------

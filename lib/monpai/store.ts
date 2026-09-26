@@ -9,7 +9,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import type { MonpaiRecord, MonthSetting, RecordInput, School, SchoolKind, Status } from './model';
+import type { MaterialItem, MaterialMovement, MonpaiRecord, MonthSetting, RecordInput, School, SchoolKind, Status } from './model';
 import { SEED_SCHOOLS } from './seed';
 
 type Fail = { ok: false; reason: string };
@@ -17,6 +17,9 @@ export type MasterResult = { ok: true; schools: School[]; settings: MonthSetting
 export type ListResult = { ok: true; items: MonpaiRecord[] } | Fail;
 export type SaveResult = { ok: true; item: MonpaiRecord } | Fail;
 export type DeleteResult = { ok: true } | Fail;
+export type MaterialsResult =
+  | { ok: true; items: MaterialItem[]; movements: MaterialMovement[]; usage: { material: string; done: number | null }[] }
+  | Fail;
 
 // シートの見出し ↔ 記録のキー（この順で1行）
 const RECORD_HEADERS: [keyof MonpaiRecord, string][] = [
@@ -80,7 +83,10 @@ function useLocal(): boolean {
   return !process.env.MONPAI_SCRIPT_URL && process.env.NODE_ENV !== 'production';
 }
 
-type Gas = { ok?: boolean; reason?: string; items?: unknown[]; schools?: unknown[]; settings?: unknown[]; item?: Record<string, unknown> };
+type Gas = {
+  ok?: boolean; reason?: string; items?: unknown[]; schools?: unknown[]; settings?: unknown[];
+  movements?: unknown[]; usage?: unknown[]; item?: Record<string, unknown>;
+};
 
 async function callGas(payload: Record<string, unknown>): Promise<Gas> {
   const url = process.env.MONPAI_SCRIPT_URL;
@@ -103,7 +109,10 @@ async function callGas(payload: Record<string, unknown>): Promise<Gas> {
 
 // ---- 手元の開発用ローカル保存 ------------------------------------------------
 
-type Local = { schools: School[]; settings: MonthSetting[]; records: MonpaiRecord[] };
+type Local = {
+  schools: School[]; settings: MonthSetting[]; records: MonpaiRecord[];
+  materials?: MaterialItem[]; movements?: MaterialMovement[];
+};
 const LOCAL_FILE = path.join(process.cwd(), '.data', 'monpai.json');
 
 async function readLocal(): Promise<Local> {
@@ -181,5 +190,71 @@ export async function deleteRecord(id: string, user: string): Promise<DeleteResu
     return { ok: true };
   }
   const j = await callGas({ action: 'monpaiDelete', id, user });
+  return j.ok ? { ok: true } : { ok: false, reason: j.reason || 'upstream_error' };
+}
+
+// ---- 配布物・ノベルティ -------------------------------------------------------
+
+function fromSheetMaterial(r: Record<string, unknown>): MaterialItem {
+  return {
+    name: s(r['品名']), kind: s(r['種類']), prep: s(r['準備担当']),
+    threshold: Number(r['発注目安']) || 0, note: s(r['備考']),
+  };
+}
+
+function fromSheetMovement(r: Record<string, unknown>): MaterialMovement {
+  return { date: s(r['日付']), name: s(r['品名']), qty: Number(r['数量']) || 0, memo: s(r['メモ']), user: s(r['登録者']) };
+}
+
+/** 配布物の一覧・入出庫・実績の配布数（在庫の計算は model.ts の computeStock）。 */
+export async function getMaterials(): Promise<MaterialsResult> {
+  if (useLocal()) {
+    const d = await readLocal();
+    return {
+      ok: true,
+      items: d.materials ?? [],
+      movements: d.movements ?? [],
+      usage: d.records.map((r) => ({ material: r.material, done: r.done })),
+    };
+  }
+  const j = await callGas({ action: 'monpaiMaterials' });
+  if (!j.ok) return { ok: false, reason: j.reason || 'upstream_error' };
+  return {
+    ok: true,
+    items: ((j.items ?? []) as Record<string, unknown>[]).map(fromSheetMaterial).filter((x) => x.name),
+    movements: ((j.movements ?? []) as Record<string, unknown>[]).map(fromSheetMovement).filter((x) => x.name),
+    usage: ((j.usage ?? []) as Record<string, unknown>[]).map((u) => ({ material: s(u['配布物']), done: numOrNull(u['実施部数']) })),
+  };
+}
+
+/** 品名が同じなら上書き、無ければ追加。 */
+export async function saveMaterial(item: MaterialItem): Promise<{ ok: true } | Fail> {
+  if (useLocal()) {
+    const d = await readLocal();
+    const list = d.materials ?? [];
+    const i = list.findIndex((m) => m.name === item.name);
+    if (i >= 0) list[i] = item; else list.push(item);
+    d.materials = list;
+    await writeLocal(d);
+    return { ok: true };
+  }
+  const j = await callGas({
+    action: 'monpaiSaveMaterial',
+    item: { 品名: item.name, 種類: item.kind, 準備担当: item.prep, 発注目安: item.threshold, 備考: item.note },
+  });
+  return j.ok ? { ok: true } : { ok: false, reason: j.reason || 'upstream_error' };
+}
+
+export async function addMovement(m: MaterialMovement): Promise<{ ok: true } | Fail> {
+  if (useLocal()) {
+    const d = await readLocal();
+    d.movements = [...(d.movements ?? []), m];
+    await writeLocal(d);
+    return { ok: true };
+  }
+  const j = await callGas({
+    action: 'monpaiAddMovement',
+    movement: { 日付: m.date, 品名: m.name, 数量: m.qty, メモ: m.memo, 登録者: m.user },
+  });
   return j.ok ? { ok: true } : { ok: false, reason: j.reason || 'upstream_error' };
 }

@@ -180,3 +180,50 @@ export function validateRecord(body: unknown): { ok: true; value: RecordInput } 
     },
   };
 }
+
+// ---- 配布物・ノベルティ -------------------------------------------------------
+//
+// 在庫は「入出庫の合計 − 実績で配った数」で毎回計算する（在庫数そのものは保存しない）。
+// こうすると実績を直したり消したりしても在庫が自動で合う。
+// 1回の門配で複数の配布物を渡すときは、配布物の欄に「チラシA、ノートB」のように区切って書く。
+// それぞれの品目から「実施部数」ずつ減る。
+
+export const MATERIAL_KINDS = ['チラシ', 'ノベルティ', 'その他'] as const;
+
+export type MaterialItem = {
+  name: string; // 品名（一意）
+  kind: string;
+  prep: string; // 準備担当（NEP／教室 など）
+  threshold: number; // 発注目安（これ以下で「残りわずか」）
+  note: string;
+};
+
+export type MaterialMovement = {
+  date: string; // YYYY-MM-DD
+  name: string; // 品名
+  qty: number; // 入庫はプラス、廃棄・調整はマイナス
+  memo: string;
+  user: string;
+};
+
+export type MaterialStock = MaterialItem & { received: number; used: number; stock: number; low: boolean };
+
+/** 配布物の欄を品名ごとに分ける。 */
+export function splitMaterials(material: string): string[] {
+  return material.split(/[、,，＋+／/]/).map((s) => s.trim()).filter(Boolean);
+}
+
+export function computeStock(
+  items: MaterialItem[],
+  movements: MaterialMovement[],
+  usage: { material: string; done: number | null }[],
+): MaterialStock[] {
+  return items.map((it) => {
+    const received = movements.filter((m) => m.name === it.name).reduce((a, m) => a + m.qty, 0);
+    const used = usage
+      .filter((u) => u.done != null && splitMaterials(u.material).includes(it.name))
+      .reduce((a, u) => a + (u.done ?? 0), 0);
+    const stock = received - used;
+    return { ...it, received, used, stock, low: stock <= it.threshold };
+  });
+}

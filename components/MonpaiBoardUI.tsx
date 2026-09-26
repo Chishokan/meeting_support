@@ -8,7 +8,7 @@ import {
   DISTRICTS, bottomOf, daysOf, shiftMonth, todayJst,
   type MonpaiRecord, type School,
 } from '@/lib/monpai/model';
-import { fetchMaster, fetchRecords, reasonText, type Master } from '@/lib/monpai/client';
+import { draftPlanApi, fetchMaster, fetchMaterials, fetchRecords, reasonText, saveRecordApi, type Master, type PlanItem } from '@/lib/monpai/client';
 import MonpaiRecordForm, { type Draft } from './MonpaiRecordForm';
 
 const DISTRICT_KEY = 'monpai.district';
@@ -25,6 +25,10 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [cellList, setCellList] = useState<{ date: string; school: string } | null>(null);
+  const [materialNames, setMaterialNames] = useState<string[]>([]);
+  const [plan, setPlan] = useState<{ summary: string; items: (PlanItem & { pick: boolean })[]; dropped: number } | null>(null);
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planMsg, setPlanMsg] = useState('');
 
   // 前回見ていた地区を覚えておく（端末ごと。読めなくても動く）
   useEffect(() => {
@@ -40,7 +44,36 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
 
   useEffect(() => {
     fetchMaster().then((r) => (r.ok ? setMaster(r.master) : setError(reasonText(r.reason))));
+    fetchMaterials().then((r) => r.ok && setMaterialNames(r.items.map((i) => i.name)));
   }, []);
+
+  async function makePlan() {
+    setPlanBusy(true);
+    setPlanMsg('');
+    const r = await draftPlanApi(district, month);
+    setPlanBusy(false);
+    if (!r.ok) return setPlanMsg(reasonText(r.reason));
+    setPlan({ summary: r.summary, dropped: r.dropped, items: r.items.map((i) => ({ ...i, pick: true })) });
+  }
+
+  async function adoptPlan() {
+    if (!plan) return;
+    setPlanBusy(true);
+    setPlanMsg('');
+    const saved: MonpaiRecord[] = [];
+    let failed = 0;
+    for (const p of plan.items.filter((i) => i.pick)) {
+      const r = await saveRecordApi({
+        district, date: p.date, time: p.time, school: p.school, staff1: p.staff1, staff2: p.staff2,
+        material: p.material, planned: p.planned, done: null, status: '予定', reason: '', memo: '',
+      });
+      if (r.ok) saved.push(r.item); else failed++;
+    }
+    setPlanBusy(false);
+    setRecords((prev) => [...prev, ...saved]);
+    if (failed) setPlanMsg(`${saved.length}件を登録しました。${failed}件は登録できませんでした。`);
+    else setPlan(null);
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -108,10 +141,14 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
           {month !== today.slice(0, 7) && (
             <button className="mp-btn" onClick={() => setMonth(today.slice(0, 7))}>今月</button>
           )}
+          <button className="mp-btn ai" disabled={planBusy || schools.length === 0} onClick={makePlan}>
+            {planBusy && !plan ? 'AIが計画案を作成中…' : 'AIで計画案を作る'}
+          </button>
         </div>
       </div>
 
       {error && <div className="mp-note">{error}</div>}
+      {planMsg && !plan && <div className="mp-note">{planMsg}</div>}
       {master?.backend === 'local' && (
         <div className="mp-note">手元の開発用の保存先（.data/monpai.json）を使っています。</div>
       )}
@@ -238,11 +275,44 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
         </div>
       )}
 
+      {plan && (
+        <div className="mp-modal-bg">
+          <div className="mp-modal wide" role="dialog" aria-modal="true">
+            <div className="mp-modal-head"><h2>AIの計画案</h2><span className="mp-modal-sub">{district}地区・{y}年{Number(m)}月</span></div>
+            <div className="mp-form">
+              {plan.summary && <p className="mp-plan-summary">{plan.summary}</p>}
+              {plan.items.length === 0 && <p className="mp-muted">追加が必要な予定はありません（またはボトムを満たしています）。</p>}
+              {plan.items.map((p, i) => (
+                <label key={i} className={`mp-plan-item ${p.pick ? '' : 'off'}`}>
+                  <input type="checkbox" checked={p.pick} onChange={(e) => setPlan({ ...plan, items: plan.items.map((x, j) => (j === i ? { ...x, pick: e.target.checked } : x)) })} />
+                  <span className="mp-plan-main">
+                    <span><b>{Number(p.date.slice(5, 7))}/{Number(p.date.slice(8))}（{daysOf(month).find((d) => d.date === p.date)?.week}）</b> {p.time} <b className="mp-card-school">{p.school}</b> {p.planned}部</span>
+                    <span className="mp-plan-sub">担当 {[p.staff1, p.staff2].filter(Boolean).join('・') || '未定'}{p.material ? `　${p.material}` : ''}</span>
+                    {p.why && <span className="mp-plan-why">{p.why}</span>}
+                  </span>
+                </label>
+              ))}
+              {plan.dropped > 0 && <p className="mp-muted">条件に合わない案（土日・地区外の学校・既存の予定と重なる等）を {plan.dropped} 件除きました。</p>}
+              {planMsg && <div className="mp-err">{planMsg}</div>}
+            </div>
+            <div className="mp-modal-foot">
+              <span className="mp-muted">登録後に表のマスから日付・担当・部数を直せます。</span>
+              <span className="mp-spacer" />
+              <button className="mp-btn" disabled={planBusy} onClick={() => { setPlan(null); setPlanMsg(''); }}>閉じる</button>
+              <button className="mp-btn primary" disabled={planBusy || !plan.items.some((i) => i.pick)} onClick={adoptPlan}>
+                {planBusy ? '登録中…' : `選んだ ${plan.items.filter((i) => i.pick).length} 件を登録`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {draft && (
         <MonpaiRecordForm
           draft={draft}
           schools={schools}
           staffNames={staffNames}
+          materialNames={materialNames}
           onClose={() => setDraft(null)}
           onSaved={onSaved}
           onDeleted={onDeleted}
