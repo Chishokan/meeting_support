@@ -1117,9 +1117,10 @@ function saveInquiryRecord_(data) {
       if (!rec['作成者']) rec['作成者'] = rec['更新者'] || '';
       rec['更新日時'] = ts;
       rec['削除'] = '';
-      sh.appendRow(dbObjToRow_(rec, col, width));
-      // 追記した行も文字列書式にしておく（自動変換防止）
-      sh.getRange(sh.getLastRow(), 1, 1, width).setNumberFormat('@');
+      // appendRow は「手入力と同じ解釈」で書くため、電話番号の先頭 0 が落ちたり日付が Date に化けたりする。
+      // 先に文字列書式を付けてから setValues で書く（書式を後から付けても、落ちた 0 は戻らない）。
+      var newRow = sh.getLastRow() + 1;
+      sh.getRange(newRow, 1, 1, width).setNumberFormat('@').setValues([dbObjToRow_(rec, col, width)]);
       return { ok: true, item: rec };
     }
 
