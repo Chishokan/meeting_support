@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import InquiryQaUI from '@/components/InquiryQaUI';
 
 // 問合せ管理は生徒・保護者の個人情報を含むため、閲覧できる部門を限定する。

@@ -15,8 +15,8 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { STAFF } from '@/lib/staff';
-import { companyKnowledge } from '@/lib/companyKnowledge';
+import { STAFF } from '@/lib/core/staff';
+import { companyKnowledge } from '@/lib/core/companyKnowledge';
 
 export const GLOSSARY_FILE = path.join('knowledge', '00_index', 'GLOSSARY.md');
 
@@ -66,7 +66,7 @@ export function parseGlossary(md: string): Term[] {
   return out;
 }
 
-// COMPANY.md（lib/companyKnowledge.ts 経由）の「（用語の定義）」以降から「用語＝説明」を拾う。
+// COMPANY.md（lib/core/companyKnowledge.ts 経由）の「（用語の定義）」以降から「用語＝説明」を拾う。
 // 1行に複数の定義が並ぶ書き方（「県一斉＝長崎県一斉模試／実判＝実力判定テスト」）があるので、
 // ／ と 。 で区切ってから1つずつ読む。「＝」を含まない断片は説明の続きなので捨てる。
 export function parseCompanyTerms(text: string): Term[] {

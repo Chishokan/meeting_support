@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import { canUseInquiryBoard } from '@/lib/inquiryBoardAccess';
 import BoardHeader from '@/components/BoardHeader';
 

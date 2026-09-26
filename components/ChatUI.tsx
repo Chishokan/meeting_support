@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
+import { sanitizeHistory, stripRoleBleed } from '@/lib/core/sanitize';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };

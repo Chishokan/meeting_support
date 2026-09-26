@@ -14,7 +14,7 @@
 3. Deploy → 発行 URL を社内共有
 
 ## 中身の調整
-- 会社情報・理念・社長方針・用語定義: knowledge/10_理念・方針/COMPANY.md（lib/companyKnowledge.ts が読み込み、全AI機能の前提として差し込む）
+- 会社情報・理念・社長方針・用語定義: knowledge/10_理念・方針/COMPANY.md（lib/core/companyKnowledge.ts が読み込み、全AI機能の前提として差し込む）
   - 会議AI・夏の結果報告・中間報告・議事録の4機能すべてが withCompanyKnowledge() を通して読む
   - 本日の日付と期（5月始まり・4月締め）は実行時に Asia/Tokyo で算出する。定数で持たない
   - 〔要確認〕と書かれた箇所は未確定。裏取りができ次第そこだけ差し替える
@@ -258,7 +258,7 @@ AI が答える（メニュー「要項QA」）。全部門が利用できる（
 
 - 画面: app/(app)/yoko-qa/page.tsx ／ components/YokoQaUI.tsx
 - API: app/api/yoko-qa/route.ts（GET＝要項の一覧、POST＝QA のストリーム）
-- 読み込み: lib/knowledgeDocs.ts ／ プロンプト: lib/yokoQaPrompt.ts
+- 読み込み: lib/core/knowledgeDocs.ts ／ プロンプト: lib/yokoQaPrompt.ts
 - 要項の本体: knowledge/40_要項/ 配下の Markdown
 
 ### なぜ Google ドキュメントを直接読まないか
@@ -330,6 +330,6 @@ node scripts/check-yoko.mjs --confirmed # 確定のものだけ（不足があ�
 - 個人情報は入れない（要項は対外資料なので通常は問題ないが、社内共有メモ等を混ぜないこと）。
 
 ## ログ / セキュリティ（テスト版のため要ハードニング）
-- 会話は Vercel のログに [CHAT_LOG] として出力。durable 保存は lib/log.ts で DB 追加。
+- 会話は Vercel のログに [CHAT_LOG] として出力。durable 保存は lib/core/log.ts で DB 追加。
 - 認証は簡易版（氏名＋校舎＋合言葉）。本番は Google SSO 等へ。
 - ログを人事評価に使う場合は社員への周知・同意を。API キーはサーバ環境変数のみ。

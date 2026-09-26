@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import { MODEL, THINKING } from '@/lib/systemPrompt';
 import { buildInquiryQaPrompt } from '@/lib/inquiryQaPrompt';
 import {
@@ -7,8 +7,8 @@ import {
   splitByMonth, currentAndPreviousYm, ymLabel, trialsInMonth, enrollmentsInMonth,
 } from '@/lib/inquiryBoard';
 import { listGoals, goalsFor, formatGoals, sameCampus, sortByCampusOrder } from '@/lib/goals';
-import { logInteraction } from '@/lib/log';
-import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
+import { logInteraction } from '@/lib/core/log';
+import { sanitizeHistory, stripRoleBleed } from '@/lib/core/sanitize';
 
 // モデルが偽の user/assistant ターンを書き始めたら即停止させる。
 const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];

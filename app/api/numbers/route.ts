@@ -1,4 +1,4 @@
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import { listNumbers, saveNumbers } from '@/lib/numbersStore';
 import { latestByCampus, type NumberValues } from '@/lib/summerNumbers';
 

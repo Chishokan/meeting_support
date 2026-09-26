@@ -3,7 +3,7 @@
 // {{事業部}} {{担当}} はログイン情報から buildProgressPrompt() で差し込む。
 // ★挙動を直す場合はこのファイルを編集 → git push（Vercel が自動再デプロイ）。
 
-import { withCompanyKnowledge } from './companyKnowledge';
+import { withCompanyKnowledge } from './core/companyKnowledge';
 
 // 出力ブロックの囲み（UI 側がこの囲みを検知して自動転記する。会議AI の「貼り付け用」とは別物）。
 export const PROGRESS_BLOCK_START = '＝＝＝ 中間報告（ここから）＝＝＝';
