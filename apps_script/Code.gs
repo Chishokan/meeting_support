@@ -585,7 +585,7 @@ function listShareItems_(data) {
 
 // ★末尾に「議事録ID」を足してある。既存シートには下の ensure で自動で見出しが足される。
 //   このIDがあることで、あとから同じ議事録を直して保存し直せる（新しい行が増えない）。
-var DEPT_MINUTES_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '場所', '出席者', '予定議題', '議事録', '会議の質チェック', '議事録ID'];
+var DEPT_MINUTES_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '場所', '出席者', '予定議題', '議事録', '会議の質チェック', '議事録ID', '修正日時', '修正者'];
 var DEPT_DECISION_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '件名', '内容', '理由・背景', '担当', '期限', '関係部門', '議事録ID'];
 
 // シートを用意し、見出しの不足分（あとから足した「議事録ID」など）を補う。
@@ -601,6 +601,12 @@ function sheetWithHeaders_(name, headers) {
     if (!cur[c]) sh.getRange(1, c + 1).setValue(headers[c]);
   }
   return sh;
+}
+
+// 見出し名から列番号（1始まり）を返す。列を足しても位置を数え直さずに済むようにするため。
+// ★「議事録ID」の位置を固定値で持つと、列を追加したときに上書きが効かなくなる。
+function colOf_(headers, name) {
+  return headers.indexOf(name) + 1;
 }
 
 // 指定列の値が id と一致する行番号を返す（見つからなければ 0）。
@@ -623,16 +629,21 @@ function findRowById_(sh, col, id) {
 function saveDeptMinutes_(data) {
   var ts = data.ts || nowIso_();
   var sh = sheetWithHeaders_('部門会議議事録', DEPT_MINUTES_HEADERS);
-  var idCol = DEPT_MINUTES_HEADERS.length; // 「議事録ID」は末尾
+  var idCol = colOf_(DEPT_MINUTES_HEADERS, '議事録ID');
   var row = findRowById_(sh, idCol, data.id);
+  var isUpdate = row > 0;
   var id = row ? String(data.id) : (data.id ? String(data.id) : Utilities.getUuid());
 
-  // 上書きのときは元の「日時」を残す（同じ会議なので、記録日は最初の保存日のままにする）。
-  var firstTs = row ? sh.getRange(row, 1).getValue() : ts;
+  // 上書きのときは、最初に登録したときの「日時・部門・入力者」をそのまま残す。
+  // 直した人は別に「修正日時・修正者」へ記録する（誰が作って誰が直したかを両方残すため）。
+  var firstTs = isUpdate ? sh.getRange(row, 1).getValue() : ts;
+  var origCampus = isUpdate ? String(sh.getRange(row, 2).getValue()) : (data.campus || '');
+  var origUser = isUpdate ? String(sh.getRange(row, 3).getValue()) : (data.user || '');
   var values = [
-    firstTs, data.campus || '', data.user || '', data.title || '', data.date || '',
+    firstTs, origCampus, origUser, data.title || '', data.date || '',
     data.place || '', data.attendees || '', data.agenda || '',
-    data.minutes || '', data.quality || '', id
+    data.minutes || '', data.quality || '', id,
+    isUpdate ? ts : '', isUpdate ? (data.user || '') : ''
   ];
   if (row) {
     sh.getRange(row, 1, 1, values.length).setValues([values]);
@@ -642,7 +653,7 @@ function saveDeptMinutes_(data) {
 
   // 決定事項は入れ替え（この議事録IDの行を消してから入れ直す）。
   var dsh = sheetWithHeaders_('部門決定事項', DEPT_DECISION_HEADERS);
-  var dIdCol = DEPT_DECISION_HEADERS.length;
+  var dIdCol = colOf_(DEPT_DECISION_HEADERS, '議事録ID');
   if (row && dsh.getLastRow() >= 2) {
     var dv = dsh.getRange(2, dIdCol, dsh.getLastRow() - 1, 1).getValues();
     // 下から消す（消すたびに行番号がずれるため）。
@@ -655,11 +666,14 @@ function saveDeptMinutes_(data) {
   for (var i = 0; i < decisions.length; i++) {
     var d = decisions[i] || {};
     dsh.appendRow([
-      firstTs, data.campus || '', data.user || '', data.title || '', data.date || '',
+      firstTs, origCampus, origUser, data.title || '', data.date || '',
       d.title || '', d.detail || '', d.reason || '', d.owner || '', d.due || '', d.related || '', id
     ]);
   }
-  return { ok: true, decisions: decisions.length, id: id, updated: row > 0 };
+  return {
+    ok: true, decisions: decisions.length, id: id, updated: isUpdate,
+    editedAt: isUpdate ? ts : '', editedBy: isUpdate ? (data.user || '') : ''
+  };
 }
 
 // 部門会議議事録の一覧（新しい順・最大100件）。
@@ -676,7 +690,8 @@ function listDeptMinutes_(data) {
       title: String(r[3] == null ? '' : r[3]), date: cellStr_(r[4]), place: String(r[5] == null ? '' : r[5]),
       attendees: String(r[6] == null ? '' : r[6]), agenda: String(r[7] == null ? '' : r[7]),
       minutes: String(r[8] == null ? '' : r[8]), quality: String(r[9] == null ? '' : r[9]),
-      id: String(r[10] == null ? '' : r[10])
+      id: String(r[10] == null ? '' : r[10]),
+      editedAt: cellStr_(r[11]), editedBy: String(r[12] == null ? '' : r[12])
     });
   }
   items.reverse();

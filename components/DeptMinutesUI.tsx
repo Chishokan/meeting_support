@@ -472,7 +472,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       if (res.ok && j?.ok) {
         setNote(
           j.updated
-            ? `保存しました（元の議事録を上書き／決定事項 ${j.decisions ?? 0} 件を入れ替え）。`
+            ? `保存しました（${name} が修正／決定事項 ${j.decisions ?? 0} 件を入れ替え）。`
             : `保存しました（決定事項 ${j.decisions ?? 0} 件を全社共有に登録）。`,
         );
         // 続けて直せるよう、保存後も同じ議事録を編集中のままにする。

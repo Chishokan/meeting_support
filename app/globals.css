@@ -921,6 +921,11 @@ button.primary:disabled { opacity: .5; cursor: default; }
 }
 .dm-modal-head h2 { font-size: 17px; margin: 3px 0; overflow-wrap: anywhere; }
 .dm-modal-sub { font-size: 12px; color: #8a94a0; overflow-wrap: anywhere; }
+/* 直して保存し直した議事録に出す「修正：9/26 14:30 安藤純平」 */
+.dm-modal-edited {
+  display: inline-block; margin-top: 5px; font-size: 11.5px; color: #8a6d1a;
+  background: #fdf3d6; border: 1px solid #f0dfa8; border-radius: 999px; padding: 2px 10px;
+}
 .dm-modal-close {
   border: none; background: transparent; color: #97a1ac; font-size: 26px; line-height: 1;
   cursor: pointer; padding: 0 4px; border-radius: 6px;
@@ -1198,7 +1203,12 @@ button.primary:disabled { opacity: .5; cursor: default; }
   .ib-modal .dm-modal-head { padding: 12px 14px 10px; align-items: center; }
   .ib-modal .dm-modal-head h2 { font-size: 16px; margin: 2px 0 0; }
   .ib-modal .dm-modal-sub { font-size: 11px; line-height: 1.4; }
-  .ib-modal .dm-modal-close { width: 44px; height: 44px; margin: -6px -8px -6px 0; font-size: 30px; }
+  .ib-modal /* 直して保存し直した議事録に出す「修正：9/26 14:30 安藤純平」 */
+.dm-modal-edited {
+  display: inline-block; margin-top: 5px; font-size: 11.5px; color: #8a6d1a;
+  background: #fdf3d6; border: 1px solid #f0dfa8; border-radius: 999px; padding: 2px 10px;
+}
+.dm-modal-close { width: 44px; height: 44px; margin: -6px -8px -6px 0; font-size: 30px; }
   .ib-modal .dm-modal-body { padding: 12px 14px 20px; }
   .ib-form section { margin-bottom: 18px; }
   .ib-form h3 { font-size: 13px; margin-bottom: 10px; }

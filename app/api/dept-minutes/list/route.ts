@@ -31,6 +31,8 @@ export type MinutesRow = {
   agenda: string; // 入力時に登録した「予定していた議題」
   minutes: string;
   quality: string;
+  editedAt: string; // 直して保存し直したときだけ入る
+  editedBy: string; // 直した人（最初の入力者は user のまま残す）
 };
 
 type GasRow = Record<string, unknown>;
@@ -62,6 +64,7 @@ export async function GET(req: Request) {
           id: s(r.id), ts: s(r.ts), campus: s(r.campus), user: s(r.user), title: s(r.title),
           date: s(r.date), place: s(r.place), attendees: s(r.attendees), agenda: s(r.agenda),
           minutes: s(r.minutes), quality: s(r.quality),
+          editedAt: s(r.editedAt), editedBy: s(r.editedBy),
         }));
         return Response.json({ ok: true, items });
       }
