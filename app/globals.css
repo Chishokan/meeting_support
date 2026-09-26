@@ -1348,3 +1348,16 @@ button.primary:disabled { opacity: .5; cursor: default; }
 @media (max-width: 900px) {
   .ib-alerts-box { max-height: 150px; }
 }
+
+/* 本番以外で出す「テスト環境」の帯（components/EnvBanner.tsx）。
+   画面の配置を崩さないよう重ねて表示し、クリックは下に素通しする。 */
+.env-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+  height: 4px; background: #e67e22; pointer-events: none;
+  display: flex; justify-content: center;
+}
+.env-banner-label {
+  margin-top: 4px; padding: 2px 12px; height: fit-content;
+  font-size: 11.5px; font-weight: 700; color: #fff; background: #e67e22;
+  border-radius: 0 0 8px 8px; opacity: .92; white-space: nowrap;
+}
