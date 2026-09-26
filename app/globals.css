@@ -1397,3 +1397,139 @@ a.portal-card:hover { border-color: var(--navy); box-shadow: 0 2px 10px rgba(31,
 /* 今のバージョン表示（package.json の version。docs/release.md） */
 .app-version { font-size: 10.5px; color: #a0a8b2; margin-top: 8px; }
 .portal-version { margin: 32px 0 0; font-size: 11.5px; color: #a0a8b2; text-align: center; }
+
+/* ============ 門配管理（/monpai）============ */
+.app-nav { display: inline-flex; gap: 4px; margin-left: 12px; }
+.app-nav-item { color: #fff; opacity: .75; text-decoration: none; font-size: 12.5px; padding: 4px 10px; border-radius: 6px; }
+.app-nav-item:hover { opacity: 1; background: rgba(255,255,255,.12); }
+.app-nav-item.active { opacity: 1; background: rgba(255,255,255,.2); font-weight: 700; }
+
+.mp { padding: 14px 20px 60px; max-width: 1600px; margin: 0 auto; }
+.mp-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.mp-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.mp-tab {
+  font-size: 13px; font-weight: 700; color: #667; background: #fff; border: 1px solid var(--line);
+  border-radius: 999px; padding: 7px 14px; cursor: pointer;
+}
+.mp-tab:hover { background: #eaf1f8; }
+.mp-tab.active { color: #fff; background: var(--navy); border-color: var(--navy); }
+.mp-month { display: flex; align-items: center; gap: 6px; }
+.mp-month-label { font-weight: 800; font-size: 15px; min-width: 96px; text-align: center; }
+.mp-btn {
+  font-size: 13px; padding: 6px 12px; border-radius: 8px; border: 1px solid #cdd3da; background: #fff; cursor: pointer; color: #333;
+}
+.mp-btn:hover { background: #f3f5f8; }
+.mp-btn:disabled { opacity: .5; cursor: default; }
+.mp-btn.primary { background: var(--navy); border-color: var(--navy); color: #fff; font-weight: 700; }
+.mp-btn.danger { color: #c0392b; border-color: #e8b4ad; }
+.mp-note { margin-bottom: 10px; padding: 9px 12px; font-size: 13px; color: #8a6d1a; background: #fdf3d6; border: 1px solid #f0dfa8; border-radius: 8px; }
+.mp-empty { padding: 24px; background: #fff; border: 1px dashed #cdd8e3; border-radius: 12px; font-size: 14px; color: #667; }
+.mp-loading { font-size: 13px; color: #8a94a0; margin: 10px 0; }
+.mp-legend { font-size: 11.5px; color: #8a94a0; margin: 6px 2px 16px; }
+.mp-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 3px 0 8px; vertical-align: -1px; }
+.mp-key.plan { background: #cfe0f1; }
+.mp-key.done { background: #4f9a6e; }
+.mp-key.unreported { background: #f6c28b; }
+
+.mp-summary, .mp-grid { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mp-summary th, .mp-grid th {
+  background: #f7f9fb; color: #667; font-size: 11.5px; font-weight: 700; padding: 8px 10px;
+  border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap;
+}
+.mp-summary td { padding: 7px 10px; border-bottom: 1px solid #eef1f4; white-space: nowrap; }
+.mp-school { font-weight: 700; }
+.mp-num { text-align: right; font-variant-numeric: tabular-nums; }
+.mp-num.short { color: #c0392b; font-weight: 700; }
+.mp-rate { display: block; font-size: 10.5px; color: #8a94a0; }
+.mp-bar-col { width: 40%; }
+.mp-bar { position: relative; height: 16px; background: #f0f2f5; border-radius: 4px; overflow: hidden; min-width: 120px; }
+.mp-bar-plan { position: absolute; inset: 0 auto 0 0; background: #cfe0f1; }
+.mp-bar-done { position: absolute; inset: 0 auto 0 0; background: #6a9fd1; }
+.mp-bar-done.ok { background: #4f9a6e; }
+.mp-bar-label { position: absolute; right: 6px; top: 0; font-size: 11px; line-height: 16px; color: #333; font-weight: 700; }
+.mp-total td { font-weight: 800; background: #f7f9fb; }
+
+.mp-grid th { text-align: center; position: sticky; top: 0; z-index: 1; }
+.mp-grid td { border-bottom: 1px solid #eef1f4; border-right: 1px solid #f3f4f6; }
+.mp-day { width: 34px; text-align: center; color: #667; font-variant-numeric: tabular-nums; }
+.mp-grid tr.holiday .mp-week-cell { color: #fff; background: #e05a4f; font-weight: 700; }
+.mp-grid tr.today td { background: #fffbea; }
+.mp-cell-td { padding: 0; min-width: 88px; }
+.mp-cell {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; min-height: 34px;
+  border: none; background: transparent; cursor: pointer; padding: 3px 4px; font: inherit; color: inherit;
+}
+.mp-cell:hover { background: #eaf1f8; }
+.mp-cell.planned { background: #eef4fb; }
+.mp-cell.done { background: #e3f2e8; }
+.mp-cell.unreported { background: #fdecd8; }
+.mp-cell.canceled { background: #f1f1f1; color: #999; text-decoration: line-through; }
+.mp-cell-num { font-weight: 700; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.mp-cell-staff { font-size: 10.5px; color: #667; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.mp-modal-bg {
+  position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.4);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.mp-modal {
+  background: #fff; border-radius: 12px; width: min(520px, 100%); max-height: 90vh; min-width: 0;
+  display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,.25);
+}
+.mp-modal-head { display: flex; align-items: baseline; gap: 10px; padding: 16px 18px 10px; border-bottom: 1px solid var(--line); }
+.mp-modal-head h2 { font-size: 16px; margin: 0; }
+.mp-modal-sub { font-size: 12px; color: #8a94a0; }
+.mp-form { padding: 10px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.mp-form label { margin: 8px 0 0; font-size: 12.5px; }
+.mp-form input, .mp-form select, .mp-form textarea { margin-top: 4px; font-size: 15px; }
+.mp-form textarea { width: 100%; padding: 10px 12px; border: 1px solid #cdd3da; border-radius: 8px; font-family: inherit; }
+.mp-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mp-week { font-weight: 400; color: #667; margin-left: 4px; }
+.mp-check { display: flex !important; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+.mp-check input { width: auto; margin: 0; }
+.mp-err { color: #c0392b; font-size: 12.5px; margin-top: 8px; }
+.mp-meta { font-size: 11px; color: #a0a8b2; margin-top: 8px; }
+.mp-modal-foot { display: flex; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); }
+.mp-spacer { flex: 1; }
+.mp-list-item {
+  text-align: left; padding: 10px 12px; margin: 4px 0; border: 1px solid var(--line); border-radius: 8px;
+  background: #fff; cursor: pointer; font-size: 13px;
+}
+.mp-list-item:hover { background: #eaf1f8; }
+
+/* 実績報告 */
+.mp-report { max-width: 720px; }
+.mp-h1 { font-size: 17px; margin: 0; }
+.mp-h2 { font-size: 14px; margin: 20px 0 8px; color: #333; }
+.mp-count { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; background: #e67e22; color: #fff; font-size: 12px; text-align: center; }
+.mp-muted { font-size: 13px; color: #8a94a0; margin: 4px 0; }
+.mp-card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+.mp-card.upcoming, .mp-card.done { padding: 9px 14px; }
+.mp-card.canceled { color: #999; }
+.mp-card-head { font-size: 14px; }
+.mp-card-school { font-weight: 700; color: var(--navy); margin-left: 4px; }
+.mp-card-sub { font-size: 12.5px; color: #667; margin-top: 3px; }
+.mp-card-form { display: grid; grid-template-columns: 110px 1fr; gap: 8px; margin-top: 8px; }
+.mp-card-form label { margin: 0; font-size: 12px; }
+.mp-card-form label:last-child { grid-column: 1 / -1; }
+.mp-card-form input { margin-top: 3px; font-size: 15px; padding: 8px 10px; }
+.mp-card-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+
+@media (max-width: 720px) {
+  .mp { padding: 12px 12px 60px; }
+  .app-nav { margin-left: 6px; }
+  .mp-bar-col { width: auto; }
+}
+.board-back, .board-title, .app-nav-item, .board-logout, .mp-btn { white-space: nowrap; }
+@media (max-width: 600px) {
+  .board-head { padding: 8px 12px; gap: 8px; }
+  .board-brand:has(.app-nav) .board-title { display: none; }
+  .app-nav { margin-left: 2px; }
+  .app-nav-item { padding: 4px 8px; }
+  .board-logout { padding: 4px 8px; }
+}
+/* 横に長い月間一覧でも日付と曜日が見えるよう、左の2列を固定する */
+.mp-grid .mp-day { position: sticky; left: 0; background: #fff; z-index: 1; }
+.mp-grid .mp-day + .mp-day { left: 34px; }
+.mp-grid th.mp-day { z-index: 2; background: #f7f9fb; }
+.mp-grid tr.today td.mp-day { background: #fffbea; }
+.mp-grid tr.holiday .mp-week-cell { background: #e05a4f; }
