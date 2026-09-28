@@ -16,7 +16,7 @@ export async function GET() {
   return Response.json({
     ok: true,
     items: computeStock(r.items, r.movements, r.usage),
-    movements: [...r.movements].reverse().slice(0, 50),
+    movements: r.recent ?? [...r.movements].reverse().slice(0, 50),
   });
 }
 

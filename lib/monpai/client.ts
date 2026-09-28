@@ -11,6 +11,7 @@ export const REASON_TEXT: Record<string, string> = {
   invalid_token: '保存先の合言葉（MONPAI_SCRIPT_TOKEN）が一致していません。',
   upstream_error: '保存先（スプレッドシート）から正しい応答がありませんでした。',
   network_error: '保存先に接続できませんでした。',
+  db_error: 'データベースの読み書きに失敗しました。テーブルが作られているか（supabase/migrations の SQL を実行したか）確認してください。',
   not_found: 'この記録は見つかりませんでした（削除された可能性があります）。',
   unauthorized: 'ログインが切れました。ログインし直してください。',
   ai_not_configured: 'AIの設定（ANTHROPIC_API_KEY）がありません。',
