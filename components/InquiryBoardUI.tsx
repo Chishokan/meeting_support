@@ -852,7 +852,8 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
   const firstRef = useRef<HTMLInputElement>(null);
 
   useModalDismiss(onClose);
-  useEffect(() => { firstRef.current?.focus(); }, []);
+  // 新規登録だけ氏名にフォーカスする（編集で当てるとスマホで最上段の「重複の統合」が隠れ、キーボードも出てしまう）
+  useEffect(() => { if (!record) firstRef.current?.focus(); }, [record]);
 
   function set<K extends keyof InquiryInput>(k: K, val: InquiryInput[K]) {
     setV((p) => ({ ...p, [k]: val }));
