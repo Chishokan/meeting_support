@@ -1,5 +1,11 @@
--- 門配管理（/monpai）のテーブル。Supabase の SQL Editor に貼り付けて1回実行する（dev 用・本番用の両方で）。
+-- 門配管理（/monpai）のテーブル。Supabase の SQL Editor に貼り付けて実行する。
 -- 何度実行しても壊れないよう「if not exists」「on conflict do nothing」で書いてある。
+--
+-- ★1つのプロジェクトに dev と本番を同居させるため、テーブルは区画（スキーマ）に分けて置く。
+--   下の2行の chishokan_dev を、dev 用はそのまま、本番用は chishokan_prod に書き換えて、2回実行する。
+--   （Vercel の環境変数 SUPABASE_SCHEMA にも同じ名前を入れる）
+create schema if not exists chishokan_dev;
+set search_path = chishokan_dev;
 --
 -- アクセスの考え方：
 --   アプリのサーバ（Vercel）だけが service_role キーで読み書きする。ブラウザから直接は触らせない。
@@ -96,3 +102,15 @@ create or replace view monpai_material_received with (security_invoker = true) a
   select name, sum(qty)::integer as qty
   from monpai_material_movements
   group by name;
+
+-- アプリのサーバ（service_role）だけが読み書きできるようにする。anon / authenticated には権限を渡さない。
+-- ※ current_schema() は上の set search_path で指定した区画。
+do $$
+declare sch text := current_schema();
+begin
+  execute format('grant usage on schema %I to service_role', sch);
+  execute format('grant all on all tables in schema %I to service_role', sch);
+  execute format('grant all on all sequences in schema %I to service_role', sch);
+  execute format('alter default privileges in schema %I grant all on tables to service_role', sch);
+  execute format('alter default privileges in schema %I grant all on sequences to service_role', sch);
+end $$;

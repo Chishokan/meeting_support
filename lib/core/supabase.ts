@@ -4,18 +4,24 @@
 // 環境変数は NEXT_PUBLIC_ を付けずに登録する（付けるとブラウザ向けのコードに埋め込まれてしまう）。
 //   SUPABASE_URL              … 例 https://xxxx.supabase.co
 //   SUPABASE_SERVICE_ROLE_KEY … Project Settings → API Keys の service_role（secret）
+//   SUPABASE_SCHEMA           … テーブルを置いた区画（スキーマ）。dev＝chishokan_dev、本番＝chishokan_prod
+//                               1つの Supabase プロジェクトに dev と本番を同居させるために分けている
 // 未設定なら null を返し、各アプリは従来の保存先（スプレッドシート）を使う。
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-let cached: SupabaseClient | null | undefined;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let cached: SupabaseClient<any, any, any> | null | undefined;
 
-export function supabaseAdmin(): SupabaseClient | null {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function supabaseAdmin(): SupabaseClient<any, any, any> | null {
   if (cached !== undefined) return cached;
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return (cached = null);
+  const schema = process.env.SUPABASE_SCHEMA || 'public';
   cached = createClient(url, key, {
+    db: { schema },
     auth: { persistSession: false, autoRefreshToken: false },
     // Next.js は fetch の結果を勝手に使い回すことがあるので、データベースの読み書きは毎回取りに行かせる
     global: { fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }) },

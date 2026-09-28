@@ -10,6 +10,7 @@
 - 門配管理の保存先を Supabase（データベース）に移せるようにした（`supabase/migrations/0001_monpai.sql`）
   - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` を登録すると Supabase、無ければ従来のスプレッドシート
   - 在庫の合計はデータベース側で集計し、記録は1000行ずつ取り切る（件数が増えても数字がずれない）
+  - 1つの Supabase プロジェクトに dev と本番を同居できるよう、区画（スキーマ）を分けた（`SUPABASE_SCHEMA`）
 
 ## [0.4.0] - 未リリース（develop で確認中）
 
