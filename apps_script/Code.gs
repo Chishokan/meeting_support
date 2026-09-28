@@ -1339,29 +1339,98 @@ function maskInquiryRecords_(items) {
 // 実行後は問い合わせQAも台帳を読むようになる（listInquiryBoard_ 参照）。
 var LEGACY_START_YEAR = 2026; // 旧シートの「5/21」のような年無しの日付を補う年（5月始まりの期の開始年）
 
+// ---- 旧スプレッドシート（2026小中等部問合せ管理）からの取り込み・差分取り込み ----------------
+//
+// 使い方（Apps Script のエディタから実行）
+//   previewLegacyDiff()  … 旧シートと台帳を見比べて、何が追加・更新されるかを「旧シート差分」タブに書く（台帳は変えない）
+//   applyLegacyDiff()    … 上の内容を台帳に反映する（追加＋空欄の穴埋め＋備考の追記）。結果も「旧シート差分」タブに書く
+//   importLegacyInquiryBoard() … applyLegacyDiff() と同じ（初回の一括取り込みも、2回目以降の差分取り込みも同じ関数で済む）
+//
+// 行の突き合わせ：校舎＋生徒氏名（空白を除いて比較）。同じ校舎に同名が複数あるときは No. でも絞る。
+//   同じ校舎に無ければ他の校舎の同名を探す（アプリ側で校舎を直したケース。県中対策→オンライン等）。
+//   台帳で削除済みの行も突き合わせに使う（アプリで消した人を旧シートから復活させない）。
+// 反映のルール：
+//   - 台帳に無い人 → 追加。No. は旧シートの番号を使うが、その番号がすでに台帳の別人に使われていれば次の番号を付け、
+//     備考に「旧シートNo.xx」と残す
+//   - 台帳にある人 → 台帳が空欄の項目だけ旧シートの値で埋める。備考は旧シートにあって台帳に無い行だけ末尾に足す
+//   - 両方に値があって違う項目 → 台帳（アプリ）の値を優先し、「競合」として一覧に出すだけ（担当者が見て判断）
+var LEGACY_REPORT_SHEET = '旧シート差分';
+var LEGACY_FILL_FIELDS = ['日付', 'ふりがな', '学校名', '学年', '電話番号', '媒体', '受講期', '連絡', '体験日', '体験',
+  '入塾提案面談日', '本人OK', 'クローズ予定日', '結果', '保護者名', '郵便番号', '住所', 'メールアドレス', 'DM'];
+var LEGACY_CONFLICT_FIELDS = ['日付', '学年', '電話番号', '連絡', '体験日', '体験', '入塾提案面談日', '本人OK', 'クローズ予定日', '結果', 'DM'];
+
 function importLegacyInquiryBoard() {
+  return applyLegacyDiff();
+}
+
+function previewLegacyDiff() {
+  var d = legacyDiff_();
+  writeLegacyReport_(d, false);
+  var msg = '【確認のみ】追加 ' + d.adds.length + ' 件、更新 ' + d.updates.length + ' 件、競合 ' + d.conflicts.length + ' 件、変更なし ' + d.unchanged + ' 件。「' + LEGACY_REPORT_SHEET + '」タブに一覧を書きました。';
+  Logger.log(msg);
+  return { preview: true, added: d.adds.length, updated: d.updates.length, conflicts: d.conflicts.length, unchanged: d.unchanged, message: msg };
+}
+
+function applyLegacyDiff() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var d = legacyDiff_();
+    var sh = d.sheet;
+    var col = d.col;
+    var width = d.width;
+    var ts = nowJp_();
+
+    // 更新（1行ずつ書き戻す）
+    for (var u = 0; u < d.updates.length; u++) {
+      var up = d.updates[u];
+      var rowArr = d.values[up.rowIndex].slice();
+      for (var f in up.fill) rowArr[col[f]] = up.fill[f];
+      if (up.noteAdd.length) {
+        var curNote = dbCellStr_(rowArr[col['備考']]);
+        rowArr[col['備考']] = (curNote ? curNote + '\n' : '') + '[旧シート ' + ts.slice(0, 10) + ']\n' + up.noteAdd.join('\n');
+      }
+      rowArr[col['更新日時']] = ts;
+      rowArr[col['更新者']] = '旧シート差分';
+      for (var w = 0; w < width; w++) rowArr[w] = rowArr[w] == null ? '' : (rowArr[w] instanceof Date ? dbCellStr_(rowArr[w]) : String(rowArr[w]));
+      sh.getRange(up.rowIndex + 1, 1, 1, width).setNumberFormat('@').setValues([rowArr]);
+    }
+
+    // 追加（まとめて書く）
+    if (d.adds.length) {
+      var rows = [];
+      for (var a = 0; a < d.adds.length; a++) {
+        var rec = d.adds[a];
+        rec['ID'] = Utilities.getUuid();
+        rec['作成日時'] = ts; rec['作成者'] = '旧シート移行';
+        rec['更新日時'] = ts; rec['更新者'] = '旧シート移行';
+        rec['削除'] = '';
+        rows.push(dbObjToRow_(rec, col, width));
+      }
+      var start = sh.getLastRow() + 1;
+      sh.getRange(start, 1, rows.length, width).setNumberFormat('@').setValues(rows);
+    }
+
+    writeLegacyReport_(d, true);
+    var msg = '追加 ' + d.adds.length + ' 件、更新 ' + d.updates.length + ' 件、競合（台帳を優先） ' + d.conflicts.length + ' 件、変更なし ' + d.unchanged + ' 件。「' + LEGACY_REPORT_SHEET + '」タブに一覧を書きました。';
+    Logger.log(msg);
+    return { preview: false, added: d.adds.length, updated: d.updates.length, conflicts: d.conflicts.length, unchanged: d.unchanged, message: msg };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function legacyNameKey_(s) {
+  return String(s == null ? '' : s).replace(/[\s　]/g, '');
+}
+
+// 旧シートの全タブを読んで、台帳の見出し名キーのオブジェクトにして返す。
+function readLegacyRows_() {
   if (!INQUIRY_BOARD_ID) throw new Error('INQUIRY_BOARD_ID が未設定です。');
   var src = SpreadsheetApp.openById(INQUIRY_BOARD_ID);
-  var sh = inquiryDbSheet_();
-  var col = dbColMap_(sh);
-  var width = Math.max(sh.getLastColumn(), INQUIRY_DB_HEADERS.length);
-
-  // 既存の台帳の「校舎|No.|氏名」を集める
-  var existing = {};
-  var cur = listInquiryRecords_({});
-  for (var i = 0; i < cur.items.length; i++) {
-    var it = cur.items[i];
-    existing[it['校舎'] + '|' + it['No.'] + '|' + it['生徒氏名'].replace(/[\s　]/g, '')] = true;
-  }
-
-  // 旧シートの見出し → 台帳の見出し（見出しが違うものだけ書く）
   var alias = { '入塾/講習会提案日': '入塾提案面談日' };
-
   var sheets = src.getSheets();
-  var added = 0;
-  var skipped = 0;
-  var rows = [];
-  var ts = nowJp_();
+  var out = [];
   for (var si = 0; si < sheets.length; si++) {
     var s = sheets[si];
     if (s.isSheetHidden && s.isSheetHidden()) continue;
@@ -1386,27 +1455,24 @@ function importLegacyInquiryBoard() {
       if (h === '生徒氏名') nameCol = c;
       if (noteCol === -1 && h.indexOf(INQUIRY_NOTE_PREFIX) === 0) noteCol = c;
     }
+    if (nameCol === -1) continue;
     // ふりがなは見出しが無い（生徒氏名の右隣）ので位置で拾う
-    var kanaCol = nameCol !== -1 && !String(headers[nameCol + 1] || '').trim() ? nameCol + 1 : -1;
+    var kanaCol = !String(headers[nameCol + 1] || '').trim() ? nameCol + 1 : -1;
     // DM 列は見出し行の1つ下に「DM」と書かれていることがあるので、A列の値で判定する
     var dmCol = colOf['DM'] !== undefined ? colOf['DM'] : 0;
 
     for (var r = hr + 1; r < values.length; r++) {
       var row = values[r];
       var name = String(row[nameCol] == null ? '' : row[nameCol]).trim();
-      var date = legacyDate_(row[colOf['日付']]);
+      var date = legacyDate_(colOf['日付'] === undefined ? '' : row[colOf['日付']]);
       if (!name && !date) continue; // 空行・小計行
       if (name === 'DM' || name === '生徒氏名') continue;
       if (name.indexOf('テ') === 0 && noteCol !== -1 && String(row[noteCol]).indexOf('テスト') !== -1) continue;
 
-      var no = Number(row[colOf['No.']]) || 0;
-      var key = campus + '|' + (no || '') + '|' + name.replace(/[\s　]/g, '');
-      if (existing[key]) { skipped++; continue; }
-      existing[key] = true;
-
       var pick = function (h) { return colOf[h] === undefined ? '' : String(row[colOf[h]] == null ? '' : row[colOf[h]]).trim(); };
-      var rec = {
-        'ID': Utilities.getUuid(),
+      var no = Number(row[colOf['No.']]) || 0;
+      out.push({
+        'ID': '',
         '校舎': campus,
         'No.': no ? String(no) : '',
         '日付': date,
@@ -1433,39 +1499,140 @@ function importLegacyInquiryBoard() {
         'メールアドレス': pick('メールアドレス'),
         'DM': legacyMark_(String(row[dmCol] == null ? '' : row[dmCol]).trim()),
         '受付ID': '',
-        '作成日時': ts,
-        '作成者': '旧シート移行',
-        '更新日時': ts,
-        '更新者': '旧シート移行',
-        '削除': '',
-      };
-      rows.push(dbObjToRow_(rec, col, width));
-      added++;
+        '_sheet': s.getName(),
+        '_row': r + 1,
+      });
+    }
+  }
+  return out;
+}
+
+// 旧シートと台帳を突き合わせて、追加・更新・競合を決める（書き込みはしない）。
+function legacyDiff_() {
+  var legacy = readLegacyRows_();
+  var sh = inquiryDbSheet_();
+  var col = dbColMap_(sh);
+  var width = Math.max(sh.getLastColumn(), INQUIRY_DB_HEADERS.length);
+  var values = sh.getLastRow() < 1 ? [] : sh.getDataRange().getValues();
+
+  // 台帳の行（削除済みも含める。削除した人を旧シートから復活させないため）
+  var ledger = [];          // { rowIndex, obj }
+  var byCampusName = {};    // 校舎|氏名 → [ledger idx]
+  var byName = {};          // 氏名 → [ledger idx]
+  var usedNo = {};          // 校舎 → { No.: true }
+  var maxNo = {};
+  for (var r = 1; r < values.length; r++) {
+    var obj = dbRowToObj_(values[r], col);
+    if (!obj['ID']) continue;
+    var idx = ledger.length;
+    ledger.push({ rowIndex: r, obj: obj });
+    var nk = legacyNameKey_(obj['生徒氏名']);
+    var ck = obj['校舎'] + '|' + nk;
+    (byCampusName[ck] = byCampusName[ck] || []).push(idx);
+    (byName[nk] = byName[nk] || []).push(idx);
+    var n = Number(obj['No.']) || 0;
+    if (n) {
+      (usedNo[obj['校舎']] = usedNo[obj['校舎']] || {})[n] = true;
+      if (!maxNo[obj['校舎']] || n > maxNo[obj['校舎']]) maxNo[obj['校舎']] = n;
     }
   }
 
-  // 校舎内で No. が無い行に採番する（旧「その他」シートなど）
-  var maxNo = {};
-  for (var e in existing) {
-    var parts = e.split('|');
-    var n = Number(parts[1]) || 0;
-    if (!maxNo[parts[0]] || n > maxNo[parts[0]]) maxNo[parts[0]] = n;
-  }
-  var noIdx = col['No.'];
-  var campusIdx = col['校舎'];
-  for (var k = 0; k < rows.length; k++) {
-    if (rows[k][noIdx]) continue;
-    var cp = rows[k][campusIdx];
-    maxNo[cp] = (maxNo[cp] || 0) + 1;
-    rows[k][noIdx] = String(maxNo[cp]);
-  }
+  var adds = [], updates = [], conflicts = [], unchanged = 0;
+  var matched = {}; // ledger idx → true（同じ台帳行に2つの旧行を当てない）
+  for (var i = 0; i < legacy.length; i++) {
+    var L = legacy[i];
+    var nk2 = legacyNameKey_(L['生徒氏名']);
+    if (!nk2) continue; // 氏名なしの行は突き合わせできないので飛ばす
+    var cands = byCampusName[L['校舎'] + '|' + nk2] || [];
+    if (!cands.length) cands = byName[nk2] || [];
+    cands = cands.filter(function (x) { return !matched[x]; });
+    var hit = -1;
+    if (cands.length === 1) hit = cands[0];
+    else if (cands.length > 1) {
+      // 同名が複数：No. が同じものを優先、無ければ最初
+      var sameNo = cands.filter(function (x) { return L['No.'] && ledger[x].obj['No.'] === L['No.']; });
+      hit = sameNo.length ? sameNo[0] : cands[0];
+    }
 
-  if (rows.length) {
-    var start = sh.getLastRow() + 1;
-    sh.getRange(start, 1, rows.length, width).setNumberFormat('@').setValues(rows);
+    if (hit === -1) {
+      // 追加。No. が台帳の別人と重なるなら採番し直す
+      var cp = L['校舎'];
+      var wantNo = Number(L['No.']) || 0;
+      var noteExtra = '';
+      if (wantNo && usedNo[cp] && usedNo[cp][wantNo]) {
+        maxNo[cp] = (maxNo[cp] || 0) + 1;
+        noteExtra = '旧シートNo.' + wantNo;
+        L['No.'] = String(maxNo[cp]);
+      } else if (!wantNo) {
+        maxNo[cp] = (maxNo[cp] || 0) + 1;
+        L['No.'] = String(maxNo[cp]);
+      } else if (wantNo > (maxNo[cp] || 0)) {
+        maxNo[cp] = wantNo;
+      }
+      (usedNo[cp] = usedNo[cp] || {})[Number(L['No.'])] = true;
+      if (noteExtra) L['備考'] = (L['備考'] ? L['備考'] + '\n' : '') + noteExtra;
+      adds.push(L);
+      continue;
+    }
+
+    matched[hit] = true;
+    var T = ledger[hit].obj;
+    if (T['削除'] === '1') { unchanged++; continue; } // アプリで削除済み。復活させない
+    var fill = {};
+    var hasFill = false;
+    for (var f = 0; f < LEGACY_FILL_FIELDS.length; f++) {
+      var fld = LEGACY_FILL_FIELDS[f];
+      var lv = String(L[fld] == null ? '' : L[fld]).trim();
+      var tv = String(T[fld] == null ? '' : T[fld]).trim();
+      if (!lv) continue;
+      if (!tv) { fill[fld] = lv; hasFill = true; }
+      else if (lv !== tv && LEGACY_CONFLICT_FIELDS.indexOf(fld) !== -1) {
+        conflicts.push({ campus: T['校舎'], no: T['No.'], name: T['生徒氏名'], field: fld, ledger: tv, legacy: lv, sheet: L['_sheet'], row: L['_row'] });
+      }
+    }
+    // 備考：旧シートにあって台帳に無い行だけ足す
+    var noteAdd = [];
+    var tNote = String(T['備考'] || '');
+    var lLines = String(L['備考'] || '').split('\n');
+    for (var n2 = 0; n2 < lLines.length; n2++) {
+      var line = lLines[n2].trim();
+      if (line && tNote.indexOf(line) === -1) noteAdd.push(line);
+    }
+    if (hasFill || noteAdd.length) {
+      updates.push({ rowIndex: ledger[hit].rowIndex, campus: T['校舎'], no: T['No.'], name: T['生徒氏名'], fill: fill, noteAdd: noteAdd, sheet: L['_sheet'], row: L['_row'] });
+    } else {
+      unchanged++;
+    }
   }
-  Logger.log('追加 ' + added + ' 件、既にあるため飛ばした ' + skipped + ' 件');
-  return { added: added, skipped: skipped };
+  return { sheet: sh, col: col, width: width, values: values, adds: adds, updates: updates, conflicts: conflicts, unchanged: unchanged };
+}
+
+// 「旧シート差分」タブに結果を書く（毎回書き直す）。
+function writeLegacyReport_(d, applied) {
+  var id = INQUIRY_DB_ID || SPREADSHEET_ID;
+  var ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  var rp = ss.getSheetByName(LEGACY_REPORT_SHEET) || ss.insertSheet(LEGACY_REPORT_SHEET);
+  rp.clearContents();
+  var ts = nowJp_();
+  var head = ['実行日時', '区分', '校舎', 'No.', '生徒氏名', '項目', '台帳の値', '旧シートの値', '旧シートの場所'];
+  var rows = [head];
+  var tag = applied ? '' : '（確認のみ・未反映）';
+  for (var a = 0; a < d.adds.length; a++) {
+    var A = d.adds[a];
+    rows.push([ts, '追加' + tag, A['校舎'], A['No.'], A['生徒氏名'], '', '', A['日付'] + ' ' + (A['結果'] || '追客中'), A['_sheet'] + ' ' + A['_row'] + '行目']);
+  }
+  for (var u = 0; u < d.updates.length; u++) {
+    var U = d.updates[u];
+    for (var f in U.fill) rows.push([ts, '空欄を埋める' + tag, U.campus, U.no, U.name, f, '', U.fill[f], U.sheet + ' ' + U.row + '行目']);
+    if (U.noteAdd.length) rows.push([ts, '備考に追記' + tag, U.campus, U.no, U.name, '備考', '', U.noteAdd.join(' / '), U.sheet + ' ' + U.row + '行目']);
+  }
+  for (var c = 0; c < d.conflicts.length; c++) {
+    var C = d.conflicts[c];
+    rows.push([ts, '競合（台帳を優先）', C.campus, C.no, C.name, C.field, C.ledger, C.legacy, C.sheet + ' ' + C.row + '行目']);
+  }
+  if (rows.length === 1) rows.push([ts, '差分なし', '', '', '', '', '', '', '']);
+  rp.getRange(1, 1, rows.length, head.length).setNumberFormat('@').setValues(rows);
+  rp.setFrozenRows(1);
 }
 
 // 旧シートの日付セル → YYYY-MM-DD。Date 型はそのまま、「5/21」「5月21日」は年を補う。
