@@ -227,3 +227,46 @@ export function computeStock(
     return { ...it, received, used, stock, low: stock <= it.threshold };
   });
 }
+
+// ---- 学校マスタ・月別設定の編集 ------------------------------------------------
+
+/** 学校マスタ・月別設定を編集できる部門（ボトムの計算のもとになるので絞る）。★増やすときはここだけ直す */
+export const MASTER_EDIT_DEPTS = ['総務・人事・支援・管理'];
+export const canEditMaster = (campus: string) => MASTER_EDIT_DEPTS.includes(campus);
+
+export function validateSchool(b: Record<string, unknown>): { ok: true; value: School } | { ok: false; errors: string[] } {
+  const str = (k: string, max: number) => String(b[k] ?? '').trim().slice(0, max);
+  const errors: string[] = [];
+  const name = str('name', 40);
+  if (!name) errors.push('学校名を入力してください。');
+  const district = str('district', 20);
+  if (!(DISTRICTS as readonly string[]).includes(district)) errors.push('地区を選んでください。');
+  const kind = str('kind', 2);
+  if (kind !== '中' && kind !== '小') errors.push('種別（中・小）を選んでください。');
+  const students = Number(b.students);
+  if (!Number.isInteger(students) || students < 0 || students > 5000) errors.push('生徒数は0〜5000の整数で入力してください。');
+  const order = Number(b.order ?? 0);
+  if (errors.length) return { ok: false, errors };
+  return {
+    ok: true,
+    value: { name, district, kind: kind as SchoolKind, students, order: Number.isFinite(order) ? Math.trunc(order) : 0, note: str('note', 100) },
+  };
+}
+
+export function validateSetting(b: Record<string, unknown>): { ok: true; value: MonthSetting } | { ok: false; errors: string[] } {
+  const errors: string[] = [];
+  const month = String(b.month ?? '').trim();
+  if (!/^\d{4}-\d{2}$/.test(month)) errors.push('月を選んでください。');
+  const school = String(b.school ?? '').trim().slice(0, 40);
+  const rawRate = String(b.rate ?? '').replace('%', '').trim();
+  let rate: number | null = null;
+  if (rawRate !== '') {
+    const n = Number(rawRate);
+    // 「50」でも「0.5」でも 50% として扱う
+    rate = n > 1 ? n / 100 : n;
+    if (!(rate > 0 && rate <= 1)) errors.push('率は1〜100（%）で入力してください。');
+  }
+  const recruit = b.recruit === true || b.recruit === 'true' || b.recruit === '1';
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value: { month, school, rate, recruit } };
+}

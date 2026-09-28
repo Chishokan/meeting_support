@@ -19,6 +19,8 @@ export const REASON_TEXT: Record<string, string> = {
   ai_bad_output: 'AIの案を読み取れませんでした。もう一度試してください。',
   ai_refused: 'AIが案の作成を断りました。',
   no_schools: 'この地区の学校が学校マスタに登録されていません。',
+  forbidden: 'この操作は管理部門だけができます。',
+  not_supported: '今の保存先（スプレッドシート）では画面から編集できません。スプレッドシートを直接編集してください。',
 };
 
 export const reasonText = (r: string) => REASON_TEXT[r] ?? `読み書きに失敗しました（${r}）。`;
@@ -84,4 +86,13 @@ export async function draftPlanApi(district: string, month: string): Promise<
   }).then((r) => r.json()).catch(() => null);
   if (!j?.ok) return { ok: false, reason: j?.reason ?? 'network_error' };
   return j;
+}
+
+export async function masterApi(method: 'POST' | 'DELETE', body: Record<string, unknown>): Promise<{ ok: boolean; reason?: string; errors?: string[] }> {
+  const init: RequestInit = method === 'POST'
+    ? { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+    : { method };
+  const url = method === 'POST' ? '/api/monpai/schools' : `/api/monpai/schools?${new URLSearchParams(body as Record<string, string>)}`;
+  const j = await fetch(url, init).then((r) => r.json()).catch(() => null);
+  return j?.ok ? { ok: true } : { ok: false, reason: j?.reason ?? 'network_error', errors: j?.errors };
 }
