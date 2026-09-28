@@ -122,9 +122,13 @@ function monthRange(m: string): [string, string] {
   return [`${m}-01`, `${next}-01`];
 }
 
-const dbFail = (where: string, err: { message?: string } | null): Fail => {
-  console.log('[monpai-db]', where, err?.message ?? '');
-  return { ok: false, reason: 'db_error' };
+// 原因を画面で特定できるよう、エラーの種類（code）と文面を reason に載せる：「db_error|コード|文面」
+// （キーや接続先そのものは含まれない。画面側の reasonText が設定の直し方に言い換える）
+const dbFail = (where: string, err: { message?: string; code?: string } | null): Fail => {
+  const code = err?.code ?? '';
+  const msg = (err?.message ?? '').replace(/\|/g, '/').slice(0, 200);
+  console.log('[monpai-db]', where, code, msg);
+  return { ok: false, reason: `db_error|${code}|${msg}` };
 };
 
 type Gas = {
