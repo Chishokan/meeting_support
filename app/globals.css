@@ -1186,6 +1186,24 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .ib-delete:hover { background: #fdecea; }
 .ib-cancel:disabled, .ib-delete:disabled { opacity: .5; cursor: default; }
 
+/* 重複の統合（編集フォームの下部） */
+.ib-merge h3 { display: flex; align-items: center; gap: 8px; }
+.ib-merge h3 .ib-link { margin-left: auto; }
+.ib-merge-hint { font-weight: 400; color: #8a6d1a; font-size: 12px; }
+.ib-merge-body { background: #f7f9fb; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.ib-merge-desc { margin: 0 0 10px; font-size: 12.5px; line-height: 1.7; color: #4b535c; }
+.ib-merge-pick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 8px; }
+.ib-merge-pick input, .ib-merge-pick select { width: 100%; min-width: 0; padding: 8px 10px; font-size: 14px; border: 1px solid #cdd3da; border-radius: 8px; background: #fff; font-family: inherit; }
+.ib-merge-preview { margin-top: 10px; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; line-height: 1.7; display: flex; flex-direction: column; gap: 4px; }
+.ib-merge-preview ul { margin: 0; padding-left: 20px; }
+.ib-merge-run { align-self: flex-start; margin-top: 6px; padding: 9px 16px; font-size: 13px; font-weight: 700; color: #fff; background: var(--navy); border: none; border-radius: 8px; cursor: pointer; }
+.ib-merge-run:disabled { opacity: .5; cursor: default; }
+@media (max-width: 620px) {
+  .ib-merge-pick { grid-template-columns: 1fr; }
+  .ib-merge-pick input, .ib-merge-pick select { font-size: 16px; min-height: 46px; }
+  .ib-merge-run { align-self: stretch; padding: 13px; font-size: 15px; border-radius: 10px; }
+}
+
 /* スマホ：登録・編集フォームを片手で入力しやすい大きさに
    - 入力欄は 16px（iOS は 16px 未満だとフォーカス時に画面が拡大される）・高さ 46px（指で押せる大きさ）
    - 日付・選択肢などの短い欄は 2 列、氏名・電話・住所などの長い欄（.full）は 1 列
