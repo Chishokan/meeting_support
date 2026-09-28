@@ -45,9 +45,12 @@ export type AlertFacts = {
   scope: string;            // 校舎名 or 'すべて'
   today: string;            // YYYY-MM-DD
   monthLabel: string;       // 2026年9月
-  kpis: KpiLine[];          // 今月入会・体験授業（目標があれば対比）
+  kpis: KpiLine[];          // 行動計画の指標（問い合わせQAの目標欄と同じ値。入会は行動計画の入力値、体験は体験日で数えた件数）
   inquiriesThisMonth: number;
   inquiriesPrevMonth: number;
+  /** 今月の問い合わせ（問い合わせ日が今月）のその後。問い合わせQAのカード「この月の問い合わせのその後」と同じ数え方 */
+  monthOutcome: { joined: number; applied: number; declined: number; open: number; other: number };
+  enrollByDate: number;     // 入塾日が今月の件数（参考。問い合わせQAが「入塾日から数えた入会（参考）」として渡すものと同じ）
   open: number;
   untouched: Ref[];
   overdue: Ref[];
@@ -100,6 +103,7 @@ export function buildFacts(rows: InquiryRecord[], scope: string, today: string, 
   let trialsThisMonth = 0;
   let open = 0;
   let enrollMissingDate = 0;
+  const monthOutcome = { joined: 0, applied: 0, declined: 0, open: 0, other: 0 };
   const untouched: Ref[] = [];
   const overdue: Ref[] = [];
   const trialNoResult: Ref[] = [];
@@ -108,15 +112,23 @@ export function buildFacts(rows: InquiryRecord[], scope: string, today: string, 
 
   for (const r of rows) {
     const dym = ymOf(r.date);
-    if (dym === ym) inquiriesThisMonth++;
-    else if (dym === pym) inquiriesPrevMonth++;
+    if (dym === ym) {
+      inquiriesThisMonth++;
+      // 問い合わせQAのカードと同じ数え方（結果の文字で分ける）
+      if (!r.result) monthOutcome.open++;
+      else if (r.result.includes('入塾')) monthOutcome.joined++;
+      else if (r.result.includes('申込')) monthOutcome.applied++;
+      else if (r.result.includes('見送')) monthOutcome.declined++;
+      else monthOutcome.other++;
+    } else if (dym === pym) inquiriesPrevMonth++;
 
     const st = statusOf(r.result);
     if (st === 'joined') {
       if (!r.enrollDate) enrollMissingDate++;
       else if (ymOf(r.enrollDate) === ym) enrollThisMonth++;
     }
-    if (r.trialDate && ymOf(r.trialDate) === ym && normalizeMark(r.trial) !== '✕') trialsThisMonth++;
+    // 体験は「体験日が今月」の件数。問い合わせQA（trialsInMonth）と同じく、体験の〇✕では絞らない
+    if (r.trialDate && ymOf(r.trialDate) === ym) trialsThisMonth++;
 
     if (st !== 'open') continue;
     open++;
@@ -137,24 +149,28 @@ export function buildFacts(rows: InquiryRecord[], scope: string, today: string, 
   const byDays = (a: Ref, b: Ref) => b.days - a.days;
   untouched.sort(byDays); overdue.sort(byDays); trialNoResult.sort(byDays); meetingNoResult.sort(byDays); staleOpen.sort(byDays);
 
-  // 目標：校舎が1つならその校舎、「すべて」なら「中等部」（4校舎合計）の行。無ければ目標無しで出す。
+  // KPI は会議DXアプリの「問い合わせQA」の目標欄と同じ値にする（画面ごとに数字が違うと混乱するため）。
+  //   - 目標：校舎が1つならその校舎、「すべて」なら「中等部」（4校舎合計）の行
+  //   - 実績：体験は体験日で数えた件数（自動）、入会など他の指標は行動計画に入力された値（goalsFor と同じ）
+  // 行動計画に今月の行が無いときだけ、台帳から数えた値（入塾日・体験日）で代用し、出所にそう書く。
   const goalCampus = scope === 'すべて' ? '中等部' : scope;
   const views: GoalView[] = goals.length ? goalsFor(goals, month, goalCampus, trialsThisMonth) : [];
-  const target = (m: string) => views.find((v) => v.metric.includes(m))?.target ?? null;
-  const kpis: KpiLine[] = [
-    { metric: '今月入会', actual: enrollThisMonth, target: target('入会'), source: '台帳の入塾日' },
-    { metric: '体験授業', actual: trialsThisMonth, target: target('体験'), source: '台帳の体験日' },
-  ];
-  // 行動計画にある他の指標（模試など）は手入力値をそのまま添える
-  for (const v of views) {
-    if (v.metric.includes('入会') || v.metric.includes('体験')) continue;
-    if (v.target == null && v.actual == null) continue;
-    kpis.push({ metric: v.metric, actual: v.actual ?? 0, target: v.target, source: '行動計画の手入力' });
+  const kpis: KpiLine[] = views.map((v) => ({
+    metric: v.metric.includes('入会') ? '今月入会' : v.metric,
+    actual: v.actual ?? 0,
+    target: v.target,
+    source: v.source === '自動' ? '台帳の体験日（問い合わせQAと同じ）' : '行動計画の入力値（問い合わせQAと同じ）',
+  }));
+  if (!views.some((v) => v.metric.includes('入会'))) {
+    kpis.unshift({ metric: '今月入会', actual: enrollThisMonth, target: null, source: '台帳の入塾日（行動計画に今月の値なし）' });
+  }
+  if (!views.some((v) => v.metric.includes('体験'))) {
+    kpis.push({ metric: '体験授業', actual: trialsThisMonth, target: null, source: '台帳の体験日（行動計画に今月の値なし）' });
   }
 
   return {
     scope, today, monthLabel: ymLabel(ym), kpis,
-    inquiriesThisMonth, inquiriesPrevMonth, open,
+    inquiriesThisMonth, inquiriesPrevMonth, monthOutcome, enrollByDate: enrollThisMonth, open,
     untouched, overdue, trialNoResult, meetingNoResult, staleOpen, enrollMissingDate,
   };
 }
@@ -212,6 +228,8 @@ export function formatFactsForAi(f: AlertFacts): string {
     '【KPI】',
     kpi,
     `問い合わせ件数: 今月${f.inquiriesThisMonth}件 ／ 前月${f.inquiriesPrevMonth}件`,
+    `今月の問い合わせのその後（問い合わせ日が今月の行）: 入塾${f.monthOutcome.joined}・申込${f.monthOutcome.applied}・見送り${f.monthOutcome.declined}・追客中${f.monthOutcome.open}${f.monthOutcome.other ? `・その他${f.monthOutcome.other}` : ''}`,
+    `入塾日から数えた入会（参考。上の「今月入会」とは別）: ${f.enrollByDate}件`,
     `追客中（結果未記入）: ${f.open}件`,
     '【滞留】',
     list(`クローズ予定日超過`, f.overdue),
