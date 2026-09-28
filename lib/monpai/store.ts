@@ -1,24 +1,33 @@
 // 門配管理の保存・取得。サーバ専用。
 //
-// 本番・dev：門配専用の Apps Script（apps_script/monpai.gs）経由で、門配専用のスプレッドシートを読み書きする。
-//            環境変数 MONPAI_SCRIPT_URL / MONPAI_SCRIPT_TOKEN（会議DXの APPS_SCRIPT_* とは別）。
-// 手元の開発：MONPAI_SCRIPT_URL が無いときは .data/monpai.json に保存する（git には入れない）。
+// 保存先は次の順で選ぶ（上にあるほど優先）：
+//   1. Supabase（SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY）… テーブルは supabase/migrations/0001_monpai.sql
+//   2. 門配専用の Apps Script（MONPAI_SCRIPT_URL / MONPAI_SCRIPT_TOKEN）… apps_script/monpai.gs
+//   3. 手元の開発だけ：.data/monpai.json（git には入れない）
+// Supabase に移したあとも、環境変数を外せばスプレッドシートに戻せる（切り替え期間の保険）。
 //
-// ★列を増やしたら RECORD_HEADERS と monpai.gs の RECORD_HEADERS を合わせること。
+// ★列を増やしたら、SQL・下の対応表（RECORD_HEADERS / fromDb / toDb）・monpai.gs をそろえること。
 
 import { promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import type { MaterialItem, MaterialMovement, MonpaiRecord, MonthSetting, RecordInput, School, SchoolKind, Status } from './model';
 import { SEED_SCHOOLS } from './seed';
+import { jpDateTime, supabaseAdmin } from '../core/supabase';
 
 type Fail = { ok: false; reason: string };
-export type MasterResult = { ok: true; schools: School[]; settings: MonthSetting[]; backend: 'sheet' | 'local' } | Fail;
+export type MasterResult = { ok: true; schools: School[]; settings: MonthSetting[]; backend: 'db' | 'sheet' | 'local' } | Fail;
 export type ListResult = { ok: true; items: MonpaiRecord[] } | Fail;
 export type SaveResult = { ok: true; item: MonpaiRecord } | Fail;
 export type DeleteResult = { ok: true } | Fail;
 export type MaterialsResult =
-  | { ok: true; items: MaterialItem[]; movements: MaterialMovement[]; usage: { material: string; done: number | null }[] }
+  | {
+      ok: true;
+      items: MaterialItem[];
+      movements: MaterialMovement[]; // 在庫の計算に使う（Supabase では品名ごとの合計）
+      usage: { material: string; done: number | null }[];
+      recent?: MaterialMovement[]; // 画面の「最近の入出庫」（新しい順）。無ければ movements から作る
+    }
   | Fail;
 
 // シートの見出し ↔ 記録のキー（この順で1行）
@@ -80,8 +89,43 @@ function fromSheetSetting(r: Record<string, unknown>): MonthSetting {
 }
 
 function useLocal(): boolean {
-  return !process.env.MONPAI_SCRIPT_URL && process.env.NODE_ENV !== 'production';
+  return !supabaseAdmin() && !process.env.MONPAI_SCRIPT_URL && process.env.NODE_ENV !== 'production';
 }
+
+// ---- Supabase ---------------------------------------------------------------
+
+type Row = Record<string, unknown>;
+
+function fromDbRecord(r: Row): MonpaiRecord {
+  return {
+    id: s(r.id), date: s(r.date).slice(0, 10), time: s(r.time), district: s(r.district), school: s(r.school),
+    staff1: s(r.staff1), staff2: s(r.staff2), material: s(r.material),
+    planned: Number(r.planned) || 0, done: r.done == null ? null : Number(r.done),
+    status: (['予定', '実施', '中止'].includes(s(r.status)) ? s(r.status) : '予定') as Status,
+    reason: s(r.reason), memo: s(r.memo),
+    createdAt: jpDateTime(r.created_at as string), createdBy: s(r.created_by),
+    updatedAt: jpDateTime(r.updated_at as string), updatedBy: s(r.updated_by),
+  };
+}
+
+function toDbRecord(r: RecordInput) {
+  return {
+    date: r.date, time: r.time, district: r.district, school: r.school, staff1: r.staff1, staff2: r.staff2,
+    material: r.material, planned: r.planned, done: r.done, status: r.status, reason: r.reason, memo: r.memo,
+  };
+}
+
+/** 月（YYYY-MM）の初日と翌月の初日。date の範囲検索に使う。 */
+function monthRange(m: string): [string, string] {
+  const [y, mo] = m.split('-').map(Number);
+  const next = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`;
+  return [`${m}-01`, `${next}-01`];
+}
+
+const dbFail = (where: string, err: { message?: string } | null): Fail => {
+  console.log('[monpai-db]', where, err?.message ?? '');
+  return { ok: false, reason: 'db_error' };
+};
 
 type Gas = {
   ok?: boolean; reason?: string; items?: unknown[]; schools?: unknown[]; settings?: unknown[];
@@ -131,6 +175,26 @@ async function writeLocal(d: Local): Promise<void> {
 // ---- 公開 -----------------------------------------------------------------
 
 export async function getMaster(): Promise<MasterResult> {
+  const db = supabaseAdmin();
+  if (db) {
+    const [sc, st] = await Promise.all([
+      db.from('monpai_schools').select('*'),
+      db.from('monpai_month_settings').select('*'),
+    ]);
+    if (sc.error) return dbFail('schools', sc.error);
+    if (st.error) return dbFail('settings', st.error);
+    return {
+      ok: true,
+      backend: 'db',
+      schools: (sc.data as Row[]).map((r) => ({
+        district: s(r.district), name: s(r.name), kind: (s(r.kind) === '小' ? '小' : '中') as SchoolKind,
+        students: Number(r.students) || 0, order: Number(r.sort_order) || 0, note: s(r.note),
+      })),
+      settings: (st.data as Row[]).map((r) => ({
+        month: s(r.month), school: s(r.school), rate: r.rate == null ? null : Number(r.rate), recruit: !!r.recruit,
+      })),
+    };
+  }
   if (useLocal()) {
     const d = await readLocal();
     return { ok: true, schools: d.schools, settings: d.settings, backend: 'local' };
@@ -144,6 +208,24 @@ export async function getMaster(): Promise<MasterResult> {
 
 /** months（YYYY-MM）のどれかに入る記録を返す。 */
 export async function listRecords(months: string[]): Promise<ListResult> {
+  const db = supabaseAdmin();
+  if (db) {
+    const sorted = [...months].sort();
+    const [from] = monthRange(sorted[0]);
+    const [, to] = monthRange(sorted[sorted.length - 1]);
+    // Supabase は1回に最大1000行しか返さないので、1000行ずつ取り切る
+    const rows: Row[] = [];
+    for (let at = 0; ; at += 1000) {
+      const { data, error } = await db
+        .from('monpai_records').select('*')
+        .is('deleted_at', null).gte('date', from).lt('date', to)
+        .order('date').order('id').range(at, at + 999);
+      if (error) return dbFail('list', error);
+      rows.push(...(data as Row[]));
+      if (data.length < 1000 || at >= 20000) break;
+    }
+    return { ok: true, items: rows.map(fromDbRecord).filter((r) => months.includes(r.date.slice(0, 7))) };
+  }
   if (useLocal()) {
     const d = await readLocal();
     return { ok: true, items: d.records.filter((r) => months.includes(r.date.slice(0, 7))) };
@@ -156,6 +238,17 @@ export async function listRecords(months: string[]): Promise<ListResult> {
 /** id が空なら新規、あれば上書き。作成日時・作成者は元の値を守る。 */
 export async function saveRecord(id: string, input: RecordInput, user: string): Promise<SaveResult> {
   const ts = nowJp();
+  const db = supabaseAdmin();
+  if (db) {
+    const body = { ...toDbRecord(input), updated_by: user, updated_at: new Date().toISOString() };
+    const q = id
+      ? db.from('monpai_records').update(body).eq('id', id).is('deleted_at', null).select().maybeSingle()
+      : db.from('monpai_records').insert({ ...body, created_by: user }).select().single();
+    const { data, error } = await q;
+    if (error) return dbFail('save', error);
+    if (!data) return { ok: false, reason: 'not_found' };
+    return { ok: true, item: fromDbRecord(data as Row) };
+  }
   if (useLocal()) {
     const d = await readLocal();
     const i = id ? d.records.findIndex((r) => r.id === id) : -1;
@@ -181,6 +274,15 @@ export async function saveRecord(id: string, input: RecordInput, user: string): 
 }
 
 export async function deleteRecord(id: string, user: string): Promise<DeleteResult> {
+  const db = supabaseAdmin();
+  if (db) {
+    const now = new Date().toISOString();
+    const { data, error } = await db
+      .from('monpai_records').update({ deleted_at: now, updated_at: now, updated_by: user })
+      .eq('id', id).is('deleted_at', null).select('id');
+    if (error) return dbFail('delete', error);
+    return data && data.length ? { ok: true } : { ok: false, reason: 'not_found' };
+  }
   if (useLocal()) {
     const d = await readLocal();
     const n = d.records.length;
@@ -208,6 +310,29 @@ function fromSheetMovement(r: Record<string, unknown>): MaterialMovement {
 
 /** 配布物の一覧・入出庫・実績の配布数（在庫の計算は model.ts の computeStock）。 */
 export async function getMaterials(): Promise<MaterialsResult> {
+  const db = supabaseAdmin();
+  if (db) {
+    const [it, rc, us, recent] = await Promise.all([
+      db.from('monpai_materials').select('*').order('name'),
+      db.from('monpai_material_received').select('*'),
+      db.from('monpai_material_usage').select('*'),
+      db.from('monpai_material_movements').select('*').order('id', { ascending: false }).limit(50),
+    ]);
+    if (it.error) return dbFail('materials', it.error);
+    if (rc.error) return dbFail('received', rc.error);
+    if (us.error) return dbFail('usage', us.error);
+    if (recent.error) return dbFail('movements', recent.error);
+    const move = (r: Row): MaterialMovement => ({
+      date: s(r.date).slice(0, 10), name: s(r.name), qty: Number(r.qty) || 0, memo: s(r.memo), user: s(r.created_by),
+    });
+    return {
+      ok: true,
+      items: (it.data as Row[]).map((r) => ({ name: s(r.name), kind: s(r.kind), prep: s(r.prep), threshold: Number(r.threshold) || 0, note: s(r.note) })),
+      movements: (rc.data as Row[]).map((r) => ({ date: '', name: s(r.name), qty: Number(r.qty) || 0, memo: '', user: '' })),
+      usage: (us.data as Row[]).map((r) => ({ material: s(r.material), done: r.done == null ? null : Number(r.done) })),
+      recent: (recent.data as Row[]).map(move),
+    };
+  }
   if (useLocal()) {
     const d = await readLocal();
     return {
@@ -229,6 +354,14 @@ export async function getMaterials(): Promise<MaterialsResult> {
 
 /** 品名が同じなら上書き、無ければ追加。 */
 export async function saveMaterial(item: MaterialItem): Promise<{ ok: true } | Fail> {
+  const db = supabaseAdmin();
+  if (db) {
+    const { error } = await db.from('monpai_materials').upsert(
+      { name: item.name, kind: item.kind, prep: item.prep, threshold: item.threshold, note: item.note },
+      { onConflict: 'name' },
+    );
+    return error ? dbFail('saveMaterial', error) : { ok: true };
+  }
   if (useLocal()) {
     const d = await readLocal();
     const list = d.materials ?? [];
@@ -246,6 +379,13 @@ export async function saveMaterial(item: MaterialItem): Promise<{ ok: true } | F
 }
 
 export async function addMovement(m: MaterialMovement): Promise<{ ok: true } | Fail> {
+  const db = supabaseAdmin();
+  if (db) {
+    const { error } = await db.from('monpai_material_movements').insert(
+      { date: m.date, name: m.name, qty: m.qty, memo: m.memo, created_by: m.user },
+    );
+    return error ? dbFail('addMovement', error) : { ok: true };
+  }
   if (useLocal()) {
     const d = await readLocal();
     d.movements = [...(d.movements ?? []), m];
