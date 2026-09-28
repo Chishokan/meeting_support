@@ -922,6 +922,18 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
         <div className="dm-modal-body ib-form">
           {/* 並びは「必須 → 架電に要る連絡先 → 追客の状況 → 備考 → その他」。
               電話を受けながら上から順に埋め、追客の更新は2つ目の区画だけで済むようにしてある。 */}
+          {record && (
+            <MergeSection
+              record={record}
+              draft={v}
+              candidates={candidates}
+              busy={busy}
+              setBusy={setBusy}
+              setErrors={setErrors}
+              onMerged={onMerged}
+            />
+          )}
+
           <section>
             <h3>基本（必須）</h3>
             <div className="ib-grid">
@@ -1045,18 +1057,6 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
             </div>
           </section>
 
-          {record && (
-            <MergeSection
-              record={record}
-              draft={v}
-              candidates={candidates}
-              busy={busy}
-              setBusy={setBusy}
-              setErrors={setErrors}
-              onMerged={onMerged}
-            />
-          )}
-
           {errors.length > 0 && (
             <ul className="ib-errors">
               {errors.map((e) => <li key={e}>{e}</li>)}
@@ -1109,11 +1109,17 @@ function MergeSection({ record, draft, candidates, busy, setBusy, setErrors, onM
   setErrors: (e: string[]) => void;
   onMerged: (item: InquiryRecord, droppedId: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
-  const [dropId, setDropId] = useState('');
-
   const key = nameKeyOf(record.studentName);
+  const sameName = useMemo(
+    () => candidates.filter((r) => r.id !== record.id && key && nameKeyOf(r.studentName) === key),
+    [candidates, record.id, key],
+  );
+  // 同じ氏名の行があるときは最初から開き、1件だけならそれを選んでおく（後から来た問い合わせを開いて、すぐまとめられるように）
+  const [open, setOpen] = useState(sameName.length > 0);
+  const [q, setQ] = useState('');
+  const [otherId, setOtherId] = useState(sameName.length === 1 ? sameName[0].id : '');
+  const [swap, setSwap] = useState(false); // true なら「この行を残す」に反転
+
   const list = useMemo(() => {
     const others = candidates.filter((r) => r.id !== record.id);
     const qq = q.trim().toLowerCase();
@@ -1125,24 +1131,30 @@ function MergeSection({ record, draft, candidates, busy, setBusy, setErrors, onM
     return { same, rest };
   }, [candidates, record.id, key, q]);
 
-  const drop = candidates.find((r) => r.id === dropId) ?? null;
-  const preview = drop ? mergePreview(record, drop) : null;
+  const other = candidates.find((r) => r.id === otherId) ?? null;
+  // 基本は古いほう（先に来た問い合わせ）を残し、この行（後から来たほう）をそこにまとめる。
+  // 日付が同じか無いときは登録日時で決める。
+  const otherIsOlder = other ? isOlder(other, record) : false;
+  const keep = other ? ((otherIsOlder !== swap) ? other : record) : null;
+  const drop = other ? (keep === other ? record : other) : null;
+  const preview = keep && drop ? mergePreview(keep, drop) : null;
   const dirty = !sameDraft(draft, record);
 
   const label = (r: InquiryRecord) =>
     `${r.campus} #${r.no} ${r.studentName || r.guardianName || '（氏名なし）'}${r.grade ? `・${r.grade}` : ''}${r.phone ? `・${r.phone}` : ''}${r.date ? `・${shortDate(r.date)}` : ''}`;
+  const short = (r: InquiryRecord) => `${r.campus} #${r.no}${r.date ? `（${shortDate(r.date)}）` : ''}`;
 
   async function run() {
-    if (!drop || busy) return;
+    if (!keep || !drop || busy) return;
     const who = drop.studentName || drop.guardianName || `No.${drop.no}`;
-    if (!window.confirm(`${drop.campus} #${drop.no}「${who}」を、この行（${record.campus} #${record.no}）にまとめます。\nまとめた行は削除されます。よろしいですか？`)) return;
+    if (!window.confirm(`${short(drop)}「${who}」を ${short(keep)} にまとめます。\n${short(drop)} は削除されます（内容は残る行の備考に入ります）。よろしいですか？`)) return;
     setBusy(true);
     setErrors([]);
     try {
       const res = await fetch('/api/inquiry-board/merge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keepId: record.id, dropId: drop.id }),
+        body: JSON.stringify({ keepId: keep.id, dropId: drop.id }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok && j.item) onMerged(j.item as InquiryRecord, drop.id);
@@ -1159,15 +1171,15 @@ function MergeSection({ record, draft, candidates, busy, setBusy, setErrors, onM
     <section className="ib-merge">
       <h3>
         重複の統合
-        {list.same.length > 0 && <span className="ib-merge-hint">同じ氏名の行が {list.same.length} 件あります</span>}
+        {sameName.length > 0 && <span className="ib-merge-hint">同じ氏名の行が {sameName.length} 件あります</span>}
         <button type="button" className="ib-link" onClick={() => setOpen((o) => !o)}>{open ? '閉じる' : '開く'}</button>
       </h3>
       {open && (
         <div className="ib-merge-body">
           <p className="ib-merge-desc">
-            同じ生徒が 2 行に分かれてしまったときに、もう一方の行を<b>この行にまとめます</b>。
-            この行の値を優先し、空欄の項目だけもう一方の値で埋めます。備考はつなげ、日付は早いほうにします。
-            まとめた行は削除されます（値は備考に残るので、あとから見直せます）。
+            後から来た問い合わせを開いた状態で、以前の問い合わせを選ぶと、<b>古いほうの行に</b>この行をまとめます。
+            古いほうの値を優先し、空欄の項目だけこの行の値で埋めます。備考はつなげ、日付は早いほうにします。
+            まとめられた行は削除されます（値は残る行の備考に入るので、あとから見直せます）。
           </p>
           <div className="ib-merge-pick">
             <input
@@ -1175,10 +1187,10 @@ function MergeSection({ record, draft, candidates, busy, setBusy, setErrors, onM
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="氏名・ふりがな・電話番号で絞り込み"
-              aria-label="統合する行を絞り込み"
+              aria-label="以前の問い合わせを絞り込み"
             />
-            <select value={dropId} onChange={(e) => setDropId(e.target.value)} aria-label="この行にまとめる行">
-              <option value="">まとめる行を選ぶ</option>
+            <select value={otherId} onChange={(e) => { setOtherId(e.target.value); setSwap(false); }} aria-label="以前の問い合わせ">
+              <option value="">以前の問い合わせを選ぶ</option>
               {list.same.length > 0 && (
                 <optgroup label="同じ氏名">
                   {list.same.map((r) => <option key={r.id} value={r.id}>{label(r)}</option>)}
@@ -1189,9 +1201,13 @@ function MergeSection({ record, draft, candidates, busy, setBusy, setErrors, onM
               </optgroup>
             </select>
           </div>
-          {drop && preview && (
+          {keep && drop && preview && (
             <div className="ib-merge-preview">
-              <div><b>{label(drop)}</b> をこの行にまとめると：</div>
+              <div>
+                <b>残す行：{short(keep)}{keep === record ? '（この行）' : ''}</b>　←　まとめる行：{short(drop)}{drop === record ? '（この行）' : ''}
+                <button type="button" className="ib-link" onClick={() => setSwap((v) => !v)}>入れ替える</button>
+              </div>
+              {keep === record && !swap && <div className="ib-meta">この行のほうが古いので、この行を残します。</div>}
               {preview.filled.length > 0 ? (
                 <ul>
                   {preview.filled.map((f) => <li key={f.key}>{f.label}：空欄 → <b>{f.value}</b></li>)}
@@ -1199,22 +1215,36 @@ function MergeSection({ record, draft, candidates, busy, setBusy, setErrors, onM
               ) : (
                 <div className="ib-meta">空欄を埋める項目はありません。</div>
               )}
-              {preview.dateFrom === 'drop' && <div>日付：{shortDate(record.date) || '未記入'} → <b>{shortDate(preview.date)}</b>（早いほう）</div>}
+              {preview.dateFrom === 'drop' && <div>日付：{shortDate(keep.date) || '未記入'} → <b>{shortDate(preview.date)}</b>（早いほう）</div>}
               {preview.conflicts.length > 0 && (
                 <div className="ib-meta">
-                  両方にあって違う値（この行を優先し、もう一方は備考に残す）：
+                  両方にあって違う値（残す行を優先し、もう一方は備考に残す）：
                   {preview.conflicts.map((c) => `${c.label}「${c.keep}」←「${c.drop}」`).join('、')}
                 </div>
               )}
-              {drop.note && <div className="ib-meta">備考（{drop.note.split('\n').length} 行）をこの行の備考の下につなげます。</div>}
+              {drop.note && <div className="ib-meta">まとめる行の備考（{drop.note.split('\n').length} 行）を残す行の備考の下につなげます。</div>}
               {dirty && <div className="ib-attn">入力中の変更があります。先に「保存」してから統合してください。</div>}
-              <button type="button" className="ib-merge-run" onClick={run} disabled={busy || dirty}>この行に統合する</button>
+              <button type="button" className="ib-merge-run" onClick={run} disabled={busy || dirty}>
+                {keep === record ? 'この行にまとめる' : `${short(keep)} にまとめる`}
+              </button>
             </div>
           )}
         </div>
       )}
     </section>
   );
+}
+
+/** a のほうが b より古い（先に来た）問い合わせか。日付 → 登録日時 の順で比べる。同じなら a を古い扱いにする。 */
+function isOlder(a: InquiryRecord, b: InquiryRecord): boolean {
+  const da = parseIso(a.date) ? a.date : '';
+  const db = parseIso(b.date) ? b.date : '';
+  if (da && db && da !== db) return da < db;
+  if (da && !db) return true;
+  if (!da && db) return false;
+  const ca = a.createdAt || ''; const cb = b.createdAt || '';
+  if (ca && cb && ca !== cb) return ca < cb;
+  return true;
 }
 
 function DateInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
