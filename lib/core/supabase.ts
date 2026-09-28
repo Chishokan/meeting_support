@@ -16,10 +16,12 @@ let cached: SupabaseClient<any, any, any> | null | undefined;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function supabaseAdmin(): SupabaseClient<any, any, any> | null {
   if (cached !== undefined) return cached;
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // 「https://xxxx.supabase.co/rest/v1/」（Data API 画面の RESTful endpoint）を貼っても動くよう、
+  // 末尾の /rest/v1 や / を落として「https://xxxx.supabase.co」にそろえる。前後の空白も落とす。
+  const url = (process.env.SUPABASE_URL ?? '').trim().replace(/\/+$/, '').replace(/\/rest\/v1$/, '');
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
   if (!url || !key) return (cached = null);
-  const schema = process.env.SUPABASE_SCHEMA || 'public';
+  const schema = (process.env.SUPABASE_SCHEMA ?? '').trim() || 'public';
   cached = createClient(url, key, {
     db: { schema },
     auth: { persistSession: false, autoRefreshToken: false },
