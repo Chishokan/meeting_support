@@ -12,7 +12,7 @@
 | 機能 | 保存先 | 経路 |
 |---|---|---|
 | 問い合わせ | スプレッドシート「問い合わせ」 | Apps Script `saveInquiry` / `listInquiries` |
-| 数値報告 | スプレッドシート「夏期数値」 | `saveNumbers` / `listNumbers` |
+| 数値報告 | スプレッドシート「月次数値」「講習数値」 | `saveNumberReport` / `listNumberReports` |
 | 成功事例 | スプレッドシート「成功事例」 | `saveSuccess` / `listSuccess` |
 | 中間報告 | スプレッドシート「中間報告状況」 | `appendProgress` / `listProgress` |
 | 議事録 | Google ドキュメント | `saveMinutes` |
@@ -209,7 +209,7 @@ Claude が判断 → tool: read_file("40_イベント/2026/夏期講習/要項.m
 | `read_file(path)` | ファイル本文を読む | Git 内ファイル読み込み |
 | `grep_knowledge(query)` | 全文検索（索引で当たらない時の保険） | ripgrep 相当 |
 | `list_dir(path)` | 階層を見る | fs |
-| `get_numbers(dept)` | 数値報告の最新値 | 既存 `listNumbers` |
+| `get_numbers(dept)` | 数値報告の最新値 | 既存 `listNumberReports` |
 | `get_inquiries(keyword)` | 過去の問い合わせ回答 | 既存 `listInquiries` |
 
 **設計上の要点**
