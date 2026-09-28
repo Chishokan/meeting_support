@@ -487,7 +487,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
 // その日は変わらない（generatedAt にその時刻が入る）。
 
 type AlertsRes =
-  | { ok: true; alerts: Alert[]; ai: { text: string; generatedAt: string; date: string } | null; aiAvailable: boolean; facts: { monthLabel: string; scope: string; kpis: KpiLine[]; inquiriesThisMonth: number; inquiriesPrevMonth: number } }
+  | { ok: true; alerts: Alert[]; ai: { text: string; generatedAt: string; date: string } | null; aiAvailable: boolean; facts: { monthLabel: string; scope: string; kpis: KpiLine[]; inquiriesThisMonth: number; inquiriesPrevMonth: number; monthOutcome: { joined: number; applied: number; declined: number; open: number; other: number } } }
   | { ok: false; reason: string };
 
 const ALERTS_OPEN_KEY = 'ib_alerts_open';
@@ -576,6 +576,9 @@ function AlertPanel({ campus, version, onFilter }: { campus: string; version: nu
             ))}
             <span className="ib-kpi" title="問い合わせ日で数えた件数">
               問合せ <b>{ok.facts.inquiriesThisMonth}</b><small>（前月 {ok.facts.inquiriesPrevMonth}）</small>
+            </span>
+            <span className="ib-kpi" title="この月の問い合わせのその後（問い合わせQAのカードと同じ数え方）">
+              入塾 <b>{ok.facts.monthOutcome.joined}</b><small>／申込 {ok.facts.monthOutcome.applied}／見送り {ok.facts.monthOutcome.declined}／追客中 {ok.facts.monthOutcome.open}</small>
             </span>
           </div>
 
