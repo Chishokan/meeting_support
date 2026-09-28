@@ -29,6 +29,9 @@ function dbErrorText(code: string, msg: string): string {
   if (code === 'PGRST106' || m.includes('schema must be one of') || m.includes('invalid schema')) {
     return 'データベースの区画が公開されていません。Supabase の Project Settings → Data API → Exposed schemas に chishokan_dev（本番は chishokan_prod）が入っているか確認してください。';
   }
+  if (code === 'PGRST125' || m.includes('invalid path')) {
+    return 'データベースの接続先URLが正しくありません。Vercel の SUPABASE_URL を「https://（プロジェクトID）.supabase.co」だけにしてください（末尾に /rest/v1 などを付けない）。';
+  }
   if (code === 'PGRST205' || code === '42P01' || m.includes('could not find the table') || m.includes('does not exist')) {
     return 'データベースに表が見つかりません。Vercel の SUPABASE_SCHEMA の値と、SQL を実行した区画（chishokan_dev / chishokan_prod）が一致しているか確認してください。';
   }
