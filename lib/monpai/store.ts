@@ -398,3 +398,69 @@ export async function addMovement(m: MaterialMovement): Promise<{ ok: true } | F
   });
   return j.ok ? { ok: true } : { ok: false, reason: j.reason || 'upstream_error' };
 }
+
+// ---- 学校マスタ・月別設定の編集（Supabase と手元のファイルだけ。スプレッドシートは直接編集する） ----
+
+type Simple = { ok: true } | Fail;
+const notSupported: Fail = { ok: false, reason: 'not_supported' };
+
+export async function saveSchool(sc: School): Promise<Simple> {
+  const db = supabaseAdmin();
+  if (db) {
+    const { error } = await db.from('monpai_schools').upsert(
+      { name: sc.name, district: sc.district, kind: sc.kind, students: sc.students, sort_order: sc.order, note: sc.note },
+      { onConflict: 'name' },
+    );
+    return error ? dbFail('saveSchool', error) : { ok: true };
+  }
+  if (!useLocal()) return notSupported;
+  const d = await readLocal();
+  const i = d.schools.findIndex((x) => x.name === sc.name);
+  if (i >= 0) d.schools[i] = sc; else d.schools.push(sc);
+  await writeLocal(d);
+  return { ok: true };
+}
+
+/** 学校マスタから外す（過去の門配の記録は残る。記録は学校名で持っているので表示もそのまま）。 */
+export async function deleteSchool(name: string): Promise<Simple> {
+  const db = supabaseAdmin();
+  if (db) {
+    const { error } = await db.from('monpai_schools').delete().eq('name', name);
+    return error ? dbFail('deleteSchool', error) : { ok: true };
+  }
+  if (!useLocal()) return notSupported;
+  const d = await readLocal();
+  d.schools = d.schools.filter((x) => x.name !== name);
+  await writeLocal(d);
+  return { ok: true };
+}
+
+export async function saveSetting(st: MonthSetting): Promise<Simple> {
+  const db = supabaseAdmin();
+  if (db) {
+    const { error } = await db.from('monpai_month_settings').upsert(
+      { month: st.month, school: st.school, rate: st.rate, recruit: st.recruit },
+      { onConflict: 'month,school' },
+    );
+    return error ? dbFail('saveSetting', error) : { ok: true };
+  }
+  if (!useLocal()) return notSupported;
+  const d = await readLocal();
+  const i = d.settings.findIndex((x) => x.month === st.month && x.school === st.school);
+  if (i >= 0) d.settings[i] = st; else d.settings.push(st);
+  await writeLocal(d);
+  return { ok: true };
+}
+
+export async function deleteSetting(month: string, school: string): Promise<Simple> {
+  const db = supabaseAdmin();
+  if (db) {
+    const { error } = await db.from('monpai_month_settings').delete().eq('month', month).eq('school', school);
+    return error ? dbFail('deleteSetting', error) : { ok: true };
+  }
+  if (!useLocal()) return notSupported;
+  const d = await readLocal();
+  d.settings = d.settings.filter((x) => !(x.month === month && x.school === school));
+  await writeLocal(d);
+  return { ok: true };
+}

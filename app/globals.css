@@ -1555,3 +1555,15 @@ a.portal-card:hover { border-color: var(--navy); box-shadow: 0 2px 10px rgba(31,
 /* 共通の button.primary（幅100%）を門配管理のボタンでは打ち消す */
 button.mp-btn.primary { width: auto; margin-top: 0; padding: 6px 14px; font-size: 13px; }
 .mp-panels button.mp-btn.primary { margin-top: 12px; padding: 8px 18px; }
+/* 学校マスタ */
+.mp-tab-count { display: inline-block; margin-left: 6px; font-size: 11px; opacity: .7; }
+.mp-edit-table input, .mp-edit-table select { padding: 5px 8px; font-size: 13px; }
+.mp-w-num { width: 90px; }
+.mp-w-kind { width: 70px; }
+.mp-row-actions { white-space: nowrap; display: flex; gap: 6px; }
+.mp-add-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.mp-add-row label { margin: 0; font-size: 12px; flex: 1 1 140px; }
+.mp-add-row input, .mp-add-row select { margin-top: 4px; padding: 7px 10px; font-size: 14px; }
+.mp-add-row .mp-check { flex: 0 0 auto; padding-bottom: 8px; }
+.mp-add-row .mp-btn.primary { flex: 0 0 auto; padding: 8px 18px; }
+.mp-month-input { width: auto; padding: 6px 10px; font-size: 14px; }
