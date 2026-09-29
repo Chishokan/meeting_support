@@ -5,7 +5,7 @@
 
 | アプリ | 状態 |
 |---|---|
-| 門配管理 | `migrations/0001_monpai.sql`（v0.5.0〜） |
+| 門配管理 | `migrations/0001_monpai.sql`（v0.6.0〜） |
 | 問合せ管理 | 未移行（Apps Script） |
 | 会議DX | 未移行（Apps Script） |
 

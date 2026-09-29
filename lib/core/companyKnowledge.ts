@@ -76,7 +76,7 @@ ${companyBody()}
 
 /**
  * 各AI機能のシステムプロンプト先頭に共通前提として差し込む。
- * 会議AI・夏の結果報告・中間報告・議事録すべてがこれを通す。
+ * 会議AI（事前報告・月次報告・講習の結果報告）・中間報告・議事録すべてがこれを通す。
  */
 export function withCompanyKnowledge(instructions: string, now: Date = new Date()): string {
   return `【智翔館の前提知識（全AI機能で共通）】

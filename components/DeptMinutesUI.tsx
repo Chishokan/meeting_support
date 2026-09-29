@@ -577,16 +577,24 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                 <input value={meta.attendees} onChange={set('attendees')} placeholder="例：直江、安東、池田、山中" />
               </label>
               <label className="wide">
-                <span>予定していた議題（1行1件・任意）</span>
+                <span>予定していた議題、または会議のレジュメ（任意）</span>
                 <textarea
+                  className="dm-agenda"
                   value={meta.agenda}
                   onChange={set('agenda')}
-                  placeholder={'例：\n9月の生徒数と対策\n中間テスト対策の役割分担\n面談週間の日程'}
+                  placeholder={
+                    '1行1件の箇条書きでも、レジュメをそのまま貼り付けても構いません。\n\n'
+                    + '例1（箇条書き）\n9月の生徒数と対策\n中間テスト対策の役割分担\n\n'
+                    + '例2（レジュメを貼り付け）\n1. 9月度 実績報告\n   (1) 生徒数・前年比\n   (2) 体験申込の状況\n2. 中間テスト対策について\n   ・担当の割り振り'
+                  }
                 />
               </label>
             </div>
             <p className="dm-hint">
-              予定議題を入れておくと、「予定どおり進んだか」「話し合えなかった議題はどれか」まで議事録に出ます。
+              入れておくと、「予定どおり進んだか」「話し合えなかった議題はどれか」まで議事録に出ます。
+              レジュメを貼った場合は、その見出しをそのまま議題名に使います。
+              なお、レジュメに書いてあるだけで会議で触れられなかった内容が、
+              決まったことのように議事録に載ることはありません。
             </p>
           </section>
 

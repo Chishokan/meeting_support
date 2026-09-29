@@ -1,9 +1,17 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getSession } from '@/lib/core/auth';
 import { buildSystemPrompt, MODEL, THINKING } from '@/lib/systemPrompt';
-import { buildSummerPrompt } from '@/lib/summerPrompt';
+import { buildSeasonPrompt } from '@/lib/seasonPrompt';
+import { buildMonthlyPrompt } from '@/lib/monthlyPrompt';
 import { listNumbers } from '@/lib/numbersStore';
-import { formatEntries, latestByCampus } from '@/lib/summerNumbers';
+import {
+  NUMBER_FORMS,
+  defaultPeriod,
+  formatEntries,
+  latestByCampus,
+  recentEntries,
+  type ReportKind,
+} from '@/lib/numberReports';
 import { logInteraction } from '@/lib/core/log';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/core/sanitize';
 
@@ -17,8 +25,22 @@ const client = new Anthropic();
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
-// 会議AIのモード。meeting＝通常の事前報告 / summer＝夏の結果報告（計画確認なし）。
-type Mode = 'meeting' | 'summer';
+// 会議AIのモード。meeting＝通常の事前報告 / monthly＝月次報告 / season＝講習の結果報告（春期・夏期・冬期）。
+type Mode = 'meeting' | ReportKind;
+
+const LOG_PREFIX: Record<Mode, string> = { meeting: '', monthly: '[月次報告] ', season: '[講習結果] ' };
+
+// 「数値報告」メニューの登録内容（自部門・直近の期間・期間×校舎ごとに最新1件）をプロンプト用の文字列にする。
+async function numbersFor(kind: ReportKind, dept: string): Promise<string> {
+  const r = await listNumbers(kind, dept);
+  return formatEntries(NUMBER_FORMS[kind], recentEntries(kind, latestByCampus(r.items)));
+}
+
+function buildPrompt(mode: Mode, dept: string, name: string, numbersText: string): string {
+  if (mode === 'monthly') return buildMonthlyPrompt(dept, name, numbersText, defaultPeriod('monthly'));
+  if (mode === 'season') return buildSeasonPrompt(dept, name, numbersText, defaultPeriod('season'));
+  return buildSystemPrompt(dept, name);
+}
 
 // 添付ファイル（PDF/画像はネイティブ対応、テキスト系は本文として渡す）
 type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };
@@ -56,12 +78,13 @@ export async function POST(req: Request) {
   // 役割漏れ・空メッセージを除去（既に汚れた履歴が送られても自己対話ループを断つ）。
   const messages = sanitizeHistory(raw) as Msg[];
   if (messages.length === 0) return new Response('messages required', { status: 400 });
-  const mode: Mode = body?.mode === 'summer' ? 'summer' : 'meeting';
+  // 旧「夏の結果報告」（summer）は講習の結果報告に統合した。古い画面から来ても動くように読み替える。
+  const rawMode = body?.mode === 'summer' ? 'season' : body?.mode;
+  const mode: Mode = rawMode === 'monthly' || rawMode === 'season' ? rawMode : 'meeting';
 
-  // 夏の結果報告では「数値報告」メニューの登録内容をプロンプトへ差し込む
+  // 月次報告・講習の結果報告では「数値報告」メニューの登録内容をプロンプトへ差し込む
   // （毎ターン最新を取りに行くので、会話の途中で登録されても次の発言から反映される）。
-  const numbersText =
-    mode === 'summer' ? formatEntries(latestByCampus(await listNumbers(session.campus))) : '';
+  const numbersText = mode === 'meeting' ? '' : await numbersFor(mode, session.campus);
 
   const encoder = new TextEncoder();
   let full = '';
@@ -72,10 +95,7 @@ export async function POST(req: Request) {
   const system: Anthropic.TextBlockParam[] = [
     {
       type: 'text',
-      text:
-        mode === 'summer'
-          ? buildSummerPrompt(session.campus, session.name, numbersText)
-          : buildSystemPrompt(session.campus, session.name),
+      text: buildPrompt(mode, session.campus, session.name, numbersText),
       cache_control: { type: 'ephemeral' },
     },
   ];
@@ -128,7 +148,7 @@ export async function POST(req: Request) {
           await logInteraction({
             user: session.name,
             campus: session.campus,
-            input: mode === 'summer' ? `[夏期結果] ${lastUser?.content ?? ''}` : (lastUser?.content ?? ''),
+            input: `${LOG_PREFIX[mode]}${lastUser?.content ?? ''}`,
             output: stripRoleBleed(full),
           });
         } catch {}

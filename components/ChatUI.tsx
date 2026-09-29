@@ -6,8 +6,8 @@ import { sanitizeHistory, stripRoleBleed } from '@/lib/core/sanitize';
 type Msg = { role: 'user' | 'assistant'; content: string };
 type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };
 
-// 会議AIのモード。meeting＝通常の事前報告 / summer＝夏の結果報告（計画確認なし）。
-type Mode = 'meeting' | 'summer';
+// 会議AIのモード。meeting＝通常の事前報告 / monthly＝月次報告 / season＝講習の結果報告（春期・夏期・冬期）。
+type Mode = 'meeting' | 'monthly' | 'season';
 
 const MODES: { id: Mode; label: string; title: string; desc: string; hint: string }[] = [
   {
@@ -18,11 +18,18 @@ const MODES: { id: Mode; label: string; title: string; desc: string; hint: strin
     hint: '事前報告をまとめましょう。下の入力欄に「会議の報告を始めたい」などと送るか、共有したいことを箇条書きで貼り付けてください。',
   },
   {
-    id: 'summer',
-    label: '夏の結果報告',
-    title: '会議AI（夏の結果報告）',
-    desc: '夏の結果を、数値（今年／昨年／目標）・振り返り・成功事例に整理します。授業担当の方は夏期講習会の振り返りのみです。',
-    hint: '夏の結果報告をまとめましょう。下の入力欄に「始めたい」と送ってください（集計表の貼り付け・PDFの添付もできます）。',
+    id: 'monthly',
+    label: '月次報告',
+    title: '会議AI（月次報告）',
+    desc: '1か月の結果を、数値（実績／昨年同月／目標）・行動計画の実施状況・成功事例に整理します。数値は先に「数値報告」（月次）で登録してください。',
+    hint: '月次報告をまとめましょう。下の入力欄に「始めたい」と送ってください（集計表の貼り付け・PDFの添付もできます）。',
+  },
+  {
+    id: 'season',
+    label: '講習の結果報告',
+    title: '会議AI（講習の結果報告）',
+    desc: '春期・夏期・冬期の講習会の結果を、数値（今年／昨年／目標）・振り返り・成功事例に整理します。授業担当の方は講習会の振り返りのみです。',
+    hint: '講習の結果報告をまとめましょう。下の入力欄に「始めたい」と送ってください（集計表の貼り付け・PDFの添付もできます）。',
   },
 ];
 
@@ -89,7 +96,7 @@ const STORE_PREFIX = 'chishokan_chat_v1';
 
 // 会話はモードごとに分けて保存する（既存の事前報告の履歴はキーを変えない）。
 function keyFor(campus: string, name: string, mode: Mode): string {
-  return `${STORE_PREFIX}:${campus}/${name}${mode === 'summer' ? ':summer' : ''}`;
+  return `${STORE_PREFIX}:${campus}/${name}${mode === 'meeting' ? '' : `:${mode}`}`;
 }
 
 function loadMessages(key: string): Msg[] {
@@ -153,7 +160,8 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
   useEffect(() => {
     let m: Mode = 'meeting';
     try {
-      if (localStorage.getItem(modeKey) === 'summer') m = 'summer';
+      const v = localStorage.getItem(modeKey);
+      if (v === 'monthly' || v === 'season') m = v;
     } catch {}
     const saved = loadMessages(keyFor(campus, name, m));
     setMode(m);

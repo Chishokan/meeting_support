@@ -358,7 +358,7 @@ export default function DashboardUI({
   const successPanel = (
     <div className="dash-panel full">
       <h2>
-        この夏の成功事例（全部門）
+        成功事例（全部門）
         <button
           type="button"
           className="panel-more as-button"
@@ -373,7 +373,7 @@ export default function DashboardUI({
           <p className="dash-empty">
             {loading
               ? '読み込み中…'
-              : 'まだ成功事例はありません。会議AIの「夏の結果報告」でまとめ、'}
+              : 'まだ成功事例はありません。会議AIの「月次報告」「講習の結果報告」でまとめ、'}
             {!loading && <><Link href="/report">報告</Link>から転記すると、ここに集まります。</>}
           </p>
         ) : (

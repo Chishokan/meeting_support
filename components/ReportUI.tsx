@@ -47,7 +47,7 @@ export default function ReportUI({ name, campus }: { name: string; campus: strin
       <div className="page-head">
         <h1>報告</h1>
         <p>
-          {campus}／{name} さん。「会議AI」が出力した<b>「貼り付け用：…（ここから）〜（ここまで）」</b>ブロック（事前報告／夏期結果報告）をここに貼り付け、
+          {campus}／{name} さん。「会議AI」が出力した<b>「貼り付け用：…（ここから）〜（ここまで）」</b>ブロック（事前報告／月次報告／講習結果報告）をここに貼り付け、
           「報告する」を押すと会議ドキュメントに新しいセクションとして転記されます。
         </p>
       </div>
@@ -56,7 +56,7 @@ export default function ReportUI({ name, campus }: { name: string; campus: strin
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="ここに『貼り付け用：事前報告』『貼り付け用：夏期結果報告』などのブロックをそのまま貼り付けてください"
+          placeholder="ここに『貼り付け用：事前報告』『貼り付け用：月次報告』『貼り付け用：講習結果報告』などのブロックをそのまま貼り付けてください"
         />
         <div className="report-actions">
           <button onClick={submit} disabled={busy || !text.trim()}>
@@ -69,7 +69,7 @@ export default function ReportUI({ name, campus }: { name: string; campus: strin
         </div>
         <p className="report-hint">
           ※ 転記先の見出しには「{campus}／{name}／日時」が自動で付きます。個人情報の扱いは会議AIの方針（生徒氏名はイニシャル）に従ってください。<br />
-          ※ 夏期結果報告の「成功事例（全体共有）」は、転記と同時に全社の成功事例としてダッシュボードに集約されます。
+          ※ 月次報告・講習結果報告の「成功事例（全体共有）」は、転記と同時に全社の成功事例としてダッシュボードに集約されます。
         </p>
       </div>
     </div>
