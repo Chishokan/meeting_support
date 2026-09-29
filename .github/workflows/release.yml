@@ -1,0 +1,128 @@
+name: リリースタグを付ける
+
+# docs/release.md の手順4（main の最新コミットにタグを付ける）を、この画面から行う。
+#
+# 使い方：GitHub の Actions → 「リリースタグを付ける」→ Run workflow
+#   Use workflow from : main（本番に出したあとのブランチ）
+#   お試し実行        : 最初はチェックを入れて、何も作らずに確認するのがおすすめ
+#
+# バージョンは package.json の version から取る。
+# 画面の左メニュー下に出るバージョンと必ず同じタグになる（打ち間違いが起きない）。
+# リリースノートは CHANGELOG.md の同じバージョンの節をそのまま使う。
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'お試し実行（タグもリリースも作らず、内容の確認だけ）'
+        type: boolean
+        default: false
+      version:
+        description: 'バージョンを手で指定する場合のみ入力（例：v0.2.1／通常は空のまま）'
+        type: string
+        required: false
+
+# タグとリリースを作るために書き込みが要る。
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # CHANGELOG の履歴と既存タグを見るため、全履歴を取る。
+          fetch-depth: 0
+
+      - name: バージョンを決める
+        id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            # package.json の version（画面に出るバージョン）に合わせる
+            VERSION="v$(node -p "require('./package.json').version")"
+          fi
+
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::バージョンは v0.0.0 の形式にしてください（今の値：$VERSION）"
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "::error::タグ $VERSION はすでにあります。package.json の version を上げてから実行してください。"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "・バージョン：$VERSION"
+          echo "・対象コミット：$GITHUB_SHA"
+
+      - name: リリースノートを用意する
+        id: notes
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          # CHANGELOG.md の「## [0.2.0] - 2026-09-26」から次の「## [」の手前までを取り出す。
+          NUM="${VERSION#v}"
+          awk -v n="$NUM" '
+            $0 ~ "^## \\[" n "\\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > /tmp/notes.md || true
+
+          if [ -s /tmp/notes.md ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "CHANGELOG.md から $NUM の節を読みました："
+            cat /tmp/notes.md
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::CHANGELOG.md に [$NUM] の節が見つかりません。コミット履歴から自動生成します。"
+          fi
+
+      - name: お試し実行（ここで終了）
+        if: ${{ inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          FOUND: ${{ steps.notes.outputs.found }}
+        run: |
+          {
+            echo "## お試し実行：何も作っていません"
+            echo ""
+            echo "| 項目 | 内容 |"
+            echo "|---|---|"
+            echo "| 付けるタグ | \`$VERSION\` |"
+            echo "| 対象コミット | \`$GITHUB_SHA\` |"
+            echo "| リリースノート | $([ "$FOUND" = true ] && echo 'CHANGELOG.md から取得' || echo 'コミット履歴から自動生成') |"
+            echo ""
+            echo "問題なければ「お試し実行」のチェックを外して、もう一度実行してください。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: タグとリリースを作る
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+          FOUND: ${{ steps.notes.outputs.found }}
+        run: |
+          set -euo pipefail
+          # gh release create はタグも一緒に作る。--target で実行時のコミットに固定する
+          #（main が動いても、確認したコミットにタグが付く）。
+          if [ "$FOUND" = true ]; then
+            gh release create "$VERSION" --target "$GITHUB_SHA" --title "$VERSION" --notes-file /tmp/notes.md
+          else
+            gh release create "$VERSION" --target "$GITHUB_SHA" --title "$VERSION" --generate-notes
+          fi
+
+          URL="$(gh release view "$VERSION" --json url --jq .url)"
+          {
+            echo "## リリース $VERSION を公開しました"
+            echo ""
+            echo "- 対象コミット：\`$GITHUB_SHA\`"
+            echo "- [$VERSION のページを開く]($URL)"
+          } >> "$GITHUB_STEP_SUMMARY"
