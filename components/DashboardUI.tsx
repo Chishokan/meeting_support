@@ -373,8 +373,8 @@ export default function DashboardUI({
           <p className="dash-empty">
             {loading
               ? '読み込み中…'
-              : 'まだ成功事例はありません。会議AIの「月次報告」「講習の結果報告」でまとめ、'}
-            {!loading && <><Link href="/report">報告</Link>から転記すると、ここに集まります。</>}
+              : 'まだ成功事例はありません。会議AIの「月次報告」「講習の結果報告」でまとめ、「報告完了」と送ると'}
+            {!loading && 'ここに集まります。'}
           </p>
         ) : (
           <ul className="case-list">
