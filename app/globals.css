@@ -169,8 +169,11 @@ button.primary:disabled { opacity: .5; cursor: default; }
   background: #fffbe9; border: 1px solid #f0e2ad; border-radius: 8px; color: #7a5c00;
 }
 .progress-transfer.done { background: #eaf6ef; border-color: #cfe8db; color: #2e6b4f; }
+/* 会議AI（月次・講習の報告完了）：入力欄の上に添付ボタンの段があるぶん上げる */
+.progress-transfer.in-chat { bottom: 238px; }
 @media (max-width: 720px) {
   .progress-transfer { left: 0; bottom: 178px; }
+  .progress-transfer.in-chat { bottom: 186px; }
 }
 
 /* 中間報告: 定例項目の編集（管理部門） */
