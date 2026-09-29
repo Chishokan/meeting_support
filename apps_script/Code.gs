@@ -14,10 +14,12 @@
  *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントの【中間報告タブ】に追記＋「中間報告状況」シートに記録
  *   - action:'listProgress' … ダッシュボード用の直近報告者  → 「中間報告状況」シートを新しい順に返す
  *   - action:'getProgressItems'/'saveProgressItems' … 中間報告の定例項目の取得・保存 → 「中間報告項目」シート（1行1項目）
- *   - action:'saveNumbers'  … 「数値報告」メニューの入力       → 「夏期数値」シートに1行で記録（校舎ごと・送り直すと追記）
- *   - action:'listNumbers'  … 会議AI・数値報告画面での参照     → 「夏期数値」シートを新しい順に返す
+ *   - action:'saveNumberReport'  … 「数値報告」メニューの入力 → 月次は「月次数値」、講習期（春期・夏期・冬期）は「講習数値」シートに1行で記録
+ *                                   （対象期間×校舎ごと・送り直すと追記。会議AI側は最新の1件を使う）
+ *   - action:'listNumberReports' … 会議AI・数値報告画面での参照 → 指定シート（月次数値／講習数値）を新しい順に返す
+ *     ※ 旧「夏期数値」シート（2026年夏まで）はそのまま残してある。読み書きはしない。
  *   - action:'saveReview'   … 「全体会議振り返り」の入力      → 「全体会議振り返り」シートに1行で記録
- *   - action:'saveSuccess'  … 夏期結果報告の成功事例        → 「成功事例」シートに1件1行で記録（「報告」転記時に自動）
+ *   - action:'saveSuccess'  … 月次・講習結果報告の成功事例       → 「成功事例」シートに1件1行で記録（「報告」転記時に自動）
  *   - action:'listSuccess'  … ダッシュボード用の成功事例一覧  → 「成功事例」シートを新しい順に返す
  *   - action:'listInquiryBoard' … 問い合わせQA用の小中等部問合せ管理 → 「問合せ台帳」（下記）を優先し、無ければ旧スプレッドシート（INQUIRY_BOARD_ID）を校舎シートごとに読む。いずれも個人情報を落として返す
  *   - action:'listInquiryRecords' / 'saveInquiryRecord' / 'deleteInquiryRecord'
@@ -159,12 +161,12 @@ function doPost(e) {
       return json_(updateInquiry_(data));
     }
 
-    if (action === 'saveNumbers') {
-      return json_(saveNumbers_(data));
+    if (action === 'saveNumberReport') {
+      return json_(saveNumberReport_(data));
     }
 
-    if (action === 'listNumbers') {
-      return json_(listNumbers_(data));
+    if (action === 'listNumberReports') {
+      return json_(listNumberReports_(data));
     }
 
     if (action === 'saveReview') {
@@ -456,15 +458,22 @@ function listProgress_(data) {
   return { ok: true, items: items };
 }
 
-// 「数値報告」メニューの入力を「夏期数値」シートへ1行で記録する。
-// 見出し（headers）と値（row）は Next 側（lib/summerNumbers.ts）が組み立てて送る。
+// 数値報告の保存先。Next 側（lib/numberReports.ts の NUMBER_FORMS）の sheet と揃える。
+// 任意のシートへ書き込まれないよう、ここに無い名前は受け付けない。
+var NUMBER_SHEETS = ['月次数値', '講習数値'];
+
+// 「数値報告」メニューの入力を指定シートへ1行で記録する。
+// 見出し（headers）と値（row＝日時・対象・部門・校舎・入力者・各項目）は Next 側が組み立てて送る。
 // 既存シートの見出しが古い場合は、不足分の見出しだけを補う。
-function saveNumbers_(data) {
+// 「100%」「2026年9月分」などが数値・日付に化けないよう、行は書式なしテキストで書き込む。
+function saveNumberReport_(data) {
+  var name = String(data.sheet || '');
+  if (NUMBER_SHEETS.indexOf(name) < 0) return { ok: false, reason: 'bad_sheet' };
   var headers = data.headers || [];
   var row = data.row || [];
-  if (!headers.length) return { ok: false, reason: 'no_headers' };
+  if (!headers.length || !row.length) return { ok: false, reason: 'no_headers' };
   var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName('夏期数値') || ss.insertSheet('夏期数値');
+  var sh = ss.getSheetByName(name) || ss.insertSheet(name);
   if (sh.getLastRow() === 0) {
     sh.appendRow(headers);
   } else {
@@ -473,15 +482,21 @@ function saveNumbers_(data) {
       if (!cur[c]) sh.getRange(1, c + 1).setValue(headers[c]);
     }
   }
-  sh.appendRow([data.ts || nowIso_(), data.dept || '', data.campus || '', data.user || ''].concat(row));
-  return { ok: true };
+  var values = row.map(function (v) { return String(v == null ? '' : v); });
+  values[0] = values[0] ? nowJp_(values[0]) : nowJp_();
+  var range = sh.getRange(sh.getLastRow() + 1, 1, 1, values.length);
+  range.setNumberFormat('@');
+  range.setValues([values]);
+  return { ok: true, sheet: name };
 }
 
-// 「夏期数値」シートを新しい順（最大200件）に、見出しをキーにした連想配列で返す。
-function listNumbers_(data) {
+// 指定シートを新しい順（最大300件）に、見出しをキーにした連想配列で返す。
+function listNumberReports_(data) {
+  var name = String(data.sheet || '');
+  if (NUMBER_SHEETS.indexOf(name) < 0) return { ok: false, reason: 'bad_sheet' };
   var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName('夏期数値');
-  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  var sh = ss.getSheetByName(name);
+  if (!sh || sh.getLastRow() < 2) return { ok: true, sheet: name, items: [] };
   var values = sh.getDataRange().getValues();
   var headers = values[0];
   var items = [];
@@ -490,18 +505,18 @@ function listNumbers_(data) {
     for (var c = 0; c < headers.length; c++) {
       var key = String(headers[c]);
       if (!key) continue;
-      obj[key] = c === 0 ? cellStr_(values[i][c]) : String(values[i][c] == null ? '' : values[i][c]);
+      obj[key] = cellStr_(values[i][c]);
     }
     items.push(obj);
   }
   items.reverse();
-  if (items.length > 200) items = items.slice(0, 200);
-  return { ok: true, items: items };
+  if (items.length > 300) items = items.slice(0, 300);
+  return { ok: true, sheet: name, items: items };
 }
 
 var SUCCESS_HEADERS = ['日時', '事業部', '担当', '件名', '取り組み', '結果', '他でも使えるポイント'];
 
-// 夏期結果報告の成功事例を「成功事例」シートへ1件1行で記録する。
+// 月次報告・講習結果報告の成功事例を「成功事例」シートへ1件1行で記録する。
 // data.cases = [{ title, action, result, point }, ...]（Next 側で報告文から抽出済み）。
 function saveSuccess_(data) {
   var cases = data.cases;
