@@ -18,6 +18,9 @@
  * ・同じ月を何度送っても二重にならない（その月の「シート取込」の記録を入れ替える）
  * ・アプリで入力した記録には触らない
  * ・学校名はアプリの学校マスタと突き合わせる（頭の数字「7祇園中」の 7 は無視）。マスタに無い学校は取り込まれず、ログに出る
+ * ・地区ごとのブロック（日の列〜不実施理由の列）ごとに読む。月の区切り（「９月」など全角も可）の行がブロックでずれていても合わせる
+ * ・「50\n30」のように改行で2つの数があるときは足す（80）。先の日の実施済は空（未報告）にする
+ * ・担当の欄に書かれた時間は「時間」へ、行事や配布物などのメモは「メモ」へ移し、担当には名前だけを残す
  */
 
 var IMPORT_URL = 'https://meeting-support-dev.vercel.app/api/monpai/import'; // 本番に入れるときは https://meeting-support.vercel.app/api/monpai/import
@@ -47,9 +50,9 @@ function previewMonpaiImport() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var out = ss.getSheetByName(PREVIEW_SHEET) || ss.insertSheet(PREVIEW_SHEET);
   out.clear();
-  var head = ['日付', '時間', '学校', '担当1', '担当2', '計画部数', '実施部数', '理由'];
+  var head = ['日付', '時間', '学校', '担当1', '担当2', '計画部数', '実施部数', '理由', 'メモ'];
   var values = [head].concat(rows.map(function (r) {
-    return [r.date, r.time, r.school, r.staff1, r.staff2, r.planned, r.done === null ? '' : r.done, r.reason];
+    return [r.date, r.time, r.school, r.staff1, r.staff2, r.planned, r.done === null ? '' : r.done, r.reason, r.memo];
   }));
   out.getRange(1, 1, values.length, head.length).setNumberFormat('@').setValues(values);
   out.setFrozenRows(1);
@@ -77,7 +80,7 @@ function runMonpaiImport() {
 
 function buildMonpaiImportSql() {
   var rows = parseMonpaiSheet_();
-  var q = function (v) { return "'" + String(v == null ? '' : v).replace(/'/g, "''") + "'"; };
+  var q = function (v) { return "'" + oneLine_(v).replace(/'/g, "''") + "'"; };
   var t = SQL_SCHEMA + '.monpai_records';
   var lines = [
     '-- 門配の取り込み（' + FROM_MONTH + '〜' + TO_MONTH + '、MP広告計画タブ）。入れる先：' + SQL_SCHEMA,
@@ -91,8 +94,8 @@ function buildMonpaiImportSql() {
     if (!district) { skipped[school] = (skipped[school] || 0) + 1; return; }
     var done = r.done === null ? 'null' : String(r.done);
     var status = r.done === null ? '予定' : '実施';
-    lines.push('insert into ' + t + ' (date, time, district, school, staff1, staff2, planned, done, status, reason, created_by, updated_by) values ('
-      + [q(r.date), q(r.time), q(district), q(school), q(r.staff1), q(r.staff2), String(r.planned), done, q(status), q(r.reason), q('シート取込'), q('シート取込')].join(', ') + ');');
+    lines.push('insert into ' + t + ' (date, time, district, school, staff1, staff2, planned, done, status, reason, memo, created_by, updated_by) values ('
+      + [q(r.date), q(r.time), q(district), q(school), q(r.staff1), q(r.staff2), String(r.planned), done, q(status), q(r.reason), q(r.memo), q('シート取込'), q('シート取込')].join(', ') + ');');
     count++;
   });
   lines.push("select to_char(date, 'YYYY-MM') as 月, count(*) as 件数 from " + t + " where created_by = 'シート取込' group by 1 order by 1;");
@@ -120,41 +123,61 @@ function parseMonpaiSheet_() {
   var blocks = findBlocks_(values, width);
   if (!blocks.length) throw new Error('「計画」「実施済」の見出しが見つかりません（HEADER_ROWS を確認）');
 
-  var months = findMonthRows_(values);           // [{ row, ym }]
+  var monthsByBlock = findMonthRows_(values, blocks);   // dayCol → [{ row, ym }]
+  var now = new Date();
+  var today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
   var out = [];
-  for (var mi = 0; mi < months.length; mi++) {
-    var ym = months[mi].ym;
-    if (ym < FROM_MONTH || ym > TO_MONTH) continue;
-    var start = months[mi].row + 1;
-    var end = mi + 1 < months.length ? months[mi + 1].row : values.length;
-    for (var r = start; r < end; r++) {
-      var row = values[r];
-      blocks.forEach(function (b) {
+  blocks.forEach(function (b) {
+    var months = monthsByBlock[b.dayCol];
+    for (var mi = 0; mi < months.length; mi++) {
+      var ym = months[mi].ym;
+      if (ym < FROM_MONTH || ym > TO_MONTH) continue;
+      var end = mi + 1 < months.length ? months[mi + 1].row : values.length;
+      for (var r = months[mi].row; r < end; r++) {
+        var row = values[r];
         var day = parseInt(String(row[b.dayCol]).trim(), 10);
-        if (!(day >= 1 && day <= 31)) return;
+        if (!(day >= 1 && day <= 31) || !/^\s*\d{1,2}\s*$/.test(String(row[b.dayCol]))) continue;
         var planned = num_(row[b.planCol]);
         var done = b.doneCol >= 0 ? num_(row[b.doneCol]) : null;
-        if (!(planned > 0) && !(done > 0)) return;  // 計画も実績も無い日は取り込まない
+        if (!(planned > 0) && !(done > 0)) continue;  // 計画も実績も無い日は取り込まない
+        var date = ym + '-' + ('0' + day).slice(-2);
+        if (date > today) {                            // 先の日：実施済の数は計画の書き間違い、「0」はまだ報告が無いだけ
+          if (!(planned > 0) && done > 0) planned = done;
+          done = null;
+        }
         var who = pickLine_(row[b.timeCol], row[b.staff1Col], row[b.staff2Col], b.school);
+        // 担当の欄に時間や行事のメモが書かれていたら、名前だけを担当に残し、時間は時間へ、残りはメモへ
+        var memo = [];
+        var staff = function (v) {
+          var sp = splitStaff_(v, b.school);
+          if (sp.time && !who.time) who.time = sp.time;
+          if (sp.memo) memo.push('担当欄：' + sp.memo);
+          return sp.staff;
+        };
+        var staff1 = staff(who.staff1), staff2 = staff(who.staff2);
+        var short = done !== null && planned > 0 && done < planned;
         out.push({
-          date: ym + '-' + ('0' + day).slice(-2),
-          time: who.time,
+          date: date,
+          time: oneLine_(who.time),
           school: b.school,
-          staff1: who.staff1,
-          staff2: who.staff2,
+          staff1: staff1,
+          staff2: staff2,
           planned: planned > 0 ? planned : 0,
           done: done,
-          reason: b.reasonCol >= 0 && done !== null && planned > 0 && done < planned ? String(row[b.reasonCol]).trim().slice(0, 200) : '',
+          reason: short && b.reasonCol >= 0 ? reasonFor_(row[b.reasonCol], b.school).slice(0, 200) : '',
+          memo: memo.join(' ').slice(0, 200),
         });
-      });
+      }
     }
-  }
+  });
+  out.sort(function (x, y) { return x.date < y.date ? -1 : x.date > y.date ? 1 : 0; });
   return out;
 }
 
 // 見出し（上から HEADER_ROWS 行）から、学校ごとの列の位置を求める。
-// 「計画」の列ごとに1校。学校名は「計画」の上にある、数字や説明ではない最初の文字。
-// 日・時間・担当・不実施理由は、その学校より左にある一番近い見出しの列。
+// シートは地区ごとの「ブロック」が左から並ぶ（日・曜・時間・担当 … 学校ごとに「計画」「実施済」… 不実施理由）。
+// ブロックは「日」の列から、次の「日」の列の手前まで。時間・担当・不実施理由は同じブロックの中の列だけを使う。
+// 「計画」の列ごとに1校。学校名は「計画」の上にある、数字や説明ではない最初の文字の1行目（「1大野中\n智 R３」→ 大野中）。
 function findBlocks_(values, width) {
   var label = function (r, c) { return String(values[r][c] || '').replace(/[\s　]/g, ''); };
   var colsOf = function (names) {
@@ -162,16 +185,9 @@ function findBlocks_(values, width) {
     for (var c = 0; c < width; c++) for (var r = 0; r < HEADER_ROWS; r++) if (names.indexOf(label(r, c)) !== -1) { cols.push(c); break; }
     return cols;
   };
-  var leftNearest = function (cols, c, limit) {
-    var best = -1;
-    cols.forEach(function (x) { if (x < c && c - x <= (limit || 40) && x > best) best = x; });
-    return best;
-  };
   var dayCols = colsOf(['日']);
-  var timeCols = colsOf(['時間']);
-  var staff1Cols = colsOf(['担当1', '担当']);
-  var staff2Cols = colsOf(['担当2']);
-  var reasonCols = colsOf(['不実施理由']);
+  var inBlock = function (cols, from, to) { return cols.filter(function (x) { return x >= from && x < to; }); };
+  var timeCols = colsOf(['時間']), staff1Cols = colsOf(['担当1', '担当']), staff2Cols = colsOf(['担当2']), reasonCols = colsOf(['不実施理由']);
 
   var blocks = [];
   for (var c = 0; c < width; c++) {
@@ -179,51 +195,88 @@ function findBlocks_(values, width) {
       if (label(r, c) !== '計画') continue;
       var school = '';
       for (var up = r - 1; up >= 0 && !school; up--) {
-        var t = String(values[up][c] || '').trim();
-        if (!t || /^[\d,.\s]+$/.test(t) || /生徒数|ボトム|High|計画|実施|担当|時間|広告|POS/.test(t)) continue;
-        school = t.replace(/^[\s　\d０-９]+/, '');
+        var first = String(values[up][c] || '').split(/\r?\n/)[0].trim();
+        if (!first || /^[\d,.\s]+$/.test(first) || /生徒数|ボトム|High|計画|実施|担当|時間|広告|POS/.test(first)) continue;
+        school = first.replace(/^[\s　\d０-９]+/, '').replace(/[\s　]/g, '');
       }
-      var dayCol = leftNearest(dayCols, c);
-      if (!school || dayCol < 0) continue;  // 合計列などは学校名が無いので飛ばす
-      var staff2 = leftNearest(staff2Cols, c);
-      blocks.push({
-        school: school,
-        planCol: c,
-        doneCol: label(r, c + 1) === '実施済' ? c + 1 : -1,
-        dayCol: dayCol,
-        timeCol: leftNearest(timeCols, c),
-        staff1Col: leftNearest(staff1Cols, c),
-        staff2Col: staff2 > dayCol ? staff2 : -1,
-        reasonCol: leftNearest(reasonCols, dayCol + 1, 5), // 不実施理由は日付の列のすぐ左（2列ほど）にある
-      });
+      var dayCol = -1, next = width;
+      dayCols.forEach(function (d) { if (d < c && d > dayCol) dayCol = d; });
+      dayCols.forEach(function (d) { if (d > c && d < next) next = d; });
+      if (school && dayCol >= 0) {   // 合計列などは学校名が無いので飛ばす
+        var last = function (cols) { var x = inBlock(cols, dayCol, c); return x.length ? x[x.length - 1] : -1; };
+        var reason = inBlock(reasonCols, c, next);
+        blocks.push({
+          school: school,
+          planCol: c,
+          doneCol: label(r, c + 1) === '実施済' ? c + 1 : -1,
+          dayCol: dayCol,
+          nextDayCol: next,
+          timeCol: last(timeCols),
+          staff1Col: last(staff1Cols),
+          staff2Col: last(staff2Cols),
+          reasonCol: reason.length ? reason[0] : -1,  // 不実施理由はブロックの右端
+        });
+      }
+      break; // 1つの列に「計画」が2回あっても1校として数える（二重取り込みを防ぐ）
     }
   }
-  return blocks;
+  // ブロックの中に、ほかの地区の学校（表の作りかけで残った列など）があれば外す
+  var skipped = [];
+  var byDay = {};
+  blocks.forEach(function (b) { (byDay[b.dayCol] = byDay[b.dayCol] || []).push(b); });
+  var kept = blocks.filter(function (b) {
+    var count = {};
+    byDay[b.dayCol].forEach(function (x) { var d = SCHOOL_DISTRICT[x.school]; if (d) count[d] = (count[d] || 0) + 1; });
+    var main = Object.keys(count).sort(function (x, y) { return count[y] - count[x]; })[0];
+    var mine = SCHOOL_DISTRICT[b.school];
+    if (mine && main && mine !== main) { skipped.push(b.school + '（' + main + 'の表の中）'); return false; }
+    return true;
+  });
+  if (skipped.length) Logger.log('ほかの地区の表の中にあるので取り込まない列：' + skipped.join('、'));
+  return kept;
 }
 
-// 「9月」のような月の区切りの行を探し、年を補う（FROM_MONTH の年から始め、1月に戻ったら翌年）。
-// 取り込む範囲より前の行（2025年度以前）は FROM_MONTH の月が最後に現れた位置から数える。
-function findMonthRows_(values) {
-  var marks = [];
+// 「９月」「10月」のような月の区切りを探す（全角の数字も読む）。
+// 区切りの行はブロックごとに1行ずれることがあるので、ブロックごとに探す。
+// ブロックに区切りが無い月は、ほかのブロックの区切りの行を使う。
+// 年度の始まり（FROM_MONTH の月が最後に現れた行）より上は前の年度なので見ない。
+function monthMark_(v) {
+  var t = String(v || '').replace(/[０-９]/g, function (d) { return String.fromCharCode(d.charCodeAt(0) - 0xFEE0); }).replace(/[\s　]/g, '');
+  var m = /^(\d{1,2})月$/.exec(t);
+  return m && +m[1] >= 1 && +m[1] <= 12 ? +m[1] : 0;
+}
+
+function findMonthRows_(values, blocks) {
+  var fromY = parseInt(FROM_MONTH.slice(0, 4), 10), fromM = parseInt(FROM_MONTH.slice(5), 10);
+  var marks = [];  // { row, col, month }
   for (var r = HEADER_ROWS; r < values.length; r++) {
     for (var c = 0; c < values[r].length; c++) {
-      var m = /^(\d{1,2})月$/.exec(String(values[r][c] || '').trim());
-      if (m) { marks.push({ row: r, month: parseInt(m[1], 10) }); break; }
+      var m = monthMark_(values[r][c]);
+      if (m) marks.push({ row: r, col: c, month: m });
     }
   }
-  var fromY = parseInt(FROM_MONTH.slice(0, 4), 10), fromM = parseInt(FROM_MONTH.slice(5), 10);
-  // 取り込み開始の月が最後に現れた位置（それより上は前の年度）
-  var startIdx = -1;
-  for (var i = marks.length - 1; i >= 0; i--) if (marks[i].month === fromM) { startIdx = i; break; }
-  if (startIdx < 0) throw new Error(fromM + '月の区切りの行が見つかりません');
-  var out = [];
-  var y = fromY, prev = fromM;
-  for (var j = startIdx; j < marks.length; j++) {
-    if (marks[j].month < prev) y++;
-    prev = marks[j].month;
-    out.push({ row: marks[j].row, ym: y + '-' + ('0' + marks[j].month).slice(-2) });
-  }
-  return out;
+  var startRow = -1;
+  marks.forEach(function (k) { if (k.month === fromM) startRow = Math.max(startRow, k.row); });
+  if (startRow < 0) throw new Error(fromM + '月の区切りの行が見つかりません');
+  marks = marks.filter(function (k) { return k.row >= startRow; });
+  var ymOf = function (m) { return (m >= fromM ? fromY : fromY + 1) + '-' + ('0' + m).slice(-2); };
+
+  // 各月の区切りの行（ブロックで見つからないときに使う）：いちばん上の行
+  var common = {};
+  marks.forEach(function (k) { if (!(k.month in common) || k.row < common[k.month]) common[k.month] = k.row; });
+
+  var byBlock = {};  // dayCol → [{ row, ym }]
+  blocks.forEach(function (b) {
+    if (byBlock[b.dayCol]) return;
+    var own = {};
+    marks.forEach(function (k) {
+      if (k.col >= b.dayCol - 2 && k.col < b.nextDayCol - 2 && !(k.month in own)) own[k.month] = k.row;
+    });
+    var list = Object.keys(common).map(function (m) { return { row: m in own ? own[m] : common[m], ym: ymOf(+m) }; });
+    list.sort(function (x, y) { return x.row - y.row; });
+    byBlock[b.dayCol] = list;
+  });
+  return byBlock;
 }
 
 // 時間・担当のセルは「大野小15:00-\n大野中16:00-17:」のように複数校が改行で並ぶことがある。
@@ -241,10 +294,72 @@ function pickLine_(timeCell, staff1Cell, staff2Cell, school) {
   return { time: m ? m[1].replace(/：/g, ':').trim() : '', staff1: pick(s1), staff2: pick(s2) };
 }
 
+// 不実施理由のセルは、隣の学校の理由がまとめて書かれていることがある。
+// 行ごとに見て、この学校の名前がある行を使う。ほかの学校の名前だけが書かれた行は使わない。
+function reasonFor_(cell, school) {
+  var stem = function (n) { return n.replace(/[中小]$/, ''); };               // 大野中 → 大野
+  var stems = Object.keys(SCHOOL_DISTRICT).map(stem);
+  var lines = String(cell || '').split(/\r?\n/).map(function (s) { return s.trim(); }).filter(String);
+  var mine = [], neutral = [];
+  lines.forEach(function (l) {
+    var flat = l.replace(/[\s　]/g, '');
+    if (flat.indexOf(school) !== -1) mine.push(l);
+    else if (!stems.some(function (n) { return flat.indexOf(n) !== -1; })) neutral.push(l); // 学校名の無い行
+  });
+  return oneLine_((mine.length ? mine : neutral).join(' '));
+}
+
+// 「50\n30」のように改行で複数の数が入っているときは足す（5030 にしない）
 function num_(v) {
-  var s = String(v == null ? '' : v).replace(/[,\s]/g, '');
-  if (s === '' || !/^\d+$/.test(s)) return null;
-  return parseInt(s, 10);
+  var parts = String(v == null ? '' : v).split(/\r?\n/).map(function (s) { return s.replace(/[,\s　]/g, ''); }).filter(String);
+  if (!parts.length) return null;
+  var sum = 0;
+  for (var i = 0; i < parts.length; i++) {
+    if (!/^\d+$/.test(parts[i])) return null;
+    sum += parseInt(parts[i], 10);
+  }
+  return sum;
+}
+
+// 改行・タブを空白1つにする（SQL の1行が途中で切れないように）
+function oneLine_(v) {
+  return String(v == null ? '' : v).replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+}
+
+// 担当の欄には名前のほかに、時間・行事・配布物のメモが書かれていることがある。
+// 「越智、松田17:30-18:30」→ 担当 越智、松田／時間 17:30-18:30
+// 「広18:00～(松)」→ 担当 松／時間 18:00～
+// 「溝口 ボックスティッシュ100」→ 担当 溝口／メモ
+// 「始業式」「雨で不実施→4/16㈭変更」→ 担当なし／メモ
+// 名前だけ（そのまま）のとき以外は、元の文字をメモに残す。
+var NOTE_WORDS_ = /式|雨|変更|中止|不実施|休|作業|行事|テスト|先生|ティッシュ|リスケ|ため|タイミング|終了|開始|給食|面談|入面/;
+var NAME_ = /^[一-龥々ぁ-んァ-ヶー]{1,5}$/;
+function isNames_(s) {
+  var parts = s.split(/[、,，・\s　]+/).filter(String);
+  return parts.length > 0 && parts.every(function (p) { return NAME_.test(p) && !NOTE_WORDS_.test(p); });
+}
+function splitStaff_(v, school) {
+  var raw = oneLine_(v);
+  var res = { staff: '', time: '', memo: '' };
+  if (!raw) return res;
+  var t = raw.replace(/^[①-⑳]+/, '');
+  Object.keys(SCHOOL_DISTRICT).forEach(function (n) { if (t.indexOf(n) === 0) t = t.slice(n.length); });
+  t = t.trim();
+  if (isNames_(t)) { res.staff = t.replace(/[,，\s　]+/g, '、'); return res; }  // 名前だけ（頭の学校名・①は外す）
+  // 「：20～15：40」のように頭が欠けた時間は読まない（メモに残す）
+  var tm = /^[:：]/.test(t) ? null : /(\d{1,2}[:：]\d{2}\s*[~〜～\-－]?\s*(\d{1,2}[:：]\d{2})?)/.exec(t);
+  if (tm) { res.time = tm[1].replace(/：/g, ':').replace(/[〜～]/g, '~').trim(); t = t.replace(tm[1], ' '); }
+  var names = [];
+  t = t.replace(/[（(]([^）)]*)[）)]/g, function (_, n) { if (isNames_(n.trim())) names.push(n.trim()); return ' '; });
+  if (t.indexOf('→') !== -1) { var after = t.split('→').pop().trim(); if (isNames_(after)) names.push(after); t = ''; }
+  // 先頭の名前（空白や、で区切られたもの、またはカタカナの前まで）
+  var head = /^\s*([一-龥々ぁ-ん]{1,4}(?:[、,，・][一-龥々ぁ-ん]{1,4})*)(?=[\s　ァ-ヶ]|$)/.exec(t);
+  if (!names.length && head && !NOTE_WORDS_.test(head[1]) && head[1].length > 1) names.push(head[1]);
+  var uniq = [];
+  names.join('、').split(/[、,，・]/).forEach(function (n) { if (n && uniq.indexOf(n) === -1) uniq.push(n); });
+  res.staff = uniq.join('、');
+  res.memo = raw;
+  return res;
 }
 
 function monthsBetween_(from, to) {

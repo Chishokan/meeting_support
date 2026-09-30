@@ -1,7 +1,7 @@
 // 門配管理：スプレッドシート「RED広報関連」の過去の実績・計画の取り込み口。
 // apps_script/monpai_import.gs が1か月ずつ送ってくる。ログインの代わりに合言葉で守る。
 //   POST  ヘッダ x-import-token: MONPAI_IMPORT_TOKEN
-//         { month: 'YYYY-MM', records: [{ date, time, school, staff1, staff2, planned, done, reason }] }
+//         { month: 'YYYY-MM', records: [{ date, time, school, staff1, staff2, planned, done, reason, memo }] }
 //   → その月の「シート取込」の記録を入れ替える（何度送っても二重にならない）
 // 地区は学校マスタから決める。マスタに無い学校の行は取り込まず、学校名を返す（マスタに足してから送り直す）。
 import { validateRecord } from '@/lib/monpai/model';
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     const done = r.done === '' || r.done == null ? null : r.done;
     const v = validateRecord({
       ...r, school: school.name, district: school.district, done,
-      status: '予定', material: '', memo: '',
+      status: '予定', material: '', memo: String(r.memo ?? '').slice(0, 500),
       // 実績が計画に届かなかった理由が入っていれば残す（中止扱いにはしない）
       reason: String(r.reason ?? '').slice(0, 500),
     });
