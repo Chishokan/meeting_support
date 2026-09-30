@@ -424,13 +424,14 @@ button.primary:disabled { opacity: .5; cursor: default; }
 }
 .num-breakdown-btn:hover { background: #e3edf7; }
 .num-breakdown-btn small { font-size: 11px; font-weight: 400; color: #6b7c8f; white-space: nowrap; }
-.num-modal { width: min(560px, 100%); }
-.num-grade-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
-.num-grade-grid label { display: flex; flex-direction: column; gap: 3px; }
-.num-grade-grid span { font-size: 12px; font-weight: 700; color: #667; }
-.num-grade-grid input { padding: 8px 10px; font-size: 15px; border: 1px solid var(--line); border-radius: 7px; width: 100%; }
-.num-grade-total { margin: 16px 0 0; font-size: 14px; color: #2a2f36; text-align: right; }
-.num-grade-total b { font-size: 20px; color: var(--navy); font-variant-numeric: tabular-nums; }
+.dm-modal.num-modal { width: min(480px, 100%); }
+.num-grade-table { width: 100%; border-collapse: collapse; }
+.num-grade-table th, .num-grade-table td { padding: 5px 6px; text-align: left; }
+.num-grade-table thead th { font-size: 12px; font-weight: 700; color: #667; border-bottom: 1px solid var(--line); }
+.num-grade-table tbody th { font-size: 13px; font-weight: 700; color: #2a2f36; width: 56px; white-space: nowrap; }
+.num-grade-table input { width: 100%; padding: 7px 10px; font-size: 15px; border: 1px solid #cdd3da; border-radius: 7px; font-variant-numeric: tabular-nums; }
+.num-grade-table tfoot th, .num-grade-table tfoot td { border-top: 2px solid var(--line); padding-top: 10px; font-size: 13px; color: #2a2f36; }
+.num-grade-table tfoot b { font-size: 19px; color: var(--navy); font-variant-numeric: tabular-nums; }
 .num-actions { display: flex; align-items: center; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
 .num-actions button { padding: 10px 22px; font-size: 14px; font-weight: 700; color: #fff; background: var(--navy); border: none; border-radius: 8px; cursor: pointer; }
 .num-actions button:disabled { opacity: .5; cursor: default; }
