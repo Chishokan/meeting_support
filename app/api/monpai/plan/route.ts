@@ -3,7 +3,7 @@
 import { getSession } from '@/lib/core/auth';
 import { STAFF } from '@/lib/core/staff';
 import { DISTRICTS, shiftMonth } from '@/lib/monpai/model';
-import { draftPlan } from '@/lib/monpai/plan';
+import { draftPlan, HISTORY_MONTHS } from '@/lib/monpai/plan';
 import { getMaster, getMaterials, listRecords } from '@/lib/monpai/store';
 
 export const runtime = 'nodejs';
@@ -20,7 +20,8 @@ export async function POST(req: Request) {
 
   const [master, recs, mats] = await Promise.all([
     getMaster(),
-    listRecords([shiftMonth(month, -2), shiftMonth(month, -1), month]),
+    // 今月と、根拠にする前の HISTORY_MONTHS か月分
+    listRecords(Array.from({ length: HISTORY_MONTHS + 1 }, (_, i) => shiftMonth(month, i - HISTORY_MONTHS))),
     getMaterials(),
   ]);
   if (!master.ok) return Response.json({ ok: false, reason: master.reason });

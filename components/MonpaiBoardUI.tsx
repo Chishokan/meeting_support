@@ -26,7 +26,7 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [cellList, setCellList] = useState<{ date: string; school: string } | null>(null);
   const [materialNames, setMaterialNames] = useState<string[]>([]);
-  const [plan, setPlan] = useState<{ summary: string; items: (PlanItem & { pick: boolean })[]; dropped: number } | null>(null);
+  const [plan, setPlan] = useState<{ summary: string; items: (PlanItem & { pick: boolean })[]; dropped: number; basis?: { months: number; visits: number } } | null>(null);
   const [planBusy, setPlanBusy] = useState(false);
   const [planMsg, setPlanMsg] = useState('');
 
@@ -53,7 +53,7 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
     const r = await draftPlanApi(district, month);
     setPlanBusy(false);
     if (!r.ok) return setPlanMsg(reasonText(r.reason));
-    setPlan({ summary: r.summary, dropped: r.dropped, items: r.items.map((i) => ({ ...i, pick: true })) });
+    setPlan({ summary: r.summary, dropped: r.dropped, basis: r.basis, items: r.items.map((i) => ({ ...i, pick: true })) });
   }
 
   async function adoptPlan() {
@@ -280,6 +280,13 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
           <div className="mp-modal wide" role="dialog" aria-modal="true">
             <div className="mp-modal-head"><h2>AIの計画案</h2><span className="mp-modal-sub">{district}地区・{y}年{Number(m)}月</span></div>
             <div className="mp-form">
+              {plan.basis && (
+                <p className="mp-muted">
+                  {plan.basis.visits > 0
+                    ? `直近${plan.basis.months}か月の実績 ${plan.basis.visits} 回分（受け取り率・曜日・時間・担当）をもとに作成しました。`
+                    : 'この地区にはまだ実績が無いため、一般的な目安で作成しました。'}
+                </p>
+              )}
               {plan.summary && <p className="mp-plan-summary">{plan.summary}</p>}
               {plan.items.length === 0 && <p className="mp-muted">追加が必要な予定はありません（またはボトムを満たしています）。</p>}
               {plan.items.map((p, i) => (
