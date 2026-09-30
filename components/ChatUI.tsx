@@ -340,7 +340,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
 
   return (
     <>
-      <div className="page-head">
+      <div className="page-head chat-head">
         <h1>{view.title}</h1>
         <p>{view.desc}</p>
         <div className="mode-switch">
