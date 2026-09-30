@@ -468,3 +468,35 @@ export async function deleteSetting(month: string, school: string): Promise<Simp
   await writeLocal(d);
   return { ok: true };
 }
+
+// ---- スプレッドシートからの取り込み（apps_script/monpai_import.gs から呼ばれる） ----------
+
+export const IMPORT_USER = 'シート取込';
+
+/**
+ * 1か月分の記録を入れ替える：その月の「シート取込」で作った記録を消してから入れ直す。
+ * 何度取り込んでも二重にならない。アプリで作った記録（作成者が人の名前）には触らない。
+ */
+export async function replaceImportedMonth(month: string, inputs: RecordInput[]): Promise<{ ok: true; inserted: number } | Fail> {
+  const [from, to] = monthRange(month);
+  const db = supabaseAdmin();
+  if (db) {
+    const del = await db.from('monpai_records').delete().eq('created_by', IMPORT_USER).gte('date', from).lt('date', to);
+    if (del.error) return dbFail('import-delete', del.error);
+    for (let i = 0; i < inputs.length; i += 500) {
+      const rows = inputs.slice(i, i + 500).map((r) => ({ ...toDbRecord(r), created_by: IMPORT_USER, updated_by: IMPORT_USER }));
+      const ins = await db.from('monpai_records').insert(rows);
+      if (ins.error) return dbFail('import-insert', ins.error);
+    }
+    return { ok: true, inserted: inputs.length };
+  }
+  if (!useLocal()) return notSupported;
+  const d = await readLocal();
+  const ts = nowJp();
+  d.records = d.records.filter((r) => !(r.createdBy === IMPORT_USER && r.date >= from && r.date < to));
+  for (const r of inputs) {
+    d.records.push({ ...r, id: randomUUID(), createdAt: ts, createdBy: IMPORT_USER, updatedAt: ts, updatedBy: IMPORT_USER });
+  }
+  await writeLocal(d);
+  return { ok: true, inserted: inputs.length };
+}

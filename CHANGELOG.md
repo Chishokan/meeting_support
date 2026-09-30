@@ -18,6 +18,9 @@
   - 月別設定（募集期・率の上書き）を月と学校（または全校）ごとに設定
   - 編集は管理部門のみ（`MASTER_EDIT_DEPTS`）、他部門は閲覧のみ
   - dev で整えた内容を本番に写す SQL（`supabase/snippets/copy_monpai_master_dev_to_prod.sql`）
+- 門配管理：スプレッドシート「RED広報関連」（MP広告計画タブ）から実績と計画を取り込む仕組み
+  - `apps_script/monpai_import.gs`：シートを読み取り、日付・学校・時間・担当・計画・実績に整えて送る（確認用タブへの書き出しもできる）
+  - `/api/monpai/import`：合言葉（`MONPAI_IMPORT_TOKEN`）で守る取り込み口。1か月ずつ「シート取込」の記録を入れ替えるので、何度送っても二重にならない
 
 ## [0.5.0] - 未リリース（develop で確認中）
 
