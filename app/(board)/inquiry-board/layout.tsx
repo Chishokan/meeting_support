@@ -1,6 +1,5 @@
-import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { getSession } from '@/lib/core/auth';
+import { requireSession } from '@/lib/core/auth';
 import { canUseInquiryBoard } from '@/lib/inquiryBoardAccess';
 import BoardHeader from '@/components/BoardHeader';
 
@@ -14,17 +13,16 @@ export const metadata = {
 };
 
 export default function BoardLayout({ children }: { children: ReactNode }) {
-  const s = getSession();
-  if (!s) redirect('/login?next=/inquiry-board');
+  const s = requireSession('/inquiry-board');
 
-  if (!canUseInquiryBoard(s.campus)) {
+  if (!canUseInquiryBoard(s)) {
     return (
       <div className="board-shell">
         <BoardHeader name={s.name} campus={s.campus} />
         <main className="board-main">
           <div className="soon-block">
             <div className="soon-badge">閲覧できません</div>
-            <p>問合せ管理は小中等部と管理部門のみ利用できます。</p>
+            <p>問合せ管理は、小中等部・管理部門、または小中等部の校舎を担当する人のみ利用できます。</p>
             <p className="soon-hint">生徒・保護者の情報を含むため、部門を限定しています。</p>
           </div>
         </main>

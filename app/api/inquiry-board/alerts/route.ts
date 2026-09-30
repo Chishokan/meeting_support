@@ -21,7 +21,7 @@ export const maxDuration = 60;
 export async function GET(req: Request) {
   const session = getSession();
   if (!session) return Response.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
-  if (!canUseInquiryBoard(session.campus)) return Response.json({ ok: false, reason: 'forbidden' }, { status: 403 });
+  if (!canUseInquiryBoard(session)) return Response.json({ ok: false, reason: 'forbidden' }, { status: 403 });
 
   const url = new URL(req.url);
   const scope = (url.searchParams.get('campus') || ALL_SCOPE).trim() || ALL_SCOPE;

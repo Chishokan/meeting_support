@@ -1,26 +1,50 @@
 import { NextResponse } from 'next/server';
-import { SESSION_COOKIE, encodeSession } from '@/lib/core/auth';
-import { isValidStaff } from '@/lib/core/staff';
+import { SESSION_COOKIE, encodeSession, sessionConfigured, sessionCookieOptions } from '@/lib/core/auth';
+import { authenticate, normalizeEmail, usersConfigured, LOCK_MINUTES, MAX_FAILS } from '@/lib/core/users';
+
+// メールアドレスとパスワードでログインする（ColorHRM と同じ方式）。
+// アカウントは管理者が発行する（/admin/users）。最初の管理者は /setup で作る。
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
-  const { name, campus } = await req.json().catch(() => ({}));
-  if (!name || !campus) {
-    return NextResponse.json({ error: '事業部とお名前を選択してください。' }, { status: 400 });
+  if (!sessionConfigured() || !usersConfigured()) {
+    return NextResponse.json(
+      { error: 'ログインの設定が済んでいません（SESSION_SECRET・Supabase）。管理者に連絡してください。' },
+      { status: 503 },
+    );
+  }
+  const body = await req.json().catch(() => ({}));
+  const email = normalizeEmail(body.email);
+  const password = String(body.password ?? '');
+  if (!email || !password) {
+    return NextResponse.json({ error: 'メールアドレスとパスワードを入力してください。' }, { status: 400 });
   }
 
-  // ── テスト運用中：合言葉（ACCESS_CODE）認証は一時停止 ──
-  // 職員マスタに存在する組み合わせのみ開始できる。
-  // 本認証に戻す際は、この検証を合言葉チェックに差し替える。
-  if (!isValidStaff(String(campus), String(name))) {
-    return NextResponse.json({ error: '選択された担当者が見つかりません。' }, { status: 400 });
+  let r;
+  try {
+    r = await authenticate(email, password);
+  } catch {
+    return NextResponse.json({ error: 'データベースに接続できませんでした。時間をおいてやり直してください。' }, { status: 502 });
+  }
+  if (!r.ok) {
+    const msg = r.reason === 'locked'
+      ? `${MAX_FAILS}回続けて間違えたため、${LOCK_MINUTES}分間ログインできません。`
+      : r.reason === 'inactive'
+        ? 'このアカウントは利用停止中です。管理者に連絡してください。'
+        : 'メールアドレスかパスワードが違います。';
+    return NextResponse.json({ error: msg }, { status: 401 });
   }
 
-  const res = NextResponse.json({ ok: true });
-  res.cookies.set(SESSION_COOKIE, encodeSession({ name: String(name), campus: String(campus) }), {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 12,
-  });
+  const u = r.user;
+  const res = NextResponse.json({ ok: true, mustChange: u.mustChangePassword });
+  res.cookies.set(
+    SESSION_COOKIE,
+    encodeSession({
+      uid: u.id, email: u.email, name: u.name, campus: u.dept, role: u.role,
+      classrooms: u.classrooms, mustChange: u.mustChangePassword,
+    }),
+    sessionCookieOptions(),
+  );
   return res;
 }

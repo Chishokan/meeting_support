@@ -14,7 +14,8 @@ export default function PortalHeader({ name, campus }: { name: string; campus: s
         <span className="board-sub">メニュー</span>
       </div>
       <div className="board-who">
-        <span className="board-user">{campus}／{name} さん</span>
+        <span className="board-user">{campus ? `${campus}／` : ''}{name} さん</span>
+        <a className="board-link" href="/password">パスワード変更</a>
         <button className="board-logout" onClick={logout}>ログアウト</button>
       </div>
     </header>

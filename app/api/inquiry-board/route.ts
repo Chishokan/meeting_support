@@ -19,7 +19,7 @@ export const maxDuration = 30;
 function gate() {
   const session = getSession();
   if (!session) return { error: Response.json({ ok: false, reason: 'unauthorized' }, { status: 401 }) };
-  if (!canUseInquiryBoard(session.campus)) {
+  if (!canUseInquiryBoard(session)) {
     return { error: Response.json({ ok: false, reason: 'forbidden' }, { status: 403 }) };
   }
   return { session };

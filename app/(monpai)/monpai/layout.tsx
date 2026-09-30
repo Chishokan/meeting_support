@@ -1,9 +1,9 @@
-import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { getSession } from '@/lib/core/auth';
+import { requireSession } from '@/lib/core/auth';
+import { canUseMonpai } from '@/lib/portalApps';
 import AppHeader from '@/components/AppHeader';
 
-// 門配管理。全部門が利用できる。ログインは全アプリ共通。
+// 門配管理。講師以外の全部門が利用できる（lib/portalApps.ts の canUseMonpai）。ログインは全アプリ共通。
 
 export const metadata = {
   title: '智翔館 門配管理',
@@ -11,8 +11,7 @@ export const metadata = {
 };
 
 export default function MonpaiLayout({ children }: { children: ReactNode }) {
-  const s = getSession();
-  if (!s) redirect('/login?next=/monpai');
+  const s = requireSession('/monpai');
   return (
     <div className="board-shell">
       <AppHeader
@@ -26,7 +25,14 @@ export default function MonpaiLayout({ children }: { children: ReactNode }) {
           { href: '/monpai/schools', label: '学校' },
         ]}
       />
-      <main className="board-main">{children}</main>
+      <main className="board-main">
+        {canUseMonpai(s) ? children : (
+          <div className="soon-block">
+            <div className="soon-badge">利用できません</div>
+            <p>門配管理は社員（管理者・教室長・社員）のみ利用できます。</p>
+          </div>
+        )}
+      </main>
     </div>
   );
 }

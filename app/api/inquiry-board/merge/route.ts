@@ -16,7 +16,7 @@ export const maxDuration = 30;
 export async function POST(req: Request) {
   const session = getSession();
   if (!session) return Response.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
-  if (!canUseInquiryBoard(session.campus)) return Response.json({ ok: false, reason: 'forbidden' }, { status: 403 });
+  if (!canUseInquiryBoard(session)) return Response.json({ ok: false, reason: 'forbidden' }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const keepId = String(body?.keepId ?? '').trim();

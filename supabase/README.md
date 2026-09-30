@@ -6,6 +6,7 @@
 | アプリ | 状態 |
 |---|---|
 | 門配管理 | `migrations/0001_monpai.sql`（v0.6.0〜） |
+| ログインアカウント | `migrations/0002_app_users.sql`（v1.0.0〜）。Supabase が無いとログインできない |
 | 問合せ管理 | 未移行（Apps Script） |
 | 会議DX | 未移行（Apps Script） |
 

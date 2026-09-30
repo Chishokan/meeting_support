@@ -5,13 +5,25 @@
 
 ## ローカル起動
 1. npm install
-2. cp .env.example .env.local して ANTHROPIC_API_KEY と ACCESS_CODE を設定
+2. cp .env.example .env.local して ANTHROPIC_API_KEY・SESSION_SECRET・SUPABASE_*・SETUP_ADMIN_EMAIL を設定
 3. npm run dev → http://localhost:3000
 
 ## Vercel デプロイ
 1. このリポジトリを Vercel で Import
-2. 環境変数を設定: ANTHROPIC_API_KEY / ACCESS_CODE /（任意）AGENT_MODEL
+2. 環境変数を設定: ANTHROPIC_API_KEY / SESSION_SECRET / SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / SUPABASE_SCHEMA / APPS_SCRIPT_URL / APPS_SCRIPT_TOKEN /（任意）AGENT_MODEL・COLORHRM_PAYROLL_URL・COLORHRM_SHIFT_URL
 3. Deploy → 発行 URL を社内共有
+
+## ログインとアカウント
+ColorHRM と同じ「メールアドレス＋パスワード」。アカウントは管理者が発行する。
+1. Supabase の SQL Editor で `supabase/migrations/0002_app_users.sql` を実行（dev は chishokan_dev、本番は chishokan_prod）
+2. Apps Script（apps_script/Code.gs）を貼り直して再デプロイし、エディタで `authorizeAll()` を1回実行（メール送信の権限）。
+   `TOKEN` と Vercel の `APPS_SCRIPT_TOKEN` を必ず設定する（未設定だと URL を知る人が誰でもメールを送れてしまう）
+3. Vercel に `SESSION_SECRET`（32文字以上）と `SETUP_ADMIN_EMAIL` を設定して再デプロイ
+4. `/setup` を開き、最初の管理者を作る → 初期パスワードがメールで届く
+5. ログイン後、メニュー下の「アカウント管理」から職員のアカウントを発行する（本人に初期パスワードと変更用URLが届く）
+
+使えるメニューはロール・部門・担当教室で決まる（`lib/portalApps.ts`・`lib/inquiryBoardAccess.ts`）。
+担当教室の選択肢は `lib/core/roles.ts` の `CLASSROOMS`。
 
 ## 中身の調整
 - 会社情報・理念・社長方針・用語定義: knowledge/10_理念・方針/COMPANY.md（lib/core/companyKnowledge.ts が読み込み、全AI機能の前提として差し込む）

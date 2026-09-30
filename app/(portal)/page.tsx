@@ -1,17 +1,18 @@
 import Link from 'next/link';
 import { getSession } from '@/lib/core/auth';
-import { PORTAL_APPS } from '@/lib/portalApps';
+import { portalApps } from '@/lib/portalApps';
 
 export default function PortalPage() {
-  // layout でログインを確認済み。ここでは部門による出し分けにだけ使う。
-  const campus = getSession()?.campus ?? '';
+  // layout でログインを確認済み。ここではロール・部門・担当教室による出し分けに使う。
+  const s = getSession();
+  if (!s) return null;
 
   return (
     <div className="portal">
       <h1 className="portal-title">使うアプリを選んでください</h1>
       <div className="portal-grid">
-        {PORTAL_APPS.map((a) => {
-          const allowed = !a.canUse || a.canUse(campus);
+        {portalApps().map((a) => {
+          const allowed = !a.canUse || a.canUse(s);
           const open = a.status === 'ready' && allowed;
           const body = (
             <>
@@ -25,17 +26,29 @@ export default function PortalPage() {
               )}
             </>
           );
-          return open ? (
+          if (!open) {
+            return (
+              <div key={a.id} className="portal-card disabled" aria-disabled="true">
+                {body}
+              </div>
+            );
+          }
+          return a.external ? (
+            <a key={a.id} href={a.href} className="portal-card">
+              {body}
+            </a>
+          ) : (
             <Link key={a.id} href={a.href} className="portal-card">
               {body}
             </Link>
-          ) : (
-            <div key={a.id} className="portal-card disabled" aria-disabled="true">
-              {body}
-            </div>
           );
         })}
       </div>
+      {s.role === 'admin' && (
+        <p className="portal-admin">
+          <Link href="/admin/users">アカウント管理（発行・ロール・担当教室）</Link>
+        </p>
+      )}
       <p className="portal-version">智翔館アプリ v{process.env.NEXT_PUBLIC_APP_VERSION}</p>
     </div>
   );

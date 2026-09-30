@@ -26,6 +26,8 @@
  *                               … 問合せ管理 Web アプリ（/inquiry-board）の台帳 → スプレッドシート「問合せ台帳」（INQUIRY_DB_ID）に1件1行
  *     ※ 旧スプレッドシートの行を台帳へ移すときは、GAS エディタで importLegacyInquiryBoard() を一度実行する（何度実行しても二重登録しない）。
  *   - action:'listGoals'        … 目標管理用 → 中等部会議議事録（GOALS_BOOK_ID）の「秋～冬行動計画」タブから月×校舎×指標の目標／実績を返す
+ *   - action:'sendMail'         … 智翔館アプリのアカウント発行・パスワード再発行の案内メールを送る（MailApp）
+ *     ※ 誰でも送れてしまわないよう、TOKEN（と Vercel の APPS_SCRIPT_TOKEN）を必ず設定すること。
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
  *
  * 【セットアップ手順】
@@ -123,6 +125,9 @@ function doPost(e) {
 
     var action = data.action || 'log';
 
+    if (action === 'sendMail') {
+      return json_(sendMail_(data));
+    }
     if (action === 'appendReport') {
       appendReport_(data);
       return json_({ ok: true });
@@ -371,6 +376,7 @@ function inquiryFolder_() {
 function authorizeAll() {
   try { DocumentApp.openById(REPORT_DOC_ID).getName(); } catch (e) {}
   try { inquiryFolder_().getName(); } catch (e) {}
+  try { MailApp.getRemainingDailyQuota(); } catch (e) {} // アカウント発行メール（sendMail_）の送信権限
 }
 
 function appendRow_(sheetName, headers, row) {
@@ -1876,6 +1882,21 @@ function nowJp_(ts) {
   var d = ts ? new Date(ts) : new Date();
   if (isNaN(d.getTime())) d = new Date();
   return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy/MM/dd HH:mm');
+}
+
+// 智翔館アプリのアカウント発行・パスワード再発行の案内メール（lib/core/mail.ts から呼ばれる）。
+// 差出人はこの Apps Script の所有者の Gmail。初回は authorizeAll() を実行して送信の権限を承認しておく。
+// ★本文に初期パスワードが入るので、シートやログには残さない。
+function sendMail_(data) {
+  var to = String(data.to || '');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return { ok: false, reason: 'invalid_to' };
+  MailApp.sendEmail({
+    to: to,
+    subject: String(data.subject || ''),
+    body: String(data.body || ''),
+    name: '智翔館アプリ',
+  });
+  return { ok: true, sent: true };
 }
 
 function nowIso_() {
