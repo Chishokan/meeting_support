@@ -6,6 +6,8 @@ import {
   EVENT_GUIDES,
   NUMBER_FORMS,
   campusesFor,
+  fieldsFor,
+  unitLabel,
   cellKey,
   defaultPeriod,
   displayRows,
@@ -244,10 +246,20 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  // 部門を切り替える前に入れた値（その部門に無い項目）は送らない。
+  function valuesForDept(): NumberValues {
+    const out: NumberValues = {};
+    for (const f of fieldsFor(form, dept)) for (const c of f.cols) {
+      const k = cellKey(f, c);
+      if (values[k]) out[k] = values[k];
+    }
+    return out;
+  }
+
   async function submit() {
     const target = site.trim();
     if (!target) {
-      setStatus('校舎を選んでください。');
+      setStatus(`${unitLabel(dept)}を選んでください。`);
       return;
     }
     setBusy(true);
@@ -256,7 +268,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
       const res = await fetch('/api/numbers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind, period, dept, campus: target, values }),
+        body: JSON.stringify({ kind, period, dept, campus: target, values: valuesForDept() }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) {
@@ -282,7 +294,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
       <div className="page-head">
         <h1>数値報告</h1>
         <p>
-          {campus}／{name} さん。数値を校舎ごとに登録します。通常期は毎月の「月次」、講習会（春期・夏期・冬期）の
+          {campus}／{name} さん。数値を校舎（管理部門はグループ）ごとに登録します。通常期は毎月の「月次」、講習会（春期・夏期・冬期）の
           あとは「講習期」を選んでください。ここで登録した数値を、会議AIの「月次報告」「講習の結果報告」が
           そのまま使います（会議AIでは数値を聞かれません）。
         </p>
@@ -323,7 +335,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
               </select>
             </label>
             <label>
-              <span>校舎</span>
+              <span>{unitLabel(dept)}</span>
               {campusesFor(dept).length > 0 ? (
                 <select value={site} onChange={(e) => setSite(e.target.value)}>
                   <option value="">選択してください</option>
@@ -336,14 +348,14 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
                   type="text"
                   value={site}
                   onChange={(e) => setSite(e.target.value)}
-                  placeholder="校舎名を入力"
+                  placeholder={`${unitLabel(dept)}名を入力`}
                 />
               )}
             </label>
           </div>
 
           <ol className="num-fields">
-            {form.fields.filter((f) => !f.hidden).map((f) => {
+            {fieldsFor(form, dept).filter((f) => !f.hidden).map((f) => {
               // 部門ごとに必ず入れてもらう数値の案内（月次の「イベント等」欄）。
               const guide = kind === 'monthly' && f.key === 'events' ? EVENT_GUIDES[dept] : undefined;
               return (
@@ -381,7 +393,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
                             </button>
                           ) : f.cols.length === 1 && c.placeholder !== '○名' ? (
                             <textarea
-                              rows={guide ? 3 : 2}
+                              rows={c.rows ?? (guide ? 3 : 2)}
                               value={values[key] ?? ''}
                               onChange={(e) => set(key, e.target.value)}
                               placeholder={guide ? guide.template : c.placeholder}
@@ -410,7 +422,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
           </div>
           <p className="num-hint">
             ※ 分からない項目は空欄のままで構いません（会議AIでは「未集計」と表示されます）。
-            同じ{form.periodLabel}・同じ校舎で送り直すと、最新の内容が使われます。
+            同じ{form.periodLabel}・同じ{unitLabel(dept)}で送り直すと、最新の内容が使われます。
           </p>
         </div>
 
@@ -432,7 +444,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
                     <span className="num-meta">{e.user}／{fmtDate(e.ts)}</span>
                   </div>
                   <dl className="num-view">
-                    {displayRows(form, e.values).map((r, j) => (
+                    {displayRows(form, e.values, e.dept).map((r, j) => (
                       <div key={j} className={r.value === '—' ? 'empty' : ''}>
                         <dt>{r.label}</dt>
                         <dd>{r.value}</dd>
