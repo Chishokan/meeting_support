@@ -10,7 +10,7 @@ import { withCompanyKnowledge } from '../core/companyKnowledge';
 import { MODEL, THINKING } from '../systemPrompt';
 import { historyLine, summarizeHistory } from './history';
 import {
-  bottomOf, daysOf, shiftMonth, todayJst, weekOf,
+  bottomOf, daysOf, samePerson, shiftMonth, staffNames, timeRange, todayJst, weekOf,
   type MonpaiRecord, type MonthSetting, type School,
 } from './model';
 
@@ -46,7 +46,8 @@ const SYSTEM = `
   【学校ごとのボトムと残り必要数】の「実績見込みでの不足」を満たすよう、回数を増やす（1回の部数を増やすより回数）。
 - 「0部だった回」の理由（雨天・下校時刻の読み違い・入塾面談など）を見て、同じ失敗を避ける（時間を変える・予備日を置く）。
 - 平日（月〜金）の下校時刻に行う。実績に時間があればそれに合わせる。無ければ中学校16:00〜17:30、小学校14:30〜15:30。
-- 同じ担当者に同じ日に2校以上を割り当てない。1人に予定が偏らないよう分散させる。
+- 同じ担当者に、時間の重なる予定を入れない。【担当者のほかの予定】（ほかの地区の予定も含む）とも重ねない。
+  同じ日に2校回すときは、移動を考えて30分以上あける。1人に予定が偏らないよう分散させる。
 - 月末に詰め込まず、月の前半から計画的に配置する。定期テスト前・行事の日が分かっていれば避ける。
 - 担当者は【担当者の候補】（この地区で門配をしたことがある人）からだけ選ぶ。その学校の実績の「担当」に名前がある人を優先する。
   候補がいない・ふさわしい人がいないときは staff1・staff2 を空欄にする（担当未定。配ったことのない人や、名前を作ることはしない）。
@@ -102,9 +103,20 @@ export function buildFacts(args: {
     `【今月すでに入っている予定（重ねない）】\n${cur.map(recordLine).join('\n') || 'なし'}`,
     `【直近の記録（参考）】\n${recent.map(recordLine).join('\n') || 'なし'}`,
     `【担当者の候補（この地区で門配をしたことがある人）】${staff.join('、') || 'なし（担当はすべて空欄＝未定にする）'}`,
+    `【担当者のほかの予定（この月・全地区。時間を重ねない）】\n${busyLines(records, staff, month) || 'なし'}`,
     `【配布物】${materials.join('、') || 'なし（空欄にする）'}`,
   ].join('\n\n');
   return { text, need, basis: { months, visits: history.reduce((a, h) => a + h.visits, 0), staff: staff.length } };
+}
+
+/** 候補の担当者が、この月にすでに持っている予定（全地区）。AI に重ねさせないために渡す。 */
+function busyLines(records: MonpaiRecord[], staff: string[], month: string): string {
+  return records
+    .filter((r) => r.date.startsWith(month) && r.status !== '中止' && staffNames(r).some((n) => staff.some((s) => samePerson(n, s))))
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
+    .slice(0, 120)
+    .map((r) => `- ${r.date}(${weekOf(r.date)}) ${r.time || '時間未定'} ${staffNames(r).join('・')}（${r.district}・${r.school}）`)
+    .join('\n');
 }
 
 function parseJson(text: string): { summary?: unknown; items?: unknown } | null {
@@ -121,12 +133,24 @@ function parseJson(text: string): { summary?: unknown; items?: unknown } | null 
 /** AI の案を検査して、実行できるものだけ残す。 */
 export function sanitizePlan(
   raw: unknown,
-  ctx: { month: string; from: string; schools: School[]; existing: MonpaiRecord[]; staff: string[]; materials: string[] },
+  ctx: {
+    month: string; from: string; schools: School[]; staff: string[]; materials: string[];
+    existing: MonpaiRecord[]; // この地区・この月の予定（同じ日・同じ学校に重ねない）
+    busy?: MonpaiRecord[];    // この月の全地区の予定（担当者の時間が重ならないか見る）
+  },
 ): { items: PlanItem[]; dropped: number } {
   const list = Array.isArray(raw) ? raw.slice(0, 80) : [];
   const names = new Set(ctx.schools.map((s) => s.name));
   const taken = new Set(ctx.existing.filter((r) => r.status !== '中止').map((r) => `${r.date}|${r.school}`));
-  const staffBusy = new Set<string>();
+  // 担当者ごとの埋まっている時間（全地区の既存の予定＋ここで採用した案）
+  const staffBusy: { date: string; name: string; time: string }[] = (ctx.busy ?? ctx.existing)
+    .filter((r) => r.status !== '中止')
+    .flatMap((r) => staffNames(r).map((name) => ({ date: r.date, name, time: r.time })));
+  const clashes = (date: string, name: string, time: string) => staffBusy.some((b) => {
+    if (b.date !== date || !samePerson(b.name, name)) return false;
+    const x = timeRange(b.time), y = timeRange(time);
+    return !x || !y || (x.start < y.end && y.start < x.end); // 時間が分からないときは重なるものとして扱う
+  });
   const valid = new Set(daysOf(ctx.month).filter((d) => d.date >= ctx.from && !d.holiday).map((d) => d.date));
   const known = (list: string[], v: string) => (list.includes(v) ? v : '');
   const items: PlanItem[] = [];
@@ -139,13 +163,13 @@ export function sanitizePlan(
     if (taken.has(`${date}|${school}`)) continue;
     const staff1 = known(ctx.staff, String(x?.staff1 ?? '').trim());
     const staff2 = known(ctx.staff, String(x?.staff2 ?? '').trim());
-    // 同じ人が同じ日に2校にならないようにする（2校目は担当を空欄にして残す）
-    const busy = [staff1, staff2].some((s) => s && staffBusy.has(`${date}|${s}`));
+    // 同じ人の時間が重なる案は、担当を空欄（未定）にして残す（ほかの地区の予定とも比べる）
+    const time = String(x?.time ?? '').slice(0, 40);
+    const busy = [staff1, staff2].some((s) => s && clashes(date, s, time));
     taken.add(`${date}|${school}`);
-    [staff1, staff2].forEach((s) => s && staffBusy.add(`${date}|${s}`));
+    if (!busy) [staff1, staff2].forEach((s) => s && staffBusy.push({ date, name: s, time }));
     items.push({
-      date, school, planned,
-      time: String(x?.time ?? '').slice(0, 40),
+      date, school, planned, time,
       staff1: busy ? '' : staff1,
       staff2: busy ? '' : staff2,
       material: known(ctx.materials, String(x?.material ?? '').trim()),
@@ -194,8 +218,9 @@ export async function draftPlan(args: {
   const j = parseJson(out);
   if (!j) return { ok: false, reason: 'ai_bad_output' };
   const existing = args.records.filter((r) => r.district === args.district && r.date.startsWith(args.month));
+  const busy = args.records.filter((r) => r.date.startsWith(args.month));
   const { items, dropped } = sanitizePlan(j.items, {
-    month: args.month, from, schools: args.schools, existing, staff: args.staff, materials: args.materials,
+    month: args.month, from, schools: args.schools, existing, busy, staff: args.staff, materials: args.materials,
   });
   return { ok: true, summary: String(j.summary ?? '').slice(0, 500), items, dropped, basis };
 }
