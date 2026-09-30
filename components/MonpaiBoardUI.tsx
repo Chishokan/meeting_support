@@ -5,10 +5,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  DISTRICTS, bottomOf, daysOf, shiftMonth, todayJst,
+  DISTRICTS, RATES, bottomOf, daysOf, settingFor, shiftMonth, todayJst,
   type MonpaiRecord, type School,
 } from '@/lib/monpai/model';
-import { draftPlanApi, fetchMaster, fetchMaterials, fetchRecords, reasonText, saveRecordApi, type Master, type PlanItem } from '@/lib/monpai/client';
+import { draftPlanApi, fetchMaster, fetchMaterials, fetchRecords, masterApi, reasonText, saveRecordApi, type Master, type PlanItem } from '@/lib/monpai/client';
 import MonpaiRecordForm, { type Draft } from './MonpaiRecordForm';
 
 const DISTRICT_KEY = 'monpai.district';
@@ -26,9 +26,12 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [cellList, setCellList] = useState<{ date: string; school: string } | null>(null);
   const [materialNames, setMaterialNames] = useState<string[]>([]);
-  const [plan, setPlan] = useState<{ summary: string; items: (PlanItem & { pick: boolean })[]; dropped: number } | null>(null);
+  const [plan, setPlan] = useState<{ summary: string; items: (PlanItem & { pick: boolean })[]; dropped: number; basis?: { months: number; visits: number; staff: number } } | null>(null);
   const [planBusy, setPlanBusy] = useState(false);
   const [planMsg, setPlanMsg] = useState('');
+  const [rateEdit, setRateEdit] = useState<{ school: string; value: string } | null>(null);
+  const [rateBusy, setRateBusy] = useState(false);
+  const [rateMsg, setRateMsg] = useState('');
 
   // 前回見ていた地区を覚えておく（端末ごと。読めなくても動く）
   useEffect(() => {
@@ -47,13 +50,32 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
     fetchMaterials().then((r) => r.ok && setMaterialNames(r.items.map((i) => i.name)));
   }, []);
 
+  // ボトムの率をこの月・この学校だけ変える（月別設定に保存。学校マスタの画面の「月別設定」と同じもの）
+  async function saveRate(school: School, value: string | null) {
+    const own = master?.settings.find((x) => x.month === month && x.school === school.name);
+    const recruit = !!settingFor(master?.settings ?? [], month, school.name)?.recruit;
+    setRateBusy(true);
+    setRateMsg('');
+    // 既定に戻す：この学校だけの設定を消す（募集期の印が付いていれば、率だけ空にして残す）
+    const r = value === null
+      ? own?.recruit
+        ? await masterApi('POST', { type: 'setting', month, school: school.name, rate: '', recruit: true })
+        : own ? await masterApi('DELETE', { type: 'setting', month, school: school.name }) : { ok: true }
+      : await masterApi('POST', { type: 'setting', month, school: school.name, rate: value, recruit });
+    setRateBusy(false);
+    if (!r.ok) return setRateMsg(r.errors?.join(' ') || reasonText(r.reason ?? ''));
+    setRateEdit(null);
+    const m = await fetchMaster();
+    if (m.ok) setMaster(m.master);
+  }
+
   async function makePlan() {
     setPlanBusy(true);
     setPlanMsg('');
     const r = await draftPlanApi(district, month);
     setPlanBusy(false);
     if (!r.ok) return setPlanMsg(reasonText(r.reason));
-    setPlan({ summary: r.summary, dropped: r.dropped, items: r.items.map((i) => ({ ...i, pick: true })) });
+    setPlan({ summary: r.summary, dropped: r.dropped, basis: r.basis, items: r.items.map((i) => ({ ...i, pick: true })) });
   }
 
   async function adoptPlan() {
@@ -96,7 +118,8 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
     const rs = inDistrict.filter((r) => r.school === s.name && r.status !== '中止');
     const planned = rs.reduce((a, r) => a + r.planned, 0);
     const done = rs.reduce((a, r) => a + (r.done ?? 0), 0);
-    return { school: s, ...bottomOf(s, master?.settings ?? [], month), planned, done };
+    const st = settingFor(master?.settings ?? [], month, s.name);
+    return { school: s, ...bottomOf(s, master?.settings ?? [], month), planned, done, custom: st?.rate != null };
   });
   const total = summary.reduce(
     (a, x) => ({ bottom: a.bottom + x.bottom, planned: a.planned + x.planned, done: a.done + x.done }),
@@ -162,7 +185,10 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
           <div className="ib-table-wrap mp-summary-wrap">
             <table className="mp-summary">
               <thead>
-                <tr><th>学校</th><th>生徒数</th><th>ボトム</th><th>計画</th><th>実績</th><th className="mp-bar-col">達成率（実績÷ボトム）</th></tr>
+                <tr>
+                  <th>学校</th><th className="mp-num">生徒数</th><th className="mp-num">ボトム</th>
+                  <th className="mp-num">計画</th><th className="mp-num">実績</th><th className="mp-bar-col">達成率（実績÷ボトム）</th>
+                </tr>
               </thead>
               <tbody>
                 {summary.map((x) => {
@@ -174,7 +200,30 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
                       <td className="mp-num">{x.school.students}</td>
                       <td className="mp-num">
                         {x.bottom}
-                        <span className="mp-rate">{Math.round(x.rate * 100)}%{x.recruit ? '・募集期' : ''}</span>
+                        {rateEdit?.school === x.school.name ? (
+                          <span className="mp-rate-edit">
+                            <input
+                              type="number" min={1} max={100} step={1} autoFocus aria-label="ボトムの率（%）"
+                              value={rateEdit.value}
+                              onChange={(e) => setRateEdit({ ...rateEdit, value: e.target.value })}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveRate(x.school, rateEdit.value);
+                                if (e.key === 'Escape') setRateEdit(null);
+                              }}
+                            />%
+                            <button className="mp-btn primary" disabled={rateBusy} onClick={() => saveRate(x.school, rateEdit.value)}>保存</button>
+                            <button className="mp-btn" disabled={rateBusy} onClick={() => saveRate(x.school, null)} title={`既定（${Math.round((x.recruit ? RATES[x.school.kind].recruit : RATES[x.school.kind].normal) * 100)}%）に戻す`}>既定</button>
+                            <button className="mp-btn" disabled={rateBusy} onClick={() => setRateEdit(null)} aria-label="やめる">×</button>
+                          </span>
+                        ) : (
+                          <button
+                            className={`mp-rate mp-rate-btn ${x.custom ? 'custom' : ''}`}
+                            title="押すと、この月のこの学校の率を変えられます"
+                            onClick={() => { setRateMsg(''); setRateEdit({ school: x.school.name, value: String(Math.round(x.rate * 100)) }); }}
+                          >
+                            {Math.round(x.rate * 100)}%{x.recruit ? '・募集期' : ''}{x.custom ? '（変更）' : ''} ✎
+                          </button>
+                        )}
                       </td>
                       <td className={`mp-num ${x.planned < x.bottom ? 'short' : ''}`}>{x.planned}</td>
                       <td className="mp-num">{x.done}</td>
@@ -198,8 +247,9 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
               </tbody>
             </table>
           </div>
+          {rateMsg && <div className="mp-note">{rateMsg}</div>}
           <p className="mp-legend">
-            <span className="mp-key plan" />計画 <span className="mp-key done" />実績　計画がボトムに届かない学校は計画の数字が赤。表のマスを押すと追加・編集できます。
+            <span className="mp-key plan" />計画 <span className="mp-key done" />実績　計画がボトムに届かない学校は計画の数字が赤。表のマスを押すと追加・編集できます。ボトムの下の「20% ✎」を押すと、この月の率を学校ごとに変えられます。
           </p>
 
           <div className="ib-table-wrap">
@@ -280,6 +330,14 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
           <div className="mp-modal wide" role="dialog" aria-modal="true">
             <div className="mp-modal-head"><h2>AIの計画案</h2><span className="mp-modal-sub">{district}地区・{y}年{Number(m)}月</span></div>
             <div className="mp-form">
+              {plan.basis && (
+                <p className="mp-muted">
+                  {plan.basis.visits > 0
+                    ? `直近${plan.basis.months}か月の実績 ${plan.basis.visits} 回分（受け取り率・曜日・時間・担当）をもとに作成しました。`
+                    : 'この地区にはまだ実績が無いため、一般的な目安で作成しました。'}
+                  {plan.basis.staff === 0 && ' この地区は担当者の記録が無いため、担当はすべて「未定」にしています。'}
+                </p>
+              )}
               {plan.summary && <p className="mp-plan-summary">{plan.summary}</p>}
               {plan.items.length === 0 && <p className="mp-muted">追加が必要な予定はありません（またはボトムを満たしています）。</p>}
               {plan.items.map((p, i) => (
