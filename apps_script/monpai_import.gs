@@ -38,9 +38,10 @@ var SCHOOL_DISTRICT = {
   '大野中': '大野', '中里中': '大野', '柚木中': '大野', '大野小': '大野', '中里小': '大野', '春日小': '大野',
   '日野中': '日野', '相浦中': '日野', '愛宕中': '日野', '日野小': '日野', '相浦小': '日野',
   '日宇中': '広田', '大塔小': '広田', '黒髪小': '広田', '日宇小': '広田',
+  '広田中': '広田', '早岐中': '広田', '東明中': '広田', '広田小': '広田',
   '祇園中': '駅前', '山澄中': '駅前', '福石中': '駅前', '崎辺中': '駅前', '祇園小': '駅前', '白南風小': '駅前',
   '佐々中': '佐々', '小佐々中': '佐々', '吉井中': '佐々', '江迎中': '佐々', '佐々小': '佐々', '口石小': '佐々',
-  '大崎中': '西海大島', '西海中': '西海大島', '大崎小': '西海大島',
+  '大崎中': '西海大島', '西海中': '西海大島', '大崎小': '西海大島', '西海東小': '西海大島',
 };
 
 // ---- 実行する関数 -------------------------------------------------------------
@@ -283,15 +284,21 @@ function findMonthRows_(values, blocks) {
 // 学校名を含む行を選び、同じ行番号の担当を取る。1行しか無ければそれを使う。
 function pickLine_(timeCell, staff1Cell, staff2Cell, school) {
   var split = function (v) { return String(v || '').split(/\r?\n/).map(function (s) { return s.trim(); }).filter(String); };
-  var times = split(timeCell), s1 = split(staff1Cell), s2 = split(staff2Cell);
+  var s1 = split(staff1Cell), s2 = split(staff2Cell);
+  // 時間の列が無いブロック（広田・大島）は、担当の欄に「広18:00～(松)」のように時間も書く
+  var times = timeCell === undefined ? s1 : split(timeCell);
   var i = -1;
   for (var k = 0; k < times.length; k++) if (times[k].replace(/[\s　]/g, '').indexOf(school) !== -1) { i = k; break; }
+  // 学校名の頭1文字の略記：「広」＝広田中、「広小」＝広田小、「早」＝早岐中
+  var abbr = new RegExp('^' + school.charAt(0) + (/小$/.test(school) ? '小' : '(?!小)'));
+  for (var k2 = 0; i < 0 && k2 < times.length; k2++) if (abbr.test(times[k2]) && /\d{1,2}[:：]\d{2}/.test(times[k2])) i = k2;
   if (i < 0 && times.length === 1) i = 0;
-  var clean = function (s) { return String(s || '').replace(/^[\s　\d０-９]+/, '').trim(); };
+  // 頭の番号（「1愛宕中」「②平野」）は外す。「15：20～」のような時間の数字は残す
+  var clean = function (s) { return String(s || '').replace(/^[\s　]*[\d０-９]+(?![\d０-９:：])/, '').trim(); };
   var t = i >= 0 ? times[i] : '';
-  var m = /(\d{1,2}[:：]\d{2}\s*[~〜\-－]?\s*(\d{1,2}[:：]?\d{0,2})?)/.exec(t);
+  var m = /^[:：]/.test(t) ? null : /(\d{1,2}[:：]\d{2}\s*[~〜～\-－]?\s*(\d{1,2}[:：]?\d{0,2})?)/.exec(t);
   var pick = function (arr) { return arr.length === 0 ? '' : clean(i >= 0 && arr[i] !== undefined ? arr[i] : arr.length === 1 ? arr[0] : ''); };
-  return { time: m ? m[1].replace(/：/g, ':').trim() : '', staff1: pick(s1), staff2: pick(s2) };
+  return { time: m ? m[1].replace(/：/g, ':').replace(/[〜～]/g, '~').trim() : '', staff1: pick(s1), staff2: pick(s2) };
 }
 
 // 不実施理由のセルは、隣の学校の理由がまとめて書かれていることがある。
@@ -336,7 +343,7 @@ var NOTE_WORDS_ = /式|雨|変更|中止|不実施|休|作業|行事|テスト|�
 var NAME_ = /^[一-龥々ぁ-んァ-ヶー]{1,5}$/;
 function isNames_(s) {
   var parts = s.split(/[、,，・\s　]+/).filter(String);
-  return parts.length > 0 && parts.every(function (p) { return NAME_.test(p) && !NOTE_WORDS_.test(p); });
+  return parts.length > 0 && parts.every(function (p) { return NAME_.test(p) && !NOTE_WORDS_.test(p) && !(p in SCHOOL_DISTRICT); });
 }
 function splitStaff_(v, school) {
   var raw = oneLine_(v);
@@ -358,7 +365,11 @@ function splitStaff_(v, school) {
   var uniq = [];
   names.join('、').split(/[、,，・]/).forEach(function (n) { if (n && uniq.indexOf(n) === -1) uniq.push(n); });
   res.staff = uniq.join('、');
-  res.memo = raw;
+  // 時間・名前・頭の略記（広・広小・早）を除いて何も残らなければ、メモは要らない
+  var rest = t;
+  uniq.forEach(function (n) { rest = rest.split(n).join(''); });
+  rest = rest.replace(/^[一-龥]小?/, '').replace(/[~〜～\-－、,，・\s　]/g, '');
+  res.memo = rest ? raw : '';
   return res;
 }
 
