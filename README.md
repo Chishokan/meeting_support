@@ -22,7 +22,8 @@
 - 数値報告（「数値報告」メニューの入力項目・対象期間・校舎のプルダウン）: lib/numberReports.ts
   - メニュー内で「月次（通常期）」と「講習期（春期・夏期・冬期）」を切り替える
   - 月次の項目は MONTHLY_FIELDS（生徒数・入会・体験・部門ごとのイベント等）、講習期の項目は SEASON_FIELDS
-  - 生徒数（月末）はポップアップで小2〜高3の学年別に入れ、画面には合計を出す（内訳は隠し項目 studentsByGrade としてシートの末尾の列に保存）
+  - 生徒数（月末・昨年同月）と入会（実績・昨年同月）は、ポップアップで小2〜高3の学年別に今年・昨年を並べて入れ、画面には合計を出す。目標は合計を直接入力
+    （内訳は隠し項目 studentsByGrade / studentsLastByGrade / enrollByGrade / enrollLastByGrade としてシートの末尾の列に保存）
   - 「イベント等」欄に部門ごとに必ず入れてもらう数値は EVENT_GUIDES（RED個別：中3県一斉模試・中3パック受講数／小中等部：模試。いずれも今年／昨年）
   - 校舎の選択肢は CAMPUSES_BY_DEPT に並べる（無い部門は校舎名の自由入力欄になる）
   - 入力は スプレッドシート「月次数値」「講習数値」へ1行ずつ記録（apps_script/Code.gs の saveNumberReport_ / listNumberReports_）。
