@@ -132,6 +132,67 @@ export function isMine(r: Pick<MonpaiRecord, 'staff1' | 'staff2'>, name: string)
   });
 }
 
+/** 担当欄の名前を1人ずつに分ける（「中山、松田」「越智・溝口」の2人書きも1人ずつ）。 */
+export function staffNames(r: Pick<MonpaiRecord, 'staff1' | 'staff2'>): string[] {
+  return Array.from(new Set([r.staff1, r.staff2].flatMap((s) => (s || '').split(/[、,，・\s　]+/)).filter(Boolean)));
+}
+
+/** 同じ人か。姓だけ（「越智」）と姓名（「越智浩晃」）も同じ人とみなす。 */
+export function samePerson(a: string, b: string): boolean {
+  if (a.length < 2 || b.length < 2) return a === b;
+  return a.startsWith(b) || b.startsWith(a);
+}
+
+/** 門配の時間の目安の長さ（終わりが書かれていないとき） */
+const DEFAULT_MINUTES = 30;
+
+/** 「16:00-17:00」「15:15-」「17:30」→ 分に直した [始まり, 終わり)。読めなければ null。 */
+export function timeRange(t: string): { start: number; end: number } | null {
+  const m = /(\d{1,2})[:：](\d{2})(?:\s*[-~〜～－]\s*(\d{1,2})[:：](\d{2}))?/.exec(t || '');
+  if (!m) return null;
+  const start = Number(m[1]) * 60 + Number(m[2]);
+  const end = m[3] ? Number(m[3]) * 60 + Number(m[4]) : start + DEFAULT_MINUTES;
+  return { start, end: end > start ? end : start + DEFAULT_MINUTES };
+}
+
+export type StaffConflict = {
+  date: string;
+  staff: string;
+  kind: '重なり' | '時間未定'; // 重なり＝時間が重なる／時間未定＝どちらかの時間が書かれておらず重なるか分からない
+  items: MonpaiRecord[];
+};
+
+/**
+ * 同じ人が同じ日に、時間の重なる門配を2か所以上持っていないかを探す（地区をまたいで見る）。
+ * 同じ日に2校でも、時間がずれていれば（大野小15:15→大野中17:30 など）重なりにしない。中止は数えない。
+ */
+export function findStaffConflicts(records: MonpaiRecord[]): StaffConflict[] {
+  const active = records.filter((r) => r.status !== '中止' && staffNames(r).length > 0);
+  const byDate = new Map<string, MonpaiRecord[]>();
+  active.forEach((r) => byDate.set(r.date, [...(byDate.get(r.date) ?? []), r]));
+  const out = new Map<string, StaffConflict>();
+  for (const [date, rs] of Array.from(byDate)) {
+    for (let i = 0; i < rs.length; i++) {
+      for (let j = i + 1; j < rs.length; j++) {
+        const a = rs[i], b = rs[j];
+        const who = staffNames(a).find((n) => staffNames(b).some((m) => samePerson(n, m)));
+        if (!who) continue;
+        const ta = timeRange(a.time), tb = timeRange(b.time);
+        const kind = !ta || !tb ? '時間未定' : ta.start < tb.end && tb.start < ta.end ? '重なり' : null;
+        if (!kind) continue;
+        const key = `${date}|${who}`;
+        const c = out.get(key) ?? { date, staff: who, kind, items: [] };
+        if (kind === '重なり') c.kind = '重なり';
+        [a, b].forEach((r) => { if (!c.items.some((x) => x.id === r.id)) c.items.push(r); });
+        out.set(key, c);
+      }
+    }
+  }
+  return Array.from(out.values())
+    .map((c) => ({ ...c, items: c.items.sort((x, y) => (timeRange(x.time)?.start ?? 0) - (timeRange(y.time)?.start ?? 0)) }))
+    .sort((x, y) => x.date.localeCompare(y.date) || x.staff.localeCompare(y.staff));
+}
+
 // ---- 入力チェック -----------------------------------------------------------
 
 const int = (v: unknown): number | null => {

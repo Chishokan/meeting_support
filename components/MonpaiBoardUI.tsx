@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  DISTRICTS, RATES, bottomOf, daysOf, settingFor, shiftMonth, todayJst,
+  DISTRICTS, RATES, bottomOf, daysOf, findStaffConflicts, settingFor, shiftMonth, todayJst, weekOf,
   type MonpaiRecord, type School,
 } from '@/lib/monpai/model';
 import { draftPlanApi, fetchMaster, fetchMaterials, fetchRecords, masterApi, reasonText, saveRecordApi, type Master, type PlanItem } from '@/lib/monpai/client';
@@ -113,6 +113,11 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
   const inDistrict = useMemo(() => records.filter((r) => r.district === district), [records, district]);
 
   const cell = (date: string, school: string) => inDistrict.filter((r) => r.date === date && r.school === school);
+
+  // 担当の重なり（全地区）：同じ人・同じ日・時間が重なる予定。この地区に関係するものを上に出す
+  const conflicts = useMemo(() => findStaffConflicts(records), [records]);
+  const conflictIds = useMemo(() => new Set(conflicts.flatMap((c) => c.items.map((r) => r.id))), [conflicts]);
+  const mineFirst = [...conflicts].sort((a, b) => Number(!a.items.some((r) => r.district === district)) - Number(!b.items.some((r) => r.district === district)));
 
   const summary = schools.map((s) => {
     const rs = inDistrict.filter((r) => r.school === s.name && r.status !== '中止');
@@ -252,6 +257,28 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
             <span className="mp-key plan" />計画 <span className="mp-key done" />実績　計画がボトムに届かない学校は計画の数字が赤。表のマスを押すと追加・編集できます。ボトムの下の「20% ✎」を押すと、この月の率を学校ごとに変えられます。
           </p>
 
+          {conflicts.length > 0 && (
+            <div className="mp-conflicts" role="status">
+              <h3>担当の重なり（全地区）<span className="mp-count">{conflicts.length}</span></h3>
+              <p className="mp-muted">同じ人が同じ日に、時間の重なる門配を2か所以上持っています。時間がずれていれば（例 15:15 と 17:30）重なりにはしません。</p>
+              <ul>
+                {mineFirst.map((c) => (
+                  <li key={c.date + c.staff} className={c.kind === '重なり' ? 'bad' : 'warn'}>
+                    <b>{Number(c.date.slice(5, 7))}/{Number(c.date.slice(8))}（{weekOf(c.date)}） {c.staff}</b>
+                    <span className="mp-conflict-kind">{c.kind === '重なり' ? '時間が重なる' : '時間未定のため要確認'}</span>
+                    <span className="mp-conflict-items">
+                      {c.items.map((r) => (
+                        <button key={r.id} className="mp-link" onClick={() => { pickDistrict(r.district); setDraft(r); }}>
+                          {r.district}・{r.school} {r.time || '時間未定'}
+                        </button>
+                      ))}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="ib-table-wrap">
             <table className="mp-grid">
               <thead>
@@ -274,12 +301,13 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
                       const canceled = rs.length > 0 && rs.every((r) => r.status === '中止');
                       const unreported = rs.some((r) => r.status === '予定') && d.date < today;
                       const cls = canceled ? 'canceled' : unreported ? 'unreported' : reported.length && done >= planned ? 'done' : rs.length ? 'planned' : '';
+                      const clash = rs.some((r) => conflictIds.has(r.id));
                       return (
                         <td key={s.name} className="mp-cell-td">
                           <button
-                            className={`mp-cell ${cls}`}
+                            className={`mp-cell ${cls} ${clash ? 'conflict' : ''}`}
                             onClick={() => openCell(d.date, s.name)}
-                            title={rs.map((r) => `${r.time} ${r.staff1}${r.staff2 ? '・' + r.staff2 : ''} ${r.material}`).join('\n')}
+                            title={(clash ? '担当の予定が重なっています\n' : '') + rs.map((r) => `${r.time} ${r.staff1}${r.staff2 ? '・' + r.staff2 : ''} ${r.material}`).join('\n')}
                           >
                             {rs.length > 0 && (
                               <>
