@@ -34,7 +34,7 @@ export const MONTHLY_FIELDS: NumberField[] = [
     note: '対象月の月末時点',
     cols: [
       { key: 'end', label: '月末', placeholder: '○名', breakdown: 'studentsByGrade' },
-      { key: 'last', label: '昨年同月', placeholder: '○名' },
+      { key: 'last', label: '昨年同月', placeholder: '○名', breakdown: 'studentsLastByGrade' },
       { key: 'target', label: '目標', placeholder: '○名' },
     ],
   },
@@ -43,8 +43,8 @@ export const MONTHLY_FIELDS: NumberField[] = [
     label: '入会',
     short: '入会',
     cols: [
-      { key: 'actual', label: '実績', placeholder: '○名' },
-      { key: 'last', label: '昨年同月', short: '昨年', placeholder: '○名' },
+      { key: 'actual', label: '実績', placeholder: '○名', breakdown: 'enrollByGrade' },
+      { key: 'last', label: '昨年同月', short: '昨年', placeholder: '○名', breakdown: 'enrollLastByGrade' },
       { key: 'target', label: '目標', placeholder: '○名' },
     ],
   },
@@ -64,15 +64,17 @@ export const MONTHLY_FIELDS: NumberField[] = [
     note: '模試・講座・説明会など、部門で目標を立てているもの',
     cols: [{ key: 'note', label: '内容', placeholder: '例）10/18 一斉模試：目標 ○名 ／ 実績 ○名' }],
   },
-  // ★この項目は必ず最後に置く。シートの既存の列の並びを崩さないよう、後から足した列は末尾に付け足している。
-  {
-    key: 'studentsByGrade',
-    label: '生徒数（月末）の学年別',
-    short: '学年別',
-    hidden: true,
-    cols: GRADES.map((g) => ({ key: g, label: g, placeholder: '○' })),
-  },
+  // ★学年別の内訳（隠し項目）は必ず最後に置き、この順を変えない。
+  //   シートの既存の列の並びを崩さないよう、後から足した列は末尾に付け足している（新しく足すときも末尾へ）。
+  gradeField('studentsByGrade', '生徒数（月末）の学年別'),
+  gradeField('studentsLastByGrade', '生徒数（昨年同月）の学年別'),
+  gradeField('enrollByGrade', '入会（実績）の学年別'),
+  gradeField('enrollLastByGrade', '入会（昨年同月）の学年別'),
 ];
+
+function gradeField(key: string, label: string): NumberField {
+  return { key, label, short: '学年別', hidden: true, cols: GRADES.map((g) => ({ key: g, label: g, placeholder: '○' })) };
+}
 
 // 「その他、部門ごとのイベント等」に必ず入れてもらう数値（部門別）。★部門の増減・項目の変更はここを編集する。
 // 画面では入力欄の上に案内を出し、template をひな形として入れられるようにする。
@@ -350,20 +352,40 @@ export function formatNumbers(form: NumberForm, values: NumberValues): string {
 // 画面表示用に「項目名：値」の行へ変換する（未入力は「—」）。
 // 一覧は幅が狭いので、短い項目名と詰めた値（例「実績3／目標5」）にする。
 export function displayRows(form: NumberForm, values: NumberValues): { label: string; value: string }[] {
-  // 隠し項目（学年別の内訳）は、入力があるときだけ1行出す。
-  return form.fields
-    .filter((f) => !f.hidden || f.cols.some((c) => (values[cellKey(f, c)] ?? '').trim()))
-    .map((f) => {
-      if (f.hidden) return { label: f.short, value: formatBreakdown(f, values) };
-      const parts = f.cols
-        .map((c) => {
-          const v = (values[cellKey(f, c)] ?? '').trim();
-          if (!v) return null;
-          return f.cols.length === 1 ? v : `${c.short ?? c.label}${v}`;
-        })
-        .filter(Boolean);
-      return { label: f.short, value: parts.length ? parts.join('／') : '—' };
-    });
+  const rows: { label: string; value: string }[] = [];
+  for (const f of form.fields) {
+    if (f.hidden) continue;
+    const parts = f.cols
+      .map((c) => {
+        const v = (values[cellKey(f, c)] ?? '').trim();
+        if (!v) return null;
+        return f.cols.length === 1 ? v : `${c.short ?? c.label}${v}`;
+      })
+      .filter(Boolean);
+    rows.push({ label: f.short, value: parts.length ? parts.join('／') : '—' });
+    // 学年別の内訳があれば、項目の下に1行添える（例「（月末/昨年）小2 3/2・小3 5/4」）。
+    const detail = breakdownByGrade(form, f, values);
+    if (detail) rows.push({ label: `${f.short}内訳`, value: detail });
+  }
+  return rows;
+}
+
+// 項目の内訳列（学年別）を学年ごとにまとめる。入力のある学年だけ。無ければ空文字。
+function breakdownByGrade(form: NumberForm, f: NumberField, values: NumberValues): string {
+  const cols = f.cols
+    .map((c) => ({ c, bf: c.breakdown ? form.fields.find((x) => x.key === c.breakdown) : undefined }))
+    .filter((x): x is { c: NumberCol; bf: NumberField } => !!x.bf);
+  if (cols.length === 0) return '';
+  const grades = cols[0].bf.cols;
+  const items = grades
+    .map((g) => {
+      const vs = cols.map(({ bf }) => (values[cellKey(bf, bf.cols.find((x) => x.key === g.key)!)] ?? '').trim());
+      return vs.some(Boolean) ? `${g.label} ${vs.map((v) => v || '–').join('/')}` : '';
+    })
+    .filter(Boolean);
+  if (items.length === 0) return '';
+  const head = cols.length > 1 ? `（${cols.map(({ c }) => c.short ?? c.label).join('/')}）` : '';
+  return head + items.join('・');
 }
 
 // 会議AIのプロンプトへ差し込む形に整形する。
