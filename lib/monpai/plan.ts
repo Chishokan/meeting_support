@@ -31,7 +31,7 @@ export type PlanItem = {
 };
 
 export type PlanResult =
-  | { ok: true; summary: string; items: PlanItem[]; dropped: number; basis: { months: number; visits: number } }
+  | { ok: true; summary: string; items: PlanItem[]; dropped: number; basis: { months: number; visits: number; staff: number } }
   | { ok: false; reason: string };
 
 const SYSTEM = `
@@ -48,7 +48,8 @@ const SYSTEM = `
 - 平日（月〜金）の下校時刻に行う。実績に時間があればそれに合わせる。無ければ中学校16:00〜17:30、小学校14:30〜15:30。
 - 同じ担当者に同じ日に2校以上を割り当てない。1人に予定が偏らないよう分散させる。
 - 月末に詰め込まず、月の前半から計画的に配置する。定期テスト前・行事の日が分かっていれば避ける。
-- 担当者は【担当者の候補】から選ぶ。分からなければ空欄にする（人を作らない）。
+- 担当者は【担当者の候補】（この地区で門配をしたことがある人）からだけ選ぶ。その学校の実績の「担当」に名前がある人を優先する。
+  候補がいない・ふさわしい人がいないときは staff1・staff2 を空欄にする（担当未定。配ったことのない人や、名前を作ることはしない）。
 - 配布物は【配布物】の品名から選ぶ。無ければ空欄。
 
 【出力】次の JSON だけを出力する（前後に説明文やコードブロックの記号を付けない）。
@@ -70,7 +71,7 @@ export function buildFacts(args: {
   materials: string[];
   staff: string[];
   from: string; // この日以降に計画する
-}): { text: string; need: Record<string, number>; basis: { months: number; visits: number } } {
+}): { text: string; need: Record<string, number>; basis: { months: number; visits: number; staff: number } } {
   const { district, month, schools, settings, records, materials, staff, from } = args;
   const start = `${shiftMonth(month, -HISTORY_MONTHS)}-01`;
   const cur = records.filter((r) => r.district === district && r.date.startsWith(month));
@@ -100,10 +101,10 @@ export function buildFacts(args: {
     `【これまでの実績（学校ごと・${start.slice(0, 7)}〜${shiftMonth(month, -1)}、コードで集計）】\n${history.map(historyLine).join('\n')}`,
     `【今月すでに入っている予定（重ねない）】\n${cur.map(recordLine).join('\n') || 'なし'}`,
     `【直近の記録（参考）】\n${recent.map(recordLine).join('\n') || 'なし'}`,
-    `【担当者の候補】${staff.join('、') || 'なし（空欄にする）'}`,
+    `【担当者の候補（この地区で門配をしたことがある人）】${staff.join('、') || 'なし（担当はすべて空欄＝未定にする）'}`,
     `【配布物】${materials.join('、') || 'なし（空欄にする）'}`,
   ].join('\n\n');
-  return { text, need, basis: { months, visits: history.reduce((a, h) => a + h.visits, 0) } };
+  return { text, need, basis: { months, visits: history.reduce((a, h) => a + h.visits, 0), staff: staff.length } };
 }
 
 function parseJson(text: string): { summary?: unknown; items?: unknown } | null {

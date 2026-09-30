@@ -104,7 +104,7 @@ export async function postMaterial(body: Record<string, unknown>): Promise<{ ok:
 export type PlanItem = import('./plan').PlanItem;
 
 export async function draftPlanApi(district: string, month: string): Promise<
-  { ok: true; summary: string; items: PlanItem[]; dropped: number; basis?: { months: number; visits: number } } | { ok: false; reason: string }
+  { ok: true; summary: string; items: PlanItem[]; dropped: number; basis?: { months: number; visits: number; staff: number } } | { ok: false; reason: string }
 > {
   const j = await fetch('/api/monpai/plan', {
     method: 'POST',
