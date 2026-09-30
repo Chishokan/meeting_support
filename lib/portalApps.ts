@@ -35,8 +35,8 @@ export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'monpai',
     name: '門配管理',
-    desc: '校門前でのチラシ配布の予定と実績を管理',
+    desc: '地区ごとの門配（校門前でのチラシ配布）の月間計画と実績報告',
     href: '/monpai',
-    status: 'soon',
+    status: 'ready',
   },
 ];

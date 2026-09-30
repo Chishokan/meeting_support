@@ -1,6 +1,6 @@
 {
   "name": "chishokan-chat",
-  "version": "0.3.8",
+  "version": "0.6.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.69.0",
+    "@supabase/supabase-js": "^2.117.2",
     "next": "14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
