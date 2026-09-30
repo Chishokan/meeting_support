@@ -6,14 +6,23 @@
 // ★聞く項目・並び順を変えたいときは MONTHLY_FIELDS / SEASON_FIELDS を編集する（シートの見出しも連動する）。
 //   見出しは項目名から作るので、label を変えると既存の行はその列が空として読まれる点に注意。
 
-import { STAFF } from './core/staff';
+import { ADMIN_CAMPUS, STAFF } from './core/staff';
 
 export type ReportKind = 'monthly' | 'season';
 
 // short は一覧表示だけで使う短縮名（label はシート見出しに使う）。
 // breakdown を持つ列は直接入力せず、ポップアップで内訳（breakdown に書いた隠し項目の各列）を入れ、その合計を入れる。
-export type NumberCol = { key: string; label: string; short?: string; placeholder?: string; breakdown?: string };
+// rows は自由記入欄（1列だけの項目）の行数。
+export type NumberCol = {
+  key: string;
+  label: string;
+  short?: string;
+  placeholder?: string;
+  breakdown?: string;
+  rows?: number;
+};
 // hidden の項目は入力欄の一覧に出さない（内訳の保存用。シートには列として残る）。
+// depts があればその部門だけ、exceptDepts があればその部門以外に出す（どちらも無ければ全部門）。
 export type NumberField = {
   key: string;
   label: string;
@@ -21,7 +30,12 @@ export type NumberField = {
   note?: string;
   cols: NumberCol[];
   hidden?: boolean;
+  depts?: string[];
+  exceptDepts?: string[];
 };
+
+// 生徒数・入会・体験を持たない部門（管理・支援・経理グループ）。月次は自由記述の数値報告だけにする。
+const NO_STUDENT_DEPTS = [ADMIN_CAMPUS];
 
 // 生徒数の学年別内訳（小2〜高3）。
 export const GRADES = ['小2', '小3', '小4', '小5', '小6', '中1', '中2', '中3', '高1', '高2', '高3'];
@@ -32,6 +46,7 @@ export const MONTHLY_FIELDS: NumberField[] = [
     label: '生徒数',
     short: '生徒数',
     note: '対象月の月末時点',
+    exceptDepts: NO_STUDENT_DEPTS,
     cols: [
       { key: 'end', label: '月末', placeholder: '○名', breakdown: 'studentsByGrade' },
       { key: 'last', label: '昨年同月', placeholder: '○名', breakdown: 'studentsLastByGrade' },
@@ -42,6 +57,7 @@ export const MONTHLY_FIELDS: NumberField[] = [
     key: 'enroll',
     label: '入会',
     short: '入会',
+    exceptDepts: NO_STUDENT_DEPTS,
     cols: [
       { key: 'actual', label: '実績', placeholder: '○名', breakdown: 'enrollByGrade' },
       { key: 'last', label: '昨年同月', short: '昨年', placeholder: '○名', breakdown: 'enrollLastByGrade' },
@@ -52,6 +68,7 @@ export const MONTHLY_FIELDS: NumberField[] = [
     key: 'trial',
     label: '体験',
     short: '体験',
+    exceptDepts: NO_STUDENT_DEPTS,
     cols: [
       { key: 'actual', label: '実績', placeholder: '○名' },
       { key: 'target', label: '目標', placeholder: '○名' },
@@ -61,6 +78,7 @@ export const MONTHLY_FIELDS: NumberField[] = [
     key: 'events',
     label: 'その他、部門ごとのイベント等の目標・実績',
     short: 'イベント等',
+    exceptDepts: NO_STUDENT_DEPTS,
     note: '模試・講座・説明会など、部門で目標を立てているもの',
     cols: [{ key: 'note', label: '内容', placeholder: '例）10/18 一斉模試：目標 ○名 ／ 実績 ○名' }],
   },
@@ -70,7 +88,30 @@ export const MONTHLY_FIELDS: NumberField[] = [
   gradeField('studentsLastByGrade', '生徒数（昨年同月）の学年別'),
   gradeField('enrollByGrade', '入会（実績）の学年別'),
   gradeField('enrollLastByGrade', '入会（昨年同月）の学年別'),
+  // 管理・支援・経理グループ用（生徒数・入会・体験が無いので、自由記述の数値報告だけ）。これも末尾に足した列。
+  {
+    key: 'freeNumbers',
+    label: '数値報告（自由記述）',
+    short: '数値報告',
+    note: '担当業務で管理している数値を、前月・昨年・目標などと比べられる形で書いてください',
+    depts: NO_STUDENT_DEPTS,
+    cols: [
+      {
+        key: 'note',
+        label: '内容',
+        rows: 6,
+        placeholder: '例）\n求人応募数：今月 ○件 ／ 前月 ○件\n経費精算の処理件数：○件（目標 ○件）\n問い合わせ対応：○件',
+      },
+    ],
+  },
 ];
+
+// その部門で使う項目（隠し項目を含む）。
+export function fieldsFor(form: NumberForm, dept: string): NumberField[] {
+  return form.fields.filter(
+    (f) => (!f.depts || f.depts.includes(dept)) && !(f.exceptDepts && f.exceptDepts.includes(dept)),
+  );
+}
 
 function gradeField(key: string, label: string): NumberField {
   return { key, label, short: '学年別', hidden: true, cols: GRADES.map((g) => ({ key: g, label: g, placeholder: '○' })) };
@@ -280,15 +321,22 @@ export function cellKey(field: NumberField, col: NumberCol): string {
 export const DEPARTMENTS: string[] = STAFF.map((s) => s.campus);
 
 // 部門ごとの校舎プルダウン候補。★校舎の増減はここを編集する。
-// 記載のない部門（LEC・英検・総務など）は校舎名の自由入力欄になる。
+// 記載のない部門（LEC・英検など）は校舎名の自由入力欄になる。
+// 総務・人事・支援・管理は校舎の代わりにグループ（管理・支援・経理）で報告する（シートの「校舎」列に入る）。
 export const CAMPUSES_BY_DEPT: Record<string, string[]> = {
   小中等部: ['佐世保駅前校', '日野校', '大野校', '日宇校', '県中対策'],
   RED個別: ['広田教室', '京町教室', '日野教室', '佐々教室', '西海大島教室', '大野教室', 'ネクスタ'],
   高等部: ['佐世保駅前校', '日宇校', '大野校'],
+  [ADMIN_CAMPUS]: ['管理', '支援', '経理'],
 };
 
 export function campusesFor(dept: string): string[] {
   return CAMPUSES_BY_DEPT[dept] ?? [];
+}
+
+// 「校舎」欄の呼び方（管理部門はグループ）。
+export function unitLabel(dept: string): string {
+  return dept === ADMIN_CAMPUS ? 'グループ' : '校舎';
 }
 
 const LEAD_HEADERS = ['日時', '対象', '部門', '校舎', '入力者'];
@@ -329,8 +377,8 @@ export type NumberEntry = {
 };
 
 // 会議AIのプロンプト・報告文に載せる形へ整形する（未入力は「未集計」）。
-export function formatNumbers(form: NumberForm, values: NumberValues): string {
-  return form.fields
+export function formatNumbers(form: NumberForm, values: NumberValues, dept = ''): string {
+  return fieldsFor(form, dept)
     .filter((f) => !f.hidden)
     .map((f, i) => {
       const parts = f.cols
@@ -351,9 +399,13 @@ export function formatNumbers(form: NumberForm, values: NumberValues): string {
 
 // 画面表示用に「項目名：値」の行へ変換する（未入力は「—」）。
 // 一覧は幅が狭いので、短い項目名と詰めた値（例「実績3／目標5」）にする。
-export function displayRows(form: NumberForm, values: NumberValues): { label: string; value: string }[] {
+export function displayRows(
+  form: NumberForm,
+  values: NumberValues,
+  dept = '',
+): { label: string; value: string }[] {
   const rows: { label: string; value: string }[] = [];
-  for (const f of form.fields) {
+  for (const f of fieldsFor(form, dept)) {
     if (f.hidden) continue;
     const parts = f.cols
       .map((c) => {
@@ -392,7 +444,7 @@ function breakdownByGrade(form: NumberForm, f: NumberField, values: NumberValues
 export function formatEntries(form: NumberForm, entries: NumberEntry[]): string {
   if (entries.length === 0) return '';
   return entries
-    .map((e) => `▼${e.period}／${e.dept}／${e.campus}（入力：${e.user}）\n${formatNumbers(form, e.values)}`)
+    .map((e) => `▼${e.period}／${e.dept}／${e.campus}（入力：${e.user}）\n${formatNumbers(form, e.values, e.dept)}`)
     .join('\n\n');
 }
 
