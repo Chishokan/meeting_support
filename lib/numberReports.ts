@@ -11,8 +11,20 @@ import { STAFF } from './core/staff';
 export type ReportKind = 'monthly' | 'season';
 
 // short は一覧表示だけで使う短縮名（label はシート見出しに使う）。
-export type NumberCol = { key: string; label: string; short?: string; placeholder?: string };
-export type NumberField = { key: string; label: string; short: string; note?: string; cols: NumberCol[] };
+// breakdown を持つ列は直接入力せず、ポップアップで内訳（breakdown に書いた隠し項目の各列）を入れ、その合計を入れる。
+export type NumberCol = { key: string; label: string; short?: string; placeholder?: string; breakdown?: string };
+// hidden の項目は入力欄の一覧に出さない（内訳の保存用。シートには列として残る）。
+export type NumberField = {
+  key: string;
+  label: string;
+  short: string;
+  note?: string;
+  cols: NumberCol[];
+  hidden?: boolean;
+};
+
+// 生徒数の学年別内訳（小2〜高3）。
+export const GRADES = ['小2', '小3', '小4', '小5', '小6', '中1', '中2', '中3', '高1', '高2', '高3'];
 
 export const MONTHLY_FIELDS: NumberField[] = [
   {
@@ -21,7 +33,7 @@ export const MONTHLY_FIELDS: NumberField[] = [
     short: '生徒数',
     note: '対象月の月末時点',
     cols: [
-      { key: 'end', label: '月末', placeholder: '○名' },
+      { key: 'end', label: '月末', placeholder: '○名', breakdown: 'studentsByGrade' },
       { key: 'last', label: '昨年同月', placeholder: '○名' },
       { key: 'target', label: '目標', placeholder: '○名' },
     ],
@@ -52,7 +64,53 @@ export const MONTHLY_FIELDS: NumberField[] = [
     note: '模試・講座・説明会など、部門で目標を立てているもの',
     cols: [{ key: 'note', label: '内容', placeholder: '例）10/18 一斉模試：目標 ○名 ／ 実績 ○名' }],
   },
+  // ★この項目は必ず最後に置く。シートの既存の列の並びを崩さないよう、後から足した列は末尾に付け足している。
+  {
+    key: 'studentsByGrade',
+    label: '生徒数（月末）の学年別',
+    short: '学年別',
+    hidden: true,
+    cols: GRADES.map((g) => ({ key: g, label: g, placeholder: '○' })),
+  },
 ];
+
+// 「その他、部門ごとのイベント等」に必ず入れてもらう数値（部門別）。★部門の増減・項目の変更はここを編集する。
+// 画面では入力欄の上に案内を出し、template をひな形として入れられるようにする。
+export const EVENT_GUIDES: Record<string, { items: string; template: string }> = {
+  RED個別: {
+    items: '中3県一斉模試（今年／昨年）・中3パック受講数（今年／昨年）',
+    template: '中3県一斉模試：今年 ○名 ／ 昨年 ○名\n中3パック受講数：今年 ○名 ／ 昨年 ○名',
+  },
+  小中等部: {
+    items: '模試（今年／昨年）',
+    template: '模試：今年 ○名 ／ 昨年 ○名',
+  },
+};
+
+// 内訳の合計（数字だけを拾って足す。1つも入っていなければ空文字）。
+export function sumBreakdown(field: NumberField, values: NumberValues): string {
+  let total = 0;
+  let any = false;
+  for (const c of field.cols) {
+    const n = parseInt((values[cellKey(field, c)] ?? '').replace(/[^0-9]/g, ''), 10);
+    if (!Number.isNaN(n)) {
+      total += n;
+      any = true;
+    }
+  }
+  return any ? String(total) : '';
+}
+
+// 内訳を「小2 3・小3 5」の形に（入力のある学年だけ）。
+export function formatBreakdown(field: NumberField, values: NumberValues): string {
+  return field.cols
+    .map((c) => {
+      const v = (values[cellKey(field, c)] ?? '').trim();
+      return v ? `${c.label} ${v}` : '';
+    })
+    .filter(Boolean)
+    .join('・');
+}
 
 // 夏期数値をもとに、春期・夏期・冬期で共通に使えるようにした項目。
 export const SEASON_FIELDS: NumberField[] = [
@@ -271,12 +329,17 @@ export type NumberEntry = {
 // 会議AIのプロンプト・報告文に載せる形へ整形する（未入力は「未集計」）。
 export function formatNumbers(form: NumberForm, values: NumberValues): string {
   return form.fields
+    .filter((f) => !f.hidden)
     .map((f, i) => {
       const parts = f.cols
         .map((c) => {
           const v = (values[cellKey(f, c)] ?? '').trim();
           if (!v) return f.cols.length === 1 ? '未集計' : `${c.label} 未集計`;
-          return f.cols.length === 1 ? v : `${c.label} ${v}`;
+          // 内訳がある列は「月末 118（内訳 小2 3・小3 5…）」のように添える。
+          const bf = c.breakdown ? form.fields.find((x) => x.key === c.breakdown) : undefined;
+          const detail = bf ? formatBreakdown(bf, values) : '';
+          const shown = detail ? `${v}（内訳 ${detail}）` : v;
+          return f.cols.length === 1 ? shown : `${c.label} ${shown}`;
         })
         .join(' ／ ');
       return `${i + 1}. ${f.label}：${parts}`;
@@ -287,16 +350,20 @@ export function formatNumbers(form: NumberForm, values: NumberValues): string {
 // 画面表示用に「項目名：値」の行へ変換する（未入力は「—」）。
 // 一覧は幅が狭いので、短い項目名と詰めた値（例「実績3／目標5」）にする。
 export function displayRows(form: NumberForm, values: NumberValues): { label: string; value: string }[] {
-  return form.fields.map((f) => {
-    const parts = f.cols
-      .map((c) => {
-        const v = (values[cellKey(f, c)] ?? '').trim();
-        if (!v) return null;
-        return f.cols.length === 1 ? v : `${c.short ?? c.label}${v}`;
-      })
-      .filter(Boolean);
-    return { label: f.short, value: parts.length ? parts.join('／') : '—' };
-  });
+  // 隠し項目（学年別の内訳）は、入力があるときだけ1行出す。
+  return form.fields
+    .filter((f) => !f.hidden || f.cols.some((c) => (values[cellKey(f, c)] ?? '').trim()))
+    .map((f) => {
+      if (f.hidden) return { label: f.short, value: formatBreakdown(f, values) };
+      const parts = f.cols
+        .map((c) => {
+          const v = (values[cellKey(f, c)] ?? '').trim();
+          if (!v) return null;
+          return f.cols.length === 1 ? v : `${c.short ?? c.label}${v}`;
+        })
+        .filter(Boolean);
+      return { label: f.short, value: parts.length ? parts.join('／') : '—' };
+    });
 }
 
 // 会議AIのプロンプトへ差し込む形に整形する。
