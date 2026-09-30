@@ -400,6 +400,37 @@ button.primary:disabled { opacity: .5; cursor: default; }
   padding: 8px 10px; font-size: 14px; border: 1px solid #cdd3da; border-radius: 8px;
   font-family: inherit; font-variant-numeric: tabular-nums; width: 100%;
 }
+.num-cols textarea {
+  width: 100%; padding: 8px 10px; font-size: 14px; font-family: inherit; line-height: 1.6;
+  border: 1px solid #cdd3da; border-radius: 8px; resize: vertical;
+}
+/* 部門ごとに必ず入れてもらう数値の案内（月次「イベント等」欄） */
+.num-guide {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 8px; padding: 8px 12px; background: #fffbe9; border: 1px solid #f0e2ad; border-radius: 8px;
+}
+.num-guide p { margin: 0; font-size: 12.5px; color: #6b5210; line-height: 1.6; min-width: 0; flex: 1 1 240px; }
+.num-guide b { display: block; }
+.num-guide button {
+  font-size: 12px; font-weight: 700; color: var(--navy); background: #fff; border: 1px solid #cfe0ee;
+  border-radius: 6px; padding: 5px 12px; cursor: pointer; white-space: nowrap;
+}
+.num-guide button:hover { background: #eef3f8; }
+/* 生徒数（月末）：学年別ポップアップを開くボタン。合計を表示する */
+.num-breakdown-btn {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 6px; width: 100%;
+  padding: 8px 10px; font-size: 14px; font-weight: 700; color: var(--navy); text-align: left;
+  background: #eef3f8; border: 1px dashed #9fbad6; border-radius: 7px; cursor: pointer;
+}
+.num-breakdown-btn:hover { background: #e3edf7; }
+.num-breakdown-btn small { font-size: 11px; font-weight: 400; color: #6b7c8f; white-space: nowrap; }
+.num-modal { width: min(560px, 100%); }
+.num-grade-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
+.num-grade-grid label { display: flex; flex-direction: column; gap: 3px; }
+.num-grade-grid span { font-size: 12px; font-weight: 700; color: #667; }
+.num-grade-grid input { padding: 8px 10px; font-size: 15px; border: 1px solid var(--line); border-radius: 7px; width: 100%; }
+.num-grade-total { margin: 16px 0 0; font-size: 14px; color: #2a2f36; text-align: right; }
+.num-grade-total b { font-size: 20px; color: var(--navy); font-variant-numeric: tabular-nums; }
 .num-actions { display: flex; align-items: center; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
 .num-actions button { padding: 10px 22px; font-size: 14px; font-weight: 700; color: #fff; background: var(--navy); border: none; border-radius: 8px; cursor: pointer; }
 .num-actions button:disabled { opacity: .5; cursor: default; }
@@ -416,6 +447,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .num-view dd {
   margin: 0; font-size: 12.5px; font-weight: 700; color: #2a2f36;
   font-variant-numeric: tabular-nums; line-height: 1.5; overflow-wrap: anywhere;
+  white-space: pre-line;
 }
 .num-view > div.empty dd { color: #b6bec7; font-weight: 400; }
 .num-list li:last-child { border-bottom: none; }
