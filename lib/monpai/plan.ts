@@ -8,10 +8,14 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { withCompanyKnowledge } from '../core/companyKnowledge';
 import { MODEL, THINKING } from '../systemPrompt';
+import { historyLine, summarizeHistory } from './history';
 import {
   bottomOf, daysOf, shiftMonth, todayJst, weekOf,
   type MonpaiRecord, type MonthSetting, type School,
 } from './model';
+
+/** 計画案の根拠にする実績の期間（対象月の前の何か月分） */
+export const HISTORY_MONTHS = 6;
 
 const client = new Anthropic();
 
@@ -26,7 +30,9 @@ export type PlanItem = {
   why: string;
 };
 
-export type PlanResult = { ok: true; summary: string; items: PlanItem[]; dropped: number } | { ok: false; reason: string };
+export type PlanResult =
+  | { ok: true; summary: string; items: PlanItem[]; dropped: number; basis: { months: number; visits: number } }
+  | { ok: false; reason: string };
 
 const SYSTEM = `
 あなたは株式会社智翔館の門配（校門前でのチラシ配布）の月間計画を立てる担当です。
@@ -34,15 +40,19 @@ const SYSTEM = `
 
 【考え方】
 - 目的は、各学校のボトム（月の最低配布数）を月末までに確実に満たすこと。残り必要数が大きい学校から優先する。
-- 1回の門配は1校・30〜60部が目安。前月までの実績で受け取りが良かった曜日・時間帯・担当者を参考にする。
-- 平日（月〜金）の下校時刻に行う。中学校はおおむね16:00〜17:30、小学校は14:30〜15:30。前月の記録に時間があればそれに合わせる。
+- いちばんの根拠は【これまでの実績（学校ごと）】。その学校で受け取りの良かった曜日・時間・担当者を優先して選ぶ。
+- 1回の部数は、その学校の「1回の計画の中央値」前後にする。実績が無い学校は30〜50部。
+- 受け取り率が低い学校（おおむね70%未満）は、計画どおり配っても実績がボトムに届かない。
+  【学校ごとのボトムと残り必要数】の「実績見込みでの不足」を満たすよう、回数を増やす（1回の部数を増やすより回数）。
+- 「0部だった回」の理由（雨天・下校時刻の読み違い・入塾面談など）を見て、同じ失敗を避ける（時間を変える・予備日を置く）。
+- 平日（月〜金）の下校時刻に行う。実績に時間があればそれに合わせる。無ければ中学校16:00〜17:30、小学校14:30〜15:30。
 - 同じ担当者に同じ日に2校以上を割り当てない。1人に予定が偏らないよう分散させる。
 - 月末に詰め込まず、月の前半から計画的に配置する。定期テスト前・行事の日が分かっていれば避ける。
 - 担当者は【担当者の候補】から選ぶ。分からなければ空欄にする（人を作らない）。
 - 配布物は【配布物】の品名から選ぶ。無ければ空欄。
 
 【出力】次の JSON だけを出力する（前後に説明文やコードブロックの記号を付けない）。
-{"summary":"計画の要点を2〜3文で","items":[{"date":"YYYY-MM-DD","time":"16:00-17:00","school":"学校名","staff1":"担当","staff2":"","material":"品名","planned":50,"why":"この日・この学校にした理由を1文で"}]}
+{"summary":"計画の要点を2〜3文で（どの実績を根拠にしたか）","items":[{"date":"YYYY-MM-DD","time":"16:00-17:00","school":"学校名","staff1":"担当","staff2":"","material":"品名","planned":50,"why":"この日・時間・担当にした理由を、実績の数字を挙げて1文で（例：火曜17:30は平均48部で最も受け取りが良い）"}]}
 `.trim();
 
 function recordLine(r: MonpaiRecord): string {
@@ -56,35 +66,44 @@ export function buildFacts(args: {
   month: string;
   schools: School[];
   settings: MonthSetting[];
-  records: MonpaiRecord[]; // 今月と前月
+  records: MonpaiRecord[]; // 今月と、その前の HISTORY_MONTHS か月
   materials: string[];
   staff: string[];
   from: string; // この日以降に計画する
-}): { text: string; need: Record<string, number> } {
+}): { text: string; need: Record<string, number>; basis: { months: number; visits: number } } {
   const { district, month, schools, settings, records, materials, staff, from } = args;
-  const prev = shiftMonth(month, -1);
+  const start = `${shiftMonth(month, -HISTORY_MONTHS)}-01`;
   const cur = records.filter((r) => r.district === district && r.date.startsWith(month));
-  const past = records.filter((r) => r.district === district && r.date.startsWith(prev));
+  const past = records.filter((r) => r.district === district && r.date >= start && r.date < `${month}-01`);
+  const history = summarizeHistory(past, schools);
   const need: Record<string, number> = {};
 
   const schoolLines = schools.map((s) => {
     const b = bottomOf(s, settings, month);
     const planned = cur.filter((r) => r.school === s.name && r.status !== '中止').reduce((a, r) => a + r.planned, 0);
     need[s.name] = Math.max(0, b.bottom - planned);
-    return `- ${s.name}（${s.kind}学校・生徒数${s.students}）ボトム${b.bottom}部（${Math.round(b.rate * 100)}%${b.recruit ? '・募集期' : ''}） 計画済み${planned}部 → 残り必要${need[s.name]}部`;
+    const rate = history.find((h) => h.school === s.name)?.rate;
+    // 受け取り率から見た実績の見込み（計画済み×受け取り率）と、ボトムまでの不足
+    const expect = rate == null ? null : Math.round(planned * rate);
+    const gap = expect == null ? '' : ` 実績見込み${expect}部 → 実績見込みでの不足${Math.max(0, b.bottom - expect)}部`;
+    return `- ${s.name}（${s.kind}学校・生徒数${s.students}）ボトム${b.bottom}部（${Math.round(b.rate * 100)}%${b.recruit ? '・募集期' : ''}） 計画済み${planned}部 → 残り必要${need[s.name]}部${gap}`;
   });
+  // 生の記録は直近の報告済み40件だけ（曜日・時間の書き方の参考）
+  const recent = past.filter((r) => r.done != null || r.status === '中止').sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40).reverse();
+  const months = new Set(past.map((r) => r.date.slice(0, 7))).size;
   const days = daysOf(month).filter((d) => d.date >= from && !d.holiday).map((d) => `${d.day}(${d.week})`);
 
   const text = [
     `【対象】${district}地区 ${month.replace('-', '年')}月`,
     `【計画してよい日】${days.join(' ') || 'なし'}`,
     `【学校ごとのボトムと残り必要数】\n${schoolLines.join('\n')}`,
+    `【これまでの実績（学校ごと・${start.slice(0, 7)}〜${shiftMonth(month, -1)}、コードで集計）】\n${history.map(historyLine).join('\n')}`,
     `【今月すでに入っている予定（重ねない）】\n${cur.map(recordLine).join('\n') || 'なし'}`,
-    `【前月の記録（参考）】\n${past.map(recordLine).join('\n') || 'なし'}`,
+    `【直近の記録（参考）】\n${recent.map(recordLine).join('\n') || 'なし'}`,
     `【担当者の候補】${staff.join('、') || 'なし（空欄にする）'}`,
     `【配布物】${materials.join('、') || 'なし（空欄にする）'}`,
   ].join('\n\n');
-  return { text, need };
+  return { text, need, basis: { months, visits: history.reduce((a, h) => a + h.visits, 0) } };
 }
 
 function parseJson(text: string): { summary?: unknown; items?: unknown } | null {
@@ -149,7 +168,7 @@ export async function draftPlan(args: {
   const today = todayJst();
   const tomorrow = new Date(Date.parse(today + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
   const from = `${args.month}-01` > tomorrow ? `${args.month}-01` : tomorrow;
-  const { text } = buildFacts({ ...args, from });
+  const { text, basis } = buildFacts({ ...args, from });
 
   let out = '';
   try {
@@ -177,5 +196,5 @@ export async function draftPlan(args: {
   const { items, dropped } = sanitizePlan(j.items, {
     month: args.month, from, schools: args.schools, existing, staff: args.staff, materials: args.materials,
   });
-  return { ok: true, summary: String(j.summary ?? '').slice(0, 500), items, dropped };
+  return { ok: true, summary: String(j.summary ?? '').slice(0, 500), items, dropped, basis };
 }
