@@ -9,6 +9,12 @@
  * 4. previewMonpaiImport を「実行」→ 新しいタブ「門配_取込確認」に、取り込む予定の行が並ぶ。中身を確認する
  * 5. 問題なければ runMonpaiImport を「実行」→ 1か月ずつアプリに送る。結果は「実行ログ」に出る
  *
+ * 【合言葉を設定せずに1回だけ取り込む場合】（3・5 の代わり）
+ * A. buildMonpaiImportSql を「実行」→ 新しいタブ「門配_取込SQL」の A 列に SQL が並ぶ
+ * B. A 列をまとめてコピー（A 列の見出しをクリック → コピー）し、Supabase の SQL Editor に貼り付けて Run
+ *    ・入れる先は下の SQL_SCHEMA（dev は chishokan_dev、本番は chishokan_prod）
+ *    ・先頭で、その区画の「シート取込」の記録（4〜10月）を消してから入れ直すので、何度実行しても二重にならない
+ *
  * ・同じ月を何度送っても二重にならない（その月の「シート取込」の記録を入れ替える）
  * ・アプリで入力した記録には触らない
  * ・学校名はアプリの学校マスタと突き合わせる（頭の数字「7祇園中」の 7 は無視）。マスタに無い学校は取り込まれず、ログに出る
@@ -21,6 +27,18 @@ var FROM_MONTH = '2026-04';      // この月から
 var TO_MONTH = '2026-10';        // この月まで（10月は計画も取り込む）
 var HEADER_ROWS = 8;             // 見出しがある行（上から何行目まで）
 var PREVIEW_SHEET = '門配_取込確認';
+var SQL_SHEET = '門配_取込SQL';
+var SQL_SCHEMA = 'chishokan_dev'; // 本番に入れるときは 'chishokan_prod'
+
+// 学校 → 地区（アプリの学校マスタと同じ。SQL で取り込むときに使う）。ここに無い学校は取り込まずログに出す
+var SCHOOL_DISTRICT = {
+  '大野中': '大野', '中里中': '大野', '柚木中': '大野', '大野小': '大野', '中里小': '大野', '春日小': '大野',
+  '日野中': '日野', '相浦中': '日野', '愛宕中': '日野', '日野小': '日野', '相浦小': '日野',
+  '日宇中': '広田', '大塔小': '広田', '黒髪小': '広田', '日宇小': '広田',
+  '祇園中': '駅前', '山澄中': '駅前', '福石中': '駅前', '崎辺中': '駅前', '祇園小': '駅前', '白南風小': '駅前',
+  '佐々中': '佐々', '小佐々中': '佐々', '吉井中': '佐々', '江迎中': '佐々', '佐々小': '佐々', '口石小': '佐々',
+  '大崎中': '西海大島', '西海中': '西海大島', '大崎小': '西海大島',
+};
 
 // ---- 実行する関数 -------------------------------------------------------------
 
@@ -55,6 +73,41 @@ function runMonpaiImport() {
     });
     Logger.log(m + '：送信 ' + list.length + '行 → ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 800));
   });
+}
+
+function buildMonpaiImportSql() {
+  var rows = parseMonpaiSheet_();
+  var q = function (v) { return "'" + String(v == null ? '' : v).replace(/'/g, "''") + "'"; };
+  var t = SQL_SCHEMA + '.monpai_records';
+  var lines = [
+    '-- 門配の取り込み（' + FROM_MONTH + '〜' + TO_MONTH + '、MP広告計画タブ）。入れる先：' + SQL_SCHEMA,
+    "delete from " + t + " where created_by = 'シート取込' and date >= '" + FROM_MONTH + "-01' and date < '" + nextMonth_(TO_MONTH) + "-01';",
+  ];
+  var skipped = {};
+  var count = 0;
+  rows.forEach(function (r) {
+    var school = String(r.school).replace(/[\s　]/g, '');
+    var district = SCHOOL_DISTRICT[school];
+    if (!district) { skipped[school] = (skipped[school] || 0) + 1; return; }
+    var done = r.done === null ? 'null' : String(r.done);
+    var status = r.done === null ? '予定' : '実施';
+    lines.push('insert into ' + t + ' (date, time, district, school, staff1, staff2, planned, done, status, reason, created_by, updated_by) values ('
+      + [q(r.date), q(r.time), q(district), q(school), q(r.staff1), q(r.staff2), String(r.planned), done, q(status), q(r.reason), q('シート取込'), q('シート取込')].join(', ') + ');');
+    count++;
+  });
+  lines.push("select to_char(date, 'YYYY-MM') as 月, count(*) as 件数 from " + t + " where created_by = 'シート取込' group by 1 order by 1;");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var out = ss.getSheetByName(SQL_SHEET) || ss.insertSheet(SQL_SHEET);
+  out.clear();
+  out.getRange(1, 1, lines.length, 1).setNumberFormat('@').setValues(lines.map(function (l) { return [l]; }));
+  Logger.log('SQL を ' + count + '件分 書き出しました。学校マスタに無く飛ばした学校：' + JSON.stringify(skipped));
+  ss.toast(count + '件分の SQL を「' + SQL_SHEET + '」の A 列に出しました', '門配の取り込み', 10);
+}
+
+function nextMonth_(ym) {
+  var y = parseInt(ym.slice(0, 4), 10), m = parseInt(ym.slice(5), 10) + 1;
+  if (m > 12) { m = 1; y++; }
+  return y + '-' + ('0' + m).slice(-2);
 }
 
 // ---- シートの読み取り -----------------------------------------------------------
