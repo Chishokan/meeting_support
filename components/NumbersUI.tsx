@@ -41,28 +41,32 @@ function reasonText(reason: string | undefined): string {
   return `理由：${reason ?? '不明'}`;
 }
 
-// 内訳（学年別の生徒数など）を入れるポップアップ。「決定」で合計を元の画面の欄に入れる。
+// 内訳の列（元の画面の列と、その学年別の内訳を持つ隠し項目）。
+type BreakdownCol = { col: NumberCol; bf: NumberField };
+
+// 学年別の人数を入れるポップアップ。1つの項目（生徒数・入会）の内訳列（例：月末と昨年同月）を並べて入れる。
+// 「決定」で各列の合計を元の画面の欄に入れる。
 function BreakdownModal({
   title,
-  field,
+  cols,
   values,
   onSave,
   onClose,
 }: {
   title: string;
-  field: NumberField;
+  cols: BreakdownCol[];
   values: NumberValues;
   onSave: (next: NumberValues) => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<NumberValues>(() => {
     const d: NumberValues = {};
-    for (const c of field.cols) d[cellKey(field, c)] = values[cellKey(field, c)] ?? '';
+    for (const { bf } of cols) for (const c of bf.cols) d[cellKey(bf, c)] = values[cellKey(bf, c)] ?? '';
     return d;
   });
   const close = useCallback(() => onClose(), [onClose]);
   useModalDismiss(close);
-  const total = sumBreakdown(field, draft);
+  const grades = cols[0]?.bf.cols ?? [];
 
   return (
     <div className="dm-modal-bg" onClick={close}>
@@ -81,21 +85,52 @@ function BreakdownModal({
           <button className="dm-modal-close" onClick={close} aria-label="閉じる">×</button>
         </div>
         <div className="dm-modal-body">
-          <div className="num-grade-grid">
-            {field.cols.map((c) => (
-              <label key={c.key}>
-                <span>{c.label}</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={draft[cellKey(field, c)] ?? ''}
-                  onChange={(e) => setDraft((d) => ({ ...d, [cellKey(field, c)]: e.target.value }))}
-                  placeholder="○"
-                />
-              </label>
-            ))}
-          </div>
-          <p className="num-grade-total">合計 <b>{total || '—'}</b>{total ? ' 名' : ''}</p>
+          <table className="num-grade-table">
+            <thead>
+              <tr>
+                <th scope="col">学年</th>
+                {cols.map(({ col }) => (
+                  <th key={col.key} scope="col">{col.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {grades.map((g) => (
+                <tr key={g.key}>
+                  <th scope="row">{g.label}</th>
+                  {cols.map(({ col, bf }) => {
+                    const c = bf.cols.find((x) => x.key === g.key)!;
+                    const key = cellKey(bf, c);
+                    return (
+                      <td key={col.key}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          aria-label={`${g.label} ${col.label}`}
+                          value={draft[key] ?? ''}
+                          onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+                          placeholder="○"
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th scope="row">合計</th>
+                {cols.map(({ col, bf }) => {
+                  const total = sumBreakdown(bf, draft);
+                  return (
+                    <td key={col.key}>
+                      <b>{total || '—'}</b>{total ? ' 名' : ''}
+                    </td>
+                  );
+                })}
+              </tr>
+            </tfoot>
+          </table>
         </div>
         <div className="dm-modal-foot">
           <button className="dm-modal-edit" onClick={close}>キャンセル</button>
@@ -117,7 +152,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
   const [status, setStatus] = useState('');
   const [note, setNote] = useState('');
   // 内訳ポップアップを開いている列（開いていなければ null）。
-  const [breakdownOf, setBreakdownOf] = useState<{ field: NumberField; col: NumberCol } | null>(null);
+  const [breakdownOf, setBreakdownOf] = useState<NumberField | null>(null);
 
   const form = NUMBER_FORMS[kind];
   const shown = entries.filter((e) => e.period === period);
@@ -173,11 +208,23 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
     setValues((prev) => ({ ...prev, [key]: v }));
   }
 
+  // 項目のうち、学年別の内訳を持つ列（生徒数なら月末と昨年同月）。
+  function breakdownColsOf(f: NumberField): BreakdownCol[] {
+    return f.cols
+      .map((c) => ({ col: c, bf: c.breakdown ? form.fields.find((x) => x.key === c.breakdown) : undefined }))
+      .filter((x): x is BreakdownCol => !!x.bf);
+  }
+
   // 内訳を決定：内訳の各値を保存し、合計を元の列へ入れる。
-  function saveBreakdown(total: { field: NumberField; col: NumberCol }, bf: NumberField, draft: NumberValues) {
-    setValues((prev) => ({ ...prev, ...draft, [cellKey(total.field, total.col)]: sumBreakdown(bf, draft) }));
+  function saveBreakdown(f: NumberField, cols: BreakdownCol[], draft: NumberValues) {
+    setValues((prev) => {
+      const next = { ...prev, ...draft };
+      for (const { col, bf } of cols) next[cellKey(f, col)] = sumBreakdown(bf, draft);
+      return next;
+    });
     setBreakdownOf(null);
   }
+
 
   // 部門ごとの必須数値のひな形を入れる（すでに書いてあれば末尾に足す）。
   function insertTemplate(key: string, template: string) {
@@ -327,7 +374,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
                             <button
                               type="button"
                               className="num-breakdown-btn"
-                              onClick={() => setBreakdownOf({ field: f, col: c })}
+                              onClick={() => setBreakdownOf(f)}
                             >
                               {values[key] ? `${values[key]} 名` : '学年別に入力'}
                               <small>{values[key] ? '内訳を見る・直す' : ''}</small>
@@ -401,14 +448,14 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
       </div>
 
       {breakdownOf && (() => {
-        const bf = form.fields.find((x) => x.key === breakdownOf.col.breakdown);
-        if (!bf) return null;
+        const cols = breakdownColsOf(breakdownOf);
+        if (cols.length === 0) return null;
         return (
           <BreakdownModal
-            title={`${breakdownOf.field.label}（${breakdownOf.col.label}）の学年別`}
-            field={bf}
+            title={`${breakdownOf.label}の学年別`}
+            cols={cols}
             values={values}
-            onSave={(draft) => saveBreakdown(breakdownOf, bf, draft)}
+            onSave={(draft) => saveBreakdown(breakdownOf, cols, draft)}
             onClose={() => setBreakdownOf(null)}
           />
         );
