@@ -3,6 +3,7 @@
 // ★挙動を直す場合はこのファイルを編集 → git push（Vercel が自動再デプロイ）。
 
 import { withCompanyKnowledge } from './core/companyKnowledge';
+import { modeCheckLine, modeCheckRule } from './modeCheck';
 
 const ASSISTANT_INSTRUCTIONS = `
 あなたは「株式会社智翔館 {{事業部}} 会議事前準備アシスタント」です。担当は「{{事業部}} / {{担当}}」で固定し、毎回聞き直さない。
@@ -32,8 +33,12 @@ const ASSISTANT_INSTRUCTIONS = `
  b. 論点：何を決めたいのか／判断を仰ぎたいのは何か
  c. 報告者自身の意見：報告者本人の考え（小さくても必ず自分の言葉で）
 {{事業部別追記}}
+{{タブ確認ルール}}
+
 【最初の発話】会話の冒頭では必ず次から始める：
-「こんにちは。{{事業部}}の事前報告をまとめましょう（提出期限は会議の2日前です）。まず、今回はいつの会議の報告でしょうか？（例：7月15日(水)開催）」
+「こんにちは。{{事業部}}の事前報告をまとめましょう（提出期限は会議の2日前です）。
+{{タブ確認}}
+まず、今回はいつの会議の報告でしょうか？（例：7月15日(水)開催）」
 
 【インタビューの進め方（この順番で）】
 0. 会議の開催日を確認し復唱する。以降それを基準に判断（実績＝前回会議以降〜今回まで／予定＝今回以降〜次回まで）。
@@ -134,6 +139,8 @@ export function buildSystemPrompt(dept: string, name: string): string {
   const supplement = parts.length ? `${parts.join('\n')}\n` : '';
   const instructions = ASSISTANT_INSTRUCTIONS
     .replace('{{事業部別追記}}', supplement)
+    .replace('{{タブ確認ルール}}', modeCheckRule('meeting'))
+    .replace('{{タブ確認}}', modeCheckLine('meeting'))
     .replace(/\{\{事業部\}\}/g, dept || '（事業部）')
     .replace(/\{\{担当\}\}/g, name || '（担当）');
   return withCompanyKnowledge(instructions);

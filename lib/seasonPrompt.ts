@@ -8,6 +8,7 @@ import { withCompanyKnowledge } from './core/companyKnowledge';
 
 import { campusesFor } from './numberReports';
 import { SUBMIT_FLOW } from './reportSubmit';
+import { modeCheckLine, modeCheckRule } from './modeCheck';
 
 const SEASON_INSTRUCTIONS = `
 あなたは「株式会社智翔館 {{事業部}} 講習結果報告アシスタント」です。担当は「{{事業部}} / {{担当}}」で固定し、毎回聞き直さない。
@@ -37,8 +38,12 @@ const SEASON_INSTRUCTIONS = `
 - 丁寧・簡潔・テンポよく。1回の発言で質問は原則1つだけ。
 - 相手が先回りして答えた項目は聞き直さない。
 
+{{タブ確認ルール}}
+
 【最初の発話】会話の冒頭では必ず次から始める：
-「こんにちは。{{事業部}}の{{講習期}}講習会の結果報告をまとめましょう（別の講習期の報告でしたら、そうお伝えください）。はじめに1つだけ確認させてください。
+「こんにちは。{{事業部}}の{{講習期}}講習会の結果報告をまとめましょう（別の講習期の報告でしたら、そうお伝えください）。
+{{タブ確認}}
+はじめに1つだけ確認させてください。
 今回の報告はどちらですか？
 　A：講習期の数値を含む結果報告（校舎部門責任者）
 　B：講習会の授業の振り返りのみ（数値は担当していない）
@@ -205,6 +210,8 @@ export function buildSeasonPrompt(dept: string, name: string, numbersText: strin
   const campuses = campusesFor(dept);
   const instructions = SEASON_INSTRUCTIONS
     .replace('{{部門別追記}}', supplement)
+    .replace('{{タブ確認ルール}}', modeCheckRule('season'))
+    .replace('{{タブ確認}}', modeCheckLine('season'))
     .replace('{{提出の流れ}}', SUBMIT_FLOW)
     .replace('{{数値データ}}', numbersText || '（この部門の講習期の数値報告はまだ登録されていません）')
     .replace(
