@@ -26,7 +26,7 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [cellList, setCellList] = useState<{ date: string; school: string } | null>(null);
   const [materialNames, setMaterialNames] = useState<string[]>([]);
-  const [plan, setPlan] = useState<{ summary: string; items: (PlanItem & { pick: boolean })[]; dropped: number; basis?: { months: number; visits: number } } | null>(null);
+  const [plan, setPlan] = useState<{ summary: string; items: (PlanItem & { pick: boolean })[]; dropped: number; basis?: { months: number; visits: number; staff: number } } | null>(null);
   const [planBusy, setPlanBusy] = useState(false);
   const [planMsg, setPlanMsg] = useState('');
   const [rateEdit, setRateEdit] = useState<{ school: string; value: string } | null>(null);
@@ -335,6 +335,7 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
                   {plan.basis.visits > 0
                     ? `直近${plan.basis.months}か月の実績 ${plan.basis.visits} 回分（受け取り率・曜日・時間・担当）をもとに作成しました。`
                     : 'この地区にはまだ実績が無いため、一般的な目安で作成しました。'}
+                  {plan.basis.staff === 0 && ' この地区は担当者の記録が無いため、担当はすべて「未定」にしています。'}
                 </p>
               )}
               {plan.summary && <p className="mp-plan-summary">{plan.summary}</p>}
