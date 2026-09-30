@@ -1,18 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   DEPARTMENTS,
+  EVENT_GUIDES,
   NUMBER_FORMS,
   campusesFor,
   cellKey,
   defaultPeriod,
   displayRows,
   periodOptions,
+  sumBreakdown,
+  type NumberCol,
   type NumberEntry,
+  type NumberField,
   type NumberValues,
   type ReportKind,
 } from '@/lib/numberReports';
+import { useModalDismiss } from '@/lib/useModalDismiss';
 
 const KINDS: ReportKind[] = ['monthly', 'season'];
 const KIND_STORE = 'chishokan_numbers_kind';
@@ -36,6 +41,71 @@ function reasonText(reason: string | undefined): string {
   return `理由：${reason ?? '不明'}`;
 }
 
+// 内訳（学年別の生徒数など）を入れるポップアップ。「決定」で合計を元の画面の欄に入れる。
+function BreakdownModal({
+  title,
+  field,
+  values,
+  onSave,
+  onClose,
+}: {
+  title: string;
+  field: NumberField;
+  values: NumberValues;
+  onSave: (next: NumberValues) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState<NumberValues>(() => {
+    const d: NumberValues = {};
+    for (const c of field.cols) d[cellKey(field, c)] = values[cellKey(field, c)] ?? '';
+    return d;
+  });
+  const close = useCallback(() => onClose(), [onClose]);
+  useModalDismiss(close);
+  const total = sumBreakdown(field, draft);
+
+  return (
+    <div className="dm-modal-bg" onClick={close}>
+      <div
+        className="dm-modal num-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="dm-modal-head">
+          <div>
+            <div className="dm-modal-sub">学年ごとの人数を入れてください（いない学年は空欄で構いません）</div>
+            <h2>{title}</h2>
+          </div>
+          <button className="dm-modal-close" onClick={close} aria-label="閉じる">×</button>
+        </div>
+        <div className="dm-modal-body">
+          <div className="num-grade-grid">
+            {field.cols.map((c) => (
+              <label key={c.key}>
+                <span>{c.label}</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={draft[cellKey(field, c)] ?? ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, [cellKey(field, c)]: e.target.value }))}
+                  placeholder="○"
+                />
+              </label>
+            ))}
+          </div>
+          <p className="num-grade-total">合計 <b>{total || '—'}</b>{total ? ' 名' : ''}</p>
+        </div>
+        <div className="dm-modal-foot">
+          <button className="dm-modal-edit" onClick={close}>キャンセル</button>
+          <button className="dm-modal-done" onClick={() => onSave(draft)}>決定</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function NumbersUI({ name, campus }: { name: string; campus: string }) {
   const [kind, setKind] = useState<ReportKind>('monthly');
   const [period, setPeriod] = useState(() => defaultPeriod('monthly'));
@@ -46,6 +116,8 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [note, setNote] = useState('');
+  // 内訳ポップアップを開いている列（開いていなければ null）。
+  const [breakdownOf, setBreakdownOf] = useState<{ field: NumberField; col: NumberCol } | null>(null);
 
   const form = NUMBER_FORMS[kind];
   const shown = entries.filter((e) => e.period === period);
@@ -99,6 +171,20 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
 
   function set(key: string, v: string) {
     setValues((prev) => ({ ...prev, [key]: v }));
+  }
+
+  // 内訳を決定：内訳の各値を保存し、合計を元の列へ入れる。
+  function saveBreakdown(total: { field: NumberField; col: NumberCol }, bf: NumberField, draft: NumberValues) {
+    setValues((prev) => ({ ...prev, ...draft, [cellKey(total.field, total.col)]: sumBreakdown(bf, draft) }));
+    setBreakdownOf(null);
+  }
+
+  // 部門ごとの必須数値のひな形を入れる（すでに書いてあれば末尾に足す）。
+  function insertTemplate(key: string, template: string) {
+    setValues((prev) => {
+      const cur = (prev[key] ?? '').trim();
+      return { ...prev, [key]: cur ? `${cur}\n${template}` : template };
+    });
   }
 
   // 登録済みの内容を読み込んで、修正のたたき台にする。
@@ -210,28 +296,65 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
           </div>
 
           <ol className="num-fields">
-            {form.fields.map((f) => (
-              <li key={f.key}>
-                <div className="num-label">
-                  {f.label}
-                  {f.note && <small>{f.note}</small>}
-                </div>
-                <div className="num-cols">
-                  {f.cols.map((c) => (
-                    <label key={c.key} className={f.cols.length === 1 ? 'wide' : ''}>
-                      <span>{c.label}</span>
-                      <input
-                        type="text"
-                        inputMode={c.placeholder === '○名' ? 'numeric' : 'text'}
-                        value={values[cellKey(f, c)] ?? ''}
-                        onChange={(e) => set(cellKey(f, c), e.target.value)}
-                        placeholder={c.placeholder}
-                      />
-                    </label>
-                  ))}
-                </div>
-              </li>
-            ))}
+            {form.fields.filter((f) => !f.hidden).map((f) => {
+              // 部門ごとに必ず入れてもらう数値の案内（月次の「イベント等」欄）。
+              const guide = kind === 'monthly' && f.key === 'events' ? EVENT_GUIDES[dept] : undefined;
+              return (
+                <li key={f.key}>
+                  <div className="num-label">
+                    {f.label}
+                    {f.note && <small>{f.note}</small>}
+                  </div>
+                  {guide && (
+                    <div className="num-guide">
+                      <p>
+                        <b>{dept}は、次の数値を必ずこの欄に入力してください：</b>
+                        {guide.items}
+                      </p>
+                      <button type="button" onClick={() => insertTemplate(cellKey(f, f.cols[0]), guide.template)}>
+                        ひな形を入れる
+                      </button>
+                    </div>
+                  )}
+                  <div className="num-cols">
+                    {f.cols.map((c) => {
+                      const key = cellKey(f, c);
+                      const bf = c.breakdown ? form.fields.find((x) => x.key === c.breakdown) : undefined;
+                      return (
+                        <label key={c.key} className={f.cols.length === 1 ? 'wide' : ''}>
+                          <span>{c.label}{bf ? '（学年別に入力）' : ''}</span>
+                          {bf ? (
+                            <button
+                              type="button"
+                              className="num-breakdown-btn"
+                              onClick={() => setBreakdownOf({ field: f, col: c })}
+                            >
+                              {values[key] ? `${values[key]} 名` : '学年別に入力'}
+                              <small>{values[key] ? '内訳を見る・直す' : ''}</small>
+                            </button>
+                          ) : f.cols.length === 1 && c.placeholder !== '○名' ? (
+                            <textarea
+                              rows={guide ? 3 : 2}
+                              value={values[key] ?? ''}
+                              onChange={(e) => set(key, e.target.value)}
+                              placeholder={guide ? guide.template : c.placeholder}
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              inputMode={c.placeholder === '○名' ? 'numeric' : 'text'}
+                              value={values[key] ?? ''}
+                              onChange={(e) => set(key, e.target.value)}
+                              placeholder={c.placeholder}
+                            />
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </li>
+              );
+            })}
           </ol>
 
           <div className="num-actions">
@@ -276,6 +399,20 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
           )}
         </div>
       </div>
+
+      {breakdownOf && (() => {
+        const bf = form.fields.find((x) => x.key === breakdownOf.col.breakdown);
+        if (!bf) return null;
+        return (
+          <BreakdownModal
+            title={`${breakdownOf.field.label}（${breakdownOf.col.label}）の学年別`}
+            field={bf}
+            values={values}
+            onSave={(draft) => saveBreakdown(breakdownOf, bf, draft)}
+            onClose={() => setBreakdownOf(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
