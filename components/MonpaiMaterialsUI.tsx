@@ -43,7 +43,7 @@ export default function MonpaiMaterialsUI() {
 
       <div className="ib-table-wrap">
         <table className="mp-summary">
-          <thead><tr><th>品名</th><th>種類</th><th>準備担当</th><th>入庫計</th><th>配布済み</th><th>在庫</th><th>発注目安</th></tr></thead>
+          <thead><tr><th>品名</th><th>種類</th><th>準備担当</th><th className="mp-num">入庫計</th><th className="mp-num">配布済み</th><th className="mp-num">在庫</th><th className="mp-num">発注目安</th></tr></thead>
           <tbody>
             {items.map((i) => (
               <tr key={i.name} className={i.low ? 'mp-low' : ''}>
@@ -112,7 +112,7 @@ export default function MonpaiMaterialsUI() {
           <h2 className="mp-h2">最近の入出庫</h2>
           <div className="ib-table-wrap">
             <table className="mp-summary">
-              <thead><tr><th>日付</th><th>品名</th><th>数量</th><th>メモ</th><th>登録者</th></tr></thead>
+              <thead><tr><th>日付</th><th>品名</th><th className="mp-num">数量</th><th>メモ</th><th>登録者</th></tr></thead>
               <tbody>
                 {moves.map((m, i) => (
                   <tr key={i}><td>{m.date}</td><td>{m.name}</td><td className="mp-num">{m.qty > 0 ? `+${m.qty}` : m.qty}</td><td>{m.memo}</td><td>{m.user}</td></tr>
