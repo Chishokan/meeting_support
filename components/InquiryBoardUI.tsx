@@ -91,7 +91,9 @@ function sortValue(r: InquiryRecord, key: ColKey): string | number | null {
     case 'no': return r.no || null;
     case 'grade': { const g = normalizeGrade(r.grade); if (!g) return null; const i = (GRADES as readonly string[]).indexOf(g); return i === -1 ? 99 : i; }
     case 'studentName': return (r.kana || r.studentName) || null;
-    case 'date': case 'meetingDate': case 'closeDate': case 'enrollDate': return r[key] || null;
+    // 日付は YYYY-MM-DD だけを並び替えの対象にする。旧シートの「5/21.6/29」のような文字は読めないので末尾に回す
+    //（文字のまま比べると「5/…」が「2026-…」より後ろ＝新しい順の先頭に来てしまう）
+    case 'date': case 'meetingDate': case 'closeDate': case 'enrollDate': { const v = r[key]; return v && parseIso(v) ? v : null; }
     case 'trial': return r.trial ? `${r.trial} ${r.trialDate}` : (r.trialDate || null);
     case 'result': return r.result || null;
     default: { const v = r[key]; return v === '' || v == null ? null : (v as string); }
@@ -160,6 +162,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<'' | RecordStatus | 'untouched' | 'overdue'>('');
   const [month, setMonth] = useState('');
+  // 既定の並びは「問い合わせ日が新しい順」。見出しを押して変えても、開き直すとこの並びに戻る
   const [sortKey, setSortKey] = useState<ColKey>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [colF, setColF] = useState<ColFilters>({});
