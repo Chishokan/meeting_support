@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   const months = (new URL(req.url).searchParams.get('months') ?? '')
     .split(',')
     .filter((m) => /^\d{4}-\d{2}$/.test(m))
-    .slice(0, 3);
+    .slice(0, 12); // 配布物の「今年度」の集計で12か月分を読む
   if (!months.length) return Response.json({ ok: false, reason: 'bad_month', items: [] }, { status: 400 });
   const r = await listRecords(months);
   if (!r.ok) return Response.json({ ok: false, reason: r.reason, items: [] }, { status: statusOf(r.reason) });
