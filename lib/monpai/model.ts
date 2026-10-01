@@ -285,7 +285,8 @@ export function computeStock(
       .filter((u) => u.done != null && splitMaterials(u.material).includes(it.name))
       .reduce((a, u) => a + (u.done ?? 0), 0);
     const stock = received - used;
-    return { ...it, received, used, stock, low: stock <= it.threshold };
+    // 発注目安を下回ったら「残りわずか」（目安が0なら出さない）
+    return { ...it, received, used, stock, low: it.threshold > 0 && stock < it.threshold };
   });
 }
 

@@ -1,11 +1,19 @@
 'use client';
 
-// 門配管理：配布物・ノベルティの在庫。
+// 門配管理：配布物・ノベルティ。
+// 教室（地区）ごとに、どの品目をいくつ使ったか（門配の「配布物」欄に品名がある記録の実施部数の合計）を出す。
 // 在庫＝入庫の合計 − 実績で配った数（門配の「配布物」欄に品名を書くと、実施部数ぶん自動で減る）。
 
-import { useEffect, useState } from 'react';
-import { MATERIAL_KINDS, todayJst } from '@/lib/monpai/model';
-import { fetchMaterials, postMaterial, reasonText, type MovementRow, type StockRow } from '@/lib/monpai/client';
+import { useEffect, useMemo, useState } from 'react';
+import { DISTRICTS, MATERIAL_KINDS, shiftMonth, splitMaterials, todayJst, type MonpaiRecord } from '@/lib/monpai/model';
+import { fetchMaterials, fetchRecords, postMaterial, reasonText, type MovementRow, type StockRow } from '@/lib/monpai/client';
+
+/** 今年度（4月始まり）の12か月。 */
+function fiscalMonths(today: string): string[] {
+  const [y, m] = today.split('-').map(Number);
+  const start = `${m >= 4 ? y : y - 1}-04`;
+  return Array.from({ length: 12 }, (_, i) => shiftMonth(start, i));
+}
 
 export default function MonpaiMaterialsUI() {
   const [items, setItems] = useState<StockRow[]>([]);
@@ -15,6 +23,10 @@ export default function MonpaiMaterialsUI() {
   const [item, setItem] = useState({ name: '', kind: 'チラシ', prep: '', threshold: '', note: '' });
   const [move, setMove] = useState({ name: '', qty: '', date: todayJst(), memo: '' });
   const [msg, setMsg] = useState('');
+  const months = useMemo(() => fiscalMonths(todayJst()), []);
+  const [records, setRecords] = useState<MonpaiRecord[]>([]);
+  const [period, setPeriod] = useState<string>('fy'); // 'fy'＝今年度、'YYYY-MM'＝その月
+  useEffect(() => { fetchRecords(months).then((r) => r.ok && setRecords(r.items)); }, [months]);
 
   async function load() {
     const r = await fetchMaterials();
@@ -33,6 +45,19 @@ export default function MonpaiMaterialsUI() {
 
   const low = items.filter((i) => i.low);
 
+  // 教室（地区）×品目の使用数。登録していない品名が配布物欄に書かれていれば、その行も出す
+  const usage = useMemo(() => {
+    const inPeriod = records.filter((r) => r.status !== '中止' && r.done != null && r.material && (period === 'fy' || r.date.startsWith(period)));
+    const names = Array.from(new Set([...items.map((i) => i.name), ...inPeriod.flatMap((r) => splitMaterials(r.material))]));
+    return names.map((name) => {
+      const by: Record<string, number> = {};
+      inPeriod.filter((r) => splitMaterials(r.material).includes(name)).forEach((r) => { by[r.district] = (by[r.district] ?? 0) + (r.done ?? 0); });
+      const total = Object.values(by).reduce((a, n) => a + n, 0);
+      return { name, kind: items.find((i) => i.name === name)?.kind ?? '', registered: items.some((i) => i.name === name), by, total };
+    }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  }, [records, items, period]);
+  const ym = (m: string) => `${m.slice(0, 4)}年${Number(m.slice(5))}月`;
+
   return (
     <div className="mp mp-materials">
       <div className="mp-toolbar"><h1 className="mp-h1">配布物・ノベルティ</h1></div>
@@ -41,9 +66,34 @@ export default function MonpaiMaterialsUI() {
         <div className="mp-note warn">残りわずか：{low.map((i) => `${i.name}（残り${i.stock}）`).join('、')}　準備担当に手配を依頼してください。</div>
       )}
 
+      <div className="mp-usage-head">
+        <h2 className="mp-h2">教室ごとの使用数</h2>
+        <select aria-label="期間" value={period} onChange={(e) => setPeriod(e.target.value)}>
+          <option value="fy">今年度（{ym(months[0])}〜）</option>
+          {months.filter((m) => m <= todayJst().slice(0, 7)).reverse().map((m) => <option key={m} value={m}>{ym(m)}</option>)}
+        </select>
+      </div>
       <div className="ib-table-wrap">
         <table className="mp-summary">
-          <thead><tr><th>品名</th><th>種類</th><th>準備担当</th><th>入庫計</th><th>配布済み</th><th>在庫</th><th>発注目安</th></tr></thead>
+          <thead><tr><th>品名</th>{DISTRICTS.map((d) => <th key={d} className="mp-num">{d}</th>)}<th className="mp-num">合計</th></tr></thead>
+          <tbody>
+            {usage.map((u) => (
+              <tr key={u.name}>
+                <td className="mp-school">{u.name}<span className="mp-rate">{u.registered ? u.kind : '品目に未登録'}</span></td>
+                {DISTRICTS.map((d) => <td key={d} className="mp-num">{u.by[d] ? u.by[d] : <span className="mp-muted">—</span>}</td>)}
+                <td className="mp-num"><b>{u.total}</b></td>
+              </tr>
+            ))}
+            {usage.length === 0 && <tr><td colSpan={DISTRICTS.length + 2} className="mp-muted">この期間に配布物を書いた実績はありません。</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <p className="mp-legend">門配の記録の「配布物」欄に品名がある実績の、実施部数の合計です（中止・未報告は数えません）。</p>
+
+      <h2 className="mp-h2">在庫</h2>
+      <div className="ib-table-wrap">
+        <table className="mp-summary">
+          <thead><tr><th>品名</th><th>種類</th><th>準備担当</th><th className="mp-num">入庫計</th><th className="mp-num">配布済み</th><th className="mp-num">在庫</th><th className="mp-num">発注目安</th></tr></thead>
           <tbody>
             {items.map((i) => (
               <tr key={i.name} className={i.low ? 'mp-low' : ''}>
@@ -112,7 +162,7 @@ export default function MonpaiMaterialsUI() {
           <h2 className="mp-h2">最近の入出庫</h2>
           <div className="ib-table-wrap">
             <table className="mp-summary">
-              <thead><tr><th>日付</th><th>品名</th><th>数量</th><th>メモ</th><th>登録者</th></tr></thead>
+              <thead><tr><th>日付</th><th>品名</th><th className="mp-num">数量</th><th>メモ</th><th>登録者</th></tr></thead>
               <tbody>
                 {moves.map((m, i) => (
                   <tr key={i}><td>{m.date}</td><td>{m.name}</td><td className="mp-num">{m.qty > 0 ? `+${m.qty}` : m.qty}</td><td>{m.memo}</td><td>{m.user}</td></tr>
