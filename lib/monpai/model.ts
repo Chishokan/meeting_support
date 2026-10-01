@@ -5,7 +5,7 @@
 //   月別設定で、特定の月・学校だけ率を上書きできる（例：開校月は大野中 50%）。
 // ★率はまず仮の値。運用しながら RATES と月別設定で微調整する。
 
-export const DISTRICTS = ['駅前', '大野', '広田', '日野', '佐々', '西海大島'] as const;
+export const DISTRICTS = ['駅前', '大野', '広田', '日宇', '日野', '佐々', '西海大島'] as const;
 export type District = (typeof DISTRICTS)[number];
 
 export type SchoolKind = '中' | '小';

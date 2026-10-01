@@ -16,8 +16,8 @@ export const SEED_SCHOOLS: School[] = [
   { district: '日野', name: '愛宕中', kind: '中', students: 216, order: 3, note: '' },
   { district: '日野', name: '日野小', kind: '小', students: 479, order: 4, note: '' },
   { district: '日野', name: '相浦小', kind: '小', students: 408, order: 5, note: '' },
-  { district: '広田', name: '日宇中', kind: '中', students: 613, order: 1, note: '日宇エリア' },
-  { district: '広田', name: '大塔小', kind: '小', students: 617, order: 2, note: '日宇エリア' },
-  { district: '広田', name: '黒髪小', kind: '小', students: 462, order: 3, note: '日宇エリア' },
-  { district: '広田', name: '日宇小', kind: '小', students: 329, order: 4, note: '日宇エリア' },
+  { district: '日宇', name: '日宇中', kind: '中', students: 613, order: 1, note: '' },
+  { district: '日宇', name: '大塔小', kind: '小', students: 617, order: 2, note: '' },
+  { district: '日宇', name: '黒髪小', kind: '小', students: 462, order: 3, note: '' },
+  { district: '日宇', name: '日宇小', kind: '小', students: 329, order: 4, note: '' },
 ];
