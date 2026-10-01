@@ -9,6 +9,7 @@ import {
   type MonpaiRecord, type School,
 } from '@/lib/monpai/model';
 import { draftPlanApi, fetchMaster, fetchMaterials, fetchRecords, masterApi, reasonText, saveRecordApi, type Master, type PlanItem } from '@/lib/monpai/client';
+import { startTime } from '@/lib/monpai/history';
 import MonpaiRecordForm, { type Draft } from './MonpaiRecordForm';
 
 const DISTRICT_KEY = 'monpai.district';
@@ -314,6 +315,11 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
                                 <span className="mp-cell-num">
                                   {canceled ? '中止' : `${planned}/${reported.length ? done : '—'}`}
                                 </span>
+                                {(() => {
+                                  // 配布の開始時刻（「17:30-18:15」→ 17:30）。時刻の無い予定は出さない
+                                  const times = Array.from(new Set(rs.map((r) => startTime(r.time)).filter(Boolean)));
+                                  return times.length > 0 && <span className="mp-cell-time">{times.join('・')}〜</span>;
+                                })()}
                                 <span className="mp-cell-staff">
                                   {Array.from(new Set(rs.flatMap((r) => [r.staff1, r.staff2]).filter(Boolean))).join('・')}
                                 </span>
@@ -328,7 +334,7 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
               </tbody>
             </table>
           </div>
-          <p className="mp-legend">マスの数字は「計画/実績」。<span className="mp-key unreported" />過ぎた日で実績が未報告　<span className="mp-key done" />計画どおり配布済み</p>
+          <p className="mp-legend">マスの数字は「計画/実績」、その下が配布の開始時刻と担当。<span className="mp-key unreported" />過ぎた日で実績が未報告　<span className="mp-key done" />計画どおり配布済み</p>
         </>
       )}
       {loading && <div className="mp-loading">読み込み中…</div>}
