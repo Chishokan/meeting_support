@@ -32,6 +32,10 @@ const SHOW_PROGRESS = false;
 // 提出状況（誰が出していないか）は止めたままで、報告の中身は全部門ぶん共有したいため。
 const SHOW_RECENT_PROGRESS = true;
 
+// クイックスタート（各画面への入口）。左メニューと同じ内容なので非表示にし、
+// その分を直近の議事録・事前共有事項に回している。再開するときは true に戻す。
+const SHOW_QUICKSTART = false;
+
 // メンバー行に出す進捗の最大件数（超えた分は「他N件」にまとめる）。
 const MAX_SHOWN_ITEMS = 3;
 // 成功事例パネルに出す件数（新しい順）。
@@ -412,9 +416,12 @@ export default function DashboardUI({
         {note && <p className="dash-note">{note}</p>}
 
         <div className="dash-grid">
-          {quickStart}
-          {minutesPanel}
-          {sharePanel}
+          {SHOW_QUICKSTART && quickStart}
+          {/* 直近の議事録と事前共有事項は、横幅いっぱいを2等分して並べる（毎日いちばん見る2つ） */}
+          <div className="dash-pair">
+            {minutesPanel}
+            {sharePanel}
+          </div>
           {SHOW_RECENT_PROGRESS && progressPanel}
           {yokoPanel}
           {successPanel}
@@ -469,7 +476,7 @@ export default function DashboardUI({
         </div>
 
         <div className="dash-grid">
-          {quickStart}
+          {SHOW_QUICKSTART && quickStart}
 
           <div className="dash-panel">
             <h2>部門別の中間報告状況</h2>
@@ -542,7 +549,7 @@ export default function DashboardUI({
       </div>
 
       <div className="dash-grid">
-        {quickStart}
+        {SHOW_QUICKSTART && quickStart}
 
         <div className="dash-panel wide">
           <h2>報告すべき項目・期日</h2>
