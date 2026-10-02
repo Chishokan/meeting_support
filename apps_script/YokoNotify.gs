@@ -6,13 +6,18 @@
  *   「無料講座_要項テンプレート（記入用）」）それぞれに、コンテナバインド（拡張機能 > Apps Script）で
  *   このファイルを丸ごと貼る。メニューは両方のドキュメントに出る。
  *   1日1回の走査トリガーは「どちらか片方のドキュメント」にだけ設定する（両方に設定すると2回走る）。
+ *   両方に作ってしまったら、片方で removeDailyTrigger を実行する。
+ *   台帳はフォルダ内の「要項台帳」を名前で探して両プロジェクトで共有する（スクリプト プロパティは
+ *   プロジェクトごとに別なので、ID をプロパティだけで持つと台帳が2つできて通知が二重になる）。
+ *   さらに、直前10分以内に別の走査が始まっていれば見送る（「状態」シート）。
  *
  * ■ 動くもの
  *   - onOpen         ドキュメントを開いたときにメニュー「要項連絡」を出す
  *   - notifyCurrentTab  メニュー「このタブを今すぐ確認して連絡」。編集直後に担当者が押す更新ボタン
  *   - dailyScan      時間主導トリガー（1日1回）で 04要項 フォルダの全ドキュメント・全タブを走査
  *   - scanAllNow     メニュー「全要項を確認して連絡」。dailyScan を手動で回す
- *   - setupDailyTrigger  トリガーを作る（1回だけ実行）
+ *   - setupDailyTrigger  トリガーを作る（1回だけ実行。片方のドキュメントだけ）
+ *   - removeDailyTrigger このプロジェクトの dailyScan トリガーを消す
  *   - seedLedger     初回に台帳だけ作る（通知しない）。既に確定している要項を今さら通知したくないとき
  *   - testLineWorks  LINE WORKS の設定確認（テスト送信）
  *   - checkPrivateKey  LW_PRIVATE_KEY の形を診断してログに出す（鍵そのものは出さない）
@@ -46,6 +51,7 @@
  *   シート「台帳」   タブごとの前回値。手で直さない（通知が二重になる／出なくなる）
  *   シート「担当者」 A列＝要項の「作成者」に書く名前、B列＝LINE WORKS のユーザーID。
  *                    書いておくと、その人に個別トークでも届く。空でも動く（部屋への通知のみ）
+ *   シート「状態」   最終走査開始時刻。二重実行の防止用。手で直さない
  *
  * ■ テストのしかた（GAS 側）
  *   testLineWorks を実行 → 部屋に「接続テスト」が届けば設定は正しい。
@@ -99,6 +105,18 @@ function seedLedger() {
   return result;
 }
 
+/** このプロジェクトの dailyScan トリガーを消す。両方のドキュメントに作ってしまったときに片方で実行する。 */
+function removeDailyTrigger() {
+  var n = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'dailyScan') {
+      ScriptApp.deleteTrigger(t);
+      n++;
+    }
+  });
+  Logger.log('dailyScan のトリガーを ' + n + ' 件消しました');
+}
+
 /** 時間主導トリガーから呼ばれる。フォルダ内の全ドキュメント・全タブを走査して通知する。 */
 function dailyScan() {
   var result = scanFolder_({ force: false });
@@ -110,10 +128,9 @@ function dailyScan() {
 function scanAllNow() {
   var result = scanFolder_({ force: false });
   var ui = DocumentApp.getUi();
-  var lines = [
-    '確認したタブ: ' + result.checked + ' 件',
-    '通知: ' + result.notified + ' 件',
-  ];
+  var lines = result.skipped
+    ? ['直前に別の走査が始まっていたため、今回は見送りました。数分後にもう一度実行してください。']
+    : ['確認したタブ: ' + result.checked + ' 件', '通知: ' + result.notified + ' 件'];
   if (result.events.length) lines.push('', result.events.join('\n'));
   if (result.errors.length) lines.push('', 'エラー:', result.errors.join('\n'));
   ui.alert('要項の確認が終わりました', lines.join('\n'), ui.ButtonSet.OK);
@@ -173,8 +190,15 @@ function scanFolder_(opt) {
   var folderId = prop_('YOKO_FOLDER_ID') || YOKO_DEFAULT_FOLDER_ID;
   var folder = DriveApp.getFolderById(folderId);
   var ledger = openLedger_();
+  var result = { checked: 0, notified: 0, events: [], errors: [], skipped: false };
+  var label = '';
+  try { label = DocumentApp.getActiveDocument() ? DocumentApp.getActiveDocument().getName() : ''; } catch (e) {}
+  if (!(opt && opt.seed) && !acquireScanGuard_(ledger, label)) {
+    result.skipped = true;
+    result.errors.push('直前（' + SCAN_GUARD_MINUTES + '分以内）に別の走査が始まっているため、今回は見送りました');
+    return result;
+  }
   var rows = readLedger_(ledger);
-  var result = { checked: 0, notified: 0, events: [], errors: [] };
 
   var files = folder.getFilesByType(MimeType.GOOGLE_DOCS);
   while (files.hasNext()) {
@@ -473,6 +497,17 @@ function nextRow_(prev, docId, tabId, info, link, sentEvents, nowIso) {
 // ------------------------------------------------------------
 
 function openLedger_() {
+  var folderId = prop_('YOKO_FOLDER_ID') || YOKO_DEFAULT_FOLDER_ID;
+
+  // まずフォルダ内の「要項台帳」を名前で探す。スクリプト プロパティはプロジェクト（＝貼ったドキュメント）ごとに
+  // 別なので、ID をプロパティだけで持つと有料講座用・無料講座用で台帳が2つできて通知が二重になる。
+  // 複数あるときは作成日が最も古いものを使う（新しい方は使われなくなるので、ゴミ箱に移してよい）。
+  var existing = findLedgerInFolder_(folderId);
+  if (existing) {
+    PropertiesService.getScriptProperties().setProperty('LEDGER_SPREADSHEET_ID', existing.getId());
+    return existing;
+  }
+
   var id = prop_('LEDGER_SPREADSHEET_ID');
   if (id) {
     try {
@@ -482,7 +517,6 @@ function openLedger_() {
     }
   }
   var ss = SpreadsheetApp.create(LEDGER_NAME);
-  var folderId = prop_('YOKO_FOLDER_ID') || YOKO_DEFAULT_FOLDER_ID;
   try {
     DriveApp.getFileById(ss.getId()).moveTo(DriveApp.getFolderById(folderId));
   } catch (e) {
@@ -497,6 +531,43 @@ function openLedger_() {
   staff.setFrozenRows(1);
   PropertiesService.getScriptProperties().setProperty('LEDGER_SPREADSHEET_ID', ss.getId());
   return ss;
+}
+
+/** フォルダ内の「要項台帳」スプレッドシートを探す。複数あれば作成日が最も古いものを返す。 */
+function findLedgerInFolder_(folderId) {
+  var files = DriveApp.getFolderById(folderId).getFilesByType(MimeType.GOOGLE_SHEETS);
+  var oldest = null;
+  while (files.hasNext()) {
+    var f = files.next();
+    if (f.getName() !== LEDGER_NAME || f.isTrashed()) continue;
+    if (!oldest || f.getDateCreated() < oldest.getDateCreated()) oldest = f;
+  }
+  return oldest ? SpreadsheetApp.openById(oldest.getId()) : null;
+}
+
+/**
+ * 走査の二重実行を防ぐ。台帳の「状態」シートに走査開始時刻を書き、
+ * 他のプロジェクト（もう一方のドキュメントのスクリプト）が直前に走査していれば今回は見送る。
+ * 台帳を共有していれば2回目は差分なしで通知は出ないが、同時に走ったときの保険。
+ */
+var SCAN_GUARD_MINUTES = 10;
+function acquireScanGuard_(ss, label) {
+  var sh = ss.getSheetByName('状態');
+  if (!sh) {
+    sh = ss.insertSheet('状態');
+    sh.getRange(1, 1, 1, 3).setValues([['項目', '値', 'メモ']]).setFontWeight('bold');
+    sh.getRange(2, 1, 1, 3).setValues([['最終走査開始', '', '走査を始めた時刻（ISO）。二重実行の防止に使う']]);
+    sh.getRange(3, 1, 1, 3).setValues([['最終走査元', '', 'どのドキュメントのスクリプトが走査したか']]);
+  }
+  var last = Date.parse(String(sh.getRange(2, 2).getValue() || ''));
+  var now = Date.now();
+  if (!isNaN(last) && now - last < SCAN_GUARD_MINUTES * 60 * 1000) {
+    return false;
+  }
+  sh.getRange(2, 2).setValue(new Date(now).toISOString());
+  sh.getRange(3, 2).setValue(label || '');
+  SpreadsheetApp.flush();
+  return true;
 }
 
 function ledgerSheet_(ss) {
