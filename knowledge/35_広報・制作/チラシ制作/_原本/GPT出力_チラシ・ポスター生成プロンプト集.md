@@ -1,7 +1,7 @@
 ---
 title: 智翔館 チラシ・ポスター生成用プロンプト集
 dept: 全社
-owner: 〔要確認：更新責任者の実名〕
+owner: 智翔館NEP 安藤純平
 updated: 2026-10-05
 source: チラシ・ポスター作成用GPTから出力したプロンプト集（2026-10-05 取り込み）
 source_type: doc

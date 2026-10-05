@@ -1,7 +1,7 @@
 ---
 title: チラシ画像生成プロンプトの要素（智翔館）
 dept: 全社
-owner: 〔要確認：更新責任者の実名〕
+owner: 智翔館NEP 安藤純平
 updated: 2026-10-05
 source: Claude に作らせたプロンプト要素のまとめ（2026-10-05 チャットで受領）
 source_type: doc
