@@ -9,17 +9,17 @@ import { ADMIN_CAMPUS } from './core/staff';
 
 // 面談管理は別アプリ（RED_Interview_reservation・面談予約システム）の管理画面。
 // 部門ごとに URL が分かれている（RED部門は /red/admin、中等部は /chutobu/admin）。
-// INTERVIEW_APP_URL にそのアプリの URL（例 https://xxxx.vercel.app）を入れる。未設定のあいだは「準備中」。
+// 既定は本番の https://red-interview-reservation.vercel.app。別の環境を開きたいときだけ INTERVIEW_APP_URL で上書きする。
 // ログインは面談予約システム側のもの（この智翔館アプリのログインとは別）。
-const INTERVIEW_APP_URL = (process.env.INTERVIEW_APP_URL ?? '').trim().replace(/\/+$/, '');
+const INTERVIEW_APP_URL = (process.env.INTERVIEW_APP_URL?.trim() || 'https://red-interview-reservation.vercel.app').replace(/\/+$/, '');
 
 function interviewApp(id: string, label: string, path: string, depts: string[]): PortalApp {
   return {
     id,
     name: `面談管理（${label}）`,
     desc: `${label}の面談予約の確認・面談枠の設定・面談記録の入力（面談予約システムの管理画面）`,
-    href: INTERVIEW_APP_URL ? `${INTERVIEW_APP_URL}${path}` : '',
-    status: INTERVIEW_APP_URL ? 'ready' : 'soon',
+    href: `${INTERVIEW_APP_URL}${path}`,
+    status: 'ready',
     external: true,
     canUse: (campus) => depts.includes(campus),
     deniedNote: `${depts.join('、')}のみ利用できます`,
