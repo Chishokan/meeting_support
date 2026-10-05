@@ -2,27 +2,25 @@
 // ★アプリを増やすときはここに1件足すだけでメニューに出る。
 //   status: 'ready'（使える）／'soon'（準備中：カードは出すが開けない）
 //   canUse: 部門で使える人を絞るときに指定する（省略すると全員）。
-//   external: 別の Web アプリ（別ドメイン）へのリンク。新しいタブで開く。
+//   external: 別の Web アプリ（別ドメイン）を開くカード。新しいタブで開く。
 
 import { canUseInquiryBoard, INQUIRY_BOARD_DEPTS } from './inquiryBoardAccess';
-import { ADMIN_CAMPUS } from './core/staff';
+import { canUseInterview, INTERVIEW_DEPTS, type InterviewDept } from './interviewSso';
 
-// 面談管理は別アプリ（RED_Interview_reservation・面談予約システム）の管理画面。
-// 部門ごとに URL が分かれている（RED部門は /red/admin、中等部は /chutobu/admin）。
-// 既定は本番の https://red-interview-reservation.vercel.app。別の環境を開きたいときだけ INTERVIEW_APP_URL で上書きする。
-// ログインは面談予約システム側のもの（この智翔館アプリのログインとは別）。
-const INTERVIEW_APP_URL = (process.env.INTERVIEW_APP_URL?.trim() || 'https://red-interview-reservation.vercel.app').replace(/\/+$/, '');
-
-function interviewApp(id: string, label: string, path: string, depts: string[]): PortalApp {
+// 面談管理は別アプリ（面談予約システム）の管理画面。部門ごとに URL が分かれている。
+// カードは /api/interview-sso を開き、そこから（メニューのログインのまま）管理画面へ転送する。
+// 開ける部門・開く先・自動ログインの仕組みは lib/interviewSso.ts。
+function interviewApp(dept: InterviewDept): PortalApp {
+  const { label, campuses } = INTERVIEW_DEPTS[dept];
   return {
-    id,
+    id: `interview-${dept}`,
     name: `面談管理（${label}）`,
     desc: `${label}の面談予約の確認・面談枠の設定・面談記録の入力（面談予約システムの管理画面）`,
-    href: `${INTERVIEW_APP_URL}${path}`,
+    href: `/api/interview-sso?dept=${dept}`,
     status: 'ready',
     external: true,
-    canUse: (campus) => depts.includes(campus),
-    deniedNote: `${depts.join('、')}のみ利用できます`,
+    canUse: (campus) => canUseInterview(dept, campus),
+    deniedNote: `${campuses.join('、')}のみ利用できます`,
   };
 }
 
@@ -61,6 +59,6 @@ export const PORTAL_APPS: PortalApp[] = [
     href: '/monpai',
     status: 'ready',
   },
-  interviewApp('interview-red', 'RED部門', '/red/admin', ['RED個別', ADMIN_CAMPUS]),
-  interviewApp('interview-chutobu', '中等部', '/chutobu/admin', ['小中等部', ADMIN_CAMPUS]),
+  interviewApp('red'),
+  interviewApp('chutobu'),
 ];
