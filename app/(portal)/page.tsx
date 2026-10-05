@@ -25,6 +25,13 @@ export default function PortalPage() {
               )}
             </>
           );
+          if (open && a.external) {
+            return (
+              <a key={a.id} href={a.href} className="portal-card" target="_blank" rel="noopener noreferrer">
+                {body}
+              </a>
+            );
+          }
           return open ? (
             <Link key={a.id} href={a.href} className="portal-card">
               {body}
