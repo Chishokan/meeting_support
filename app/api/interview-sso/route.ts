@@ -10,10 +10,14 @@ export const dynamic = 'force-dynamic';
 
 export function GET(req: Request) {
   const url = new URL(req.url);
-  const s = getSession();
-  if (!s) return NextResponse.redirect(new URL('/login?next=/', url));
-
   const dept = url.searchParams.get('dept') ?? '';
+  const s = getSession();
+  if (!s) {
+    // 面談予約システムの管理画面から（未ログインで）回されてきた人も、ログイン後にそのまま管理画面へ戻す
+    const next = isInterviewDept(dept) ? `/api/interview-sso?dept=${dept}` : '/';
+    return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(next)}`, url));
+  }
+
   if (!isInterviewDept(dept) || !isValidStaff(s.campus, s.name) || !canUseInterview(dept, s.campus)) {
     return NextResponse.redirect(new URL('/', url));
   }
