@@ -25,15 +25,74 @@ type Source = 'record' | 'file' | 'paste';
 //   decoding  … ブラウザで音声を読み込み、送れる形（WAV）に変換している
 //   uploading … その区間をサーバへ送っている（1区間 約2.9MB）
 //   analyzing … サーバ側で Gemini が音声を文字にしている
-type Phase = 'idle' | 'decoding' | 'uploading' | 'analyzing';
+//   waiting   … 送りすぎで断られたので、少し待ってから同じ区間を送り直す
+type Phase = 'idle' | 'decoding' | 'uploading' | 'analyzing' | 'waiting';
 
 const PHASE_LABEL: Record<Exclude<Phase, 'idle'>, string> = {
   decoding: '音声を読み込んでいます',
   uploading: 'アップロード中',
   analyzing: '解析中（AIが文字に起こしています）',
+  waiting: '混み合っているため待っています',
 };
 
+// 送信が断られたときに待つ秒数（Gemini が待ち時間を指定してきたらそちらを使う）。
+// 無料枠は短い時間に続けて送ると断られるので、あきらめずに待って送り直す。
+const RETRY_WAITS = [10, 25, 60];
+
+// 待てば通る見込みのある失敗か。
+function isRetryable(reason: string): boolean {
+  return reason === 'rate_limited' || reason === 'upstream_busy' || reason === 'network_error';
+}
+
+// これが出たら残りの区間を送っても同じ結果にしかならない（＝すぐ止める）。
+function isFatal(reason: string): boolean {
+  return (
+    reason === 'not_configured'
+    || reason === 'unsupported_type'
+    || reason === 'invalid_key'
+    || reason === 'quota_exceeded'
+  );
+}
+
 const EMPTY_META: Meta = { title: '', date: '', place: '', attendees: '', agenda: '' };
+
+// 1区間を送った結果。失敗は例外にせず、理由を持ったまま呼び出し側へ返す。
+type SegResult =
+  | { ok: true; text: string }
+  | { ok: false; reason: string; detail?: string; retryAfterSec?: number };
+
+// 何区間が文字にできて、何区間が落ちたか。終わったときの案内はこれだけを見て決める。
+type RunTally = {
+  total: number; // 区間の総数
+  done: number; // 送り終えた区間数（打ち切ったときは総数より少ない）
+  ok: number;
+  failed: number;
+  reason: string;
+  detail: string;
+};
+
+// 文字起こしが一通り終わったときの案内文。
+// 「終わりました」とだけ出して中身が空、という状態を作らないための分岐。
+function runSummary(t: RunTally): { note: string; warn: string; err: string } {
+  if (t.ok === 0) {
+    const why = transcribeError(t.reason || 'failed');
+    const tail = t.detail ? `（${t.detail}）` : '';
+    // 途中で打ち切ったときは「全部試した」と誤解させない書き方にする。
+    const head = t.done < t.total
+      ? `文字起こしできませんでした。${t.total}区間のうち${t.done}区間を試した時点で中止しました。`
+      : `文字起こしできませんでした（${t.total}区間すべて）。`;
+    return { note: '', err: `${head}${why}${tail}`, warn: '' };
+  }
+  if (t.failed > 0) {
+    return {
+      note: `文字起こしが終わりました（${t.total}区間中${t.ok}区間）。「議事録を作成」を押してください。`,
+      warn: `${t.failed}区間は文字にできませんでした（${transcribeError(t.reason)}）。`
+        + 'その部分は議事録に入りません。足りないところは「議事録メモ」に書き足してください。',
+      err: '',
+    };
+  }
+  return { note: '文字起こしが終わりました。「議事録を作成」を押してください。', warn: '', err: '' };
+}
 
 function pickMime(): string {
   if (typeof MediaRecorder === 'undefined') return '';
@@ -46,10 +105,23 @@ function pickMime(): string {
 }
 
 // 文字起こしAPIが返す失敗理由を、そのまま画面に出せる日本語にする。
+// 「何が起きたか」と「次にどうすればよいか」が分かる文にすること
+//（原因が分からないまま全区間が失敗すると、画面上は空っぽになるだけで理由が追えない）。
 function transcribeError(reason: string): string {
   switch (reason) {
     case 'not_configured':
       return '音声の自動文字起こしが未設定です。管理者に GEMINI_API_KEY の設定を依頼してください。';
+    case 'invalid_key':
+      return 'APIキーが無効か、権限がありません。管理者に GEMINI_API_KEY の確認を依頼してください。';
+    case 'quota_exceeded':
+      return 'Gemini の1日あたりの利用枠を使い切りました。日付が変わると戻ります。'
+        + '急ぐ場合は、他のアプリで文字起こしして「文字起こしを貼り付け」から入れてください。';
+    case 'rate_limited':
+      return '短い時間に送りすぎて断られました（無料枠の制限）。時間をおいてお試しください。';
+    case 'upstream_busy':
+      return 'Gemini 側が混み合っています。時間をおいてお試しください。';
+    case 'too_large':
+      return '音声の区間が大きすぎて送れませんでした。管理者にご連絡ください。';
     case 'unsupported_type':
       return 'この音声形式には対応していません。mp3 / m4a / wav などでお試しください。';
     case 'blocked':
@@ -57,7 +129,7 @@ function transcribeError(reason: string): string {
     case 'timeout':
       return '文字起こしに時間がかかりすぎました。時間をおいてもう一度お試しください。';
     default:
-      return '文字起こしに失敗しました。時間をおいてお試しください。';
+      return '原因を特定できませんでした。時間をおいてもう一度お試しください。';
   }
 }
 
@@ -88,9 +160,19 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   // いま何をしているか（無反応に見えないよう画面に出す）。
   const [phase, setPhase] = useState<Phase>('idle');
   const [uploadPct, setUploadPct] = useState(0);
+  // 送り直しの待ち時間（残り秒）。止まっているように見えないよう画面に出す。
+  const [waitLeft, setWaitLeft] = useState(0);
+  // 処理中の取りこぼし件数。1件ごとに赤字を出すと「うまくいっているのに警告が出る」ので、
+  // 途中は件数だけ控えめに見せ、終わったときにまとめて1行で伝える。
+  const [failedSegs, setFailedSegs] = useState(0);
+  // 直前の取り込み結果。手順2の行にも結果を出すために持つ
+  //（赤い案内は手順3の下に出るので、長い音声だと気づかないまま終わってしまう）。
+  const [lastRun, setLastRun] = useState<RunTally | null>(null);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState('');
+  // 「一部だけ落ちた」ときの注意。失敗（赤）ではないので色を分ける。
+  const [warn, setWarn] = useState('');
   const [err, setErr] = useState('');
 
   const [checking, setChecking] = useState(false);
@@ -116,8 +198,13 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const recordingRef = useRef(false);
   const queueRef = useRef<Blob[]>([]);
   const workingRef = useRef(false);
+  // 録音は区切りごとに何度も pump() を通るので、成否の数はここにためる。
+  const tallyRef = useRef<RunTally>({ total: 0, done: 0, ok: 0, failed: 0, reason: '', detail: '' });
   const mimeRef = useRef('');
-  const loaded = useRef(false);
+  // 下書きを読み終えたか。ref ではなく state にしているのは、
+  // 読み込み直後の保存が「まだ反映されていない空の値」を書いてしまうのを防ぐため
+  //（ref だと読み込みと同じ描画で保存側が動き、保存済みの下書きを消してしまう）。
+  const [hydrated, setHydrated] = useState(false);
 
   // ---- 下書きの保持（会議の録音は取り直せないので、リロードでも消さない） ----
   useEffect(() => {
@@ -132,15 +219,15 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         if (typeof j?.draft === 'string') setDraft(j.draft);
       }
     } catch {}
-    loaded.current = true;
+    setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (!loaded.current) return;
+    if (!hydrated) return;
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({ meta, transcript, memo, draft, editingId }));
     } catch {}
-  }, [meta, transcript, memo, draft, editingId]);
+  }, [hydrated, meta, transcript, memo, draft, editingId]);
 
   // ---- 文字起こしが使える設定か ----
   useEffect(() => {
@@ -169,7 +256,16 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       const res = await fetch('/api/dept-minutes/transcribe?check=1');
       const j = await res.json().catch(() => ({}));
       setConfigured(Boolean(j?.configured));
-      if (j?.ok && j?.modelOk) {
+      if (j?.ok && j?.modelOk && j?.quotaOk === false) {
+        // キーもモデル名も正しいのに、実際に送ると断られる状態
+        //（1日の無料枠を使い切っているときはこれになる）。
+        setCheckOk(false);
+        setCheckMsg(
+          `モデル「${j.model}」は使えますが、いま文字起こしは通りません。`
+          + `${transcribeError(String(j.quotaReason || 'failed'))}`
+          + `${j.quotaDetail ? `（${j.quotaDetail}）` : ''}`,
+        );
+      } else if (j?.ok && j?.modelOk) {
         setCheckOk(true);
         setCheckMsg(`接続できました。モデル「${j.model}」で文字起こしします。`);
       } else if (j?.ok) {
@@ -216,8 +312,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   // 1区間は約2.9MB あり、回線によっては送信だけで時間がかかる。
   // 「アップロード中」と「解析中」を画面で区別するため、fetch ではなく
   // XMLHttpRequest を使って送信の進み具合（upload.onprogress）を拾う。
-  const sendSegment = useCallback((blob: Blob, filename: string): Promise<string> => {
-    return new Promise<string>((resolve, reject) => {
+  const sendSegment = useCallback((blob: Blob, filename: string): Promise<SegResult> => {
+    return new Promise<SegResult>((resolve) => {
       const form = new FormData();
       form.append('audio', blob, filename);
 
@@ -240,23 +336,54 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         setPhase('analyzing');
       };
       xhr.onload = () => {
-        let j: { ok?: boolean; text?: unknown; reason?: unknown } = {};
+        let j: { ok?: boolean; text?: unknown; reason?: unknown; detail?: unknown; retryAfterSec?: unknown } = {};
         try {
           j = JSON.parse(xhr.responseText);
         } catch {}
-        if (j?.ok) resolve(String(j.text ?? ''));
-        // 失敗理由をそのまま投げ、呼び出し側で日本語にして表示する。
-        else reject(new Error(String(j?.reason ?? 'failed')));
+        if (j?.ok) {
+          resolve({ ok: true, text: String(j.text ?? '') });
+          return;
+        }
+        // 失敗は例外にせず結果として返す。1区間の失敗で全体を止めないため。
+        resolve({
+          ok: false,
+          reason: String(j?.reason ?? 'failed'),
+          detail: typeof j?.detail === 'string' ? j.detail : '',
+          retryAfterSec: typeof j?.retryAfterSec === 'number' ? j.retryAfterSec : 0,
+        });
       };
-      xhr.onerror = () => reject(new Error('network_error'));
-      xhr.onabort = () => reject(new Error('aborted'));
+      xhr.onerror = () => resolve({ ok: false, reason: 'network_error' });
+      xhr.onabort = () => resolve({ ok: false, reason: 'aborted' });
       xhr.send(form);
     });
   }, []);
 
+  // 断られた区間は、少し待ってから同じものを送り直す。
+  // 無料枠は短い時間に続けて送ると断られるため、ここで粘らないと
+  // 1区間の失敗がそのまま全区間の失敗に広がってしまう。
+  const sendWithRetry = useCallback(
+    async (blob: Blob, filename: string): Promise<SegResult> => {
+      for (let attempt = 0; ; attempt++) {
+        const r = await sendSegment(blob, filename);
+        if (r.ok || !isRetryable(r.reason) || attempt >= RETRY_WAITS.length) return r;
+        // Gemini が「この秒数だけ待て」と言ってきたらそれに従う（長すぎる指定は切り詰める）。
+        const wait = r.retryAfterSec && r.retryAfterSec > 0 ? Math.min(r.retryAfterSec, 90) : RETRY_WAITS[attempt];
+        setPhase('waiting');
+        for (let left = wait; left > 0; left--) {
+          setWaitLeft(left);
+          await new Promise((done) => setTimeout(done, 1000));
+        }
+        setWaitLeft(0);
+      }
+    },
+    [sendSegment],
+  );
+
   const pump = useCallback(async () => {
     if (workingRef.current) return;
     workingRef.current = true;
+    // 録音中はこの関数が何度も呼ばれるので、結果は ref にためて最後にまとめて伝える。
+    const tally = tallyRef.current;
     try {
       while (queueRef.current.length > 0) {
         const blob = queueRef.current[0];
@@ -265,22 +392,44 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           setPhase('decoding');
           const { segments } = await splitAudioFile(blob);
           for (let i = 0; i < segments.length; i++) {
-            const text = await sendSegment(segments[i], `rec${i + 1}.wav`);
-            if (text) setTranscript((prev) => (prev ? `${prev}\n${text}` : text));
+            const r = await sendWithRetry(segments[i], `rec${i + 1}.wav`);
+            tally.total += 1;
+            if (r.ok) {
+              tally.ok += 1;
+              if (r.text) setTranscript((prev) => (prev ? `${prev}\n${r.text}` : r.text));
+            } else {
+              tally.failed += 1;
+              tally.reason = r.reason;
+              tally.detail = r.detail || '';
+              setFailedSegs(tally.failed);
+            }
           }
-        } catch (e) {
-          setErr(transcribeError((e as Error).message));
+        } catch {
+          // WAV への変換そのものに失敗した区間（壊れた録音など）。
+          tally.total += 1;
+          tally.failed += 1;
+          tally.reason = tally.reason || 'decode_failed';
+          setFailedSegs(tally.failed);
         }
         queueRef.current.shift();
         setQueued(queueRef.current.length);
       }
+      // 区切りごとに赤字を出すと会議中ずっと警告が出てしまうので、
+      // 待ち行列が空になった時点で一度だけまとめて伝える。
+      if (tally.failed > 0) {
+        const sum = runSummary({ ...tally, done: tally.total });
+        setWarn(sum.warn);
+        setErr(sum.err);
+      }
+      if (tally.total > 0) setLastRun({ ...tally, done: tally.total });
     } finally {
       workingRef.current = false;
       // 待ち行列が空になったら進捗表示を畳む。
       setPhase('idle');
       setUploadPct(0);
+      setWaitLeft(0);
     }
-  }, [sendSegment]);
+  }, [sendWithRetry]);
 
   const enqueue = useCallback(
     (blob: Blob) => {
@@ -348,7 +497,11 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
 
   async function startRecording() {
     setErr('');
+    setWarn('');
     setNote('');
+    setFailedSegs(0);
+    setLastRun(null);
+    tallyRef.current = { total: 0, done: 0, ok: 0, failed: 0, reason: '', detail: '' };
     if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setErr('このブラウザは録音に対応していません。録音アプリで録った音声ファイルを添付してください。');
       return;
@@ -378,35 +531,54 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     e.target.value = '';
     if (!file) return;
     setErr('');
+    setWarn('');
     setNote('');
+    setFailedSegs(0);
+    setLastRun(null);
     try {
       // 1時間の音声だと読み込み（WAVへの変換）だけで数十秒かかる。無反応に見えないよう状態を出す。
       setPhase('decoding');
       const { segments, durationSec } = await splitAudioFile(file);
       setNote(`${fmtDuration(durationSec)}の音声を${segments.length}区間に分けて文字起こしします。`);
       setFileProgress({ done: 0, total: segments.length });
+
+      // 1区間ごとに赤字を出すと、ほとんど成功していても警告だらけに見える。
+      // 数だけ数えておいて、終わったときに一度だけまとめて伝える。
+      const tally: RunTally = { total: segments.length, done: 0, ok: 0, failed: 0, reason: '', detail: '' };
       for (let i = 0; i < segments.length; i++) {
-        try {
-          const text = await sendSegment(segments[i], `part${i + 1}.wav`);
-          if (text) setTranscript((prev) => (prev ? `${prev}\n${text}` : text));
-        } catch (ex) {
-          const reason = (ex as Error).message;
-          // 設定そのものが無い場合は続けても全区間失敗するので、そこで止める。
-          if (reason === 'not_configured' || reason === 'unsupported_type') {
-            setErr(transcribeError(reason));
+        const r = await sendWithRetry(segments[i], `part${i + 1}.wav`);
+        tally.done = i + 1;
+        if (r.ok) {
+          tally.ok += 1;
+          if (r.text) setTranscript((prev) => (prev ? `${prev}\n${r.text}` : r.text));
+        } else {
+          tally.failed += 1;
+          tally.reason = r.reason;
+          tally.detail = r.detail || '';
+          setFailedSegs(tally.failed);
+          // 残りを送っても同じ理由で落ちるだけの失敗は、ここで打ち切る
+          //（枠切れのまま40区間送り続けても時間を使うだけなので）。
+          if (isFatal(r.reason)) {
+            setFileProgress({ done: tally.done, total: segments.length });
             break;
           }
-          setErr(`区間 ${i + 1} でつまずきました（${transcribeError(reason)}）続きを処理します。`);
         }
         setFileProgress({ done: i + 1, total: segments.length });
       }
-      setNote('文字起こしが終わりました。「議事録を作成」を押してください。');
+
+      // 「終わりました」と出すのは、実際に文字が取れたときだけ。
+      const sum = runSummary(tally);
+      setNote(sum.note);
+      setWarn(sum.warn);
+      setErr(sum.err);
+      setLastRun(tally);
     } catch {
       setErr('この音声ファイルを読み込めませんでした。mp3 / m4a / wav などでお試しください。');
       setNote('');
     } finally {
       setPhase('idle');
       setUploadPct(0);
+      setWaitLeft(0);
       setFileProgress({ done: 0, total: 0 });
     }
   }
@@ -429,6 +601,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       return;
     }
     setErr('');
+    setWarn('');
     setNote('');
     setGenerating(true);
     setDraft('');
@@ -504,6 +677,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     setEditingId(d.editingId);
     setOpenMeeting(null);
     setErr('');
+    setWarn('');
     setNote(
       d.editingId
         ? '保存済みの議事録を読み込みました。直して「確認しました・保存する」を押すと上書きされます。'
@@ -518,6 +692,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     stopRecording();
     queueRef.current = [];
     setQueued(0);
+    setFailedSegs(0);
+    setLastRun(null);
     setMeta({ ...EMPTY_META, date: todayLocal() });
     setTranscript('');
     setMemo('');
@@ -525,6 +701,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     setEditingId('');
     setInstruction('');
     setNote('');
+    setWarn('');
     setErr('');
   }
 
@@ -706,6 +883,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                       <span className="dm-work-phase">
                         {phase === 'idle' ? '処理中' : PHASE_LABEL[phase]}
                         {phase === 'uploading' && ` ${uploadPct}%`}
+                        {phase === 'waiting' && waitLeft > 0 && `（あと${waitLeft}秒で送り直します）`}
                       </span>
                       {/* 読み込みが終わるまで区間数は決まらないので、決まってから出す */}
                       {fileProgress.total > 0 ? (
@@ -731,14 +909,19 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                         ? `ここまでに ${transcript.length.toLocaleString()} 字を文字にしました。`
                         : '最初の区間の結果が出るまで少しお待ちください。'}
                       {phase === 'analyzing' && ' 画面を閉じずにお待ちください。'}
+                      {/* 途中の取りこぼしは件数だけ控えめに出す。詳しい案内は終わってから1行で出す */}
+                      {failedSegs > 0 && ` 取りこぼし ${failedSegs} 区間（このまま続けます）。`}
                     </p>
                   </div>
                 ) : (
-                  <div className="dm-tstatus">
+                  <div className={`dm-tstatus ${lastRun && lastRun.ok === 0 ? 'bad' : ''}`}>
                     <span>
                       {transcript.trim()
                         ? `文字起こし完了（${transcript.length.toLocaleString()}字）`
-                        : '音声を取り込むと、ここで文字起こしが進みます'}
+                          + (lastRun && lastRun.failed > 0 ? `／${lastRun.failed}区間は取りこぼし` : '')
+                        : lastRun && lastRun.ok === 0
+                          ? '文字起こしできませんでした（下の赤い案内をご確認ください）'
+                          : '音声を取り込むと、ここで文字起こしが進みます'}
                     </span>
                     {transcript.trim() && (
                       <button className="dm-tlink" onClick={() => setShowTranscript((v) => !v)}>
@@ -857,6 +1040,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
               </>
             )}
             {note && <p className="dm-note ok">{note}</p>}
+            {warn && <p className="dm-note warn">{warn}</p>}
             {err && <p className="dm-note err">{err}</p>}
           </section>
         </div>

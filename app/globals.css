@@ -847,6 +847,8 @@ button.primary:disabled { opacity: .5; cursor: default; }
   padding: 10px 12px; background: #f8fafc; border: 1px solid #eef1f5; border-radius: 8px;
 }
 .dm-tstatus > span { font-size: 13px; color: #5a636d; }
+.dm-tstatus.bad { background: #fdecea; border-color: #f0b7b0; }
+.dm-tstatus.bad > span { color: #c0392b; font-weight: 700; }
 .dm-tlink {
   font-size: 12px; color: var(--navy); background: #fff; border: 1px solid #cdd8e3;
   border-radius: 6px; padding: 4px 12px; cursor: pointer; white-space: nowrap;
@@ -896,6 +898,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .dm-primary:disabled, .dm-save:disabled, .dm-copy:disabled { opacity: .5; cursor: default; }
 .dm-note { margin: 12px 0 0; font-size: 13px; line-height: 1.7; }
 .dm-note.ok { color: #2e6b4f; }
+.dm-note.warn { color: #8a6d1a; }
 .dm-note.err { color: #c0392b; }
 
 .dm-side { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 16px; }

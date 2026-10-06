@@ -45,6 +45,11 @@ export async function POST(req: Request) {
 
   const r = await transcribeAudio(audio, name);
   if (r.ok) return Response.json({ ok: true, text: r.text });
+  // 理由のほかに、短い手がかり（HTTP 429 / RESOURCE_EXHAUSTED など）と
+  // 「何秒待てば通るか」も返す。画面はこれを見て待ち時間を決め、原因も表示する。
   // not_configured は画面が案内を出すための状態なので 200 で返す（通信エラーと区別する）。
-  return Response.json({ ok: false, reason: r.reason }, { status: r.reason === 'not_configured' ? 200 : 502 });
+  return Response.json(
+    { ok: false, reason: r.reason, detail: r.detail, retryAfterSec: r.retryAfterSec },
+    { status: r.reason === 'not_configured' ? 200 : 502 },
+  );
 }
