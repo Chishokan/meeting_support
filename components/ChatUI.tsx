@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/core/sanitize';
 import { extractFinalBlock, isSubmitCommand } from '@/lib/reportSubmit';
+import { ACTION_REPORT_DEPTS } from '@/lib/numberReports';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };
@@ -10,7 +11,7 @@ type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data
 // 会議AIのモード。meeting＝通常の事前報告 / monthly＝月次報告 / season＝講習の結果報告（春期・夏期・冬期）。
 type Mode = 'meeting' | 'monthly' | 'season';
 
-const MODES: { id: Mode; label: string; title: string; desc: string; hint: string }[] = [
+const MODES: { id: Mode; label: string; title: string; desc: string; actionDesc?: string; hint: string }[] = [
   {
     id: 'meeting',
     label: '事前報告',
@@ -23,6 +24,9 @@ const MODES: { id: Mode; label: string; title: string; desc: string; hint: strin
     label: '月次報告',
     title: '会議AI（月次報告）',
     desc: '1か月の結果を、数値（実績／昨年同月／目標）・計画の実践度合い・成功事例に整理します。数値は先に「数値報告」（月次）で登録してください。数値を担当していない方は、その月の行動目標と結果・成功事例のみです。',
+    // ACTION_REPORT_DEPTS の部門（総務・人事・支援・管理／LEC）で開いたときの説明。
+    actionDesc:
+      'その月の行動内容と結果を報告し、不足点・課題・他部門への共有事項を整理します。最初に何月の報告かを確認します。LEC は「数値報告」（月次）に登録した数値も報告文に入ります。',
     hint: '月次報告をまとめましょう。下の入力欄に「始めたい」と送ってください。最後に「報告完了」と送ると、会議ドキュメントへ自動で保存されます。',
   },
   {
@@ -159,6 +163,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
   const storeKey = keyFor(campus, name, mode);
   const modeKey = `${STORE_PREFIX}:mode:${campus}/${name}`;
   const view = MODES.find((m) => m.id === mode) ?? MODES[0];
+  const desc = view.actionDesc && ACTION_REPORT_DEPTS.includes(campus) ? view.actionDesc : view.desc;
 
   // 同じ端末・ブラウザで中断→再開できるよう、会話を localStorage に保存する。
   // 前回開いていたモードと、そのモードの会話を復元する。
@@ -342,7 +347,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
     <>
       <div className="page-head chat-head">
         <h1>{view.title}</h1>
-        <p>{view.desc}</p>
+        <p>{desc}</p>
         <div className="mode-switch">
           {MODES.map((m) => (
             <button

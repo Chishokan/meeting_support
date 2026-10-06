@@ -5,6 +5,7 @@ import { buildSeasonPrompt } from '@/lib/seasonPrompt';
 import { buildMonthlyPrompt } from '@/lib/monthlyPrompt';
 import { listNumbers } from '@/lib/numbersStore';
 import {
+  NO_NUMBER_DEPTS,
   NUMBER_FORMS,
   defaultPeriod,
   formatEntries,
@@ -84,7 +85,9 @@ export async function POST(req: Request) {
 
   // 月次報告・講習の結果報告では「数値報告」メニューの登録内容をプロンプトへ差し込む
   // （毎ターン最新を取りに行くので、会話の途中で登録されても次の発言から反映される）。
-  const numbersText = mode === 'meeting' ? '' : await numbersFor(mode, session.campus);
+  // 数値報告をしない部門（管理部門）は取りに行かない。
+  const numbersText =
+    mode === 'meeting' || NO_NUMBER_DEPTS.includes(session.campus) ? '' : await numbersFor(mode, session.campus);
 
   const encoder = new TextEncoder();
   let full = '';

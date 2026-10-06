@@ -1,6 +1,6 @@
 import { getSession } from '@/lib/core/auth';
 import { listNumbers, saveNumbers } from '@/lib/numbersStore';
-import { isReportKind, latestByCampus, type NumberValues } from '@/lib/numberReports';
+import { NO_NUMBER_DEPTS, isReportKind, latestByCampus, type NumberValues } from '@/lib/numberReports';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -32,6 +32,8 @@ export async function POST(req: Request) {
   if (!isReportKind(kind)) return Response.json({ ok: false, reason: 'bad_kind' }, { status: 400 });
   if (!period) return Response.json({ ok: false, reason: 'missing_period' }, { status: 400 });
   if (!dept || !campus) return Response.json({ ok: false, reason: 'missing_campus' }, { status: 400 });
+  // 数値報告をしない部門（管理部門）は受け付けない（古い画面から送られた場合の守り）。
+  if (NO_NUMBER_DEPTS.includes(dept)) return Response.json({ ok: false, reason: 'no_numbers_dept' }, { status: 400 });
 
   const values: NumberValues = {};
   if (raw && typeof raw === 'object') {

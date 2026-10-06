@@ -34,8 +34,13 @@ export type NumberField = {
   exceptDepts?: string[];
 };
 
-// 生徒数・入会・体験を持たない部門（管理・支援・経理グループ）。月次は自由記述の数値報告だけにする。
-const NO_STUDENT_DEPTS = [ADMIN_CAMPUS];
+// 数値報告をしない部門。「数値報告」メニューの部門に出さず、会議AIの月次報告でも数値を扱わない。
+export const NO_NUMBER_DEPTS = [ADMIN_CAMPUS];
+
+// 会議AIの月次報告を A/B に分けず、「行動内容と結果 → 不足点 → 課題 → 他部門への共有事項」で行う部門
+// （lib/monthlyPrompt.ts の ACTION_INSTRUCTIONS）。★部門の増減はここを編集する。
+// LEC は「数値報告」メニュー（月次）の登録があれば報告文に転記する（会話では数値を尋ねない）。
+export const ACTION_REPORT_DEPTS = [ADMIN_CAMPUS, 'LEC'];
 
 // 生徒数の学年別内訳（小2〜高3）。
 export const GRADES = ['小2', '小3', '小4', '小5', '小6', '中1', '中2', '中3', '高1', '高2', '高3'];
@@ -46,7 +51,7 @@ export const MONTHLY_FIELDS: NumberField[] = [
     label: '生徒数',
     short: '生徒数',
     note: '対象月の月末時点',
-    exceptDepts: NO_STUDENT_DEPTS,
+    exceptDepts: NO_NUMBER_DEPTS,
     cols: [
       { key: 'end', label: '月末', placeholder: '○名', breakdown: 'studentsByGrade' },
       { key: 'last', label: '昨年同月', placeholder: '○名', breakdown: 'studentsLastByGrade' },
@@ -57,7 +62,7 @@ export const MONTHLY_FIELDS: NumberField[] = [
     key: 'enroll',
     label: '入会',
     short: '入会',
-    exceptDepts: NO_STUDENT_DEPTS,
+    exceptDepts: NO_NUMBER_DEPTS,
     cols: [
       { key: 'actual', label: '実績', placeholder: '○名', breakdown: 'enrollByGrade' },
       { key: 'last', label: '昨年同月', short: '昨年', placeholder: '○名', breakdown: 'enrollLastByGrade' },
@@ -68,7 +73,7 @@ export const MONTHLY_FIELDS: NumberField[] = [
     key: 'trial',
     label: '体験',
     short: '体験',
-    exceptDepts: NO_STUDENT_DEPTS,
+    exceptDepts: NO_NUMBER_DEPTS,
     cols: [
       { key: 'actual', label: '実績', placeholder: '○名' },
       { key: 'target', label: '目標', placeholder: '○名' },
@@ -78,7 +83,7 @@ export const MONTHLY_FIELDS: NumberField[] = [
     key: 'events',
     label: 'その他、部門ごとのイベント等の目標・実績',
     short: 'イベント等',
-    exceptDepts: NO_STUDENT_DEPTS,
+    exceptDepts: NO_NUMBER_DEPTS,
     note: '模試・講座・説明会など、部門で目標を立てているもの',
     cols: [{ key: 'note', label: '内容', placeholder: '例）10/18 一斉模試：目標 ○名 ／ 実績 ○名' }],
   },
@@ -88,13 +93,15 @@ export const MONTHLY_FIELDS: NumberField[] = [
   gradeField('studentsLastByGrade', '生徒数（昨年同月）の学年別'),
   gradeField('enrollByGrade', '入会（実績）の学年別'),
   gradeField('enrollLastByGrade', '入会（昨年同月）の学年別'),
-  // 管理・支援・経理グループ用（生徒数・入会・体験が無いので、自由記述の数値報告だけ）。これも末尾に足した列。
+  // 旧・管理部門用の自由記述（2026年10月に廃止。総務・人事・支援・管理は数値報告をしなくなった）。
+  // どの部門にも出さないが、シートの列（末尾）の並びを保つために定義は残す。消すと、次に末尾へ足す項目が
+  // この列の見出しの下に書き込まれてしまう。
   {
     key: 'freeNumbers',
     label: '数値報告（自由記述）',
     short: '数値報告',
     note: '担当業務で管理している数値を、前月・昨年・目標などと比べられる形で書いてください',
-    depts: NO_STUDENT_DEPTS,
+    depts: [],
     cols: [
       {
         key: 'note',
@@ -320,23 +327,19 @@ export function cellKey(field: NumberField, col: NumberCol): string {
 // 部門（既存の事業部区分）。
 export const DEPARTMENTS: string[] = STAFF.map((s) => s.campus);
 
+// 「数値報告」メニューで選べる部門（数値報告をしない部門を除く）。
+export const NUMBER_DEPTS: string[] = DEPARTMENTS.filter((d) => !NO_NUMBER_DEPTS.includes(d));
+
 // 部門ごとの校舎プルダウン候補。★校舎の増減はここを編集する。
 // 記載のない部門（LEC・英検など）は校舎名の自由入力欄になる。
-// 総務・人事・支援・管理は校舎の代わりにグループ（管理・支援・経理）で報告する（シートの「校舎」列に入る）。
 export const CAMPUSES_BY_DEPT: Record<string, string[]> = {
   小中等部: ['佐世保駅前校', '日野校', '大野校', '日宇校', '県中対策'],
   RED個別: ['広田教室', '京町教室', '日野教室', '佐々教室', '西海大島教室', '大野教室', 'ネクスタ'],
   高等部: ['佐世保駅前校', '日宇校', '大野校'],
-  [ADMIN_CAMPUS]: ['管理', '支援', '経理'],
 };
 
 export function campusesFor(dept: string): string[] {
   return CAMPUSES_BY_DEPT[dept] ?? [];
-}
-
-// 「校舎」欄の呼び方（管理部門はグループ）。
-export function unitLabel(dept: string): string {
-  return dept === ADMIN_CAMPUS ? 'グループ' : '校舎';
 }
 
 const LEAD_HEADERS = ['日時', '対象', '部門', '校舎', '入力者'];

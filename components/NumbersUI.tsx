@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
-  DEPARTMENTS,
   EVENT_GUIDES,
+  NUMBER_DEPTS,
   NUMBER_FORMS,
   campusesFor,
   fieldsFor,
-  unitLabel,
   cellKey,
   defaultPeriod,
   displayRows,
@@ -37,6 +36,7 @@ function fmtDate(s: string) {
 
 function reasonText(reason: string | undefined): string {
   if (reason === 'not_configured') return 'スプレッドシート連携（Apps Script）が未設定です。';
+  if (reason === 'no_numbers_dept') return 'この部門は数値報告の対象外です。';
   if (reason === 'apps_script_outdated') {
     return 'Apps Script が古い版のままです。apps_script/Code.gs を貼り直して「新しいデプロイ」をしてください。';
   }
@@ -146,7 +146,8 @@ function BreakdownModal({
 export default function NumbersUI({ name, campus }: { name: string; campus: string }) {
   const [kind, setKind] = useState<ReportKind>('monthly');
   const [period, setPeriod] = useState(() => defaultPeriod('monthly'));
-  const [dept, setDept] = useState(DEPARTMENTS.includes(campus) ? campus : DEPARTMENTS[0] ?? '');
+  // 数値報告をしない部門（管理部門）の人が開いたときは、先頭の部門を選んでおく（他部門の代理入力用）。
+  const [dept, setDept] = useState(NUMBER_DEPTS.includes(campus) ? campus : NUMBER_DEPTS[0] ?? '');
   const [site, setSite] = useState('');
   const [values, setValues] = useState<NumberValues>({});
   const [entries, setEntries] = useState<NumberEntry[]>([]);
@@ -259,7 +260,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
   async function submit() {
     const target = site.trim();
     if (!target) {
-      setStatus(`${unitLabel(dept)}を選んでください。`);
+      setStatus('校舎を選んでください。');
       return;
     }
     setBusy(true);
@@ -294,9 +295,10 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
       <div className="page-head">
         <h1>数値報告</h1>
         <p>
-          {campus}／{name} さん。数値を校舎（管理部門はグループ）ごとに登録します。通常期は毎月の「月次」、講習会（春期・夏期・冬期）の
+          {campus}／{name} さん。数値を校舎ごとに登録します。通常期は毎月の「月次」、講習会（春期・夏期・冬期）の
           あとは「講習期」を選んでください。ここで登録した数値を、会議AIの「月次報告」「講習の結果報告」が
           そのまま使います（会議AIでは数値を聞かれません）。
+          総務・人事・支援・管理は数値報告の対象外です（月次報告は会議AIの「月次報告」だけで行います）。
         </p>
         <div className="mode-switch" role="tablist" aria-label="報告の種類">
           {KINDS.map((k) => (
@@ -329,13 +331,13 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
             <label>
               <span>部門</span>
               <select value={dept} onChange={(e) => changeDept(e.target.value)}>
-                {DEPARTMENTS.map((d) => (
+                {NUMBER_DEPTS.map((d) => (
                   <option key={d} value={d}>{d}</option>
                 ))}
               </select>
             </label>
             <label>
-              <span>{unitLabel(dept)}</span>
+              <span>校舎</span>
               {campusesFor(dept).length > 0 ? (
                 <select value={site} onChange={(e) => setSite(e.target.value)}>
                   <option value="">選択してください</option>
@@ -348,7 +350,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
                   type="text"
                   value={site}
                   onChange={(e) => setSite(e.target.value)}
-                  placeholder={`${unitLabel(dept)}名を入力`}
+                  placeholder="校舎名を入力"
                 />
               )}
             </label>
@@ -422,7 +424,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
           </div>
           <p className="num-hint">
             ※ 分からない項目は空欄のままで構いません（会議AIでは「未集計」と表示されます）。
-            同じ{form.periodLabel}・同じ{unitLabel(dept)}で送り直すと、最新の内容が使われます。
+            同じ{form.periodLabel}・同じ校舎で送り直すと、最新の内容が使われます。
           </p>
         </div>
 
