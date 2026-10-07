@@ -9,6 +9,10 @@
 // 【環境変数】※未設定でもアプリは壊れない（画面が「テキスト貼り付け」を案内する）
 //   GEMINI_API_KEY … Google AI Studio（https://aistudio.google.com/apikey）で発行したキー。
 //                    これが未設定なら文字起こし機能は無効になる。
+//   GEMINI_API_KEY_2 … 予備のキー（任意。_3 _4 _5 まで足せる）。
+//                    1本目が1日の枠を使い切った／制限に当たったときは、自動で次のキーへ回す。
+//                    ★無料枠は Google のプロジェクト単位なので、予備は別の Google アカウントで
+//                      発行したキーにしないと枠は増えない（同じアカウントの2本目は同じ枠を使う）。
 //   GEMINI_MODEL   … 使用モデル（既定 gemini-3.6-flash）。新しいモデルに変えたいときだけ設定する。
 //   GEMINI_API_URL … エンドポイントの土台（既定 https://generativelanguage.googleapis.com/v1beta）。
 //                    通常は設定不要。
@@ -53,6 +57,7 @@ export type TranscribeFail =
   | 'blocked'
   | 'timeout'
   | 'invalid_key'
+  | 'model_not_found'
   | 'rate_limited'
   | 'quota_exceeded'
   | 'too_large'
@@ -61,11 +66,12 @@ export type TranscribeFail =
   | 'network_error';
 
 export type TranscribeResult =
-  | { ok: true; text: string }
+  // keyNo は何本目のキーで通った／落ちたか（1始まり）。keysTried は試した本数。
+  | { ok: true; text: string; keyNo?: number }
   // detail は「HTTP 429 / RESOURCE_EXHAUSTED」のような短い手がかり。
   // 原因が分からないまま何十区間も失敗するのを防ぐため、画面にも出す。
   // retryAfterSec は Gemini が「この秒数だけ待て」と返してきたときだけ入る。
-  | { ok: false; reason: TranscribeFail; detail?: string; retryAfterSec?: number };
+  | { ok: false; reason: TranscribeFail; detail?: string; retryAfterSec?: number; keyNo?: number; keysTried?: number };
 
 // Gemini のエラー応答を、画面で扱える理由に分ける。
 // 本文をそのまま画面へ出すと分かりにくいうえ量も多いので、
@@ -93,6 +99,7 @@ function classifyUpstream(
 
   const detail = `HTTP ${status}${gStatus ? ` / ${gStatus}` : ''}`;
   if (status === 401 || status === 403) return { reason: 'invalid_key', detail };
+  if (status === 404) return { reason: 'model_not_found', detail };
   if (status === 413) return { reason: 'too_large', detail };
   if (status === 429) {
     // 「1日あたり」の上限は待っても回復しないので、混雑（数十秒待てば通る）と分けて伝える。
@@ -115,9 +122,39 @@ const MIME_BY_EXT: Record<string, string> = {
   flac: 'audio/flac',
 };
 
+// 予備キーは GEMINI_API_KEY_2 〜 _5 まで見る。
+const MAX_KEY_SLOTS = 5;
+
+// 設定されている Gemini のキーを順番に並べて返す。
+// GEMINI_API_KEY にカンマ区切りで複数書く形にも対応している
+//（Vercel の環境変数を増やさずに予備を足したいとき用）。
+export function geminiKeys(): string[] {
+  const out: string[] = [];
+  const add = (v: string | undefined) => {
+    for (const piece of String(v || '').split(/[,\s]+/)) {
+      const k = piece.trim();
+      if (k && !out.includes(k)) out.push(k);
+    }
+  };
+  add(process.env.GEMINI_API_KEY);
+  for (let i = 2; i <= MAX_KEY_SLOTS; i++) add(process.env[`GEMINI_API_KEY_${i}`]);
+  return out;
+}
+
+// 直前に通ったキー（0始まり）。次の区間はここから試すので、
+// 枠を使い切ったキーに毎回当たりに行かずに済む。
+// サーバが入れ替わると 0 に戻るが、そのときは1回だけ余分に弾かれるだけで実害はない。
+let preferredKey = 0;
+
+// 次のキーに回す意味がある失敗か。
+// Gemini 側の不調（5xx）やタイムアウトはどのキーでも同じ結果になるので回さない。
+function shouldSwitchKey(reason: TranscribeFail): boolean {
+  return reason === 'quota_exceeded' || reason === 'rate_limited' || reason === 'invalid_key';
+}
+
 // 文字起こしが使える状態か（画面の出し分けに使う）。
 export function isTranscribeConfigured(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY);
+  return geminiKeys().length > 0;
 }
 
 // ファイル名・MIME から Gemini に渡す MIME を決める。判断できなければ null。
@@ -138,17 +175,19 @@ export function resolveAudioMime(filename: string, given: string): string | null
 // モデル名の打ち間違いは「文字起こしに失敗しました」としか出ず原因が分かりにくいので、
 // ここで「そのモデルは使えない／使えるのはこれ」と具体的に返す。
 
+// キー1本ぶんの確認結果。何本目がどういう状態かを画面にそのまま並べる。
+export type KeyCheck = { no: number; ok: boolean; reason?: TranscribeFail; detail?: string };
+
 export type SetupCheck =
   | {
       ok: true;
       model: string;
+      // キーごとに実際に1回だけ生成を試した結果。キーが有効でも無料枠を使い切っていると
+      // 文字起こしは全部失敗するので、音声を送る前にここで分かるようにしている。
+      keys: KeyCheck[];
+      usable: number; // いま文字起こしに使えるキーの本数
       modelOk: boolean;
       suggestions: string[];
-      // 実際に1回だけ生成を試した結果。キーが有効でも無料枠を使い切っていると
-      // 文字起こしは全部失敗するので、音声を送る前にここで分かるようにしている。
-      quotaOk?: boolean;
-      quotaReason?: TranscribeFail;
-      quotaDetail?: string;
     }
   | { ok: false; reason: 'not_configured' | 'invalid_key' | 'timeout' | 'upstream_error' | 'network_error' };
 
@@ -162,7 +201,7 @@ function isUsableModel(name: string, methods: string[]): boolean {
 // モデル一覧（ListModels）は枠を消費しないため、1日の無料枠を使い切っていても
 // 「接続できました」と出てしまう。それを防ぐための確認なので、
 // ここでは意図的に generateContent を1回だけ呼ぶ。
-async function probeQuota(base: string, model: string): Promise<{ ok: boolean; reason?: TranscribeFail; detail?: string }> {
+async function probeQuota(base: string, model: string, key: string): Promise<{ ok: boolean; reason?: TranscribeFail; detail?: string }> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15000);
   try {
@@ -170,7 +209,7 @@ async function probeQuota(base: string, model: string): Promise<{ ok: boolean; r
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': process.env.GEMINI_API_KEY as string,
+        'x-goog-api-key': key,
       },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: 'ok' }] }],
@@ -194,27 +233,43 @@ async function probeQuota(base: string, model: string): Promise<{ ok: boolean; r
 }
 
 export async function checkTranscribeSetup(): Promise<SetupCheck> {
-  if (!isTranscribeConfigured()) return { ok: false, reason: 'not_configured' };
+  const keys = geminiKeys();
+  if (keys.length === 0) return { ok: false, reason: 'not_configured' };
 
   const base = process.env.GEMINI_API_URL || DEFAULT_BASE;
   const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
 
+  // キーごとに、設定したモデルで実際に1回だけ生成させてみる。
+  // この1回で「キーが有効か」「モデル名が合っているか」「枠が残っているか」が同時に分かる。
+  const rows: KeyCheck[] = [];
+  for (let i = 0; i < keys.length; i++) {
+    const r = await probeQuota(base, model, keys[i]);
+    rows.push({ no: i + 1, ok: r.ok, reason: r.reason, detail: r.detail });
+  }
+  const usable = rows.filter((r) => r.ok).length;
+
+  // どのキーでも「そのモデルは無い」と言われたときだけ、使えるモデル名の候補を取りに行く。
+  const badModel = usable === 0 && rows.some((r) => r.reason === 'model_not_found');
+  let suggestions: string[] = [];
+  if (badModel) {
+    // モデル一覧は枠を消費しないので、キーが有効でさえあれば引ける。
+    const key = keys[rows.findIndex((r) => r.reason === 'model_not_found')] || keys[0];
+    suggestions = await listUsableModels(base, key);
+  }
+
+  return { ok: true, model, keys: rows, usable, modelOk: !badModel, suggestions };
+}
+
+// 設定に使えるモデル名の候補（flash 系を優先して数件だけ）。
+async function listUsableModels(base: string, key: string): Promise<string[]> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15000);
   try {
     const res = await fetch(`${base}/models?pageSize=1000`, {
-      headers: { 'x-goog-api-key': process.env.GEMINI_API_KEY as string },
+      headers: { 'x-goog-api-key': key },
       signal: ctrl.signal,
     });
-    if (res.status === 401 || res.status === 403) return { ok: false, reason: 'invalid_key' };
-    if (!res.ok) {
-      const detail = (await res.text().catch(() => '')).slice(0, 300);
-      try {
-        console.error('[TRANSCRIBE] check', res.status, detail);
-      } catch {}
-      return { ok: false, reason: 'upstream_error' };
-    }
-
+    if (!res.ok) return [];
     const j = (await res.json().catch(() => null)) as {
       models?: { name?: unknown; supportedGenerationMethods?: unknown }[];
     } | null;
@@ -230,26 +285,9 @@ export async function checkTranscribeSetup(): Promise<SetupCheck> {
         : [];
       if (short && isUsableModel(short, methods)) usable.push(short);
     }
-
-    const modelOk = usable.includes(model);
-    // モデル名が合っているときだけ、枠が残っているかまで確かめる
-    //（名前が違えば必ず失敗するので、確かめる意味がない）。
-    const quota = modelOk ? await probeQuota(base, model) : null;
-
-    return {
-      ok: true,
-      model,
-      modelOk,
-      // 使えない場合に画面へ出す候補（flash 系を優先して数件だけ）。
-      suggestions: [...usable.filter((n) => n.includes('flash')), ...usable.filter((n) => !n.includes('flash'))].slice(0, 8),
-      ...(quota ? { quotaOk: quota.ok, quotaReason: quota.reason, quotaDetail: quota.detail } : {}),
-    };
-  } catch (e) {
-    const aborted = (e as Error)?.name === 'AbortError';
-    try {
-      console.error('[TRANSCRIBE] check', aborted ? 'timeout' : String(e));
-    } catch {}
-    return { ok: false, reason: aborted ? 'timeout' : 'network_error' };
+    return [...usable.filter((n) => n.includes('flash')), ...usable.filter((n) => !n.includes('flash'))].slice(0, 8);
+  } catch {
+    return [];
   } finally {
     clearTimeout(timer);
   }
@@ -268,25 +306,14 @@ function readText(j: unknown): string {
     .trim();
 }
 
-export async function transcribeAudio(file: Blob, filename: string): Promise<TranscribeResult> {
-  if (!isTranscribeConfigured()) return { ok: false, reason: 'not_configured' };
-  if (!file || file.size === 0) return { ok: false, reason: 'empty' };
-
-  const mime = resolveAudioMime(filename, file.type);
-  if (!mime) return { ok: false, reason: 'unsupported_type' };
-
-  const base = process.env.GEMINI_API_URL || DEFAULT_BASE;
-  const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
-  const url = `${base}/models/${model}:generateContent`;
-
-  const data = Buffer.from(await file.arrayBuffer()).toString('base64');
-  // 社内用語のヒントはナレッジ（GLOSSARY.md / 10_理念・方針/COMPANY.md）から毎回組み立てる。
-  // 読めなくても文字起こし自体は止めない。
-  let vocab = '';
-  try {
-    vocab = await buildVocabHint();
-  } catch {}
-
+// 1本のキーで1区間を文字起こしする。キーの切り替えは呼び出し側（transcribeAudio）が行う。
+async function callGemini(
+  key: string,
+  url: string,
+  mime: string,
+  data: string,
+  vocab: string,
+): Promise<TranscribeResult> {
   const body = {
     contents: [
       {
@@ -309,7 +336,7 @@ export async function transcribeAudio(file: Blob, filename: string): Promise<Tra
       headers: {
         'Content-Type': 'application/json',
         // キーはヘッダで渡す（URL に付けるとログや履歴に残りやすいため）。
-        'x-goog-api-key': process.env.GEMINI_API_KEY as string,
+        'x-goog-api-key': key,
       },
       body: JSON.stringify(body),
       signal: ctrl.signal,
@@ -349,4 +376,45 @@ export async function transcribeAudio(file: Blob, filename: string): Promise<Tra
   } finally {
     clearTimeout(timer);
   }
+}
+
+// 1区間を文字起こしする。
+// キーが複数あるときは、枠を使い切った／制限に当たったキーを自動で次のキーへ回す。
+// （音声の base64 化と用語ヒントの組み立ては1回だけ行い、キーを変えて送り直す）
+export async function transcribeAudio(file: Blob, filename: string): Promise<TranscribeResult> {
+  const keys = geminiKeys();
+  if (keys.length === 0) return { ok: false, reason: 'not_configured' };
+  if (!file || file.size === 0) return { ok: false, reason: 'empty' };
+
+  const mime = resolveAudioMime(filename, file.type);
+  if (!mime) return { ok: false, reason: 'unsupported_type' };
+
+  const base = process.env.GEMINI_API_URL || DEFAULT_BASE;
+  const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
+  const url = `${base}/models/${model}:generateContent`;
+
+  const data = Buffer.from(await file.arrayBuffer()).toString('base64');
+  // 社内用語のヒントはナレッジ（GLOSSARY.md / 10_理念・方針/COMPANY.md）から毎回組み立てる。
+  // 読めなくても文字起こし自体は止めない。
+  let vocab = '';
+  try {
+    vocab = await buildVocabHint();
+  } catch {}
+
+  // 直前に通ったキーから順に、ひと回りだけ試す。
+  let last: TranscribeResult = { ok: false, reason: 'upstream_error' };
+  for (let n = 0; n < keys.length; n++) {
+    const idx = (preferredKey + n) % keys.length;
+    const r = await callGemini(keys[idx], url, mime, data, vocab);
+    if (r.ok) {
+      preferredKey = idx; // 次の区間もこのキーから始める
+      return { ...r, keyNo: idx + 1 };
+    }
+    last = { ...r, keyNo: idx + 1, keysTried: n + 1 };
+    if (!shouldSwitchKey(r.reason)) return last;
+    try {
+      console.error('[TRANSCRIBE] switch key', `${idx + 1} -> ${((idx + 1) % keys.length) + 1}`, r.reason);
+    } catch {}
+  }
+  return { ...last, keysTried: keys.length };
 }

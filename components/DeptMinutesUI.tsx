@@ -104,6 +104,30 @@ function pickMime(): string {
   return '';
 }
 
+// 接続テストが返す、APIキー1本ぶんの状態。
+type KeyState = { no: number; ok: boolean; reason?: string; detail?: string };
+
+// キー一覧に並べる短いラベル（「キー2：1日の枠を使い切り」の後ろ側）。
+function keyStateLabel(k: KeyState): string {
+  if (k.ok) return '使えます';
+  switch (k.reason) {
+    case 'quota_exceeded':
+      return '1日の枠を使い切り';
+    case 'rate_limited':
+      return '一時的に制限中';
+    case 'invalid_key':
+      return 'キーが無効';
+    case 'model_not_found':
+      return 'モデル名が違う';
+    case 'upstream_busy':
+      return 'Gemini側が不調';
+    case 'timeout':
+      return '応答なし';
+    default:
+      return '使えません';
+  }
+}
+
 // 文字起こしAPIが返す失敗理由を、そのまま画面に出せる日本語にする。
 // 「何が起きたか」と「次にどうすればよいか」が分かる文にすること
 //（原因が分からないまま全区間が失敗すると、画面上は空っぽになるだけで理由が追えない）。
@@ -114,8 +138,11 @@ function transcribeError(reason: string): string {
     case 'invalid_key':
       return 'APIキーが無効か、権限がありません。管理者に GEMINI_API_KEY の確認を依頼してください。';
     case 'quota_exceeded':
-      return 'Gemini の1日あたりの利用枠を使い切りました。日付が変わると戻ります。'
+      return '登録されているAPIキーがすべて、Gemini の1日あたりの利用枠を使い切りました。'
+        + '日付が変わると戻ります。'
         + '急ぐ場合は、他のアプリで文字起こしして「文字起こしを貼り付け」から入れてください。';
+    case 'model_not_found':
+      return 'モデル名が違います。管理者に環境変数 GEMINI_MODEL の確認を依頼してください。';
     case 'rate_limited':
       return '短い時間に送りすぎて断られました（無料枠の制限）。時間をおいてお試しください。';
     case 'upstream_busy':
@@ -256,26 +283,39 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       const res = await fetch('/api/dept-minutes/transcribe?check=1');
       const j = await res.json().catch(() => ({}));
       setConfigured(Boolean(j?.configured));
-      if (j?.ok && j?.modelOk && j?.quotaOk === false) {
-        // キーもモデル名も正しいのに、実際に送ると断られる状態
-        //（1日の無料枠を使い切っているときはこれになる）。
-        setCheckOk(false);
-        setCheckMsg(
-          `モデル「${j.model}」は使えますが、いま文字起こしは通りません。`
-          + `${transcribeError(String(j.quotaReason || 'failed'))}`
-          + `${j.quotaDetail ? `（${j.quotaDetail}）` : ''}`,
-        );
-      } else if (j?.ok && j?.modelOk) {
-        setCheckOk(true);
-        setCheckMsg(`接続できました。モデル「${j.model}」で文字起こしします。`);
-      } else if (j?.ok) {
+      if (j?.ok && !j?.modelOk) {
         const s = Array.isArray(j.suggestions) ? j.suggestions.slice(0, 4).join(' / ') : '';
+        setCheckOk(false);
         setCheckMsg(
           `キーは有効ですが、モデル「${j.model}」が使えません。`
           + `環境変数 GEMINI_MODEL を次のいずれかに変えてください：${s || '（候補を取得できませんでした）'}`,
         );
+      } else if (j?.ok) {
+        // キーは1本とは限らない。何本目がどういう状態かをそのまま並べて出す。
+        const rows: KeyState[] = Array.isArray(j.keys) ? j.keys : [];
+        const usable = Number(j.usable || 0);
+        const detail = rows.map((k) => `キー${k.no}：${keyStateLabel(k)}`).join('／');
+        setCheckOk(usable > 0);
+        if (usable > 0) {
+          setCheckMsg(
+            `接続できました。モデル「${j.model}」で文字起こしします。`
+            + (rows.length > 1 ? `APIキー${rows.length}本中${usable}本が使えます（${detail}）。` : ''),
+          );
+        } else {
+          // 理由がキーごとに違うときに1本目の理由で代表させると嘘になるので、
+          // そろっているときだけ詳しい案内を出す。
+          const reasons = Array.from(new Set(rows.map((k) => String(k.reason || 'failed'))));
+          setCheckMsg(
+            `いま文字起こしは通りません（${detail || '理由を特定できませんでした'}）。`
+            + (reasons.length === 1
+              ? transcribeError(reasons[0])
+              : 'キーごとに状態が違います。使えるキーを足すか、時間をおいてお試しください。'),
+          );
+        }
       } else if (j?.reason === 'not_configured') {
         setCheckMsg('GEMINI_API_KEY が設定されていません。');
+      } else if (j?.reason === 'model_not_found') {
+        setCheckMsg('モデル名が違います。環境変数 GEMINI_MODEL をご確認ください。');
       } else if (j?.reason === 'invalid_key') {
         setCheckMsg('APIキーが無効か、権限がありません。Google AI Studio のキーをご確認ください。');
       } else if (j?.reason === 'timeout') {

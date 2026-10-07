@@ -48,8 +48,10 @@ export async function POST(req: Request) {
   // 理由のほかに、短い手がかり（HTTP 429 / RESOURCE_EXHAUSTED など）と
   // 「何秒待てば通るか」も返す。画面はこれを見て待ち時間を決め、原因も表示する。
   // not_configured は画面が案内を出すための状態なので 200 で返す（通信エラーと区別する）。
+  // キーが複数あるときは、何本試して落ちたかも手がかりに足す。
+  const detail = r.keysTried && r.keysTried > 1 ? `${r.detail || ''}・キー${r.keysTried}本すべて` : r.detail;
   return Response.json(
-    { ok: false, reason: r.reason, detail: r.detail, retryAfterSec: r.retryAfterSec },
+    { ok: false, reason: r.reason, detail, retryAfterSec: r.retryAfterSec },
     { status: r.reason === 'not_configured' ? 200 : 502 },
   );
 }
