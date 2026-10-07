@@ -1,137 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { SEGMENT_SECONDS, fmtDuration, splitAudioFile } from '@/lib/audioChunk';
+import { useCallback, useEffect, useState } from 'react';
 import { templateOutline } from '@/lib/deptMinutesTemplate';
 import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
 import MinutesDetail from '@/components/MinutesDetail';
+import AudioCapture from '@/components/AudioCapture';
+import { useAudioTranscriber } from '@/lib/useAudioTranscriber';
 import { DRAFT_KEY as STORE_KEY, draftFromRow } from '@/lib/deptMinutesDraft';
 import type { DecisionRow, MinutesRow } from '@/app/api/dept-minutes/list/route';
 
-// 録音は1区間ずつ独立したファイルにして、会議中から順に文字起こししていく。
-// 会議が終わった時点でほぼ文字起こしが終わっている状態にするための作り。
-// ★文字起こしに使う Gemini は webm を受け付けないため、録音した区間は送信前に
-//   splitAudioFile() で 16kHz モノラルの WAV に変換している。
-//   1区間が SEGMENT_SECONDS を超えると変換後に2つに割れるので、同じ長さにそろえておく。
-const REC_SEGMENT_SECONDS = SEGMENT_SECONDS;
-
-const REC_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
-
+// 録音・音声ファイルの取り込みと文字起こしは lib/useAudioTranscriber.ts（面談記録と共通）。
+// 「音声を取り込む」欄の見た目は components/AudioCapture.tsx。
 
 type Meta = { title: string; date: string; place: string; attendees: string; agenda: string };
-type Source = 'record' | 'file' | 'paste';
-
-// 文字起こしの進み具合。利用者から見て「止まっている」と「処理中」を区別するために持つ。
-//   decoding  … ブラウザで音声を読み込み、送れる形（WAV）に変換している
-//   uploading … その区間をサーバへ送っている（1区間 約2.9MB）
-//   analyzing … サーバ側で Gemini が音声を文字にしている
-//   waiting   … 送りすぎで断られたので、少し待ってから同じ区間を送り直す
-type Phase = 'idle' | 'decoding' | 'uploading' | 'analyzing' | 'waiting';
-
-const PHASE_LABEL: Record<Exclude<Phase, 'idle'>, string> = {
-  decoding: '音声を読み込んでいます',
-  uploading: 'アップロード中',
-  analyzing: '解析中（AIが文字に起こしています）',
-  waiting: '混み合っているため待っています',
-};
-
-// 送信が断られたときに待つ秒数（Gemini が待ち時間を指定してきたらそちらを使う）。
-// 無料枠は短い時間に続けて送ると断られるので、あきらめずに待って送り直す。
-const RETRY_WAITS = [10, 25, 60];
-
-// 待てば通る見込みのある失敗か。
-function isRetryable(reason: string): boolean {
-  return reason === 'rate_limited' || reason === 'upstream_busy' || reason === 'network_error';
-}
-
-// これが出たら残りの区間を送っても同じ結果にしかならない（＝すぐ止める）。
-function isFatal(reason: string): boolean {
-  return (
-    reason === 'not_configured'
-    || reason === 'unsupported_type'
-    || reason === 'invalid_key'
-    || reason === 'quota_exceeded'
-  );
-}
 
 const EMPTY_META: Meta = { title: '', date: '', place: '', attendees: '', agenda: '' };
-
-// 1区間を送った結果。失敗は例外にせず、理由を持ったまま呼び出し側へ返す。
-type SegResult =
-  | { ok: true; text: string }
-  | { ok: false; reason: string; detail?: string; retryAfterSec?: number };
-
-// 何区間が文字にできて、何区間が落ちたか。終わったときの案内はこれだけを見て決める。
-type RunTally = {
-  total: number; // 区間の総数
-  done: number; // 送り終えた区間数（打ち切ったときは総数より少ない）
-  ok: number;
-  failed: number;
-  reason: string;
-  detail: string;
-};
-
-// 文字起こしが一通り終わったときの案内文。
-// 「終わりました」とだけ出して中身が空、という状態を作らないための分岐。
-function runSummary(t: RunTally): { note: string; warn: string; err: string } {
-  if (t.ok === 0) {
-    const why = transcribeError(t.reason || 'failed');
-    const tail = t.detail ? `（${t.detail}）` : '';
-    // 途中で打ち切ったときは「全部試した」と誤解させない書き方にする。
-    const head = t.done < t.total
-      ? `文字起こしできませんでした。${t.total}区間のうち${t.done}区間を試した時点で中止しました。`
-      : `文字起こしできませんでした（${t.total}区間すべて）。`;
-    return { note: '', err: `${head}${why}${tail}`, warn: '' };
-  }
-  if (t.failed > 0) {
-    return {
-      note: `文字起こしが終わりました（${t.total}区間中${t.ok}区間）。「議事録を作成」を押してください。`,
-      warn: `${t.failed}区間は文字にできませんでした（${transcribeError(t.reason)}）。`
-        + 'その部分は議事録に入りません。足りないところは「議事録メモ」に書き足してください。',
-      err: '',
-    };
-  }
-  return { note: '文字起こしが終わりました。「議事録を作成」を押してください。', warn: '', err: '' };
-}
-
-function pickMime(): string {
-  if (typeof MediaRecorder === 'undefined') return '';
-  for (const t of REC_TYPES) {
-    try {
-      if (MediaRecorder.isTypeSupported(t)) return t;
-    } catch {}
-  }
-  return '';
-}
-
-// 文字起こしAPIが返す失敗理由を、そのまま画面に出せる日本語にする。
-// 「何が起きたか」と「次にどうすればよいか」が分かる文にすること
-//（原因が分からないまま全区間が失敗すると、画面上は空っぽになるだけで理由が追えない）。
-function transcribeError(reason: string): string {
-  switch (reason) {
-    case 'not_configured':
-      return '音声の自動文字起こしが未設定です。管理者に GEMINI_API_KEY の設定を依頼してください。';
-    case 'invalid_key':
-      return 'APIキーが無効か、権限がありません。管理者に GEMINI_API_KEY の確認を依頼してください。';
-    case 'quota_exceeded':
-      return 'Gemini の1日あたりの利用枠を使い切りました。日付が変わると戻ります。'
-        + '急ぐ場合は、他のアプリで文字起こしして「文字起こしを貼り付け」から入れてください。';
-    case 'rate_limited':
-      return '短い時間に送りすぎて断られました（無料枠の制限）。時間をおいてお試しください。';
-    case 'upstream_busy':
-      return 'Gemini 側が混み合っています。時間をおいてお試しください。';
-    case 'too_large':
-      return '音声の区間が大きすぎて送れませんでした。管理者にご連絡ください。';
-    case 'unsupported_type':
-      return 'この音声形式には対応していません。mp3 / m4a / wav などでお試しください。';
-    case 'blocked':
-      return '文字起こしが安全フィルタで止められました。該当の区間だけ手で入力してください。';
-    case 'timeout':
-      return '文字起こしに時間がかかりすぎました。時間をおいてもう一度お試しください。';
-    default:
-      return '原因を特定できませんでした。時間をおいてもう一度お試しください。';
-  }
-}
 
 function todayLocal(): string {
   const d = new Date();
@@ -145,39 +28,18 @@ function fmtDate(s: string) {
 
 export default function DeptMinutesUI({ name, campus }: { name: string; campus: string }) {
   const [meta, setMeta] = useState<Meta>({ ...EMPTY_META, date: todayLocal() });
-  const [source, setSource] = useState<Source>('record');
   const [transcript, setTranscript] = useState('');
   // 会議中に人が取ったメモ（任意）。音声と一緒にAIへ渡す。
   const [memo, setMemo] = useState('');
   const [draft, setDraft] = useState('');
   const [instruction, setInstruction] = useState('');
 
-  const [configured, setConfigured] = useState<boolean | null>(null);
-  const [recording, setRecording] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [queued, setQueued] = useState(0); // 文字起こし待ちの区間数
-  const [fileProgress, setFileProgress] = useState({ done: 0, total: 0 });
-  // いま何をしているか（無反応に見えないよう画面に出す）。
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [uploadPct, setUploadPct] = useState(0);
-  // 送り直しの待ち時間（残り秒）。止まっているように見えないよう画面に出す。
-  const [waitLeft, setWaitLeft] = useState(0);
-  // 処理中の取りこぼし件数。1件ごとに赤字を出すと「うまくいっているのに警告が出る」ので、
-  // 途中は件数だけ控えめに見せ、終わったときにまとめて1行で伝える。
-  const [failedSegs, setFailedSegs] = useState(0);
-  // 直前の取り込み結果。手順2の行にも結果を出すために持つ
-  //（赤い案内は手順3の下に出るので、長い音声だと気づかないまま終わってしまう）。
-  const [lastRun, setLastRun] = useState<RunTally | null>(null);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState('');
   // 「一部だけ落ちた」ときの注意。失敗（赤）ではないので色を分ける。
   const [warn, setWarn] = useState('');
   const [err, setErr] = useState('');
-
-  const [checking, setChecking] = useState(false);
-  const [checkMsg, setCheckMsg] = useState('');
-  const [checkOk, setCheckOk] = useState(false);
 
   const [decisions, setDecisions] = useState<DecisionRow[]>([]);
   const [meetings, setMeetings] = useState<MinutesRow[]>([]);
@@ -188,23 +50,21 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [editingId, setEditingId] = useState('');
   const [decFilter, setDecFilter] = useState('');
   const [showTemplate, setShowTemplate] = useState(false);
-  // 文字起こしは普段は隠しておく（必要なときだけ開く）。
-  const [showTranscript, setShowTranscript] = useState(false);
-
-  const streamRef = useRef<MediaStream | null>(null);
-  const recRef = useRef<MediaRecorder | null>(null);
-  const segTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tickTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const recordingRef = useRef(false);
-  const queueRef = useRef<Blob[]>([]);
-  const workingRef = useRef(false);
-  // 録音は区切りごとに何度も pump() を通るので、成否の数はここにためる。
-  const tallyRef = useRef<RunTally>({ total: 0, done: 0, ok: 0, failed: 0, reason: '', detail: '' });
-  const mimeRef = useRef('');
   // 下書きを読み終えたか。ref ではなく state にしているのは、
   // 読み込み直後の保存が「まだ反映されていない空の値」を書いてしまうのを防ぐため
   //（ref だと読み込みと同じ描画で保存側が動き、保存済みの下書きを消してしまう）。
   const [hydrated, setHydrated] = useState(false);
+
+  // 録音・音声ファイル → 区間ごとの文字起こし。取れた文字は文字起こしの末尾に足していく。
+  const t = useAudioTranscriber({
+    endpoint: '/api/dept-minutes/transcribe',
+    labels: { action: '議事録を作成', memo: '議事録メモ', output: '議事録' },
+    onText: (text) => setTranscript((prev) => (prev ? `${prev}\n${text}` : text)),
+    setNote,
+    setWarn,
+    setErr,
+  });
+  const { recording } = t;
 
   // ---- 下書きの保持（会議の録音は取り直せないので、リロードでも消さない） ----
   useEffect(() => {
@@ -229,67 +89,6 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     } catch {}
   }, [hydrated, meta, transcript, memo, draft, editingId]);
 
-  // ---- 文字起こしが使える設定か ----
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const res = await fetch('/api/dept-minutes/transcribe');
-        const j = await res.json().catch(() => ({}));
-        if (alive) setConfigured(Boolean(j?.configured));
-      } catch {
-        if (alive) setConfigured(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // 音声を送る前に、キーとモデル名が正しいかを確かめる。
-  async function checkSetup() {
-    if (checking) return;
-    setChecking(true);
-    setCheckMsg('確認中…');
-    setCheckOk(false);
-    try {
-      const res = await fetch('/api/dept-minutes/transcribe?check=1');
-      const j = await res.json().catch(() => ({}));
-      setConfigured(Boolean(j?.configured));
-      if (j?.ok && j?.modelOk && j?.quotaOk === false) {
-        // キーもモデル名も正しいのに、実際に送ると断られる状態
-        //（1日の無料枠を使い切っているときはこれになる）。
-        setCheckOk(false);
-        setCheckMsg(
-          `モデル「${j.model}」は使えますが、いま文字起こしは通りません。`
-          + `${transcribeError(String(j.quotaReason || 'failed'))}`
-          + `${j.quotaDetail ? `（${j.quotaDetail}）` : ''}`,
-        );
-      } else if (j?.ok && j?.modelOk) {
-        setCheckOk(true);
-        setCheckMsg(`接続できました。モデル「${j.model}」で文字起こしします。`);
-      } else if (j?.ok) {
-        const s = Array.isArray(j.suggestions) ? j.suggestions.slice(0, 4).join(' / ') : '';
-        setCheckMsg(
-          `キーは有効ですが、モデル「${j.model}」が使えません。`
-          + `環境変数 GEMINI_MODEL を次のいずれかに変えてください：${s || '（候補を取得できませんでした）'}`,
-        );
-      } else if (j?.reason === 'not_configured') {
-        setCheckMsg('GEMINI_API_KEY が設定されていません。');
-      } else if (j?.reason === 'invalid_key') {
-        setCheckMsg('APIキーが無効か、権限がありません。Google AI Studio のキーをご確認ください。');
-      } else if (j?.reason === 'timeout') {
-        setCheckMsg('応答がありませんでした。時間をおいてお試しください。');
-      } else {
-        setCheckMsg('確認に失敗しました。時間をおいてお試しください。');
-      }
-    } catch {
-      setCheckMsg('確認に失敗しました。通信状況をご確認ください。');
-    } finally {
-      setChecking(false);
-    }
-  }
-
   // 保存済みの議事録（会議ごと）と決定事項（1件ずつ）をまとめて読み込む。
   const loadSaved = useCallback(async () => {
     try {
@@ -307,281 +106,6 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   useEffect(() => {
     void loadSaved();
   }, [loadSaved]);
-
-  // ---- 文字起こし（1区間ずつ順番に送る） ----
-  // 1区間は約2.9MB あり、回線によっては送信だけで時間がかかる。
-  // 「アップロード中」と「解析中」を画面で区別するため、fetch ではなく
-  // XMLHttpRequest を使って送信の進み具合（upload.onprogress）を拾う。
-  const sendSegment = useCallback((blob: Blob, filename: string): Promise<SegResult> => {
-    return new Promise<SegResult>((resolve) => {
-      const form = new FormData();
-      form.append('audio', blob, filename);
-
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/dept-minutes/transcribe');
-
-      // 進捗イベントが来ない環境でも表示が前の段階のまま固まらないよう、
-      // 送信を始める時点で「アップロード中」にしておく。
-      setPhase('uploading');
-      setUploadPct(0);
-
-      xhr.upload.onprogress = (e) => {
-        if (!e.lengthComputable) return;
-        setPhase('uploading');
-        setUploadPct(Math.min(100, Math.round((e.loaded / e.total) * 100)));
-      };
-      // 送り終わったらサーバ側（Gemini）の処理待ちに変わる。
-      xhr.upload.onload = () => {
-        setUploadPct(100);
-        setPhase('analyzing');
-      };
-      xhr.onload = () => {
-        let j: { ok?: boolean; text?: unknown; reason?: unknown; detail?: unknown; retryAfterSec?: unknown } = {};
-        try {
-          j = JSON.parse(xhr.responseText);
-        } catch {}
-        if (j?.ok) {
-          resolve({ ok: true, text: String(j.text ?? '') });
-          return;
-        }
-        // 失敗は例外にせず結果として返す。1区間の失敗で全体を止めないため。
-        resolve({
-          ok: false,
-          reason: String(j?.reason ?? 'failed'),
-          detail: typeof j?.detail === 'string' ? j.detail : '',
-          retryAfterSec: typeof j?.retryAfterSec === 'number' ? j.retryAfterSec : 0,
-        });
-      };
-      xhr.onerror = () => resolve({ ok: false, reason: 'network_error' });
-      xhr.onabort = () => resolve({ ok: false, reason: 'aborted' });
-      xhr.send(form);
-    });
-  }, []);
-
-  // 断られた区間は、少し待ってから同じものを送り直す。
-  // 無料枠は短い時間に続けて送ると断られるため、ここで粘らないと
-  // 1区間の失敗がそのまま全区間の失敗に広がってしまう。
-  const sendWithRetry = useCallback(
-    async (blob: Blob, filename: string): Promise<SegResult> => {
-      for (let attempt = 0; ; attempt++) {
-        const r = await sendSegment(blob, filename);
-        if (r.ok || !isRetryable(r.reason) || attempt >= RETRY_WAITS.length) return r;
-        // Gemini が「この秒数だけ待て」と言ってきたらそれに従う（長すぎる指定は切り詰める）。
-        const wait = r.retryAfterSec && r.retryAfterSec > 0 ? Math.min(r.retryAfterSec, 90) : RETRY_WAITS[attempt];
-        setPhase('waiting');
-        for (let left = wait; left > 0; left--) {
-          setWaitLeft(left);
-          await new Promise((done) => setTimeout(done, 1000));
-        }
-        setWaitLeft(0);
-      }
-    },
-    [sendSegment],
-  );
-
-  const pump = useCallback(async () => {
-    if (workingRef.current) return;
-    workingRef.current = true;
-    // 録音中はこの関数が何度も呼ばれるので、結果は ref にためて最後にまとめて伝える。
-    const tally = tallyRef.current;
-    try {
-      while (queueRef.current.length > 0) {
-        const blob = queueRef.current[0];
-        try {
-          // 録音そのままの形式（webm 等）は文字起こし側が受け付けないため、WAV に変換して送る。
-          setPhase('decoding');
-          const { segments } = await splitAudioFile(blob);
-          for (let i = 0; i < segments.length; i++) {
-            const r = await sendWithRetry(segments[i], `rec${i + 1}.wav`);
-            tally.total += 1;
-            if (r.ok) {
-              tally.ok += 1;
-              if (r.text) setTranscript((prev) => (prev ? `${prev}\n${r.text}` : r.text));
-            } else {
-              tally.failed += 1;
-              tally.reason = r.reason;
-              tally.detail = r.detail || '';
-              setFailedSegs(tally.failed);
-            }
-          }
-        } catch {
-          // WAV への変換そのものに失敗した区間（壊れた録音など）。
-          tally.total += 1;
-          tally.failed += 1;
-          tally.reason = tally.reason || 'decode_failed';
-          setFailedSegs(tally.failed);
-        }
-        queueRef.current.shift();
-        setQueued(queueRef.current.length);
-      }
-      // 区切りごとに赤字を出すと会議中ずっと警告が出てしまうので、
-      // 待ち行列が空になった時点で一度だけまとめて伝える。
-      if (tally.failed > 0) {
-        const sum = runSummary({ ...tally, done: tally.total });
-        setWarn(sum.warn);
-        setErr(sum.err);
-      }
-      if (tally.total > 0) setLastRun({ ...tally, done: tally.total });
-    } finally {
-      workingRef.current = false;
-      // 待ち行列が空になったら進捗表示を畳む。
-      setPhase('idle');
-      setUploadPct(0);
-      setWaitLeft(0);
-    }
-  }, [sendWithRetry]);
-
-  const enqueue = useCallback(
-    (blob: Blob) => {
-      if (blob.size === 0) return;
-      queueRef.current.push(blob);
-      setQueued(queueRef.current.length);
-      void pump();
-    },
-    [pump],
-  );
-
-  // ---- 録音 ----
-  const beginSegment = useCallback(() => {
-    const stream = streamRef.current;
-    if (!stream) return;
-    const mime = mimeRef.current;
-    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-    const chunks: Blob[] = [];
-    rec.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) chunks.push(e.data);
-    };
-    rec.onstop = () => {
-      enqueue(new Blob(chunks, { type: mime || 'audio/webm' }));
-      if (recordingRef.current) {
-        // まだ録音中なら次の区間をすぐ始める（会議は途切れない）。
-        beginSegment();
-      } else {
-        // 終了時のマイク解放は最後の区間を受け取ってから。
-        // 先にトラックを止めると、最後の数秒が欠けることがある。
-        streamRef.current?.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
-    };
-    recRef.current = rec;
-    rec.start();
-    segTimer.current = setTimeout(() => {
-      try {
-        rec.stop();
-      } catch {}
-    }, REC_SEGMENT_SECONDS * 1000);
-  }, [enqueue]);
-
-  const stopRecording = useCallback(() => {
-    recordingRef.current = false;
-    setRecording(false);
-    if (segTimer.current) clearTimeout(segTimer.current);
-    if (tickTimer.current) clearInterval(tickTimer.current);
-    segTimer.current = null;
-    tickTimer.current = null;
-    // 録音中なら stop() → onstop で最後の区間を受け取ってからマイクを解放する。
-    // 録音していなければここで解放する。
-    let stopping = false;
-    try {
-      if (recRef.current && recRef.current.state !== 'inactive') {
-        recRef.current.stop();
-        stopping = true;
-      }
-    } catch {}
-    recRef.current = null;
-    if (!stopping) {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-  }, []);
-
-  async function startRecording() {
-    setErr('');
-    setWarn('');
-    setNote('');
-    setFailedSegs(0);
-    setLastRun(null);
-    tallyRef.current = { total: 0, done: 0, ok: 0, failed: 0, reason: '', detail: '' };
-    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setErr('このブラウザは録音に対応していません。録音アプリで録った音声ファイルを添付してください。');
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true },
-      });
-      streamRef.current = stream;
-      mimeRef.current = pickMime();
-      recordingRef.current = true;
-      setRecording(true);
-      setElapsed(0);
-      tickTimer.current = setInterval(() => setElapsed((s) => s + 1), 1000);
-      beginSegment();
-    } catch {
-      setErr('マイクを使えませんでした。ブラウザのマイク許可をご確認ください。');
-    }
-  }
-
-  // 画面を離れるときにマイクを解放する。
-  useEffect(() => () => stopRecording(), [stopRecording]);
-
-  // ---- 音声ファイルの添付 ----
-  async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setErr('');
-    setWarn('');
-    setNote('');
-    setFailedSegs(0);
-    setLastRun(null);
-    try {
-      // 1時間の音声だと読み込み（WAVへの変換）だけで数十秒かかる。無反応に見えないよう状態を出す。
-      setPhase('decoding');
-      const { segments, durationSec } = await splitAudioFile(file);
-      setNote(`${fmtDuration(durationSec)}の音声を${segments.length}区間に分けて文字起こしします。`);
-      setFileProgress({ done: 0, total: segments.length });
-
-      // 1区間ごとに赤字を出すと、ほとんど成功していても警告だらけに見える。
-      // 数だけ数えておいて、終わったときに一度だけまとめて伝える。
-      const tally: RunTally = { total: segments.length, done: 0, ok: 0, failed: 0, reason: '', detail: '' };
-      for (let i = 0; i < segments.length; i++) {
-        const r = await sendWithRetry(segments[i], `part${i + 1}.wav`);
-        tally.done = i + 1;
-        if (r.ok) {
-          tally.ok += 1;
-          if (r.text) setTranscript((prev) => (prev ? `${prev}\n${r.text}` : r.text));
-        } else {
-          tally.failed += 1;
-          tally.reason = r.reason;
-          tally.detail = r.detail || '';
-          setFailedSegs(tally.failed);
-          // 残りを送っても同じ理由で落ちるだけの失敗は、ここで打ち切る
-          //（枠切れのまま40区間送り続けても時間を使うだけなので）。
-          if (isFatal(r.reason)) {
-            setFileProgress({ done: tally.done, total: segments.length });
-            break;
-          }
-        }
-        setFileProgress({ done: i + 1, total: segments.length });
-      }
-
-      // 「終わりました」と出すのは、実際に文字が取れたときだけ。
-      const sum = runSummary(tally);
-      setNote(sum.note);
-      setWarn(sum.warn);
-      setErr(sum.err);
-      setLastRun(tally);
-    } catch {
-      setErr('この音声ファイルを読み込めませんでした。mp3 / m4a / wav などでお試しください。');
-      setNote('');
-    } finally {
-      setPhase('idle');
-      setUploadPct(0);
-      setWaitLeft(0);
-      setFileProgress({ done: 0, total: 0 });
-    }
-  }
 
   // ---- 議事録の生成 ----
   async function generate(mode: 'draft' | 'revise') {
@@ -689,11 +213,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
 
   function reset() {
     if (!confirm('入力中の会議情報・文字起こし・議事録をすべて消して、新しい会議を始めますか？')) return;
-    stopRecording();
-    queueRef.current = [];
-    setQueued(0);
-    setFailedSegs(0);
-    setLastRun(null);
+    t.resetAll();
     setMeta({ ...EMPTY_META, date: todayLocal() });
     setTranscript('');
     setMemo('');
@@ -708,9 +228,6 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const set = (k: keyof Meta) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setMeta((m) => ({ ...m, [k]: e.target.value }));
 
-  // 音声の読み込み中は区間数がまだ決まっていないので、phase も見て「処理中」と判断する
-  //（ここを落とすと、1時間の音声の読み込み中だけ画面が無反応に見える）。
-  const busyTranscribe = phase !== 'idle' || queued > 0 || fileProgress.total > 0;
   const shownDecisions = decisions.filter((d) => (decFilter ? d.campus === decFilter : true));
   const shownMeetings = meetings.filter((m) => (decFilter ? m.campus === decFilter : true));
   // 絞り込みの選択肢は、議事録と決定事項の両方に出てくる部門から作る。
@@ -779,169 +296,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           <section className="dm-step">
             <h2><span className="dm-num">2</span>会議の音声を取り込む</h2>
 
-            {configured === false && (
-              <p className="dm-warn">
-                音声の自動文字起こしが未設定です。管理者に環境変数 <code>GEMINI_API_KEY</code>（Google AI Studio のAPIキー）
-                の設定を依頼してください。設定までは「文字起こしを貼り付け」をご利用いただけます。
-              </p>
-            )}
-
-            <div className="dm-check">
-              <button onClick={() => void checkSetup()} disabled={checking || recording}>
-                文字起こしの接続テスト
-              </button>
-              {checkMsg && <span className={`dm-check-msg ${checkOk ? 'ok' : ''}`}>{checkMsg}</span>}
-            </div>
-
-            <div className="dm-tabs">
-              <button
-                className={`dm-tab ${source === 'record' ? 'active' : ''}`}
-                onClick={() => setSource('record')}
-                disabled={recording}
-              >
-                その場で録音
-              </button>
-              <button
-                className={`dm-tab ${source === 'file' ? 'active' : ''}`}
-                onClick={() => setSource('file')}
-                disabled={recording}
-              >
-                録音ファイルを添付
-              </button>
-              <button
-                className={`dm-tab ${source === 'paste' ? 'active' : ''}`}
-                onClick={() => setSource('paste')}
-                disabled={recording}
-              >
-                文字起こしを貼り付け
-              </button>
-            </div>
-
-            {source === 'record' && (
-              <div className="dm-source">
-                <div className="dm-rec">
-                  {!recording ? (
-                    <button className="dm-rec-btn" onClick={startRecording} disabled={configured === false}>
-                      ● 録音を開始
-                    </button>
-                  ) : (
-                    <button className="dm-rec-btn stop" onClick={stopRecording}>
-                      ■ 録音を終了
-                    </button>
-                  )}
-                  {recording && <span className="dm-rec-time">録音中 {fmtDuration(elapsed)}</span>}
-                </div>
-                <p className="dm-hint">
-                  録音は{REC_SEGMENT_SECONDS / 60}分ごとに区切って、会議中から順に文字にしていきます。
-                  会議が終わるころには文字起こしもほぼ終わっています。画面を閉じると録音は止まります。
-                </p>
-              </div>
-            )}
-
-            {source === 'file' && (
-              <div className="dm-source">
-                <input
-                  type="file"
-                  accept="audio/*,video/*"
-                  onChange={onPickFile}
-                  disabled={configured === false || phase !== 'idle'}
-                />
-                <p className="dm-hint">
-                  スマートフォンの録音アプリ等で録った音声（mp3 / m4a / wav など）を選んでください。
-                  長い会議は自動で{SEGMENT_SECONDS}秒ずつに分けて処理します。
-                </p>
-              </div>
-            )}
-
-            {source === 'paste' && (
-              <div className="dm-source">
-                <p className="dm-hint">
-                  他のアプリで文字起こし済みのテキストがあれば、下の欄に直接貼り付けてください。
-                </p>
-              </div>
-            )}
-
-            {/* 文字起こしは画面に出さず内部で保持する。
-                40〜60分の会議では数万字になり、直すのは議事録の方なので普段は見せない。
-                ただし「貼り付け」は入力欄そのものなので、そのときだけ常に表示する。 */}
-            {source === 'paste' ? (
-              <label className="dm-transcript">
-                <span>文字起こしを貼り付け（{transcript.length.toLocaleString()}字）</span>
-                <textarea
-                  value={transcript}
-                  onChange={(e) => setTranscript(e.target.value)}
-                  placeholder="他のアプリで文字起こししたテキストをここに貼り付けてください。"
-                />
-              </label>
-            ) : (
-              <>
-                {busyTranscribe ? (
-                  /* いま何をしているか（読み込み／アップロード／解析）と、どこまで進んだかを出す */
-                  <div className="dm-work">
-                    <div className="dm-work-head">
-                      <span className="dm-spinner" aria-hidden="true" />
-                      <span className="dm-work-phase">
-                        {phase === 'idle' ? '処理中' : PHASE_LABEL[phase]}
-                        {phase === 'uploading' && ` ${uploadPct}%`}
-                        {phase === 'waiting' && waitLeft > 0 && `（あと${waitLeft}秒で送り直します）`}
-                      </span>
-                      {/* 読み込みが終わるまで区間数は決まらないので、決まってから出す */}
-                      {fileProgress.total > 0 ? (
-                        <span className="dm-work-count">
-                          {fileProgress.done} / {fileProgress.total} 区間
-                        </span>
-                      ) : queued > 0 ? (
-                        <span className="dm-work-count">残り {queued} 区間</span>
-                      ) : null}
-                    </div>
-                    <div className="dm-bar">
-                      <div
-                        className={`dm-bar-fill ${fileProgress.total > 0 ? '' : 'indet'}`}
-                        style={
-                          fileProgress.total > 0
-                            ? { width: `${Math.round((fileProgress.done / fileProgress.total) * 100)}%` }
-                            : undefined
-                        }
-                      />
-                    </div>
-                    <p className="dm-work-note">
-                      {transcript.trim()
-                        ? `ここまでに ${transcript.length.toLocaleString()} 字を文字にしました。`
-                        : '最初の区間の結果が出るまで少しお待ちください。'}
-                      {phase === 'analyzing' && ' 画面を閉じずにお待ちください。'}
-                      {/* 途中の取りこぼしは件数だけ控えめに出す。詳しい案内は終わってから1行で出す */}
-                      {failedSegs > 0 && ` 取りこぼし ${failedSegs} 区間（このまま続けます）。`}
-                    </p>
-                  </div>
-                ) : (
-                  <div className={`dm-tstatus ${lastRun && lastRun.ok === 0 ? 'bad' : ''}`}>
-                    <span>
-                      {transcript.trim()
-                        ? `文字起こし完了（${transcript.length.toLocaleString()}字）`
-                          + (lastRun && lastRun.failed > 0 ? `／${lastRun.failed}区間は取りこぼし` : '')
-                        : lastRun && lastRun.ok === 0
-                          ? '文字起こしできませんでした（下の赤い案内をご確認ください）'
-                          : '音声を取り込むと、ここで文字起こしが進みます'}
-                    </span>
-                    {transcript.trim() && (
-                      <button className="dm-tlink" onClick={() => setShowTranscript((v) => !v)}>
-                        {showTranscript ? '閉じる' : '文字起こしを確認'}
-                      </button>
-                    )}
-                  </div>
-                )}
-                {showTranscript && (
-                  <label className="dm-transcript">
-                    <span>文字起こし（通常は直す必要はありません。議事録は次の欄で直せます）</span>
-                    <textarea
-                      value={transcript}
-                      onChange={(e) => setTranscript(e.target.value)}
-                    />
-                  </label>
-                )}
-              </>
-            )}
-
+            <AudioCapture t={t} transcript={transcript} setTranscript={setTranscript} subject="会議" />
             {/* 会議中に手で取ったメモ。録音と一緒に渡すと、聞き取れなかった数字や
                 固有名詞をメモ側から補える。録音が無い会議はメモだけでも作れる。 */}
             <label className="dm-memo">

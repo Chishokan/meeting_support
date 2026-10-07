@@ -4,14 +4,12 @@ import { checkTranscribeSetup, isTranscribeConfigured, transcribeAudio } from '@
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-// 録音データ（音声ファイル）を1区間ずつ受け取り、Gemini で文字起こしして返す。
-// 長い会議は画面側（lib/useAudioTranscriber.ts）で区間に分けて順番に送る。
-// サーバ関数の実行時間・リクエストサイズの上限に収めるための分割なので、
-// 区間の長さを変えるときは lib/audioChunk.ts の SEGMENT_SECONDS を直すこと。
+// 面談の録音を1区間ずつ受け取り、Gemini で文字起こしして返す。
+// 仕組みは部門会議議事録（app/api/dept-minutes/transcribe/route.ts）と同じで、
+// 違うのは Gemini への説明（面談の録音であること・話者の付け方）だけ。
+// 区間に分けて送るのは画面側（lib/useAudioTranscriber.ts）。
 
-// 文字起こしが使える設定かを画面へ伝える（未設定ならテキスト貼り付けを案内する）。
-// ?check=1 を付けると、実際に Gemini へ問い合わせてキーとモデル名まで確かめる
-//（画面の「接続テスト」ボタン用。音声を送る前に設定ミスを見つけるためのもの）。
+// 文字起こしが使える設定か（?check=1 で実際に Gemini へ問い合わせる）。
 export async function GET(req: Request) {
   const session = getSession();
   if (!session) return Response.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
@@ -43,11 +41,8 @@ export async function POST(req: Request) {
   const given = (audio as { name?: unknown }).name;
   const name = typeof given === 'string' && given ? given : 'segment.wav';
 
-  const r = await transcribeAudio(audio, name);
+  const r = await transcribeAudio(audio, name, 'interview');
   if (r.ok) return Response.json({ ok: true, text: r.text });
-  // 理由のほかに、短い手がかり（HTTP 429 / RESOURCE_EXHAUSTED など）と
-  // 「何秒待てば通るか」も返す。画面はこれを見て待ち時間を決め、原因も表示する。
-  // not_configured は画面が案内を出すための状態なので 200 で返す（通信エラーと区別する）。
   return Response.json(
     { ok: false, reason: r.reason, detail: r.detail, retryAfterSec: r.retryAfterSec },
     { status: r.reason === 'not_configured' ? 200 : 502 },

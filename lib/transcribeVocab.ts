@@ -10,7 +10,7 @@
 //   どちらに足しても、次のデプロイから文字起こしに効く。
 //
 // ※ GLOSSARY.md はコードから辿れないため、next.config.mjs の
-//   outputFileTracingIncludes に /api/dept-minutes/transcribe を入れてある。
+//   outputFileTracingIncludes に /api/dept-minutes/transcribe と /api/interview-notes/transcribe を入れてある。
 //   ここを外すと本番だけ用語が効かなくなるので注意。
 
 import { promises as fs } from 'node:fs';

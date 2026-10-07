@@ -59,6 +59,13 @@ export const PORTAL_APPS: PortalApp[] = [
     href: '/monpai',
     status: 'ready',
   },
+  {
+    id: 'interview-notes',
+    name: '面談記録',
+    desc: '生徒・保護者との面談を録音し、AIが要点・合意したこと・次回までの対応を面談記録にまとめる',
+    href: '/interview-notes',
+    status: 'ready',
+  },
   interviewApp('red'),
   interviewApp('chutobu'),
 ];

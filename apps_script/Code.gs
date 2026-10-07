@@ -10,6 +10,8 @@
  *                                                          「部門決定事項」シートに1決定1行
  *   - action:'listDeptMinutes' … 部門会議議事録の一覧
  *   - action:'listDeptDecisions' … 部門横断の決定事項一覧（決め事の見える化）
+ *   - action:'saveInterviewNote' … 「面談記録」アプリ（/interview-notes）の保存 → スプレッドシート「面談記録」（INTERVIEW_DB_ID）に1面談1行
+ *   - action:'listInterviewNotes' … 面談記録の一覧（data.campus があればその部門の記録だけ）
  *   - action:'appendReport' … 「報告」からの事前報告      → Google ドキュメント（REPORT_DOC_ID）に新セクション追記
  *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントの【中間報告タブ】に追記＋「中間報告状況」シートに記録
  *   - action:'listProgress' … ダッシュボード用の直近報告者  → 「中間報告状況」シートを新しい順に返す
@@ -76,6 +78,18 @@ var INQUIRY_DB_HEADERS = [
 var AI_NOTES_SHEET = 'AI注意点';
 var AI_NOTES_HEADERS = ['日付', '対象', '本文', '生成日時'];
 var AI_NOTES_KEEP_DAYS = 90;
+
+// 面談記録アプリ（/interview-notes）の保存先スプレッドシートID。
+// 生徒・保護者の個人的な事情を含むので、会話ログの転記先とは別ファイルにすることを勧める
+//（別ファイルにすると、閲覧できる人をそのファイルの共有設定だけで絞れる）。
+// 空ならこのスクリプトがバインドされたシート（SPREADSHEET_ID と同じ扱い）に「面談記録」タブを作る。
+var INTERVIEW_DB_ID = '';
+var INTERVIEW_SHEET = '面談記録';
+// ★列の読み書きは見出し名で引く。列を足すときは末尾に足すこと。
+var INTERVIEW_HEADERS = [
+  '日時', '部門', '記録者', '生徒氏名', '学年', '面談の種類', '面談日時', '校舎・場所', '面談者', '同席者',
+  '面談の目的・事前メモ', '面談記録', '確認事項', '記録ID', '修正日時', '修正者'
+];
 
 // 「目標管理」が読む中等部会議議事録スプレッドシートID。
 // 目標・実績は下の GOALS_SHEET_NAME のタブにある。空なら目標対比は表示されない。
@@ -232,6 +246,14 @@ function doPost(e) {
 
     if (action === 'listDeptDecisions') {
       return json_(listDeptDecisions_(data));
+    }
+
+    if (action === 'saveInterviewNote') {
+      return json_(saveInterviewNote_(data));
+    }
+
+    if (action === 'listInterviewNotes') {
+      return json_(listInterviewNotes_(data));
     }
 
     if (action === 'saveMinutes') {
@@ -733,6 +755,102 @@ function listDeptDecisions_(data) {
   }
   items.reverse();
   if (items.length > 200) items = items.slice(0, 200);
+  return { ok: true, items: items };
+}
+
+// ===== 面談記録（面談記録アプリ /interview-notes の保存先） ======================
+// 1面談1行。録音・文字起こしは保存せず、記録者が確認した面談記録と確認事項だけを残す。
+
+function interviewSheet_() {
+  var id = INTERVIEW_DB_ID || SPREADSHEET_ID;
+  var ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(INTERVIEW_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(INTERVIEW_SHEET);
+    sh.appendRow(INTERVIEW_HEADERS);
+    sh.setFrozenRows(1);
+    // 面談日時・学年が勝手に日付や数値へ変換されないよう、全列を文字列扱いにする。
+    sh.getRange(1, 1, sh.getMaxRows(), INTERVIEW_HEADERS.length).setNumberFormat('@');
+    return sh;
+  }
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(INTERVIEW_HEADERS);
+    sh.setFrozenRows(1);
+    return sh;
+  }
+  // 列が増えたときは、無い見出しを補う（既存の列の位置は変えない）。
+  var cur = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+  for (var c = 0; c < INTERVIEW_HEADERS.length; c++) {
+    if (!cur[c]) sh.getRange(1, c + 1).setValue(INTERVIEW_HEADERS[c]);
+  }
+  return sh;
+}
+
+// 面談記録の保存。data.id があれば、その記録を直して保存し直したとみなして元の行を上書きする。
+// 上書きは同じ部門の人（または管理部門 data.admin）だけ。最初の「日時・部門・記録者」は残し、
+// 直した人は「修正日時・修正者」に記録する。
+function saveInterviewNote_(data) {
+  var ts = data.ts || nowIso_();
+  var sh = interviewSheet_();
+  var col = function (name) { return colOf_(INTERVIEW_HEADERS, name); };
+  var row = findRowById_(sh, col('記録ID'), data.id);
+  var isUpdate = row > 0;
+  var id = row ? String(data.id) : Utilities.getUuid();
+
+  var firstTs = ts;
+  var origCampus = data.campus || '';
+  var origUser = data.user || '';
+  if (isUpdate) {
+    firstTs = sh.getRange(row, col('日時')).getValue();
+    origCampus = String(sh.getRange(row, col('部門')).getValue());
+    origUser = String(sh.getRange(row, col('記録者')).getValue());
+    if (!data.admin && origCampus !== String(data.campus || '')) {
+      return { ok: false, reason: 'forbidden' };
+    }
+  }
+
+  var values = [
+    firstTs, origCampus, origUser, data.student || '', data.grade || '', data.kind || '',
+    data.date || '', data.place || '', data.interviewer || '', data.attendees || '',
+    data.purpose || '', data.note || '', data.checks || '', id,
+    isUpdate ? ts : '', isUpdate ? (data.user || '') : ''
+  ];
+  if (row) {
+    sh.getRange(row, 1, 1, values.length).setValues([values]);
+  } else {
+    sh.appendRow(values);
+  }
+  return { ok: true, id: id, updated: isUpdate };
+}
+
+// 面談記録の一覧（新しい順・最大300件）。data.campus があればその部門の記録だけを返す。
+function listInterviewNotes_(data) {
+  var sh = interviewSheet_();
+  if (sh.getLastRow() < 2) return { ok: true, items: [] };
+  var values = sh.getDataRange().getValues();
+  var head = values[0];
+  var at = function (r, name) {
+    var i = head.indexOf(name);
+    return i < 0 || r[i] == null ? '' : r[i];
+  };
+  var only = String(data.campus || '');
+  var items = [];
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    var campus = String(at(r, '部門'));
+    if (only && campus !== only) continue;
+    items.push({
+      ts: cellStr_(at(r, '日時')), campus: campus, user: String(at(r, '記録者')),
+      student: String(at(r, '生徒氏名')), grade: String(at(r, '学年')), kind: String(at(r, '面談の種類')),
+      date: cellStr_(at(r, '面談日時')), place: String(at(r, '校舎・場所')),
+      interviewer: String(at(r, '面談者')), attendees: String(at(r, '同席者')),
+      purpose: String(at(r, '面談の目的・事前メモ')), note: String(at(r, '面談記録')),
+      checks: String(at(r, '確認事項')), id: String(at(r, '記録ID')),
+      editedAt: cellStr_(at(r, '修正日時')), editedBy: String(at(r, '修正者'))
+    });
+  }
+  items.reverse();
+  if (items.length > 300) items = items.slice(0, 300);
   return { ok: true, items: items };
 }
 

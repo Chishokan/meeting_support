@@ -25,22 +25,39 @@ const DEFAULT_MODEL = 'gemini-3.6-flash';
 // Vercel の関数実行時間（60秒）に当たる前に自分で打ち切る。
 const TIMEOUT_MS = 50000;
 
-// 議事録用の文字起こしなので、要約させず・補完させず・前置きも書かせない。
+// 議事録・面談記録用の文字起こしなので、要約させず・補完させず・前置きも書かせない。
 // 末尾に社内用語のヒント（lib/transcribeVocab.ts がナレッジから組み立てる）を足して誤変換を減らす。
-const PROMPT_BASE = `この音声は学習塾「智翔館」の部門会議の録音です。長い会議を区切ったうちの一部なので、
-途中から始まり途中で終わることがあります。
+// 何の録音か（kind）で冒頭の説明と話者の付け方だけを変える。
+export type TranscribeKind = 'meeting' | 'interview';
+
+const PROMPT_HEAD: Record<TranscribeKind, string> = {
+  meeting: `この音声は学習塾「智翔館」の部門会議の録音です。長い会議を区切ったうちの一部なので、
+途中から始まり途中で終わることがあります。`,
+  interview: `この音声は学習塾「智翔館」の面談（講師・教室長と、生徒または保護者との面談）の録音です。
+長い面談を区切ったうちの一部なので、途中から始まり途中で終わることがあります。`,
+};
+
+const SPEAKER_RULE: Record<TranscribeKind, string> = {
+  meeting: '- 話者が聞き分けられる場合のみ「安東：」のように行頭に付ける。分からなければ付けない。',
+  interview:
+    '- 話者が聞き分けられる場合のみ、行頭に「講師：」「生徒：」「保護者：」のいずれかを付ける。分からなければ付けない。',
+};
+
+function promptBase(kind: TranscribeKind): string {
+  return `${PROMPT_HEAD[kind]}
 
 聞こえたとおりに日本語で文字起こししてください。次を必ず守ってください。
 - 要約・言い換え・整形をしない。話されたとおりに書く。
 - 途中で切れている文を勝手に補わない。聞こえたところまでで止める。
 - 「以下が文字起こしです」などの前置きや、あなた自身の説明・感想は一切書かない。
 - タイムスタンプは書かない。
-- 話者が聞き分けられる場合のみ「安東：」のように行頭に付ける。分からなければ付けない。
+${SPEAKER_RULE[kind]}
 - 聞き取れない部分は【聞き取り不明】と書く。
 - 音声に人の声が入っていない場合は、何も書かずに空で返す。
 `;
+}
 
-// 文字起こしが失敗した理由。画面の文言（components/DeptMinutesUI.tsx の transcribeError）と
+// 文字起こしが失敗した理由。画面の文言（lib/useAudioTranscriber.ts の transcribeError）と
 // 対になっているので、増やしたら向こうにも足すこと。
 //   rate_limited   … 短い時間に送りすぎた。少し待てば通る（画面が自動で待って送り直す）
 //   quota_exceeded … 無料枠の1日分を使い切った。待っても今日はもう通らない
@@ -268,7 +285,11 @@ function readText(j: unknown): string {
     .trim();
 }
 
-export async function transcribeAudio(file: Blob, filename: string): Promise<TranscribeResult> {
+export async function transcribeAudio(
+  file: Blob,
+  filename: string,
+  kind: TranscribeKind = 'meeting',
+): Promise<TranscribeResult> {
   if (!isTranscribeConfigured()) return { ok: false, reason: 'not_configured' };
   if (!file || file.size === 0) return { ok: false, reason: 'empty' };
 
@@ -292,7 +313,7 @@ export async function transcribeAudio(file: Blob, filename: string): Promise<Tra
       {
         role: 'user',
         parts: [
-          { text: vocab ? `${PROMPT_BASE}\n${vocab}` : PROMPT_BASE },
+          { text: vocab ? `${promptBase(kind)}\n${vocab}` : promptBase(kind) },
           { inline_data: { mime_type: mime, data } },
         ],
       },
