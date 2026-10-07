@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from 'react';
 import { SEGMENT_SECONDS, fmtDuration } from '@/lib/audioChunk';
-import { PHASE_LABEL, REC_SEGMENT_SECONDS, type AudioTranscriber } from '@/lib/useAudioTranscriber';
+import { PHASE_LABEL, REC_SEGMENT_SECONDS, waitReasonLabel, type AudioTranscriber } from '@/lib/useAudioTranscriber';
 
 type Source = 'record' | 'file' | 'paste';
 
@@ -213,7 +213,11 @@ export default function AudioCapture({
               <div className="dm-work-head">
                 <span className="dm-spinner" aria-hidden="true" />
                 <span className="dm-work-phase">
-                  {phase === 'idle' ? '処理中' : PHASE_LABEL[phase]}
+                  {phase === 'idle'
+                    ? '処理中'
+                    : phase === 'waiting' && t.waitInfo
+                      ? waitReasonLabel(t.waitInfo.reason)
+                      : PHASE_LABEL[phase]}
                   {phase === 'uploading' && ` ${t.uploadPct}%`}
                   {phase === 'waiting' && t.waitLeft > 0 && `（あと${t.waitLeft}秒で送り直します）`}
                 </span>
@@ -241,6 +245,13 @@ export default function AudioCapture({
                   ? `ここまでに ${transcript.length.toLocaleString()} 字を文字にしました。`
                   : '最初の区間の結果が出るまで少しお待ちください。'}
                 {phase === 'analyzing' && ' 画面を閉じずにお待ちください。'}
+                {/* 待っている理由の手がかり（HTTP 503 など）。管理者に伝えるときに使う */}
+                {phase === 'waiting' && t.waitInfo && (
+                  <span className="ac-wait-detail">
+                    {` 送り直し ${t.waitInfo.attempt}/${t.waitInfo.max} 回目`}
+                    {t.waitInfo.detail && `（${t.waitInfo.detail}）`}
+                  </span>
+                )}
                 {/* 途中の取りこぼしは件数だけ控えめに出す。詳しい案内は終わってから1行で出す */}
                 {t.failedSegs > 0 && ` 取りこぼし ${t.failedSegs} 区間（このまま続けます）。`}
               </p>

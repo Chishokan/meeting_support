@@ -21,23 +21,52 @@ const REC_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/o
 //   decoding  … ブラウザで音声を読み込み、送れる形（WAV）に変換している
 //   uploading … その区間をサーバへ送っている（1区間 約2.9MB）
 //   analyzing … サーバ側で Gemini が音声を文字にしている
-//   waiting   … 送りすぎで断られたので、少し待ってから同じ区間を送り直す
+//   waiting   … 断られた・通信が切れたので、少し待ってから同じ区間を送り直す（理由は waitInfo）
 export type Phase = 'idle' | 'decoding' | 'uploading' | 'analyzing' | 'waiting';
 
 export const PHASE_LABEL: Record<Exclude<Phase, 'idle'>, string> = {
   decoding: '音声を読み込んでいます',
   uploading: 'アップロード中',
   analyzing: '解析中（AIが文字に起こしています）',
-  waiting: '混み合っているため待っています',
+  waiting: '少し待ってから送り直します',
 };
+
+// 送り直しを待っているときに出す「なぜ待っているか」。
+// 以前は理由に関係なく「混み合っている」と出していたため、通信の途切れと Gemini の混雑の見分けがつかなかった。
+export function waitReasonLabel(reason: string): string {
+  switch (reason) {
+    case 'rate_limited':
+      return '短い時間に送りすぎて断られたため、待ってから送り直します';
+    case 'upstream_busy':
+      return 'Gemini（文字起こしAI）が混み合っているため、待ってから送り直します';
+    case 'network_error':
+      return 'サーバから Gemini につながらなかったため、待ってから送り直します';
+    case 'client_network':
+      return '通信が途切れたため、待ってから送り直します（電波の良い場所で、この画面を開いたままにしてください）';
+    case 'timeout':
+      return '時間がかかりすぎたため、待ってから送り直します';
+    default:
+      return '少し待ってから送り直します';
+  }
+}
+
+export type WaitInfo = { reason: string; detail: string; attempt: number; max: number };
 
 // 送信が断られたときに待つ秒数（Gemini が待ち時間を指定してきたらそちらを使う）。
 // 無料枠は短い時間に続けて送ると断られるので、あきらめずに待って送り直す。
 const RETRY_WAITS = [10, 25, 60];
 
 // 待てば通る見込みのある失敗か。
+//   client_network … スマホ・PC からサーバへの送信そのものが途切れた（電波・画面ロックなど）
+//   timeout        … サーバ側で時間切れ（一時的な遅さのことが多い）
 function isRetryable(reason: string): boolean {
-  return reason === 'rate_limited' || reason === 'upstream_busy' || reason === 'network_error';
+  return (
+    reason === 'rate_limited'
+    || reason === 'upstream_busy'
+    || reason === 'network_error'
+    || reason === 'client_network'
+    || reason === 'timeout'
+  );
 }
 
 // これが出たら残りの区間を送っても同じ結果にしかならない（＝すぐ止める）。
@@ -131,6 +160,10 @@ export function transcribeError(reason: string): string {
       return '文字起こしが安全フィルタで止められました。該当の区間だけ手で入力してください。';
     case 'timeout':
       return '文字起こしに時間がかかりすぎました。時間をおいてもう一度お試しください。';
+    case 'network_error':
+      return 'サーバから Gemini につながりませんでした。時間をおいてもう一度お試しください。';
+    case 'client_network':
+      return '通信が途切れて送れませんでした。電波の良い場所で、画面を開いたままもう一度お試しください。';
     default:
       return '原因を特定できませんでした。時間をおいてもう一度お試しください。';
   }
@@ -165,6 +198,8 @@ export function useAudioTranscriber(opts: TranscriberOptions) {
   const [uploadPct, setUploadPct] = useState(0);
   // 送り直しの待ち時間（残り秒）。止まっているように見えないよう画面に出す。
   const [waitLeft, setWaitLeft] = useState(0);
+  // 何が理由で待っているか（画面に出す）。
+  const [waitInfo, setWaitInfo] = useState<WaitInfo | null>(null);
   // 処理中の取りこぼし件数。1件ごとに赤字を出すと「うまくいっているのに警告が出る」ので、
   // 途中は件数だけ控えめに見せ、終わったときにまとめて1行で伝える。
   const [failedSegs, setFailedSegs] = useState(0);
@@ -290,15 +325,20 @@ export function useAudioTranscriber(opts: TranscriberOptions) {
           resolve({ ok: true, text: String(j.text ?? '') });
           return;
         }
+        // JSON が返ってこない＝アプリより手前（Vercel）で止められた。HTTP の番号で見分ける。
+        //   504 … サーバ関数の時間切れ　413 … 1区間が大きすぎる　それ以外 … 原因不明
+        let reason = String(j?.reason ?? '');
+        if (!reason) reason = xhr.status === 504 ? 'timeout' : xhr.status === 413 ? 'too_large' : 'failed';
         // 失敗は例外にせず結果として返す。1区間の失敗で全体を止めないため。
         resolve({
           ok: false,
-          reason: String(j?.reason ?? 'failed'),
-          detail: typeof j?.detail === 'string' ? j.detail : '',
+          reason,
+          detail: typeof j?.detail === 'string' && j.detail ? j.detail : j?.reason ? '' : `HTTP ${xhr.status}`,
           retryAfterSec: typeof j?.retryAfterSec === 'number' ? j.retryAfterSec : 0,
         });
       };
-      xhr.onerror = () => resolve({ ok: false, reason: 'network_error' });
+      // サーバに届く前に通信が切れた（電波・画面ロック・別アプリへの切り替えなど）。
+      xhr.onerror = () => resolve({ ok: false, reason: 'client_network' });
       xhr.onabort = () => resolve({ ok: false, reason: 'aborted' });
       xhr.send(form);
     });
@@ -314,12 +354,14 @@ export function useAudioTranscriber(opts: TranscriberOptions) {
         if (r.ok || !isRetryable(r.reason) || attempt >= RETRY_WAITS.length) return r;
         // Gemini が「この秒数だけ待て」と言ってきたらそれに従う（長すぎる指定は切り詰める）。
         const wait = r.retryAfterSec && r.retryAfterSec > 0 ? Math.min(r.retryAfterSec, 90) : RETRY_WAITS[attempt];
+        setWaitInfo({ reason: r.reason, detail: r.detail || '', attempt: attempt + 1, max: RETRY_WAITS.length });
         setPhase('waiting');
         for (let left = wait; left > 0; left--) {
           setWaitLeft(left);
           await new Promise((done) => setTimeout(done, 1000));
         }
         setWaitLeft(0);
+        setWaitInfo(null);
       }
     },
     [sendSegment],
@@ -605,6 +647,7 @@ export function useAudioTranscriber(opts: TranscriberOptions) {
     phase,
     uploadPct,
     waitLeft,
+    waitInfo,
     failedSegs,
     lastRun,
     busy,

@@ -285,6 +285,130 @@ function readText(j: unknown): string {
     .trim();
 }
 
+// ---------------------------------------------------------------------------
+// 混雑時の予備モデル
+// ---------------------------------------------------------------------------
+// Gemini の無料枠は「モデルごと」に混雑（503）や回数制限（429）がかかる。
+// 設定したモデルが断られたら、同じ区間をすぐ別の flash 系モデルで送り直す
+//（画面側で何十秒も待つより早く、ほとんどの場合そのまま通る）。
+//   GEMINI_FALLBACK_MODELS … 予備のモデル名をカンマ区切りで指定（任意）。
+//                            未設定なら、キーで使えるモデルの一覧から flash 系を自動で2つまで選ぶ。
+//                            「none」にすると予備を使わない。
+
+// 予備に回す理由。これ以外（キーが無効・形式が違う等）はどのモデルでも同じ結果になる。
+const FALLBACK_REASONS: TranscribeFail[] = ['rate_limited', 'quota_exceeded', 'upstream_busy'];
+const MAX_FALLBACKS = 2;
+// 予備に回すのは、残り時間がこれ以上あるときだけ（90秒の区間の文字起こしにかかる時間の目安）。
+const MIN_TIME_FOR_TRY_MS = 15000;
+
+let autoFallback: { at: number; models: string[] } | null = null;
+
+// 予備モデルの候補を並べる。安定版（preview / exp でない）→ flash → flash-lite の順に好む。
+function rankFallbacks(names: string[], primary: string): string[] {
+  const score = (n: string) =>
+    (/preview|exp/i.test(n) ? 2 : 0) + (/lite/i.test(n) ? 1 : 0) + (/flash/i.test(n) ? 0 : 10);
+  return names
+    .filter((n) => n !== primary && /flash/i.test(n) && !/(live|audio|tts|image|thinking)/i.test(n))
+    .sort((a, b) => score(a) - score(b) || b.localeCompare(a))
+    .slice(0, MAX_FALLBACKS);
+}
+
+async function fallbackModels(base: string, primary: string): Promise<string[]> {
+  const env = process.env.GEMINI_FALLBACK_MODELS?.trim();
+  if (env) {
+    if (env.toLowerCase() === 'none') return [];
+    return env.split(',').map((m) => m.trim()).filter((m) => m && m !== primary).slice(0, MAX_FALLBACKS);
+  }
+  // モデル一覧は枠を消費しない。6時間は覚えておく（区間ごとに問い合わせないため）。
+  if (autoFallback && Date.now() - autoFallback.at < 6 * 3600 * 1000) return autoFallback.models;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const res = await fetch(`${base}/models?pageSize=1000`, {
+      headers: { 'x-goog-api-key': process.env.GEMINI_API_KEY as string },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return [];
+    const j = (await res.json().catch(() => null)) as {
+      models?: { name?: unknown; supportedGenerationMethods?: unknown }[];
+    } | null;
+    const names: string[] = [];
+    for (const m of Array.isArray(j?.models) ? j!.models! : []) {
+      const short = (typeof m?.name === 'string' ? m.name : '').replace(/^models\//, '');
+      const methods = Array.isArray(m?.supportedGenerationMethods)
+        ? (m.supportedGenerationMethods as unknown[]).map((x) => String(x))
+        : [];
+      if (short && isUsableModel(short, methods)) names.push(short);
+    }
+    autoFallback = { at: Date.now(), models: rankFallbacks(names, primary) };
+    return autoFallback.models;
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// 1つのモデルに1回だけ送る。
+async function callModel(
+  base: string,
+  model: string,
+  body: unknown,
+  timeoutMs: number,
+): Promise<TranscribeResult> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/models/${model}:generateContent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // キーはヘッダで渡す（URL に付けるとログや履歴に残りやすいため）。
+        'x-goog-api-key': process.env.GEMINI_API_KEY as string,
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+
+    if (!res.ok) {
+      // 本文はログに残し、画面へ返すのは理由と短い手がかりだけにする。
+      const text = (await res.text().catch(() => '')).slice(0, 600);
+      try {
+        console.error('[TRANSCRIBE] gemini', model, res.status, text);
+      } catch {}
+      return { ok: false, ...classifyUpstream(res.status, text) };
+    }
+
+    const j = (await res.json().catch(() => null)) as {
+      promptFeedback?: { blockReason?: string };
+      candidates?: { finishReason?: string }[];
+    } | null;
+
+    // 安全フィルタ等で止められた場合は、空文字ではなく理由を返す。
+    const blocked = j?.promptFeedback?.blockReason;
+    const finish = j?.candidates?.[0]?.finishReason;
+    if (blocked || (finish && finish !== 'STOP' && finish !== 'MAX_TOKENS')) {
+      try {
+        console.error('[TRANSCRIBE] gemini blocked', model, blocked || finish);
+      } catch {}
+      return { ok: false, reason: 'blocked' };
+    }
+
+    return { ok: true, text: readText(j) };
+  } catch (e) {
+    const aborted = (e as Error)?.name === 'AbortError';
+    try {
+      console.error('[TRANSCRIBE] gemini', model, aborted ? 'timeout' : String(e));
+    } catch {}
+    return aborted
+      ? { ok: false, reason: 'timeout' }
+      // サーバから Gemini へつながらなかった（スマホ側の通信とは別）。
+      : { ok: false, reason: 'network_error', detail: 'サーバ→Gemini の接続失敗' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function transcribeAudio(
   file: Blob,
   filename: string,
@@ -296,9 +420,9 @@ export async function transcribeAudio(
   const mime = resolveAudioMime(filename, file.type);
   if (!mime) return { ok: false, reason: 'unsupported_type' };
 
+  const started = Date.now();
   const base = process.env.GEMINI_API_URL || DEFAULT_BASE;
   const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
-  const url = `${base}/models/${model}:generateContent`;
 
   const data = Buffer.from(await file.arrayBuffer()).toString('base64');
   // 社内用語のヒントはナレッジ（GLOSSARY.md / 10_理念・方針/COMPANY.md）から毎回組み立てる。
@@ -322,52 +446,35 @@ export async function transcribeAudio(
     generationConfig: { temperature: 0 },
   };
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // キーはヘッダで渡す（URL に付けるとログや履歴に残りやすいため）。
-        'x-goog-api-key': process.env.GEMINI_API_KEY as string,
-      },
-      body: JSON.stringify(body),
-      signal: ctrl.signal,
-    });
+  // まず設定したモデル。混雑・回数制限で断られたら予備のモデルへ。
+  const first = await callModel(base, model, body, TIMEOUT_MS);
+  if (first.ok || !FALLBACK_REASONS.includes(first.reason)) return first;
 
-    if (!res.ok) {
-      // 本文はログに残し、画面へ返すのは理由と短い手がかりだけにする。
-      const body = (await res.text().catch(() => '')).slice(0, 600);
+  const tried: string[] = [`${model}: ${first.detail || first.reason}`];
+  let last: TranscribeResult = first;
+  let allQuota = first.reason === 'quota_exceeded';
+  for (const fb of await fallbackModels(base, model)) {
+    const left = TIMEOUT_MS - (Date.now() - started);
+    if (left < MIN_TIME_FOR_TRY_MS) break;
+    const r = await callModel(base, fb, body, left);
+    if (r.ok) {
       try {
-        console.error('[TRANSCRIBE] gemini', res.status, body);
+        console.log('[TRANSCRIBE] fallback used', fb, 'after', tried.join(' / '));
       } catch {}
-      return { ok: false, ...classifyUpstream(res.status, body) };
+      return r;
     }
-
-    const j = (await res.json().catch(() => null)) as {
-      promptFeedback?: { blockReason?: string };
-      candidates?: { finishReason?: string }[];
-    } | null;
-
-    // 安全フィルタ等で止められた場合は、空文字ではなく理由を返す。
-    const blocked = j?.promptFeedback?.blockReason;
-    const finish = j?.candidates?.[0]?.finishReason;
-    if (blocked || (finish && finish !== 'STOP' && finish !== 'MAX_TOKENS')) {
-      try {
-        console.error('[TRANSCRIBE] gemini blocked', blocked || finish);
-      } catch {}
-      return { ok: false, reason: 'blocked' };
-    }
-
-    return { ok: true, text: readText(j) };
-  } catch (e) {
-    const aborted = (e as Error)?.name === 'AbortError';
-    try {
-      console.error('[TRANSCRIBE] gemini', aborted ? 'timeout' : String(e));
-    } catch {}
-    return { ok: false, reason: aborted ? 'timeout' : 'network_error' };
-  } finally {
-    clearTimeout(timer);
+    tried.push(`${fb}: ${r.detail || r.reason}`);
+    last = r;
+    if (r.reason !== 'quota_exceeded') allQuota = false;
+    if (!FALLBACK_REASONS.includes(r.reason)) break;
   }
+  if (last.ok) return last;
+  // どのモデルも断った。1日の枠切れが混ざっていても、混雑で断ったモデルがあれば「待てば通る」扱いにする。
+  const reason: TranscribeFail = allQuota ? 'quota_exceeded' : last.reason === 'quota_exceeded' ? 'rate_limited' : last.reason;
+  return {
+    ok: false,
+    reason,
+    detail: tried.join(' → '),
+    retryAfterSec: last.retryAfterSec ?? first.retryAfterSec,
+  };
 }
