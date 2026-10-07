@@ -4,11 +4,29 @@
 // 「部門会議議事録」と「面談記録」の両方で使う。録音・送信の仕組みは lib/useAudioTranscriber.ts。
 // ★文言の「会議」「面談」は subject で切り替える。
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SEGMENT_SECONDS, fmtDuration } from '@/lib/audioChunk';
 import { PHASE_LABEL, REC_SEGMENT_SECONDS, type AudioTranscriber } from '@/lib/useAudioTranscriber';
 
 type Source = 'record' | 'file' | 'paste';
+
+// 添付できる音声。スマホの標準録音アプリが書き出す形式を拡張子でも並べておく
+//（MIME だけだと、端末によっては .m4a などが選べない状態で表示されるため）。
+// AMR（.amr / .3gp）はブラウザで読めないが、選べないと理由が分からないので、選ばせてから案内を出す。
+const ACCEPT = [
+  'audio/*', 'video/*',
+  '.m4a', '.mp3', '.wav', '.aac', '.caf', '.mp4', '.ogg', '.opus', '.flac', '.webm', '.amr', '.3gp', '.3gpp',
+].join(',');
+
+type Device = 'ios' | 'android' | 'other';
+
+function detectDevice(): Device {
+  const ua = navigator.userAgent || '';
+  if (/android/i.test(ua)) return 'android';
+  // iPadOS の Safari は Mac として名乗るので、タッチの有無で見分ける。
+  if (/iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
+  return 'other';
+}
 
 export default function AudioCapture({
   t,
@@ -27,6 +45,10 @@ export default function AudioCapture({
   // 文字起こしは普段は隠しておく（必要なときだけ開く）。
   const [showTranscript, setShowTranscript] = useState(false);
   const { recording, configured, phase, lastRun } = t;
+  // 使っている端末の手順を先に開いて見せる（サーバ側では分からないので、表示後に判定する）。
+  const [device, setDevice] = useState<Device>('other');
+  useEffect(() => setDevice(detectDevice()), []);
+  const mobile = device !== 'other';
 
   return (
     <>
@@ -82,9 +104,28 @@ export default function AudioCapture({
             )}
             {recording && <span className="dm-rec-time">録音中 {fmtDuration(t.elapsed)}</span>}
           </div>
+          {recording && (
+            <p className="dm-note warn ac-keep">
+              録音中は画面を消したり、他のアプリに切り替えたりしないでください（その間は録音されません）。
+            </p>
+          )}
+          {!recording && t.interrupted && (
+            <p className="dm-note warn">
+              録音中に画面が消えたか、他のアプリに切り替わりました。その間の音声は入っていない可能性があります。
+              足りないところは下のメモに書き足してください。
+            </p>
+          )}
           <p className="dm-hint">
             録音は{REC_SEGMENT_SECONDS / 60}分ごとに区切って、{subject}中から順に文字にしていきます。
             {subject}が終わるころには文字起こしもほぼ終わっています。画面を閉じると録音は止まります。
+            {mobile && (
+              <>
+                <br />
+                スマホでは、録音中に画面が消えたり他のアプリを開いたりすると録音が止まります。
+                画面を開いたままにできないときは、スマホの録音アプリ（ボイスメモ・レコーダー）で録音して、
+                あとから「録音ファイルを添付」で取り込んでください。
+              </>
+            )}
             {recordHint && <><br />{recordHint}</>}
           </p>
         </div>
@@ -92,16 +133,55 @@ export default function AudioCapture({
 
       {source === 'file' && (
         <div className="dm-source">
-          <input
-            type="file"
-            accept="audio/*,video/*"
-            onChange={(e) => void t.onPickFile(e)}
-            disabled={configured === false || phase !== 'idle'}
-          />
+          {/* スマホでは標準の「ファイルを選択」が小さく押しにくいので、ボタンの形にして入力欄は隠す */}
+          <label className={`ac-pick ${configured === false || phase !== 'idle' ? 'disabled' : ''}`}>
+            <input
+              type="file"
+              accept={ACCEPT}
+              onChange={(e) => void t.onPickFile(e)}
+              disabled={configured === false || phase !== 'idle'}
+            />
+            <span>録音ファイルを選ぶ</span>
+          </label>
+          {t.picked && (
+            <p className="ac-picked">
+              選んだファイル：<b>{t.picked.name}</b>（{t.picked.size}）
+            </p>
+          )}
           <p className="dm-hint">
-            スマートフォンの録音アプリ等で録った音声（mp3 / m4a / wav など）を選んでください。
+            スマートフォンの録音アプリ等で録った音声（m4a / mp3 / wav など）を選んでください。
             長い{subject}は自動で{SEGMENT_SECONDS}秒ずつに分けて処理します。
+            取り込みが終わるまで、この画面を開いたままにしてください（画面が消えると止まります）。
           </p>
+
+          <details className="ac-guide" open={device === 'ios'} key={`ios-${device}`}>
+            <summary>iPhone の「ボイスメモ」から取り込む</summary>
+            <ol>
+              <li>「ボイスメモ」で取り込みたい録音を開き、<b>「…」</b>（その他）を押す</li>
+              <li><b>「"ファイル"に保存」</b>を選び、保存先（「このiPhone内」など）を選んで<b>「保存」</b></li>
+              <li>この画面で<b>「録音ファイルを選ぶ」</b>→<b>「ファイルを選択」</b>→ 2で保存した場所から録音を選ぶ</li>
+            </ol>
+            <p>
+              ボイスメモの録音は「ファイル」アプリに保存してからでないと選べません。
+              録音の名前を {subject}の日付・生徒名などに変えておくと、選ぶときに迷いません。
+            </p>
+          </details>
+
+          <details className="ac-guide" open={device === 'android'} key={`android-${device}`}>
+            <summary>Android の録音アプリから取り込む</summary>
+            <ol>
+              <li>この画面で<b>「録音ファイルを選ぶ」</b>を押す</li>
+              <li>
+                出てきた画面で<b>「音声」</b>、または<b>「Recordings」</b>（Galaxy は「Recordings」→「Voice Recorder」）の
+                フォルダを開き、録音を選ぶ
+              </li>
+            </ol>
+            <p>
+              Pixel の「レコーダー」など、録音がアプリの中にしか保存されない機種では、
+              録音を開いて<b>「共有」</b>→ 音声ファイルとして「ファイル」アプリや Google ドライブに保存してから選んでください。
+              録音アプリの保存形式が「AMR」「3GP」になっていると読み込めません。設定で「M4A」「MP3」などに変えてください。
+            </p>
+          </details>
         </div>
       )}
 

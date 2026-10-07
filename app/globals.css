@@ -1029,10 +1029,72 @@ button.primary:disabled { opacity: .5; cursor: default; }
 /* ============ 面談記録（部門会議議事録の dm-* をそのまま使い、差分だけここに置く） ============ */
 .dm-tlink.iv-same { display: block; margin: -4px 0 10px; white-space: normal; text-align: left; }
 
+/* 音声の取り込み（components/AudioCapture.tsx。部門会議議事録と共通） */
+.ac-pick {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  padding: 11px 24px; font-size: 14px; font-weight: 700; color: #fff; background: var(--navy);
+  border-radius: 8px; cursor: pointer;
+}
+/* 入力欄は見えなくして、ボタンの上に重ねる（押すとそのまま端末のファイル選択が開く） */
+.ac-pick input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.ac-pick.disabled { opacity: .5; cursor: default; }
+.ac-pick.disabled input { cursor: default; }
+.ac-pick:focus-within { outline: 3px solid #9cc0e4; outline-offset: 2px; }
+.ac-picked { margin: 10px 0 0; font-size: 13px; color: #4b535c; overflow-wrap: anywhere; }
+.ac-guide {
+  margin-top: 10px; padding: 10px 14px; background: #f7f9fb; border: 1px solid var(--line); border-radius: 8px;
+  font-size: 13px; line-height: 1.7; color: #4b535c;
+}
+.ac-guide summary { font-weight: 700; color: var(--navy); cursor: pointer; }
+.ac-guide ol { margin: 8px 0 0; padding-left: 1.4em; }
+.ac-guide li { margin-bottom: 4px; }
+.ac-guide p { margin: 6px 0 0; font-size: 12px; color: #8a94a0; }
+.ac-keep { margin-top: 10px; }
+
 @media (max-width: 980px) {
   .dm-body { grid-template-columns: 1fr; }
   .dm-side { position: static; }
   .dm-dec-list { max-height: none; }
+}
+
+/* ============ 部門会議議事録・面談記録：スマホ ============
+   録音や録音ファイルの取り込みをスマホで行うことが多いので、片手で押しやすい大きさにする。
+   - 入力欄は 16px（iOS は 16px 未満だとフォーカス時に画面が拡大される）
+   - 録音・ファイル選択・作成・保存のボタンは横いっぱい・高さ 48px 前後 */
+@media (max-width: 620px) {
+  .dm .page-head { padding: 14px 14px 12px; }
+  /* 「新しい会議／面談」は説明文に重なるので、説明の下に置く */
+  .dm .reset-chat { position: static; margin-top: 10px; padding: 8px 14px; font-size: 13px; }
+  .dm-body { padding: 12px 10px 40px; gap: 12px; }
+  .dm-step { padding: 14px 14px; border-radius: 10px; }
+  .dm-fields { gap: 10px; }
+  .dm-fields label { min-width: 0; flex-basis: 100%; }
+  .dm-fields input, .dm-fields select, .dm-fields textarea,
+  .dm-memo textarea, .dm-transcript textarea, .dm-draft, .dm-revise input, .dm-filter {
+    font-size: 16px;
+  }
+  .dm-fields input, .dm-fields select { min-height: 46px; border-radius: 10px; }
+  .dm-fields select {
+    -webkit-appearance: none; appearance: none; padding-right: 32px;
+    background: #fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%234b535c' stroke-width='2'/></svg>") no-repeat right 12px center;
+  }
+  .dm-fields textarea.dm-agenda { min-height: 140px; }
+  .dm-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .dm-tab { padding: 10px 4px; font-size: 12.5px; border-radius: 10px; white-space: normal; line-height: 1.3; }
+  .dm-rec { flex-direction: column; align-items: stretch; gap: 8px; }
+  .dm-rec-btn, .ac-pick, .dm-primary, .dm-save { width: 100%; padding: 14px 16px; font-size: 16px; border-radius: 10px; }
+  .dm-rec-time { text-align: center; font-size: 16px; }
+  .dm-check button { padding: 9px 12px; }
+  .dm-actions { flex-direction: column; align-items: stretch; gap: 8px; }
+  .dm-copy { width: 100%; padding: 12px 16px; font-size: 15px; border-radius: 10px; }
+  .dm-draft { min-height: 60vh; padding: 10px 12px; font-size: 15px; }
+  .dm-revise { flex-direction: column; }
+  .dm-revise input { min-width: 0; min-height: 46px; border-radius: 10px; }
+  .dm-revise button { padding: 12px 16px; font-size: 15px; border-radius: 10px; }
+  .dm-tstatus { flex-wrap: wrap; gap: 8px; }
+  .dm-panel { padding: 14px 14px; border-radius: 10px; }
+  .dm-meet-list { max-height: none; }
+  .dm-detail { padding: 8px 14px; font-size: 13px; }
 }
 
 /* ============ モバイル ============ */

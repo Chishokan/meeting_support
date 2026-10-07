@@ -11,7 +11,7 @@
 //   1区間が SEGMENT_SECONDS を超えると変換後に2つに割れるので、同じ長さにそろえておく。
 
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { SEGMENT_SECONDS, fmtDuration, splitAudioFile } from '@/lib/audioChunk';
+import { SEGMENT_SECONDS, audioFileProblem, fmtDuration, fmtSize, splitAudioFile } from '@/lib/audioChunk';
 
 export const REC_SEGMENT_SECONDS = SEGMENT_SECONDS;
 
@@ -171,6 +171,12 @@ export function useAudioTranscriber(opts: TranscriberOptions) {
   // 直前の取り込み結果。手順2の行にも結果を出すために持つ
   //（赤い案内は手順3の下に出るので、長い音声だと気づかないまま終わってしまう）。
   const [lastRun, setLastRun] = useState<RunTally | null>(null);
+
+  // 添付したファイル（名前と大きさを画面に出して、選び間違いに気づけるようにする）。
+  const [picked, setPicked] = useState<{ name: string; size: string } | null>(null);
+  // 録音中に画面が隠れた（画面ロック・他のアプリへの切り替え）か。
+  // スマホのブラウザは画面が隠れるとマイクを止めるので、その間の音声は入らない。
+  const [interrupted, setInterrupted] = useState(false);
 
   const [checking, setChecking] = useState(false);
   const [checkMsg, setCheckMsg] = useState('');
@@ -447,6 +453,7 @@ export function useAudioTranscriber(opts: TranscriberOptions) {
 
   async function startRecording() {
     clearRun();
+    setInterrupted(false);
     tallyRef.current = { ...EMPTY_TALLY };
     const o = optsRef.current;
     if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
@@ -472,12 +479,22 @@ export function useAudioTranscriber(opts: TranscriberOptions) {
   // 画面を離れるときにマイクを解放する。
   useEffect(() => () => stopRecording(), [stopRecording]);
 
+  // 録音中に画面が隠れたら覚えておく（戻ってきたときに注意を出す）。
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'hidden' && recordingRef.current) setInterrupted(true);
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
   // ---- 音声ファイルの添付 ----
   async function onPickFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
     clearRun();
+    setPicked({ name: file.name || '（名前なし）', size: fmtSize(file.size) });
     const o = optsRef.current;
     try {
       // 1時間の音声だと読み込み（WAVへの変換）だけで数十秒かかる。無反応に見えないよう状態を出す。
@@ -517,7 +534,14 @@ export function useAudioTranscriber(opts: TranscriberOptions) {
       o.setErr(sum.err);
       setLastRun(tally);
     } catch {
-      o.setErr('この音声ファイルを読み込めませんでした。mp3 / m4a / wav などでお試しください。');
+      o.setErr(
+        audioFileProblem(file) === 'amr'
+          ? 'この録音は AMR 形式（.amr / .3gp）のため、ブラウザで読み込めません。'
+            + '録音アプリの設定で保存形式を「M4A」「MP3」「AAC」などに変えて録り直すか、'
+            + '他のアプリで文字起こしして「文字起こしを貼り付け」から入れてください。'
+          : 'この音声ファイルを読み込めませんでした。mp3 / m4a / wav などでお試しください。'
+            + '長い録音で読み込めない場合は、録音アプリで2〜3つに分けて書き出し、順番に添付してください。',
+      );
       o.setNote('');
     } finally {
       setPhase('idle');
@@ -534,11 +558,43 @@ export function useAudioTranscriber(opts: TranscriberOptions) {
     setQueued(0);
     setFailedSegs(0);
     setLastRun(null);
+    setPicked(null);
+    setInterrupted(false);
   }, [stopRecording]);
 
   // 音声の読み込み中は区間数がまだ決まっていないので、phase も見て「処理中」と判断する
   //（ここを落とすと、1時間の音声の読み込み中だけ画面が無反応に見える）。
   const busy = phase !== 'idle' || queued > 0 || fileProgress.total > 0;
+
+  // 録音中・文字起こしの処理中は、スマホの画面が自動で消えないようにする（Screen Wake Lock）。
+  // 画面が消えるとブラウザが止まり、録音も送信も途切れるため。
+  // 対応していない端末では何もしない（画面の案内で「画面を消さないで」と伝えている）。
+  const keepAwake = recording || busy;
+  useEffect(() => {
+    if (!keepAwake) return;
+    const nav = navigator as Navigator & { wakeLock?: { request: (t: 'screen') => Promise<WakeLockSentinel> } };
+    if (!nav.wakeLock) return;
+    let lock: WakeLockSentinel | null = null;
+    let alive = true;
+    const acquire = async () => {
+      try {
+        const l = await nav.wakeLock!.request('screen');
+        if (alive) lock = l;
+        else void l.release();
+      } catch {}
+    };
+    // 画面を切り替えるとロックは自動で外れるので、戻ってきたら取り直す。
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void acquire();
+    };
+    void acquire();
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      alive = false;
+      document.removeEventListener('visibilitychange', onVis);
+      if (lock) void lock.release().catch(() => {});
+    };
+  }, [keepAwake]);
 
   return {
     configured,
@@ -552,6 +608,8 @@ export function useAudioTranscriber(opts: TranscriberOptions) {
     failedSegs,
     lastRun,
     busy,
+    picked,
+    interrupted,
     checking,
     checkMsg,
     checkOk,

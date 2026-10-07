@@ -75,6 +75,13 @@
 - 閲覧できる範囲: lib/interviewNotes/access.ts。自分の部門の記録だけ（管理部門は全部門）。他部門の記録は上書きできない
 - 会話ログ（「会話ログ」シート）には生徒名・文字起こし・記録本文を残さない（使われた事実と字数だけ）
 - 編集中の内容は端末（localStorage）に残る。共用端末では保存後に「新しい面談」で消すこと
+- スマホ対応：録音はスマホで行うことが多い前提で作っている（部門会議議事録も同じ部品・同じ見た目）
+  - 「録音ファイルを添付」に iPhone のボイスメモ／Android の録音アプリから取り込む手順を出している（components/AudioCapture.tsx の ac-guide）。
+    ボイスメモは「"ファイル"に保存」してからでないとブラウザで選べない
+  - 録音中・処理中は Screen Wake Lock で画面が消えないようにしている（lib/useAudioTranscriber.ts）。
+    画面が消える・他のアプリに切り替えるとブラウザは録音を止めるので、そうなったときは画面で知らせる
+  - 音声は 16kHz の OfflineAudioContext で読み込む（lib/audioChunk.ts）。48kHz で読むと1時間の録音で1GB前後になり、iPhone で落ちるため
+  - AMR（.amr / .3gp）はどのブラウザも読めない。録音アプリの保存形式を変えてもらう案内を出す
 - セットアップ: apps_script/Code.gs を最新にして再デプロイする（saveInterviewNote / listInterviewNotes が増えている）
 
 ## 問合せ管理アプリ（小中等部 問合せ管理の Web アプリ化）
