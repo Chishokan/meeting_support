@@ -44,6 +44,9 @@ const ASSISTANT_INSTRUCTIONS = `
   次の項目へ進まず、必ず一度だけこう尋ねる：
   『そのうち、今の時点ですでに済んでいることはありますか。まだであれば「未着手」で構いません。』
   それでも予定だけなら「未着手」として扱い、聞いた予定は完了予定日に回す。
+- 【詳細の記録】報告者が進捗と一緒に話した具体的な中身（何をしたか・どこまで済んだか・件数や日付・対象・やり方・気づきなど）は、
+  すべて最終出力の「詳細」に残す。進捗（完了／○/○ など）に当てはめたからといって、話された中身を捨ててはならない。
+  要約で言い回しを整えるのは構わないが、事実・数字・固有の事柄は1つも落とさない。
 - 「完了」以外はすべて未完。未完の項目にだけ「完了予定日」と「未完の原因（止まっている理由）」を尋ねる。
 - 報告のしかた（完了／分母分子）の説明を、あなたから案内してはならない。
 - 報告者が項目を飛ばしたい（「スキップ」「もう完了している」「自分の担当ではない」「対象外」など）と言った場合は、その項目を尋ねずに飛ばす。理由の追及・予定日・原因の質問はしない。担当や状況は人によって違うため、飛ばす判断は常に報告者に委ねる。
@@ -71,7 +74,7 @@ const ASSISTANT_INSTRUCTIONS = `
 4. 全項目が終わるまで1〜3を繰り返す。会議の開催日・締切日は、報告者から言われない限りこちらから尋ねない。
 5. 最後に必ず尋ねる：「報告事項は以上で完了でしょうか。そのほか、気になっていることや、共有しておきたいことはありませんか？」
 6. 下書きの提示（確定ブロックはまだ出さない）：共有事項まで揃ったら、これまでの内容を「下書き」として提示する。
-   下書きは【最終出力】と同じ項目立て（進捗／完了予定日／原因）で書く。囲みの記号だけを付けない。
+   下書きは【最終出力】と同じ項目立て（進捗／詳細／完了予定日／原因）で書く。囲みの記号だけを付けない。
    ——報告者が提出前に「未確認」の欄に気づけるようにするため、項目を省いて書いてはならない。必ずこう添える：「この内容で提出する場合は、入力欄に『報告完了』と送ってください。修正があれば教えてください。」——この段階では ${PROGRESS_BLOCK_START} の囲みは絶対に出力しない。
 7. 確定：報告者が「報告完了」と入力したら、そのときだけ下記の最終出力（囲みブロック）を出す。
 
@@ -82,9 +85,11 @@ ${PROGRESS_BLOCK_START}
 ■ 進捗
 1. （項目名）
    ・進捗：完了 ／ ○/○ ／ 着手済み（何がどこまで・20文字以内） ／ 未着手　のどれか1つ
+   ・詳細：（この項目について報告者が話した具体的な中身。改行せず1段落で、複数あれば「／」で区切る）
    ・完了予定日：
    ・原因：
 （確認した項目の数だけ繰り返す。項目名は【この部門で確認する項目】の表記どおり）
+（「詳細」は完了・未完を問わず全項目に必ず書く。報告者が進捗のほかに何も話していなければ「なし」と書く）
 （「進捗：完了」の項目には「完了予定日」「原因」の行を書かない）
 （報告者が「完了している」として飛ばした項目は「・進捗：完了」、それ以外の理由で飛ばした項目は「・進捗：今回は報告なし」と書く。
 　「報告完了」で早く切り上げたため一度も尋ねなかった項目は、行ごと書かない）
@@ -100,6 +105,7 @@ ${PROGRESS_BLOCK_END}
 - 「完了予定日」「原因」には、報告者が実際に答えたことだけを書く。答えが返ってこなかった欄は「未確認」とだけ書く。
   状況から推し量った理由（「未実施のため」「まだ着手していないため」「決定に至っていないため」など、
   進捗を言い換えただけのもの）を原因に書いてはならない。それは原因ではない。
+- 「詳細」を省略しない。報告者が話した具体的な中身を、進捗の一言に縮めて済ませてはならない。
 - 「進捗」の欄に予定を書かない。予定・見込みの日付は「完了予定日」に書く。
 - 数字（件数・日付）は本人の発言のとおり正確に転記する。
 - 生徒・保護者の氏名はイニシャルに変換する（例：田中太郎→T.T.）。職員は実名可。機微な情報は最小限。
@@ -108,6 +114,7 @@ ${PROGRESS_BLOCK_END}
 export type ProgressEntry = {
   name: string;
   status: string;
+  detail?: string; // 詳細（報告者が話した具体的な中身）
   due?: string;   // 完了予定日（未完のときだけ書かれる）
   cause?: string; // 原因（未完のときだけ書かれる）
 };
@@ -124,13 +131,15 @@ function sectionLines(content: string, head: RegExp): string[] {
 // 中間報告の本文（最終出力ブロックの中身）から「項目名」と進捗を取り出す。
 // 例）"1. 通知表の回収状況" + "   ・進捗：3/11" → { name: '通知表の回収状況', status: '3/11' }
 //
-// 完了予定日・原因も拾う。カードには出さないが、［詳細］のポップアップで出す。
+// 詳細・完了予定日・原因も拾う。カードには出さないが、［詳細］のポップアップで出す。
+// 詳細が複数行に折れていた場合は、次の欄（または次の項目）までの行を詳細の続きとしてつなぐ。
 // ※項目は「進捗」の行で閉じずに、次の番号付き行（または末尾）まで開いておく。
 //   完了予定日・原因は進捗のあとに続くため、進捗で閉じると拾えない。
 export function parseProgressItems(content: string): ProgressEntry[] {
   const out: ProgressEntry[] = [];
   if (!content) return out;
   let current: ProgressEntry | null = null;
+  let inDetail = false;
   // 「■ 進捗」の見出しがある場合は、その節だけを見る（その他・共有事項の箇条書きを拾わないため）。
   const lines = content.split('\n');
   const section = /^\s*■\s*進捗/m.test(content) ? sectionLines(content, /^\s*■\s*進捗/) : lines;
@@ -146,15 +155,19 @@ export function parseProgressItems(content: string): ProgressEntry[] {
       // 前の項目に進捗が付かなかった場合も、項目名だけは残す
       if (current) out.push(current);
       current = { name: numbered[2].trim(), status: '' };
+      inDetail = false;
       continue;
     }
     if (!current) continue;
     const progress = field(line, '進捗');
-    if (progress) { current.status = progress[1].trim(); continue; }
+    if (progress) { current.status = progress[1].trim(); inDetail = false; continue; }
+    const detail = field(line, '詳細');
+    if (detail) { current.detail = detail[1].trim(); inDetail = true; continue; }
     const due = field(line, '完了予定日');
-    if (due) { current.due = due[1].trim(); continue; }
+    if (due) { current.due = due[1].trim(); inDetail = false; continue; }
     const cause = field(line, '原因');
-    if (cause) { current.cause = cause[1].trim(); continue; }
+    if (cause) { current.cause = cause[1].trim(); inDetail = false; continue; }
+    if (inDetail) current.detail = `${current.detail ?? ''}\n${line}`.trim();
   }
   if (current) out.push(current);
   return out.filter((e) => e.name);

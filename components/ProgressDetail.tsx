@@ -2,7 +2,7 @@
 
 // 中間報告1件の詳細（ポップアップ）。
 // ダッシュボードのカードの［詳細］で開く。カードには項目名と進捗しか出さないので、
-// 完了予定日・原因・その他の共有事項はここで読む。
+// 詳細・完了予定日・原因・その他の共有事項はここで読む。
 // ★事前共有事項（ShareItemDetail）・議事録（MinutesDetail）と同じ見た目の枠（dm-modal-*）を使う。
 
 import type { ProgressEntry } from '@/lib/progressPrompt';
@@ -64,7 +64,10 @@ export default function ProgressDetail({
                       {p.status || '—'}
                     </span>
                   </div>
-                  {/* 完了予定日・原因は未完のときだけ書かれる。無い項目には行を出さない。 */}
+                  {/* 詳細は全項目に書かれる（「なし」は出さない）。完了予定日・原因は未完のときだけ。無い項目には行を出さない。 */}
+                  {p.detail && p.detail !== 'なし' && (
+                    <div className="prog-detail-line prog-detail-text"><b>詳細</b>{p.detail}</div>
+                  )}
                   {p.due && <div className="prog-detail-line"><b>完了予定日</b>{p.due}</div>}
                   {p.cause && <div className="prog-detail-line"><b>原因</b>{p.cause}</div>}
                 </li>
@@ -91,6 +94,7 @@ export default function ProgressDetail({
                   ...row.progress.map(
                     (p, i) =>
                       `${i + 1}. ${p.name}\n   ・進捗：${p.status || '—'}` +
+                      (p.detail ? `\n   ・詳細：${p.detail}` : '') +
                       (p.due ? `\n   ・完了予定日：${p.due}` : '') +
                       (p.cause ? `\n   ・原因：${p.cause}` : ''),
                   ),
