@@ -100,6 +100,30 @@ export function confirmedDocs(docs: KnowledgeDoc[]): KnowledgeDoc[] {
   return docs.filter((d) => d.status === CONFIRMED);
 }
 
+/**
+ * 本文から制作費（広報物の制作にかかる社内の費用）の記載を落とす。
+ * 要項テンプレートの＜広報物・制作物＞には制作費の行と「制作費の目安」の一覧があるが、
+ * 職員向けの回答には出さない（受講料と取り違える恐れもある）。
+ * 取り込みで消し忘れても AI に渡らないよう、プロンプトに載せる直前でここを通す。
+ */
+export function stripProductionCost(body: string): string {
+  const out: string[] = [];
+  let inGuide = false; // 「制作費の目安」の一覧の中
+  for (const line of body.split('\n')) {
+    const t = line.trim();
+    if (/^\**制作費の目安/.test(t)) { inGuide = true; continue; }
+    if (inGuide) {
+      // 一覧（箇条書き・空行・出典の※）が終わるまで読み飛ばす
+      if (!t || /^[-*・]/.test(t) || /^※/.test(t)) continue;
+      inGuide = false;
+    }
+    // 制作費の行と、「※制作物ごとに制作費がかかります…」の注記の行
+    if (t.includes('制作費')) continue;
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
 /** 確定済みの要項をプロンプトに載せる形へ。出典を引けるようファイル名を添える。 */
 export function formatDocs(docs: KnowledgeDoc[]): string {
   if (!docs.length) return '（確定済みの要項がまだありません）';
@@ -113,7 +137,7 @@ export function formatDocs(docs: KnowledgeDoc[]): string {
       ]
         .filter(Boolean)
         .join('\n');
-      return `${head}\n\n${d.body}`;
+      return `${head}\n\n${stripProductionCost(d.body)}`;
     })
     .join('\n\n');
 }
