@@ -753,6 +753,26 @@ button.primary:disabled { opacity: .5; cursor: default; }
   grid-template-columns: minmax(360px, 1fr) minmax(280px, 360px); align-items: start;
 }
 .dm-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* 会議を始めるときの入口。手順1のすぐ上に置き、毎回ここから始めてもらう。 */
+.dm-start {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--navy);
+  border-radius: 12px; padding: 14px 18px;
+}
+.dm-start-text { display: flex; flex-direction: column; gap: 3px; flex: 1 1 260px; min-width: 0; }
+.dm-start-text strong { font-size: 14px; color: var(--navy); }
+.dm-start-text span { font-size: 12px; color: #667; line-height: 1.7; }
+.dm-start-btn {
+  flex: 0 0 auto; font-size: 14px; font-weight: 700; color: #fff; background: var(--navy);
+  border: none; border-radius: 8px; padding: 11px 20px; cursor: pointer; white-space: nowrap;
+}
+.dm-start-btn:hover { filter: brightness(1.12); }
+.dm-start-btn:disabled { opacity: .5; cursor: default; filter: none; }
+/* 前の会議の入力が残っているときは、押し忘れに気づけるよう色を変える。 */
+.dm-start.left { border-color: #e6c37a; border-left-color: #c9962a; background: #fffaf0; }
+.dm-start.left .dm-start-text strong { color: #8a6d1a; }
+.dm-start.left .dm-start-btn { background: #c9962a; }
 .dm-step { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
 .dm-step h2 { font-size: 15px; margin: 0 0 14px; display: flex; align-items: center; gap: 10px; }
 .dm-num {
