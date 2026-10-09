@@ -728,7 +728,9 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   }
 
   function reset() {
-    if (!confirm('入力中の会議情報・文字起こし・議事録をすべて消して、新しい会議を始めますか？')) return;
+    // 何も入っていないときに「すべて消しますか？」と聞くのは分かりにくいので、
+    // 残っているものがあるときだけ確認する。
+    if (hasInput && !confirm('入力中の会議情報・文字起こし・議事録をすべて消して、新しい会議を始めますか？')) return;
     stopRecording();
     queueRef.current = [];
     setQueued(0);
@@ -751,6 +753,11 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   // 音声の読み込み中は区間数がまだ決まっていないので、phase も見て「処理中」と判断する
   //（ここを落とすと、1時間の音声の読み込み中だけ画面が無反応に見える）。
   const busyTranscribe = phase !== 'idle' || queued > 0 || fileProgress.total > 0;
+  // 前の会議の入力が残っているか（開催日は今日が最初から入っているので数えない）。
+  const hasInput = Boolean(
+    meta.title.trim() || meta.place.trim() || meta.attendees.trim() || meta.agenda.trim()
+    || transcript.trim() || memo.trim() || draft.trim(),
+  );
   const shownDecisions = decisions.filter((d) => (decFilter ? d.campus === decFilter : true));
   const shownMeetings = meetings.filter((m) => (decFilter ? m.campus === decFilter : true));
   // 絞り込みの選択肢は、議事録と決定事項の両方に出てくる部門から作る。
@@ -766,13 +773,28 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           {campus}／{name} さん。会議を録音して文字起こしし、議事録テンプレートに沿って整えます。
           内容を確認して保存すると、決定事項が全部門で見られるようになります。
         </p>
-        <button className="reset-chat" onClick={reset} disabled={generating || saving || recording}>
-          新しい会議
-        </button>
       </div>
 
       <div className="dm-body">
         <div className="dm-main">
+          {/* 会議ごとに必ずここから始めてもらう。
+              右上に置いていたときは気づかれず、前の会議の入力が残ったまま
+              次の会議を書き足してしまうことがあったため、手順1のすぐ上に出している。 */}
+          <div className={`dm-start ${hasInput ? 'left' : ''}`}>
+            <div className="dm-start-text">
+              <strong>{hasInput ? '前の会議の内容が残っています' : 'まずはここから'}</strong>
+              <span>
+                {hasInput
+                  ? '別の会議を始めるときは、先に「新しい会議を始める」を押してください。'
+                    + '会議情報・文字起こし・議事録をすべて消して、まっさらな状態にします。'
+                  : '新しい会議の状態です。このまま下の「1 会議の情報」から入力してください。'}
+              </span>
+            </div>
+            <button className="dm-start-btn" onClick={reset} disabled={generating || saving || recording}>
+              新しい会議を始める
+            </button>
+          </div>
+
           {/* ---------- 1. 会議情報 ---------- */}
           <section className="dm-step">
             <h2><span className="dm-num">1</span>会議の情報</h2>
