@@ -1,11 +1,12 @@
 {
   "name": "chishokan-chat",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "node --experimental-strip-types --no-warnings --test \"lib/**/*.test.ts\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.69.0",
