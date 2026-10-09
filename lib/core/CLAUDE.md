@@ -11,6 +11,8 @@
 | `knowledgeDocs.ts` | `knowledge/` 配下の Markdown（確定した要項など）を読む |
 | `sanitize.ts` | AIの応答の後処理（役割漏れの除去など） |
 | `log.ts` | AIとの会話ログをスプレッドシートへ転記する |
+| `supabase.ts` | Supabase（データベース）への接続。サーバ専用 |
+| `dbError.ts` | Supabase のエラーを設定の直し方に言い換える（画面側で使う。門配管理・適性検査） |
 
 ## 置き場所の決め方
 
