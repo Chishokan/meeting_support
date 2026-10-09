@@ -6,6 +6,7 @@
 
 import { canUseInquiryBoard, INQUIRY_BOARD_DEPTS } from './inquiryBoardAccess';
 import { canUseInterview, interviewAppUrl, INTERVIEW_DEPTS, type InterviewDept } from './interviewApp';
+import { APTITUDE_DEPTS, canUseAptitude } from './aptitude/access';
 
 // 面談管理は別アプリ（面談予約システム）の管理画面。部門ごとに URL が分かれている。
 // 管理画面にはログインの仕組みが無く、カードは管理画面の URL をそのまま開く。
@@ -61,4 +62,13 @@ export const PORTAL_APPS: PortalApp[] = [
   },
   interviewApp('red'),
   interviewApp('chutobu'),
+  {
+    id: 'aptitude',
+    name: '適性検査',
+    desc: '講師（学生パート）・事務スタッフ・社員の採用選考の適性検査。受検URLの発行・紙回答の入力・結果の確認',
+    href: '/aptitude',
+    status: 'ready',
+    canUse: canUseAptitude,
+    deniedNote: `${APTITUDE_DEPTS.join('、')}のみ利用できます`,
+  },
 ];
