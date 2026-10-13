@@ -14,6 +14,7 @@ const NAV: NavItem[] = [
   { href: '/meeting-review', label: '全体会議振り返り', desc: '感想・気づき・やると決めたこと' },
   { href: '/progress', label: '中間報告', desc: '決議事項の進捗報告' },
   { href: '/report', label: '報告', desc: 'ドキュメントへ転記' },
+  { href: '/kaizen', label: 'つきいち改善', desc: '月1改善の提出と投票' },
   // 問い合わせQAはテスト運用中。担当者が本番の数字として使わないよう「準備中」を出す。
   // 画面は開けるので soon は表示だけで、リンクは止めない。
   { href: '/inquiry-qa', label: '問い合わせQA', desc: '小中等部の問合せ状況をAIに聞く', soon: true },
