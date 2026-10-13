@@ -22,6 +22,7 @@ export default function MonpaiLayout({ children }: { children: ReactNode }) {
         nav={[
           { href: '/monpai', label: '月間一覧' },
           { href: '/monpai/report', label: '実績報告' },
+          { href: '/monpai/summary', label: '集計' },
           { href: '/monpai/materials', label: '配布物' },
           { href: '/monpai/schools', label: '学校' },
         ]}

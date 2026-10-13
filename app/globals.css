@@ -1706,6 +1706,27 @@ button.mp-btn.primary { width: auto; margin-top: 0; padding: 6px 14px; font-size
 .mp-add-row .mp-check { flex: 0 0 auto; padding-bottom: 8px; }
 .mp-add-row .mp-btn.primary { flex: 0 0 auto; padding: 8px 18px; }
 .mp-month-input { width: auto; padding: 6px 10px; font-size: 14px; }
+/* 月の集計 */
+.mp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 4px 0 6px; }
+.mp-kpi { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; }
+.mp-kpi span { font-size: 11.5px; color: #667; font-weight: 700; }
+.mp-kpi b { font-size: 22px; font-variant-numeric: tabular-nums; color: #222; }
+.mp-kpi small { font-size: 10.5px; color: #8a94a0; }
+.mp-kpi.main { border-color: #b9cfe4; background: #f3f8fd; }
+.mp-kpi.main b { color: var(--navy); }
+.mp-kpi.warn { border-color: #f2c4b8; background: #fdece8; }
+.mp-kpi.warn b { color: #a0402c; }
+.mp-subtotal td { font-weight: 700; background: #f7f9fb; }
+.mp-summary td.mp-wrap { white-space: normal; min-width: 200px; }
+/* スマホでは .ib-table-wrap が枠からはみ出す設定（問合せ管理のカード表示用）なので、集計の表は枠の中で横にスクロールさせる */
+.mp-summary-page .ib-table-wrap { overflow-x: auto; }
+/* スマホ：画面の切り替え（月間一覧・実績報告…）が入りきらないときは横にスクロールする（ヘッダは1行のまま） */
+@media (max-width: 600px) {
+  .board-brand:has(.app-nav) { min-width: 0; }
+  .app-nav { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .app-nav::-webkit-scrollbar { display: none; }
+  .board-back, .board-who { flex-shrink: 0; }
+}
 
 /* ───────── 適性検査（/aptitude）─────────
    一覧・表・ポップアップは問合せ管理（ib-*）と会議DX（dm-modal-*）の部品を使い、ここは適性検査だけの見た目を足す。
