@@ -332,3 +332,102 @@ export function validateSetting(b: Record<string, unknown>): { ok: true; value: 
   if (errors.length) return { ok: false, errors };
   return { ok: true, value: { month, school, rate, recruit } };
 }
+
+// ---- 月の集計（/monpai/summary）------------------------------------------------
+//
+// 1か月の門配を全地区まとめて、地区・学校・担当ごとに数える。数え方は月間一覧の集計表と同じ：
+//   計画＝中止を除いた計画部数の合計／実績＝報告済みの実施部数の合計（中止は数えない）
+//   ボトムは学校マスタに載っている学校の分だけ。学校マスタに無い学校の記録も実績には数える。
+
+export type Tally = {
+  bottom: number;
+  planned: number;
+  done: number;
+  visits: number; // 実施を報告した回数（0部の回も含む）
+  canceled: number; // 中止
+  unreported: number; // 日付が過ぎたのに実績が未報告
+  upcoming: number; // 今日以降の予定
+};
+
+export type SchoolTally = Tally & { district: string; school: string; registered: boolean };
+export type DistrictTally = Tally & { district: string; schools: SchoolTally[] };
+export type StaffTally = { name: string; visits: number; done: number; canceled: number; unreported: number };
+
+export type MonthSummary = {
+  month: string;
+  total: Tally;
+  districts: DistrictTally[];
+  staff: StaffTally[];
+  unreported: MonpaiRecord[]; // 日付順
+  canceled: MonpaiRecord[]; // 日付順
+};
+
+const emptyTally = (): Tally => ({ bottom: 0, planned: 0, done: 0, visits: 0, canceled: 0, unreported: 0, upcoming: 0 });
+
+function addTally(a: Tally, b: Tally): Tally {
+  return {
+    bottom: a.bottom + b.bottom, planned: a.planned + b.planned, done: a.done + b.done, visits: a.visits + b.visits,
+    canceled: a.canceled + b.canceled, unreported: a.unreported + b.unreported, upcoming: a.upcoming + b.upcoming,
+  };
+}
+
+/** 記録1件の数え分け。today（YYYY-MM-DD）より前で実績が無ければ未報告。 */
+function tallyOf(r: MonpaiRecord, today: string): Tally {
+  const t = emptyTally();
+  if (r.status === '中止') { t.canceled = 1; return t; }
+  t.planned = r.planned;
+  if (r.done != null) { t.done = r.done; t.visits = 1; }
+  else if (r.date < today) t.unreported = 1;
+  else t.upcoming = 1;
+  return t;
+}
+
+export function summarizeMonth(
+  records: MonpaiRecord[],
+  schools: School[],
+  settings: MonthSetting[],
+  month: string,
+  today: string,
+): MonthSummary {
+  const rs = records.filter((r) => monthOf(r.date) === month).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const extra = Array.from(new Set(rs.map((r) => r.district))).filter((d) => !(DISTRICTS as readonly string[]).includes(d));
+
+  const districts: DistrictTally[] = [...DISTRICTS, ...extra].map((district) => {
+    const inD = rs.filter((r) => r.district === district);
+    const master = schools.filter((s) => s.district === district).sort((a, b) => a.order - b.order);
+    const others = Array.from(new Set(inD.map((r) => r.school))).filter((n) => !master.some((s) => s.name === n));
+    const rows: SchoolTally[] = [
+      ...master.map((s) => ({ name: s.name, bottom: bottomOf(s, settings, month).bottom, registered: true })),
+      ...others.map((name) => ({ name, bottom: 0, registered: false })),
+    ].map(({ name, bottom, registered }) => ({
+      ...inD.filter((r) => r.school === name).reduce((a, r) => addTally(a, tallyOf(r, today)), { ...emptyTally(), bottom }),
+      district, school: name, registered,
+    }));
+    return { ...rows.reduce(addTally, emptyTally()), district, schools: rows };
+  });
+
+  // 担当は「中山、松田」の2人書きも1人ずつ数える。2人で担当した回は、それぞれに部数を数える。
+  // 姓だけ（「越智」）と姓名（「越智浩晃」）は同じ人にまとめ、長いほうの名前で出す（同じ姓が2人以上いれば分けたまま）
+  const staff: StaffTally[] = [];
+  for (const r of rs) {
+    const t = tallyOf(r, today);
+    if (t.upcoming) continue;
+    for (const n of staffNames(r)) {
+      const hit = staff.filter((s) => samePerson(s.name, n));
+      let s = hit.length === 1 ? hit[0] : staff.find((x) => x.name === n);
+      if (!s) staff.push((s = { name: n, visits: 0, done: 0, canceled: 0, unreported: 0 }));
+      if (n.length > s.name.length) s.name = n;
+      s.visits += t.visits; s.done += t.done; s.canceled += t.canceled; s.unreported += t.unreported;
+    }
+  }
+  staff.sort((a, b) => b.done - a.done || b.visits - a.visits || a.name.localeCompare(b.name));
+
+  return {
+    month,
+    total: districts.reduce(addTally, emptyTally()),
+    districts,
+    staff,
+    unreported: rs.filter((r) => tallyOf(r, today).unreported),
+    canceled: rs.filter((r) => r.status === '中止'),
+  };
+}
