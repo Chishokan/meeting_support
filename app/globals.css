@@ -2048,7 +2048,7 @@ button.mp-btn.primary { width: auto; margin-top: 0; padding: 6px 14px; font-size
 .kz-side.after .kz-side-label { color: #2e6b4f; }
 .kz-photo { display: block; margin-bottom: 6px; }
 .kz-photo img { display: block; width: 100%; max-height: 220px; object-fit: cover; border-radius: 6px; background: #e9ecf0; }
-.kz-photo-link { display: inline-block; font-size: 12px; color: var(--navy); margin-bottom: 6px; }
+.kz-photo-link { display: inline-block; font-size: 12px; color: var(--navy); margin: 0 12px 6px 0; }
 .kz-text { font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
 .kz-text.clamp { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
 .kz-more { font-size: 12px; color: var(--navy); background: none; border: none; padding: 4px 0; cursor: pointer; }
@@ -2089,6 +2089,11 @@ button.mp-btn.primary { width: auto; margin-top: 0; padding: 6px 14px; font-size
 .kz-admin-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); margin-top: 8px; }
 .kz-admin h4 { font-size: 12px; margin: 0 0 4px; color: #2a2f36; }
 .kz-admin p { font-size: 13px; line-height: 1.8; margin: 0; overflow-wrap: anywhere; }
+.kz-admin p.kz-hint { font-size: 12px; line-height: 1.7; margin-top: 8px; }
+.kz-admin p.kz-msg { margin-top: 8px; }
+.kz-import { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-top: 10px; }
+.kz-import label { display: flex; flex-direction: column; gap: 4px; margin: 0; font-size: 12px; font-weight: 700; color: #2a2f36; }
+.kz-import input[type="file"] { width: auto; max-width: 100%; padding: 6px 8px; font-size: 13px; }
 
 @media (max-width: 980px) {
   .kz-submit { grid-template-columns: 1fr; }

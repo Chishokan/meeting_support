@@ -21,9 +21,6 @@ export async function POST(req: Request) {
     return Response.json({ ok: false, reason: 'bad_month', message: '締め切れるのは投票受付中の月だけです。' }, { status: 400 });
   }
   const r = await setClose(month, body.closed === true, session.name);
-  if (!r.ok) {
-    const status = r.reason === 'not_configured' || r.reason === 'apps_script_outdated' ? 200 : 502;
-    return Response.json({ ok: false, reason: r.reason }, { status });
-  }
+  if (!r.ok) return Response.json({ ok: false, reason: r.reason }, { status: r.reason === 'not_configured' ? 200 : 502 });
   return Response.json({ ok: true });
 }

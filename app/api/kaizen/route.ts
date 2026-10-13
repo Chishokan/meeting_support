@@ -3,7 +3,7 @@
 //   POST   … 改善の提出
 //   PUT    … 改善の修正（body.id で指定。本人はその月の投票が締まるまで、管理部門はいつでも）
 //   DELETE … 改善の削除（?id=。直せる人と同じ）
-// 投票は ./vote、管理部門の締め切りは ./close。
+// 投票は ./vote、管理部門の締め切りは ./close、旧スプレッドシートの取り込みは ./import。
 
 import { randomUUID } from 'crypto';
 import { getSession, type Session } from '@/lib/core/auth';
@@ -18,10 +18,10 @@ import {
   validateInput,
   type Kaizen,
 } from '@/lib/kaizen/model';
-import { deleteKaizen, loadKaizen, saveKaizen, type PhotoChange, type PhotoChanges } from '@/lib/kaizen/store';
+import { deleteKaizen, loadKaizen, saveKaizen, withPhotoUrls, type PhotoChange, type PhotoChanges } from '@/lib/kaizen/store';
 
 export const runtime = 'nodejs';
-// 写真の保存（Drive）があるぶん、ほかの画面より長めに待つ
+// 写真の保存（Supabase Storage）があるぶん、ほかの画面より長めに待つ
 export const maxDuration = 60;
 
 // 1枚あたりの上限（base64 の文字数）。画面で長辺1600pxに縮めてから送るので、ふつうは数百KBに収まる。
@@ -36,7 +36,7 @@ function gate(): { session: Session } | { error: Response } {
 }
 
 function failStatus(reason: string): number {
-  if (reason === 'not_configured' || reason === 'apps_script_outdated') return 200;
+  if (reason === 'not_configured') return 200;
   if (reason === 'not_found') return 404;
   return 502;
 }
@@ -72,7 +72,8 @@ export async function GET() {
     today: todayJst(),
     staffNames: STAFF.flatMap((s) => s.names),
   });
-  return Response.json({ ok: true, backend: r.backend, ...view });
+  // 写真はバケットの中のパスで持っているので、画面で開ける期限つきの URL に置き換えて渡す
+  return Response.json({ ok: true, backend: r.backend, ...view, items: await withPhotoUrls(view.items) });
 }
 
 export async function POST(req: Request) {
@@ -101,9 +102,9 @@ export async function POST(req: Request) {
     updatedBy: g.session.name,
     source: '',
   };
-  const s = await saveKaizen(item, photos);
+  const s = await saveKaizen(item, photos, null);
   if (!s.ok) return Response.json({ ok: false, reason: s.reason }, { status: failStatus(s.reason) });
-  return Response.json({ ok: true, item: s.item });
+  return Response.json({ ok: true, id: item.id });
 }
 
 export async function PUT(req: Request) {
@@ -132,9 +133,9 @@ export async function PUT(req: Request) {
   if (err) return Response.json({ ok: false, reason: 'invalid', message: err }, { status: 400 });
 
   const item: Kaizen = { ...cur, ...input, updatedAt: nowJstText(), updatedBy: g.session.name };
-  const s = await saveKaizen(item, photos);
+  const s = await saveKaizen(item, photos, cur);
   if (!s.ok) return Response.json({ ok: false, reason: s.reason }, { status: failStatus(s.reason) });
-  return Response.json({ ok: true, item: s.item });
+  return Response.json({ ok: true, id: item.id });
 }
 
 export async function DELETE(req: Request) {
@@ -150,7 +151,7 @@ export async function DELETE(req: Request) {
   if (!canEdit(cur, g.session.name, g.session.campus === ADMIN_CAMPUS, todayJst(), r.closes)) {
     return Response.json({ ok: false, reason: 'forbidden', message: 'この改善は消せません（投票が締め切られたか、ほかの人の改善です）。' }, { status: 403 });
   }
-  const d = await deleteKaizen(id, g.session.name);
+  const d = await deleteKaizen(cur, g.session.name);
   if (!d.ok) return Response.json({ ok: false, reason: d.reason }, { status: failStatus(d.reason) });
   return Response.json({ ok: true });
 }

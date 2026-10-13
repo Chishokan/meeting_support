@@ -4,9 +4,11 @@
 // 判定（何月に出せるか・誰が直せるか・得票を見せてよいか）はサーバ（app/api/kaizen）が lib/kaizen/model.ts で済ませて返す。
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { dbErrorText } from '@/lib/core/dbError';
 import { downscaleToDataUrl } from '@/lib/downscaleImage';
 import {
   KAIZEN_CAMPUSES,
+  LEGACY_VOTES_FROM,
   LIMITS,
   MAX_VOTES,
   addMonths,
@@ -21,7 +23,7 @@ import {
 } from '@/lib/kaizen/model';
 
 type Tab = 'submit' | 'vote' | 'results';
-type ApiView = KaizenView & { ok: true; backend: 'sheet' | 'local' };
+type ApiView = KaizenView & { ok: true; backend: 'db' | 'local' };
 
 type PhotoState = { kind: 'keep'; urls: string[] } | { kind: 'new'; dataUrl: string } | { kind: 'none' };
 type Draft = {
@@ -40,18 +42,27 @@ const CAMPUS_KEY = 'kaizen.campus';
 
 function reasonText(reason?: string, message?: string): string {
   if (message) return message;
-  switch (reason) {
+  const r = reason ?? '';
+  // データベース（Supabase）の失敗は「db_error|コード|文面」で返ってくる（門配管理・適性検査と同じ）
+  if (r.startsWith('db_error')) {
+    const [, code = '', msg = ''] = r.split('|');
+    return dbErrorText(code, msg);
+  }
+  if (r.startsWith('storage_error')) {
+    const msg = r.split('|')[1] ?? '';
+    return `写真を保存できませんでした。管理者の方へ：Supabase の Storage に kaizen-photos があるか（supabase/migrations/0003_kaizen.sql を実行したか）確認してください（${msg || '詳細なし'}）。`;
+  }
+  switch (r) {
     case 'not_configured':
-      return '保存先（Apps Script）が未設定です。管理者に連絡してください。';
-    case 'apps_script_outdated':
-      return 'Apps Script が古いままです（管理者の方へ：apps_script/Code.gs を貼り替えて「新バージョン」でデプロイし直してください）。';
+      return 'データベース（Supabase）が未設定です。管理者に連絡してください。';
     case 'unauthorized':
       return 'ログインが切れました。画面を読み込み直してください。';
+    case 'forbidden':
+      return 'この操作は管理部門だけができます。';
     case 'network_error':
-    case 'upstream_error':
-      return '保存先とつながりませんでした。少し待ってからやり直してください。';
+      return '通信できませんでした。少し待ってからやり直してください。';
     default:
-      return `うまくいきませんでした（${reason || '理由不明'}）。`;
+      return `うまくいきませんでした（${r || '通信エラー'}）。少し待ってからやり直してください。`;
   }
 }
 
@@ -394,7 +405,7 @@ function SubmitTab({ view, name, onChanged }: { view: ApiView; name: string; onC
         <PhotoField label="Afterの写真" value={draft.afterPhoto} onChange={(p) => set('afterPhoto', p)} />
 
         <p className="kz-hint">
-          写真は、リンクを知っている人なら見られる形で保存されます。生徒の顔・氏名・成績が写っていないか確かめてください。
+          写真は会議DXにログインした人だけが見られます。全社で共有されるので、生徒の顔・氏名・成績が写っていないか確かめてください。
         </p>
 
         <div className="kz-actions">
@@ -579,7 +590,71 @@ function VoteTab({ view, name, onChanged, goResults }: { view: ApiView; name: st
 
 // ---- 一覧・結果 ---------------------------------------------------------------
 
-function ResultsTab({ view, month, setMonth }: { view: ApiView; month: string; setMonth: (m: string) => void }) {
+/** 管理部門だけ：旧スプレッドシートの CSV を読み込ませて、過去の提出と票を移す（何度やっても二重にならない）。 */
+function LegacyImport({ onChanged }: { onChanged: () => Promise<void> }) {
+  const [answers, setAnswers] = useState<File | null>(null);
+  const [votes, setVotes] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function run() {
+    if (!answers || busy) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch('/api/kaizen/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: await answers.text(), votes: votes ? await votes.text() : '' }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        const v = j.votes;
+        const parts = [
+          `改善：${j.items.added}件を追加（取り込み済み ${j.items.skipped}件）`,
+          votes ? `票：${v.added}人分を追加（取り込み済み・アプリで投票済み ${v.skipped}人、${monthLabel(v.from)}より前の月 ${v.old}人）` : '',
+          v.unmatched.length ? `改善が見つからなかった票：${v.unmatched.join('、')}` : '',
+        ];
+        setMsg({ ok: true, text: parts.filter(Boolean).join('／') });
+        await onChanged();
+      } else {
+        setMsg({ ok: false, text: reasonText(j?.reason, j?.message) });
+      }
+    } catch {
+      setMsg({ ok: false, text: reasonText('network_error') });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <details className="kz-admin">
+      <summary>管理部門向け：旧スプレッドシートから取り込む</summary>
+      <p className="kz-hint">
+        旧スプレッドシート「智翔館 つきいち改善リニューアルシステム」で「回答」シートを開き、ファイル → ダウンロード →
+        カンマ区切り形式（.csv）で保存します。「投票回答」シートも同じように保存します（票も移すとき）。
+        何度取り込んでも二重にはなりません。票は{monthLabel(LEGACY_VOTES_FROM)}分からで、アプリで投票し直した人の票は上書きしません。
+        旧フォームの写真は Drive のリンクのまま残ります。
+      </p>
+      <div className="kz-import">
+        <label>
+          「回答」シートの CSV（必須）
+          <input type="file" accept=".csv,text/csv" onChange={(e) => setAnswers(e.target.files?.[0] ?? null)} />
+        </label>
+        <label>
+          「投票回答」シートの CSV（任意）
+          <input type="file" accept=".csv,text/csv" onChange={(e) => setVotes(e.target.files?.[0] ?? null)} />
+        </label>
+        <button type="button" className="kz-secondary" onClick={run} disabled={!answers || busy}>
+          {busy ? '取り込んでいます…' : '取り込む'}
+        </button>
+      </div>
+      {msg && <p className={`kz-msg ${msg.ok ? 'ok' : 'ng'}`}>{msg.text}</p>}
+    </details>
+  );
+}
+
+function ResultsTab({ view, month, setMonth, onChanged }: { view: ApiView; month: string; setMonth: (m: string) => void; onChanged: () => Promise<void> }) {
   const months = view.months.filter((m) => m.count > 0 || m.month === view.currentMonth || m.month === view.votingMonth);
   const mv = view.months.find((m) => m.month === month) ?? months[0];
   if (!mv) return null;
@@ -659,6 +734,7 @@ function ResultsTab({ view, month, setMonth }: { view: ApiView; month: string; s
           <p className="kz-hint">名簿は lib/kaizen/model.ts の KAIZEN_ROSTER（旧スプレッドシートの「スタッフ名簿」）。</p>
         </details>
       )}
+      {view.isAdmin && <LegacyImport onChanged={onChanged} />}
 
       {ordered.length === 0 ? (
         <p className="kz-empty pad">{monthLabel(mv.month)}分の提出はまだありません。</p>
@@ -754,7 +830,7 @@ export default function KaizenUI({ name }: { name: string }) {
 
       {view && tab === 'submit' && <SubmitTab view={view} name={name} onChanged={load} />}
       {view && tab === 'vote' && <VoteTab view={view} name={name} onChanged={load} goResults={() => { setResultMonth(view.votingMonth); setTab('results'); }} />}
-      {view && tab === 'results' && <ResultsTab view={view} month={resultMonth} setMonth={setResultMonth} />}
+      {view && tab === 'results' && <ResultsTab view={view} month={resultMonth} setMonth={setResultMonth} onChanged={load} />}
     </div>
   );
 }

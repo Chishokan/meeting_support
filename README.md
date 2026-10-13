@@ -385,13 +385,14 @@ node scripts/check-yoko.mjs --confirmed # 確定のものだけ（不足があ�
 
 ## つきいち改善（月1改善の提出と投票）
 旧スプレッドシート「智翔館 つきいち改善リニューアルシステム」（Google フォームで提出・Apps Script の Web アプリで投票）を
-会議DXに移したもの。URL は **`/kaizen`**（会議DXの左メニュー「つきいち改善」）。
+会議DXに移したもの。URL は **`/kaizen`**（会議DXの左メニュー「つきいち改善」）。Apps Script・Google フォームは使わない。
 
-- 画面: components/KaizenUI.tsx ／ API: app/api/kaizen/（route.ts＝提出・修正・削除、vote＝投票、close＝締め切り）
-- ルール・集計: lib/kaizen/model.ts ★票数（MAX_VOTES）・校舎（KAIZEN_CAMPUSES）・名簿（KAIZEN_ROSTER）を変えるときはここ。テストは `npm test`
-- 保存: lib/kaizen/store.ts → apps_script/Code.gs の listKaizen_ / saveKaizen_ / deleteKaizen_ / saveKaizenVote_ / setKaizenClose_。
-  会議DXのスプレッドシートに「つきいち改善」（1改善1行）「つきいち改善投票」（対象月×投票者で1行）「つきいち改善締切」が自動でできる。
-  開発中（APPS_SCRIPT_URL 未設定）は .data/kaizen.json
+- 画面: components/KaizenUI.tsx ／ API: app/api/kaizen/（route.ts＝提出・修正・削除、vote＝投票、close＝締め切り、import＝旧データの取り込み）
+- ルール・集計・旧データの読み方: lib/kaizen/model.ts ★票数（MAX_VOTES）・校舎（KAIZEN_CAMPUSES）・名簿（KAIZEN_ROSTER）を変えるときはここ。テストは `npm test`
+- 保存先: Supabase（supabase/migrations/0003_kaizen.sql）。lib/kaizen/store.ts
+  - 改善＝kaizen_items（1改善1行）、票＝kaizen_votes（対象月×投票者で1行）、管理部門の締め切り＝kaizen_closes
+  - 写真＝Storage の kaizen-photos バケット（非公開）。中のフォルダを区画名（chishokan_dev / chishokan_prod）で分ける
+  - 手元の開発だけ .data/kaizen.json。本番で Supabase が未設定なら画面に「未設定」と出る
 
 ### 流れ
 1. **提出する**：その月のうちに、提出者（一緒に取り組んだ人も入れる）・校舎・改善タイトル・Before／After の説明（必須）と写真（任意）を出す
@@ -408,28 +409,26 @@ node scripts/check-yoko.mjs --confirmed # 確定のものだけ（不足があ�
 - 旧システムとの違い：旧 Web アプリは投票者ごとに1行しか残さず、翌月に投票すると前の月の票が消えていた。ここでは月ごとに残る
 
 ### 写真
-- 画面で長辺1600pxに縮めてから送る。Apps Script が Drive のフォルダ「会議DX_つきいち改善写真」に保存する
-- 画面に縮小画像を出すため「リンクを知っている人は閲覧可」にしている（お問い合わせの画像と同じ扱い）。
-  生徒の顔・氏名・成績が写った写真は避けるよう、提出画面に注意を出している
-- 写真を外す・差し替える・改善を消すと、そのフォルダにある元の写真はゴミ箱へ移る（30日は戻せる）。フォルダの外のファイルには触らない
-- 縮小画像が読めないとき（共有されていない写真など）は「写真を開く」のリンクを出す
+- 画面で長辺1600pxに縮めてから送る。サーバが Storage の kaizen-photos バケットに置く（1枚5MBまで・JPEG／PNG／WebP）
+- バケットは公開しない。画面には12時間で切れる URL だけを渡すので、会議DXにログインした人しか見られない
+- 写真を外す・差し替える・改善を消すと、バケットからも消す（元に戻せない）
+- 旧スプレッドシートから移した写真は Drive のリンクのまま。見る人に閲覧権限があれば縮小画像が出て、無ければ「写真を開く」のリンクになる
 
 ### 本番に出すとき
-1. apps_script/Code.gs を会議DXの Apps Script に貼り替え、「デプロイを管理 → 編集 → バージョン：新バージョン」で出し直す
-   （貼り替えないと、画面に「Apps Script が古いまま」と出て保存できない）
-2. 旧スプレッドシートの提出・票を移すときは、Apps Script のエディタで **importLegacyKaizen** を選んで「実行」する（初回は権限の承認が出る）。
-   実行ログに件数が出る。何度実行しても二重には入らない（アプリで入れ直した票も上書きしない）
-   - 実行するアカウントが旧スプレッドシートを開けること（Code.gs の KAIZEN_LEGACY_ID）
-   - 改善はすべての月を移す。票は 2026年9月分から（KAIZEN_LEGACY_VOTES_FROM）。6月分の票は旧 Web アプリが上書きして一部しか残っていないため移さない
+1. Supabase の SQL Editor で supabase/migrations/0003_kaizen.sql を実行する（dev＝chishokan_dev、本番＝chishokan_prod の2回。手順は supabase/README.md）。
+   テーブル3つと写真のバケットができる。門配管理・適性検査で SUPABASE_URL などを設定済みなら、環境変数の追加は要らない
+2. 旧スプレッドシートの提出・票を移す（管理部門でログインして「一覧・結果」→「管理部門向け：旧スプレッドシートから取り込む」）
+   - 旧スプレッドシートで「回答」シートを開き、ファイル → ダウンロード → カンマ区切り形式（.csv）。「投票回答」シートも同じように保存して、2つを選んで「取り込む」
+   - 何度取り込んでも二重にならない（改善は日時＋タイトル、票は対象月×投票者で見分ける）。アプリで投票し直した人の票は上書きしない
+   - 改善はすべての月を移す。票は 2026年9月分から（LEGACY_VOTES_FROM）。6月分の票は旧 Web アプリが上書きして一部しか残っていないため移さない
      （6月分の結果は旧スプレッドシートの「集計」シートが正）
-   - 旧フォームの写真は「会議DX_つきいち改善写真」へコピーして使う（元のファイルの共有設定は変えない。KAIZEN_LEGACY_COPY_PHOTOS）。
-     コピーできなかった写真は元の URL のまま残る
+   - 旧スプレッドシートで投票が続いているあいだは、切り替える直前にもう一度取り込めば、増えた分だけ入る
 3. 移したら、旧フォームと旧投票 Web アプリの受付を止める（両方で受け付けると提出・票が分かれる）
 
 ### 触るときの注意
 - 会議DXにログインできるのは lib/core/staff.ts の職員だけ。名簿（KAIZEN_ROSTER）にしかいない人は投票できない。
   提出は、ログインできる人が「提出者」にその人の名前を入れて出す
-- シートの見出しは Code.gs の KAIZEN_HEADERS と lib/kaizen/store.ts（fromSheetRow / toSheetRow）をそろえる
+- 列を増やすときは、新しい番号の SQL を足し、lib/kaizen/store.ts の fromDb / toDb をそろえる
 - 旧システムにあった「資料生成（Google スライド）」は移していない
 
 ## 適性検査アプリ（講師・事務スタッフ・社員の採用選考）

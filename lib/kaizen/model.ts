@@ -39,7 +39,9 @@ export type Kaizen = {
   title: string;
   before: string;
   after: string;
-  beforePhotos: string[]; // 写真の URL（Drive）。開発中だけ data URL
+  // 写真。保存先では Supabase Storage のパス（旧スプレッドシートから移したものは Drive の URL、開発中は data URL）。
+  // 画面に渡すときは API が期限つきの URL に置き換える（lib/kaizen/store.ts の withPhotoUrls）
+  beforePhotos: string[];
   afterPhotos: string[];
   enteredBy: string; // 入力した人（ログインしていた人）
   enteredDept: string; // 入力した人の部門
@@ -217,18 +219,13 @@ export function campusLabel(c: string): string {
   return c.endsWith('校') ? c : `${c}校`;
 }
 
-/** 旧スプレッドシートの投票と同じ書き方：日野校：安東瑞輝「おはよう勉強会リフレクション集」 */
-export function kaizenLabel(k: Pick<Kaizen, 'campus' | 'members' | 'title'>): string {
-  return `${campusLabel(k.campus)}：${k.members.join('・')}「${k.title}」`;
-}
-
 /** Drive の URL からファイル ID を取り出す（open?id=… / file/d/…/view の両方）。 */
 export function driveFileId(url: string): string {
   const m = url.match(/[?&]id=([\w-]{10,})/) || url.match(/\/d\/([\w-]{10,})/);
   return m ? m[1] : '';
 }
 
-/** 画面に出す縮小画像の URL。Drive の写真はサムネイル（リンクを知っている人が見られる設定のときだけ表示できる）。 */
+/** 画面に出す縮小画像の URL。旧スプレッドシートの Drive の写真はサムネイル（見る人に閲覧権限があるときだけ表示できる）。 */
 export function photoThumbUrl(url: string, width = 800): string {
   if (url.startsWith('data:')) return url;
   const id = driveFileId(url);
@@ -401,4 +398,143 @@ export function buildView(args: {
     months,
     people,
   };
+}
+
+// ---- 旧スプレッドシートからの取り込み ------------------------------------------
+// 旧「智翔館 つきいち改善リニューアルシステム」の CSV を、管理部門が「一覧・結果」の画面から読み込ませる（保存は app/api/kaizen/import）。
+//   「回答」シートの CSV     → 改善（タイムスタンプの月を対象月にする）
+//   「投票回答」シートの CSV → 票（投票した月の前の月を対象月にする。LEGACY_VOTES_FROM より前は取り込まない）
+// 何度取り込んでも二重にしない：改善は source（「旧:日時|タイトル」）、票は対象月×投票者で見分ける（API 側で除く）。
+// 旧フォームの写真（Drive）は URL のまま残す（画面では縮小画像を試し、見られなければ「写真を開く」のリンクになる）。
+
+/** 票を取り込む最初の対象月。旧 Web アプリは投票者ごとに1行しか残さず、翌月に投票すると前の月の票を消していたため、
+ *  2026年6月分の票は一部しか残っていない（6月分の結果は旧スプレッドシートの「集計」シートが正）。 */
+export const LEGACY_VOTES_FROM = '2026-09';
+
+/** CSV（Google スプレッドシートの「ダウンロード → CSV」）を行×列に分ける。セル内の改行・「"」・「,」に対応。 */
+export function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  const src = text.replace(/^﻿/, '');
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (quoted) {
+      if (c === '"' && src[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (c === '"') {
+        quoted = false;
+      } else {
+        cell += c;
+      }
+    } else if (c === '"') {
+      quoted = true;
+    } else if (c === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (c === '\n' || c === '\r') {
+      if (c === '\r' && src[i + 1] === '\n') i++;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += c;
+    }
+  }
+  if (cell !== '' || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows.filter((r) => r.some((x) => x.trim() !== ''));
+}
+
+/** 「2026/06/16 6:25:11」「2026/09/30」→ { text: '2026/06/16 06:25', month: '2026-06' }。読めなければ null。 */
+export function legacyTs(v: string): { text: string; month: string } | null {
+  const m = String(v ?? '').trim().match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (!m) return null;
+  const p = (n: string | undefined) => String(Number(n ?? 0)).padStart(2, '0');
+  return { text: `${m[1]}/${p(m[2])}/${p(m[3])} ${p(m[4])}:${p(m[5])}`, month: `${m[1]}-${p(m[2])}` };
+}
+
+function columns(header: string[], names: [string, number][]): number[] {
+  const h = header.map((x) => x.trim());
+  return names.map(([name, fallback]) => {
+    const i = h.indexOf(name);
+    return i >= 0 ? i : fallback;
+  });
+}
+
+const urls = (s: string) => String(s ?? '').split(/[\s,]+/).filter((u) => /^https?:/.test(u));
+
+/** 「回答」シートの CSV → 改善。newId は ID の振り方（API では randomUUID）。 */
+export function legacyItems(rows: string[][], newId: () => string, now: string): Kaizen[] {
+  if (rows.length < 2) return [];
+  const [cTs, cName, cCampus, cTitle, cBefore, cAfter, cBP, cAP] = columns(rows[0], [
+    ['タイムスタンプ', 0], ['提出者氏名', 1], ['所属校舎', 2], ['改善タイトル', 3],
+    ['Before（改善前）の説明', 4], ['After（改善後）の説明', 5], ['Beforeの写真', 6], ['Afterの写真', 7],
+  ]);
+  const out: Kaizen[] = [];
+  for (const r of rows.slice(1)) {
+    const title = (r[cTitle] ?? '').trim();
+    const ts = legacyTs(r[cTs] ?? '');
+    if (!title || !ts) continue;
+    out.push({
+      id: newId(),
+      month: ts.month,
+      submittedAt: ts.text,
+      members: splitNames(r[cName] ?? ''),
+      campus: (r[cCampus] ?? '').trim().replace(/校$/, ''),
+      title,
+      before: (r[cBefore] ?? '').trim(),
+      after: (r[cAfter] ?? '').trim(),
+      beforePhotos: urls(r[cBP] ?? ''),
+      afterPhotos: urls(r[cAP] ?? ''),
+      enteredBy: '',
+      enteredDept: '',
+      updatedAt: now,
+      updatedBy: '旧スプレッドシート移行',
+      source: `旧:${ts.text}|${title}`,
+    });
+  }
+  return out;
+}
+
+export type LegacyVotes = { votes: KaizenVote[]; old: number; unmatched: string[] };
+
+/**
+ * 「投票回答」シートの CSV → 票。選択肢「日野校：安東瑞輝「おはよう勉強会リフレクション集」, …」を、
+ * 対象月の改善のタイトル（同じタイトルが複数あれば校舎も）で突き合わせる。items は取り込み済み＋今回の改善。
+ */
+export function legacyVotes(rows: string[][], items: Kaizen[]): LegacyVotes {
+  const out: LegacyVotes = { votes: [], old: 0, unmatched: [] };
+  if (rows.length < 2) return out;
+  const [cTs, cVoter, cChoice] = columns(rows[0], [
+    ['タイムスタンプ', 0], ['投票者の校舎・氏名', 1], ['良いと思った改善を選択してください（一人3票まで）', 2],
+  ]);
+  for (const r of rows.slice(1)) {
+    const ts = legacyTs(r[cTs] ?? '');
+    // 「投票者の校舎・氏名」は名前だけのことが多いが、「日野・安東瑞輝」のように校舎が付いていても名前だけを使う
+    const voter = (r[cVoter] ?? '').trim().split(/[・：:\s　]/).pop() ?? '';
+    if (!ts || !voter) continue;
+    const month = addMonths(ts.month, -1);
+    if (month < LEGACY_VOTES_FROM) {
+      out.old++;
+      continue;
+    }
+    const ids: string[] = [];
+    for (const m of (r[cChoice] ?? '').matchAll(/([^\s,、：:]+?)校?：([^「]*)「([^」]*)」/g)) {
+      const cands = items.filter((k) => k.month === month && k.title === m[3].trim());
+      const hit = cands.find((k) => k.campus === m[1].replace(/校$/, '')) ?? cands[0];
+      if (hit && !ids.includes(hit.id)) ids.push(hit.id);
+    }
+    if (!ids.length) {
+      out.unmatched.push(voter);
+      continue;
+    }
+    out.votes.push({ month, voter, dept: '', ids: ids.slice(0, 3), votedAt: ts.text });
+  }
+  return out;
 }
