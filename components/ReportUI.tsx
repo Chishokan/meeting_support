@@ -45,11 +45,11 @@ export default function ReportUI({ name, campus }: { name: string; campus: strin
   return (
     <div className="report">
       <div className="page-head">
-        <h1>報告</h1>
+        <h1>報告の転記</h1>
         <p>
-          {campus}／{name} さん。「会議AI」の事前報告が出力した<b>「貼り付け用：…（ここから）〜（ここまで）」</b>ブロックをここに貼り付け、
-          「報告する」を押すと会議ドキュメントに新しいセクションとして転記されます。
-          月次報告・講習の結果報告は、会議AIで「報告完了」と送ると自動で保存されるので、ここへの貼り付けは不要です。
+          {campus}／{name} さん。事前報告・月次報告・講習の結果報告は、会議AIで「報告完了」と送ると自動で会議ドキュメントへ
+          転記されるので、ふだんはこの画面を使いません。自動で保存できなかったときだけ、会議AIの報告文
+          <b>（「＝＝＝ …（ここから）＝＝＝」〜「＝＝＝ …（ここまで）＝＝＝」）</b>をここに貼り付けて「報告する」を押してください。
         </p>
       </div>
 
@@ -57,7 +57,7 @@ export default function ReportUI({ name, campus }: { name: string; campus: strin
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="ここに『貼り付け用：事前報告』のブロックをそのまま貼り付けてください"
+          placeholder="ここに会議AIの報告文（＝＝＝ の行を含む）をそのまま貼り付けてください"
         />
         <div className="report-actions">
           <button onClick={submit} disabled={busy || !text.trim()}>

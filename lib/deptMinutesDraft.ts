@@ -9,7 +9,14 @@ import {
   QUALITY_CLOSE,
 } from '@/lib/deptMinutesPrompt';
 import type { MinutesRow } from '@/app/api/dept-minutes/list/route';
-import { metaKey, type PreshareRow } from '@/lib/deptMinutesPreshare';
+import { extractDecisions, extractSection } from '@/lib/deptMinutesParse';
+import {
+  buildNextAgenda,
+  metaKey,
+  nextMeetingDate,
+  type PreshareMeta,
+  type PreshareRow,
+} from '@/lib/deptMinutesPreshare';
 
 export const DRAFT_KEY = 'chishokan_dept_minutes_v1';
 
@@ -23,6 +30,8 @@ export type MinutesDraft = {
   preshareId?: string;
   // 事前共有したときの会議情報（metaKey）。共有後に手順1を直したかどうかを見分ける。
   preshareSnap?: string;
+  // 別の画面から移ってきたときに、手順1の下に一度だけ出す案内。
+  notice?: string;
 };
 
 // 保存済みの議事録を、編集画面がそのまま読める形に戻す。
@@ -73,6 +82,31 @@ export function draftFromPreshare(row: PreshareRow): MinutesDraft {
     preshareId: row.id,
     preshareSnap: metaKey(meta),
   };
+}
+
+// 保存した議事録から、次回の会議の下書きを作る（部門会議のループ：議事録 → 次回の事前共有）。
+// 会議名・場所・出席者は前回と同じ。開催日時は議事録の「■ 次回会議」に日付があれば入れる。
+// 議題には前回から引き継ぐもの（話し合えなかった議題・決定事項・継続審議・ToDo・持ち越し）を並べる。
+// minutes は議事録本文（MinutesRow.minutes、または extractMinutes() したもの）。
+export function draftForNext(prev: PreshareMeta & { minutes: string }): MinutesDraft {
+  const { minutes } = prev;
+  const next = extractSection(minutes, '次回会議');
+  const meta = {
+    title: prev.title,
+    date: nextMeetingDate(next),
+    place: prev.place,
+    attendees: prev.attendees,
+    agenda: buildNextAgenda({
+      title: prev.title,
+      date: prev.date,
+      agenda: extractSection(minutes, '議題'),
+      decisions: extractDecisions(minutes).map((d) => ({ title: d.title || d.detail, owner: d.owner, due: d.due })),
+      pending: extractSection(minutes, '継続審議'),
+      todos: extractSection(minutes, 'ToDo'),
+      next,
+    }),
+  };
+  return { meta, transcript: '', memo: '', draft: '', editingId: '', preshareId: '', preshareSnap: '' };
 }
 
 /** この端末に残っている編集中の内容（無ければ null）。 */

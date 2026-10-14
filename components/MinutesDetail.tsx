@@ -26,11 +26,14 @@ export default function MinutesDetail({
   row,
   onClose,
   onEdit,
+  onNext,
 }: {
   row: MinutesRow;
   onClose: () => void;
   // 渡されたときだけ［修正］を出す。押すと編集画面へこの議事録を読み込む。
   onEdit?: () => void;
+  // 渡されたときだけ［次回の事前共有をつくる］を出す。この議事録から次回の議題の下書きを作る。
+  onNext?: () => void;
 }) {
   // 開いているあいだは Esc で閉じられるようにする。
   // Esc で閉じる／開いているあいだ後ろのページを動かさない
@@ -73,9 +76,16 @@ export default function MinutesDetail({
           )}
         </div>
 
-        <div className="dm-modal-foot">
-          {onEdit && (
-            <button className="dm-modal-edit" onClick={onEdit}>修正する</button>
+        <div className={`dm-modal-foot ${onEdit || onNext ? 'has-left' : ''}`}>
+          {(onEdit || onNext) && (
+            <div className="dm-modal-left">
+              {onNext && (
+                <button className="dm-modal-edit dm-modal-next" onClick={onNext}>次回の事前共有をつくる</button>
+              )}
+              {onEdit && (
+                <button className="dm-modal-edit" onClick={onEdit}>修正する</button>
+              )}
+            </div>
           )}
           <button
             className="dm-copy"
