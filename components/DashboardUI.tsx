@@ -5,8 +5,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { STAFF } from '@/lib/core/staff';
 import YokoCard, { type YokoCardData } from '@/components/YokoCard';
 import MinutesDetail from '@/components/MinutesDetail';
-import { draftFromRow, stashDraft } from '@/lib/deptMinutesDraft';
+import { draftFromPreshare, draftFromRow, draftHasWork, readDraft, stashDraft } from '@/lib/deptMinutesDraft';
 import ShareItemDetail from '@/components/ShareItemDetail';
+import PreshareDetail from '@/components/PreshareDetail';
+import PreshareList from '@/components/PreshareList';
+import { localDay, upcomingPreshares, type PreshareRow } from '@/lib/deptMinutesPreshare';
 import ProgressDetail from '@/components/ProgressDetail';
 import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
 import type { ProgressEntry } from '@/lib/progressPrompt';
@@ -49,6 +52,8 @@ const MAX_SHOWN_MINUTES = 5;
 const MAX_SHOWN_YOKO = 4;
 // 事前共有事項のカード件数。協議・決裁は会議で扱うので、報告より前に出す。
 const MAX_SHOWN_SHARE = 6;
+// 部門会議の事前共有のカード件数（今日 → これから → 議事録待ちの順）。
+const MAX_SHOWN_PRESHARE = 6;
 const SHARE_ORDER: Record<string, number> = { 協議: 0, 決裁: 1, 報告: 2 };
 
 function fmtDateTime(s: string) {
@@ -72,6 +77,9 @@ export default function DashboardUI({
   const [cases, setCases] = useState<SuccessRow[]>([]);
   const [minutes, setMinutes] = useState<MinutesRow[]>([]);
   const [shareItems, setShareItems] = useState<ShareRow[]>([]);
+  // 部門会議の事前共有（会議情報と議題・レジュメ）。
+  const [preshares, setPreshares] = useState<PreshareRow[]>([]);
+  const [openPreshare, setOpenPreshare] = useState<{ row: PreshareRow; when: string } | null>(null);
   // ［詳細］で開く事前共有事項。議事録と同じくこのページ上で開く。
   const [openShare, setOpenShare] = useState<ShareRow | null>(null);
   // ［詳細］で開く議事録。画面を移らずにこのページ上で開く。
@@ -89,13 +97,14 @@ export default function DashboardUI({
     (async () => {
       try {
         // 中間報告は非表示のあいだ取得しない（GAS への無駄な往復を減らす）。
-        const [statusRes, itemsRes, successRes, minutesRes, yokoRes, shareRes] = await Promise.all([
+        const [statusRes, itemsRes, successRes, minutesRes, yokoRes, shareRes, preRes] = await Promise.all([
           SHOW_PROGRESS || SHOW_RECENT_PROGRESS ? fetch('/api/progress/latest') : Promise.resolve(null),
           SHOW_PROGRESS && !isAdmin ? fetch('/api/progress/items') : Promise.resolve(null),
           fetch('/api/success').catch(() => null),
           fetch('/api/dept-minutes/list?scope=minutes').catch(() => null),
           fetch('/api/yoko-qa').catch(() => null),
           fetch('/api/share-items').catch(() => null),
+          fetch('/api/dept-minutes/preshare').catch(() => null),
         ]);
         if (statusRes) {
           const j = await statusRes.json().catch(() => ({}));
@@ -129,6 +138,10 @@ export default function DashboardUI({
         const j6 = shareRes ? await shareRes.json().catch(() => ({})) : {};
         if (!alive) return;
         if (j6?.ok && Array.isArray(j6.items)) setShareItems(j6.items as ShareRow[]);
+
+        const j7 = preRes ? await preRes.json().catch(() => ({})) : {};
+        if (!alive) return;
+        if (j7?.ok && Array.isArray(j7.items)) setPreshares(j7.items as PreshareRow[]);
       } catch {
         if (alive) setNote('情報の取得に失敗しました。');
       } finally {
@@ -281,6 +294,60 @@ export default function DashboardUI({
     </div>
   );
 
+  // 部門会議の事前共有（全部門）。「部門会議議事録」の手順1で［事前共有で報告する］を押した会議。
+  // 出席者が議題・レジュメを見ながら会議を進められるよう、今日の会議をいちばん上に出す。
+  // 議事録を保存した会議は外れて「直近の議事録」に移る（並べ方・外し方は upcomingPreshares）。
+  const upcoming = upcomingPreshares(preshares, localDay());
+  const preshareRest = upcoming.length - MAX_SHOWN_PRESHARE;
+  const presharePanel = (
+    <div className="dash-panel full">
+      <h2>
+        部門会議の事前共有
+        <Link href="/dept-minutes" className="panel-more">事前共有する</Link>
+      </h2>
+      {upcoming.length === 0 ? (
+        <p className="dash-empty">
+          {loading ? '読み込み中…' : 'これからの部門会議の事前共有はありません。'}
+          {!loading && (
+            <>
+              {' '}
+              <Link href="/dept-minutes">部門会議議事録</Link>の「1 会議の情報」を入力して［事前共有で報告する］を押すと、ここに載ります。
+            </>
+          )}
+        </p>
+      ) : (
+        <>
+          <PreshareList
+            views={upcoming.slice(0, MAX_SHOWN_PRESHARE)}
+            grid
+            onOpen={(row, when) => setOpenPreshare({ row, when })}
+            onStart={startFromPreshare}
+          />
+          {preshareRest > 0 && (
+            <p className="dept-items-note">
+              ほかに {preshareRest} 件あります。<Link href="/dept-minutes">部門会議議事録</Link>の画面ですべて見られます。
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+
+  // 事前共有の会議の議事録づくりを始める。会議情報を渡してから議事録の画面へ移る。
+  // この端末に作りかけの議事録（文字起こし・メモ・議事録）が残っていれば、消す前に確かめる。
+  function startFromPreshare(row: PreshareRow) {
+    const cur = readDraft();
+    if (cur?.preshareId !== row.id) {
+      if (
+        draftHasWork(cur)
+        && !confirm('この端末に作りかけの議事録があります。消して、この会議の議事録づくりを始めますか？')
+      ) return;
+      stashDraft(draftFromPreshare(row));
+    }
+    // 同じ会議を入力中なら、作りかけの内容を残したまま画面を開く。
+    window.location.href = '/dept-minutes';
+  }
+
   // 直近の中間報告（全部門）。
   // 部門ごとの直近1件を新しい順に出す。単純に新しい順の N 件にすると、報告の多い部門で
   // 埋まって他部門が見えなくなる。「自部門だけでなく他部門も見られる」ことが目的なので、
@@ -409,7 +476,8 @@ export default function DashboardUI({
           <h1>ダッシュボード</h1>
           <p>
             {campus}／{name} さん、おつかれさまです。
-            直近の議事録・会議前に共有された協議事項・全部門の中間報告・実施期間中の要項をまとめます。
+            これからの部門会議の議題・直近の議事録・会議前に共有された協議事項・全部門の中間報告・
+            実施期間中の要項をまとめます。
           </p>
         </div>
 
@@ -417,6 +485,8 @@ export default function DashboardUI({
 
         <div className="dash-grid">
           {SHOW_QUICKSTART && quickStart}
+          {/* 会議中に議題・レジュメを開くので、いちばん上に置く（今日の会議が先頭に来る） */}
+          {presharePanel}
           {/* 直近の議事録と事前共有事項は、横幅いっぱいを2等分して並べる（毎日いちばん見る2つ） */}
           <div className="dash-pair">
             {minutesPanel}
@@ -441,6 +511,14 @@ export default function DashboardUI({
         )}
         {openShare && (
           <ShareItemDetail row={openShare} onClose={() => setOpenShare(null)} />
+        )}
+        {openPreshare && (
+          <PreshareDetail
+            row={openPreshare.row}
+            when={openPreshare.when}
+            onClose={() => setOpenPreshare(null)}
+            onStart={() => startFromPreshare(openPreshare.row)}
+          />
         )}
         {openProgress && (
           <ProgressDetail row={openProgress} onClose={() => setOpenProgress(null)} />

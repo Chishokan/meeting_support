@@ -29,10 +29,13 @@ export async function POST(req: Request) {
 
   // 既存の議事録を直して保存し直すときだけ id が付く（付いていなければ新規）。
   const id = String(body?.id ?? '');
+  // 事前共有した会議なら、その事前共有に議事録を結び付ける（ダッシュボードの事前共有から外れる）。
+  const preshareId = String(body?.preshareId ?? '');
 
   const payload = {
     action: 'saveDeptMinutes',
     id,
+    preshareId,
     token: process.env.APPS_SCRIPT_TOKEN || '',
     ts: new Date().toISOString(),
     campus: session.campus,

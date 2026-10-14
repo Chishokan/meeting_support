@@ -5,7 +5,16 @@ import { SEGMENT_SECONDS, fmtDuration, splitAudioFile } from '@/lib/audioChunk';
 import { templateOutline } from '@/lib/deptMinutesTemplate';
 import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
 import MinutesDetail from '@/components/MinutesDetail';
-import { DRAFT_KEY as STORE_KEY, draftFromRow } from '@/lib/deptMinutesDraft';
+import PreshareDetail from '@/components/PreshareDetail';
+import PreshareList from '@/components/PreshareList';
+import { DRAFT_KEY as STORE_KEY, draftFromPreshare, draftFromRow } from '@/lib/deptMinutesDraft';
+import {
+  localDay,
+  metaKey,
+  missingForPreshare,
+  upcomingPreshares,
+  type PreshareRow,
+} from '@/lib/deptMinutesPreshare';
 import type { DecisionRow, MinutesRow } from '@/app/api/dept-minutes/list/route';
 
 // 録音は1区間ずつ独立したファイルにして、会議中から順に文字起こししていく。
@@ -218,6 +227,18 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   // 文字起こしは普段は隠しておく（必要なときだけ開く）。
   const [showTranscript, setShowTranscript] = useState(false);
 
+  // ---- 事前共有（会議の前に手順1の内容を全部門へ出しておく） ----
+  // 事前共有した会議の ID。議事録の保存時に添えて、事前共有と議事録を結び付ける。
+  const [shareId, setShareId] = useState('');
+  // 事前共有したときの手順1の内容。共有後に直したかどうか（更新が要るか）を見分ける。
+  const [shareSnap, setShareSnap] = useState('');
+  const [sharing, setSharing] = useState(false);
+  // 事前共有の結果は手順1の中に出す（ふだんの案内は手順3の下に出るので、押した場所から見えない）。
+  const [shareMsg, setShareMsg] = useState('');
+  const [shareErr, setShareErr] = useState('');
+  const [preshares, setPreshares] = useState<PreshareRow[]>([]);
+  const [openPreshare, setOpenPreshare] = useState<{ row: PreshareRow; when: string } | null>(null);
+
   const streamRef = useRef<MediaStream | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
   const segTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -244,6 +265,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         if (typeof j?.memo === 'string') setMemo(j.memo);
         if (typeof j?.editingId === 'string') setEditingId(j.editingId);
         if (typeof j?.draft === 'string') setDraft(j.draft);
+        if (typeof j?.preshareId === 'string') setShareId(j.preshareId);
+        if (typeof j?.preshareSnap === 'string') setShareSnap(j.preshareSnap);
       }
     } catch {}
     setHydrated(true);
@@ -252,9 +275,12 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ meta, transcript, memo, draft, editingId }));
+      localStorage.setItem(
+        STORE_KEY,
+        JSON.stringify({ meta, transcript, memo, draft, editingId, preshareId: shareId, preshareSnap: shareSnap }),
+      );
     } catch {}
-  }, [hydrated, meta, transcript, memo, draft, editingId]);
+  }, [hydrated, meta, transcript, memo, draft, editingId, shareId, shareSnap]);
 
   // ---- 文字起こしが使える設定か ----
   useEffect(() => {
@@ -330,17 +356,20 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     }
   }
 
-  // 保存済みの議事録（会議ごと）と決定事項（1件ずつ）をまとめて読み込む。
+  // 保存済みの議事録（会議ごと）・決定事項（1件ずつ）・事前共有をまとめて読み込む。
   const loadSaved = useCallback(async () => {
     try {
-      const [decRes, minRes] = await Promise.all([
+      const [decRes, minRes, preRes] = await Promise.all([
         fetch('/api/dept-minutes/list'),
         fetch('/api/dept-minutes/list?scope=minutes'),
+        fetch('/api/dept-minutes/preshare').catch(() => null),
       ]);
       const jd = await decRes.json().catch(() => ({}));
       if (jd?.ok && Array.isArray(jd.items)) setDecisions(jd.items as DecisionRow[]);
       const jm = await minRes.json().catch(() => ({}));
       if (jm?.ok && Array.isArray(jm.items)) setMeetings(jm.items as MinutesRow[]);
+      const jp = preRes ? await preRes.json().catch(() => ({})) : {};
+      if (jp?.ok && Array.isArray(jp.items)) setPreshares(jp.items as PreshareRow[]);
     } catch {}
   }, []);
 
@@ -669,6 +698,77 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     }
   }
 
+  // ---- 事前共有 ----
+  // 手順1の内容（会議名・日時・場所・出席者・議題／レジュメ）を、会議の前に全部門へ出す。
+  // 2回目からは同じ事前共有を上書きする（同じ会議が何件も並ばないように）。
+  async function preshare() {
+    if (sharing) return;
+    const missing = missingForPreshare(meta);
+    if (missing.length > 0) {
+      setShareMsg('');
+      setShareErr(`${missing.join('・')}を入れてから事前共有してください。`);
+      return;
+    }
+    setSharing(true);
+    setShareMsg('');
+    setShareErr('');
+    try {
+      const res = await fetch('/api/dept-minutes/preshare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: shareId, meta }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        setShareId(String(j.id));
+        setShareSnap(metaKey(meta));
+        // どこに載ったかはボタンの横の文で伝えているので、ここは結果だけを短く出す。
+        setShareMsg(j.updated ? '事前共有を更新しました。' : '事前共有しました。');
+        void loadSaved();
+      } else if (j?.reason === 'not_configured') {
+        setShareErr('スプレッドシート連携が未設定のため、事前共有できません。管理者にご連絡ください。');
+      } else if (j?.reason === 'gas_outdated') {
+        setShareErr('Apps Script が古いため事前共有できません。管理者に Apps Script の更新（再デプロイ）を依頼してください。');
+      } else {
+        setShareErr('事前共有に失敗しました。時間をおいてお試しください。');
+      }
+    } catch {
+      setShareErr('事前共有に失敗しました。通信状況をご確認ください。');
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  // 事前共有された会議を、手順1に読み込んで議事録づくりを始める。
+  // 事前共有した端末と、会議で録音する端末が違うときに使う（入力し直さずに済み、議事録も結び付く）。
+  function loadPreshare(row: PreshareRow) {
+    if (recording || busyTranscribe || generating || saving) {
+      alert('録音・文字起こし・議事録の作成・保存が終わってから読み込んでください。');
+      return;
+    }
+    if (hasInput && !confirm('入力中の会議情報・文字起こし・議事録を消して、この事前共有の会議を読み込みますか？')) return;
+    const d = draftFromPreshare(row);
+    queueRef.current = [];
+    setQueued(0);
+    setFailedSegs(0);
+    setLastRun(null);
+    setMeta({ ...EMPTY_META, ...d.meta });
+    setTranscript('');
+    setMemo('');
+    setDraft('');
+    setEditingId('');
+    setInstruction('');
+    setShareId(d.preshareId ?? '');
+    setShareSnap(d.preshareSnap ?? '');
+    setOpenPreshare(null);
+    setNote('');
+    setWarn('');
+    setErr('');
+    setShareErr('');
+    setShareMsg('事前共有の会議を読み込みました。手順2で音声を取り込んでください。議事録を保存すると、この事前共有に結び付きます。');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   // ---- 保存 ----
   async function save() {
     if (saving || !draft.trim()) return;
@@ -679,7 +779,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       const res = await fetch('/api/dept-minutes/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meta, content: draft, id: editingId }),
+        body: JSON.stringify({ meta, content: draft, id: editingId, preshareId: shareId }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) {
@@ -715,6 +815,11 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     setMemo(d.memo);
     setDraft(d.draft);
     setEditingId(d.editingId);
+    // 保存済みの議事録を直すときは、事前共有とは切り離す（もう会議は終わっている）。
+    setShareId(d.preshareId ?? '');
+    setShareSnap(d.preshareSnap ?? '');
+    setShareMsg('');
+    setShareErr('');
     setOpenMeeting(null);
     setErr('');
     setWarn('');
@@ -742,6 +847,10 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     setDraft('');
     setEditingId('');
     setInstruction('');
+    setShareId('');
+    setShareSnap('');
+    setShareMsg('');
+    setShareErr('');
     setNote('');
     setWarn('');
     setErr('');
@@ -758,6 +867,11 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     meta.title.trim() || meta.place.trim() || meta.attendees.trim() || meta.agenda.trim()
     || transcript.trim() || memo.trim() || draft.trim(),
   );
+  // 事前共有のあとで手順1を直したか（直したら「更新する」を押してもらう）。
+  const shareDirty = Boolean(shareId) && metaKey(meta) !== shareSnap;
+  // 保存済みの議事録を直しているときは、会議はもう終わっているので事前共有の欄を出さない。
+  const showShare = !editingId || Boolean(shareId);
+  const upcoming = upcomingPreshares(preshares, localDay());
   const shownDecisions = decisions.filter((d) => (decFilter ? d.campus === decFilter : true));
   const shownMeetings = meetings.filter((m) => (decFilter ? m.campus === decFilter : true));
   // 絞り込みの選択肢は、議事録と決定事項の両方に出てくる部門から作る。
@@ -835,6 +949,37 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
               なお、レジュメに書いてあるだけで会議で触れられなかった内容が、
               決まったことのように議事録に載ることはありません。
             </p>
+
+            {/* 会議の前に手順1の内容を全部門へ出しておく。出席者はダッシュボードで
+                議題・レジュメを見ながら会議を進められる。 */}
+            {showShare && (
+              <div className={`dm-share ${shareId && !shareDirty ? 'done' : ''}`}>
+                <div className="dm-share-row">
+                  <button
+                    className="dm-share-btn"
+                    onClick={() => void preshare()}
+                    disabled={sharing || (Boolean(shareId) && !shareDirty)}
+                  >
+                    {sharing
+                      ? '送信中…'
+                      : !shareId
+                        ? '事前共有で報告する'
+                        : shareDirty
+                          ? '事前共有を更新する'
+                          : '✓ 事前共有済み'}
+                  </button>
+                  <span className="dm-share-text">
+                    {!shareId
+                      ? '会議の前に押すと、会議名・日時・場所・出席者・議題（レジュメ）がダッシュボードに載り、全部門が見ながら会議を進められます。'
+                      : shareDirty
+                        ? '事前共有のあとで会議の情報を直しました。［事前共有を更新する］を押すと、ダッシュボードにも反映されます。'
+                        : 'ダッシュボードの「部門会議の事前共有」に載っています。議事録を保存すると、そこから外れて「直近の議事録」に移ります。'}
+                  </span>
+                </div>
+                {shareMsg && <p className="dm-note ok">{shareMsg}</p>}
+                {shareErr && <p className="dm-note err">{shareErr}</p>}
+              </div>
+            )}
           </section>
 
           {/* ---------- 2. 音声 → 文字起こし ---------- */}
@@ -1109,6 +1254,24 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
 
         {/* ---------- 右：保存済みの議事録・決定事項 ---------- */}
         <aside className="dm-side">
+          {/* 事前共有された会議（全部門）。別の端末で事前共有した会議も、ここから読み込んで議事録を作れる。 */}
+          <div className="dm-panel">
+            <div className="dm-panel-head">
+              <h2>これからの部門会議{upcoming.length > 0 && `（${upcoming.length}）`}</h2>
+            </div>
+            {upcoming.length === 0 ? (
+              <p className="dm-empty">
+                事前共有された会議はありません。手順1を入力して［事前共有で報告する］を押すと、こことダッシュボードに載ります。
+              </p>
+            ) : (
+              <PreshareList
+                views={upcoming}
+                agendaLines={2}
+                onOpen={(row, when) => setOpenPreshare({ row, when })}
+              />
+            )}
+          </div>
+
           <div className="dm-panel">
             <div className="dm-panel-head">
               <h2>保存済みの議事録</h2>
@@ -1235,6 +1398,15 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           row={openMeeting}
           onClose={() => setOpenMeeting(null)}
           onEdit={() => startEdit(openMeeting)}
+        />
+      )}
+      {/* 事前共有の詳細。いま入力中の会議なら、読み込み直す必要が無いので［この会議の議事録をつくる］を出さない。 */}
+      {openPreshare && (
+        <PreshareDetail
+          row={openPreshare.row}
+          when={openPreshare.when}
+          onClose={() => setOpenPreshare(null)}
+          onStart={openPreshare.row.id === shareId ? undefined : () => loadPreshare(openPreshare.row)}
         />
       )}
     </div>

@@ -10,6 +10,8 @@
  *                                                          「部門決定事項」シートに1決定1行
  *   - action:'listDeptMinutes' … 部門会議議事録の一覧
  *   - action:'listDeptDecisions' … 部門横断の決定事項一覧（決め事の見える化）
+ *   - action:'saveDeptPreshare' … 部門会議の事前共有（会議情報と議題・レジュメ） → 「部門会議事前共有」シートに1会議1行
+ *   - action:'listDeptPreshare' … ダッシュボードの「部門会議の事前共有」用の一覧
  *   - action:'appendReport' … 「報告」からの事前報告      → Google ドキュメント（REPORT_DOC_ID）に新セクション追記
  *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントの【中間報告タブ】に追記＋「中間報告状況」シートに記録
  *   - action:'listProgress' … ダッシュボード用の直近報告者  → 「中間報告状況」シートを新しい順に返す
@@ -232,6 +234,14 @@ function doPost(e) {
 
     if (action === 'listDeptDecisions') {
       return json_(listDeptDecisions_(data));
+    }
+
+    if (action === 'saveDeptPreshare') {
+      return json_(saveDeptPreshare_(data));
+    }
+
+    if (action === 'listDeptPreshare') {
+      return json_(listDeptPreshare_(data));
     }
 
     if (action === 'saveMinutes') {
@@ -685,6 +695,14 @@ function saveDeptMinutes_(data) {
       d.title || '', d.detail || '', d.reason || '', d.owner || '', d.due || '', d.related || '', id
     ]);
   }
+
+  // 事前共有した会議なら、その事前共有に議事録IDを入れる（ダッシュボードの事前共有から外れる）。
+  // ここで失敗しても議事録の保存は済んでいるので、保存の結果には響かせない。
+  if (data.preshareId) {
+    try {
+      linkDeptPreshare_(data.preshareId, id);
+    } catch (err) {}
+  }
   return {
     ok: true, decisions: decisions.length, id: id, updated: isUpdate,
     editedAt: isUpdate ? ts : '', editedBy: isUpdate ? (data.user || '') : ''
@@ -734,6 +752,81 @@ function listDeptDecisions_(data) {
   items.reverse();
   if (items.length > 200) items = items.slice(0, 200);
   return { ok: true, items: items };
+}
+
+// 部門会議の事前共有。会議の前に、手順1の会議情報と議題・レジュメを全部門へ出しておく
+//（ダッシュボードの「部門会議の事前共有」で、出席者が議題・レジュメを見ながら会議を進めるため）。
+// ★列は見出し名で引く（colOf_）。「議事録ID」はこの会議の議事録を保存したときに入る。
+var DEPT_PRESHARE_SHEET = '部門会議事前共有';
+var DEPT_PRESHARE_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '場所', '出席者', '議題・レジュメ', '事前共有ID', '更新日時', '更新者', '議事録ID'];
+
+function preshareCell_(r, name) {
+  return cellStr_(r[colOf_(DEPT_PRESHARE_HEADERS, name) - 1]);
+}
+
+// data.id があれば、その事前共有を上書きする。
+// 最初に共有したときの「日時・部門・入力者」と、結び付いた「議事録ID」はそのまま残す。
+function saveDeptPreshare_(data) {
+  var H = DEPT_PRESHARE_HEADERS;
+  var sh = sheetWithHeaders_(DEPT_PRESHARE_SHEET, H);
+  var row = findRowById_(sh, colOf_(H, '事前共有ID'), data.id);
+  var cur = row ? sh.getRange(row, 1, 1, H.length).getValues()[0] : null;
+  var id = data.id ? String(data.id) : Utilities.getUuid();
+  var ts = nowJp_('');
+  var rec = {
+    '日時': cur ? preshareCell_(cur, '日時') : ts,
+    '部門': cur ? preshareCell_(cur, '部門') : (data.campus || ''),
+    '入力者': cur ? preshareCell_(cur, '入力者') : (data.user || ''),
+    '会議名': data.title || '',
+    '開催日時': data.date || '',
+    '場所': data.place || '',
+    '出席者': data.attendees || '',
+    '議題・レジュメ': data.agenda || '',
+    '事前共有ID': id,
+    '更新日時': cur ? ts : '',
+    '更新者': cur ? (data.user || '') : '',
+    '議事録ID': cur ? preshareCell_(cur, '議事録ID') : ''
+  };
+  var values = H.map(function (h) { return String(rec[h]); });
+  // appendRow は手入力と同じ解釈で書くため、「- 9月の実績」で始まる議題が数式とみなされたり、
+  // 開催日時が日付に化けたりする。先に文字列書式を付けてから setValues で書く。
+  sh.getRange(row || sh.getLastRow() + 1, 1, 1, H.length).setNumberFormat('@').setValues([values]);
+  return { ok: true, id: id, updated: Boolean(row), ts: rec['日時'] };
+}
+
+// 部門会議の事前共有の一覧（新しい順・最大100件）。
+// 議事録を保存した会議・日の過ぎた会議を外すのは Next 側（lib/deptMinutesPreshare.ts）で行う。
+function listDeptPreshare_(data) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(DEPT_PRESHARE_SHEET);
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, DEPT_PRESHARE_HEADERS.length).getValues();
+  var items = [];
+  for (var i = 0; i < values.length; i++) {
+    var r = values[i];
+    items.push({
+      id: preshareCell_(r, '事前共有ID'), ts: preshareCell_(r, '日時'),
+      campus: preshareCell_(r, '部門'), user: preshareCell_(r, '入力者'),
+      title: preshareCell_(r, '会議名'), date: preshareCell_(r, '開催日時'),
+      place: preshareCell_(r, '場所'), attendees: preshareCell_(r, '出席者'),
+      agenda: preshareCell_(r, '議題・レジュメ'),
+      editedAt: preshareCell_(r, '更新日時'), editedBy: preshareCell_(r, '更新者'),
+      minutesId: preshareCell_(r, '議事録ID')
+    });
+  }
+  items.reverse();
+  if (items.length > 100) items = items.slice(0, 100);
+  return { ok: true, items: items };
+}
+
+// 議事録を保存したとき、元になった事前共有に議事録IDを入れる（saveDeptMinutes_ から呼ぶ）。
+function linkDeptPreshare_(preshareId, minutesId) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(DEPT_PRESHARE_SHEET);
+  if (!sh) return;
+  var row = findRowById_(sh, colOf_(DEPT_PRESHARE_HEADERS, '事前共有ID'), preshareId);
+  if (!row) return;
+  sh.getRange(row, colOf_(DEPT_PRESHARE_HEADERS, '議事録ID')).setNumberFormat('@').setValue(String(minutesId));
 }
 
 // 中間報告の「定例項目」を管理するシート（無ければ作成）。
