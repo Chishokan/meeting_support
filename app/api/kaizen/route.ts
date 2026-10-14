@@ -21,7 +21,7 @@ import {
 import { deleteKaizen, loadKaizen, saveKaizen, withPhotoUrls, type PhotoChange, type PhotoChanges } from '@/lib/kaizen/store';
 
 export const runtime = 'nodejs';
-// 写真の保存（Supabase Storage）があるぶん、ほかの画面より長めに待つ
+// 写真の保存（Xサーバーの置き場）があるぶん、ほかの画面より長めに待つ
 export const maxDuration = 60;
 
 // 1枚あたりの上限（base64 の文字数）。画面で長辺1600pxに縮めてから送るので、ふつうは数百KBに収まる。
@@ -72,7 +72,7 @@ export async function GET() {
     today: todayJst(),
     staffNames: STAFF.flatMap((s) => s.names),
   });
-  // 写真はバケットの中のパスで持っているので、画面で開ける期限つきの URL に置き換えて渡す
+  // 写真は置き場の中の名前で持っているので、画面で開ける期限つき・署名つきの URL に置き換えて渡す
   return Response.json({ ok: true, backend: r.backend, ...view, items: await withPhotoUrls(view.items) });
 }
 

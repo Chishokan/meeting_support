@@ -391,8 +391,9 @@ node scripts/check-yoko.mjs --confirmed # 確定のものだけ（不足があ�
 - ルール・集計・旧データの読み方: lib/kaizen/model.ts ★票数（MAX_VOTES）・校舎（KAIZEN_CAMPUSES）・名簿（KAIZEN_ROSTER）を変えるときはここ。テストは `npm test`
 - 保存先: Supabase（supabase/migrations/0003_kaizen.sql）。lib/kaizen/store.ts
   - 改善＝kaizen_items（1改善1行）、票＝kaizen_votes（対象月×投票者で1行）、管理部門の締め切り＝kaizen_closes
-  - 写真＝Storage の kaizen-photos バケット（非公開）。中のフォルダを区画名（chishokan_dev / chishokan_prod）で分ける
   - 手元の開発だけ .data/kaizen.json。本番で Supabase が未設定なら画面に「未設定」と出る
+- 写真の置き場: **Xサーバー**（xserver/kaigi-files/。給与・シフトの報告写真と同じ考え方）。接続は lib/core/xserverFiles.ts、
+  手順は xserver/kaigi-files/README.md。表には置き場の中の名前だけを持つ
 
 ### 流れ
 1. **提出する**：その月のうちに、提出者（一緒に取り組んだ人も入れる）・校舎・改善タイトル・Before／After の説明（必須）と写真（任意）を出す
@@ -409,21 +410,25 @@ node scripts/check-yoko.mjs --confirmed # 確定のものだけ（不足があ�
 - 旧システムとの違い：旧 Web アプリは投票者ごとに1行しか残さず、翌月に投票すると前の月の票が消えていた。ここでは月ごとに残る
 
 ### 写真
-- 画面で長辺1600pxに縮めてから送る。サーバが Storage の kaizen-photos バケットに置く（1枚5MBまで・JPEG／PNG／WebP）
-- バケットは公開しない。画面には12時間で切れる URL だけを渡すので、会議DXにログインした人しか見られない
-- 写真を外す・差し替える・改善を消すと、バケットからも消す（元に戻せない）
+- 画面で長辺1600pxに縮めてから送る。会議DX のサーバが Xサーバーの置き場（api.php）に置く（1枚5MBまで・JPEG／PNG／WebP）
+- 置き場の写真は直接は開けない（.htaccess）。画面には **6〜12時間で切れる署名つきの URL**（photo.php）だけを渡すので、
+  会議DXにログインした人しか見られない。署名の合言葉は Vercel の FILES_SECRET と置き場の config.php の secret
+- 写真を外す・差し替える・改善を消すと、置き場からも消す（元に戻せない）
+- 置き場が未設定のとき：本番では写真を受け付けない（写真なしの提出はできる）。手元の開発では .data/kaizen.json に入れて代用する
 - 旧スプレッドシートから移した写真は Drive のリンクのまま。見る人に閲覧権限があれば縮小画像が出て、無ければ「写真を開く」のリンクになる
 
 ### 本番に出すとき
 1. Supabase の SQL Editor で supabase/migrations/0003_kaizen.sql を実行する（dev＝chishokan_dev、本番＝chishokan_prod の2回。手順は supabase/README.md）。
-   テーブル3つと写真のバケットができる。門配管理・適性検査で SUPABASE_URL などを設定済みなら、環境変数の追加は要らない
-2. 旧スプレッドシートの提出・票を移す（管理部門でログインして「一覧・結果」→「管理部門向け：旧スプレッドシートから取り込む」）
+   門配管理・適性検査で SUPABASE_URL などを設定済みなら、Supabase の環境変数の追加は要らない
+2. Xサーバーに写真の置き場を作り、Vercel に FILES_URL・FILES_SECRET を登録する（手順は xserver/kaigi-files/README.md）。
+   置き場の PHP は GitHub Actions の「Deploy kaigi-files to Xserver」で上がる（main の xserver/kaigi-files/ を直すと自動）
+3. 旧スプレッドシートの提出・票を移す（管理部門でログインして「一覧・結果」→「管理部門向け：旧スプレッドシートから取り込む」）
    - 旧スプレッドシートで「回答」シートを開き、ファイル → ダウンロード → カンマ区切り形式（.csv）。「投票回答」シートも同じように保存して、2つを選んで「取り込む」
    - 何度取り込んでも二重にならない（改善は日時＋タイトル、票は対象月×投票者で見分ける）。アプリで投票し直した人の票は上書きしない
    - 改善はすべての月を移す。票は 2026年9月分から（LEGACY_VOTES_FROM）。6月分の票は旧 Web アプリが上書きして一部しか残っていないため移さない
      （6月分の結果は旧スプレッドシートの「集計」シートが正）
    - 旧スプレッドシートで投票が続いているあいだは、切り替える直前にもう一度取り込めば、増えた分だけ入る
-3. 移したら、旧フォームと旧投票 Web アプリの受付を止める（両方で受け付けると提出・票が分かれる）
+4. 移したら、旧フォームと旧投票 Web アプリの受付を止める（両方で受け付けると提出・票が分かれる）
 
 ### 触るときの注意
 - 会議DXにログインできるのは lib/core/staff.ts の職員だけ。名簿（KAIZEN_ROSTER）にしかいない人は投票できない。

@@ -1,0 +1,21 @@
+<?php
+// ============================================================
+// 会議DX のファイル置き場（/kaigi-files/）の設定（テンプレート）
+//   このファイルを config.php にコピーして値を入れる。
+//     cp config.php.example config.php
+//   ※ config.php は Git に上げない（.gitignore 済み・自動デプロイでも上げない）。
+//     サーバー上の kaigi-files/config.php に、FTP かファイルマネージャの［アップロード］で置く。
+// ============================================================
+return [
+  // 会議DX（Vercel）と共有する合言葉。Vercel の環境変数 FILES_SECRET と「同じ値」を入れる。
+  //   32文字以上のランダムな文字列にする（例：ターミナルで  openssl rand -hex 32 ）。
+  //   これを知っている人は写真を置けて、見るための URL も作れてしまう。人に送らない・画面に出さない。
+  'secret' => '',
+
+  // 写真の保存先。既定はこのフォルダの storage/（.htaccess で直接は開けないようにしてある）。
+  //   public_html の外に置きたいときは絶対パスにする（例：'/home/xxxx/chishokan.co.jp/kaigi-files-storage'）。
+  'storage_dir' => __DIR__ . '/storage',
+
+  // 1ファイルの上限（バイト）。会議DX は長辺1600pxに縮めてから送るので、ふつうは数百KB。
+  'max_bytes' => 5 * 1024 * 1024,
+];

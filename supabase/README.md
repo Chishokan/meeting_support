@@ -7,7 +7,7 @@
 |---|---|
 | 門配管理 | `migrations/0001_monpai.sql`（v0.6.0〜） |
 | 適性検査 | `migrations/0002_aptitude.sql`（v0.13.0〜）。Supabase 専用（スプレッドシートには置かない） |
-| つきいち改善 | `migrations/0003_kaizen.sql`（v0.15.0〜）。Supabase 専用。写真は Storage の `kaizen-photos` バケット（非公開） |
+| つきいち改善 | `migrations/0003_kaizen.sql`（v0.15.0〜）。Supabase 専用。写真は Xサーバーの置き場（`xserver/kaigi-files/`）に置き、ここには名前だけを持つ |
 | 問合せ管理 | 未移行（Apps Script） |
 | 会議DX | 未移行（Apps Script） |
 

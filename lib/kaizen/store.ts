@@ -1,10 +1,11 @@
 // つきいち改善の保存・取得。サーバ専用。
 //
 // 保存先：
-//   1. Supabase（SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY）… テーブルと写真のバケットは supabase/migrations/0003_kaizen.sql
-//      写真は Storage の kaizen-photos バケット（非公開）に置き、画面には期限つきの URL を渡す
-//   2. 手元の開発だけ：.data/kaizen.json（git には入れない。写真は data URL のまま入る）
+//   1. Supabase（SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY）… テーブルは supabase/migrations/0003_kaizen.sql
+//   2. 手元の開発だけ：.data/kaizen.json（git には入れない）
 //   本番で Supabase が未設定なら not_configured を返し、画面に「未設定」と出す。
+// 写真：Xサーバーのファイル置き場（xserver/kaigi-files/。lib/core/xserverFiles.ts）。表には置き場の中の名前だけを持ち、
+//   画面には期限つき・署名つきの URL を渡す。置き場が未設定のとき、開発中は data URL で代用し、本番では写真を受け付けない。
 //
 // 誰が直せるか・投票できるか・何票までかは、ここに来る前に API（app/api/kaizen/）が lib/kaizen/model.ts で確かめる。
 // ★列を増やしたら、SQL と下の fromDb / toDb をそろえること。
@@ -12,6 +13,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { jpDateTime, supabaseAdmin } from '../core/supabase';
+import { deleteFiles, filesConfigured, putFile, signedFileUrl } from '../core/xserverFiles';
 import { nowJstText, type Kaizen, type KaizenClose, type KaizenVote } from './model';
 
 /** 写真の扱い：そのまま／外す／新しい写真（base64） */
@@ -22,8 +24,6 @@ export type KaizenData = { items: Kaizen[]; votes: KaizenVote[]; closes: KaizenC
 export type Fail = { ok: false; reason: string };
 type Row = Record<string, unknown>;
 
-const BUCKET = 'kaizen-photos';
-const SIGN_SECONDS = 60 * 60 * 12; // 画面に渡す写真の URL の有効期限（12時間。開き直せば新しくなる）
 const PAGE = 1000; // Supabase は1回1000行まで
 
 function backend(): 'db' | 'local' | null {
@@ -47,12 +47,6 @@ function dbFail(where: string, err: { message?: string; code?: string }): Fail {
   const msg = (err.message ?? '').replace(/\|/g, '/').slice(0, 200);
   console.log('[kaizen-db]', where, code, msg);
   return { ok: false, reason: `db_error|${code}|${msg}` };
-}
-
-function storageFail(where: string, err: { message?: string }): Fail {
-  const msg = (err.message ?? '').replace(/\|/g, '/').slice(0, 200);
-  console.log('[kaizen-storage]', where, msg);
-  return { ok: false, reason: `storage_error|${msg}` };
 }
 
 // ---- 行 ⇔ 型 ----------------------------------------------------------------
@@ -127,43 +121,40 @@ const isFail = (v: unknown): v is Fail => !!v && typeof v === 'object' && (v as 
 
 // ---- 写真 ------------------------------------------------------------------
 
-/** バケットの中のパスか（旧スプレッドシートの Drive の URL・開発中の data URL ではないもの）。 */
-const isStoragePath = (ref: string) => !/^(https?:|data:)/.test(ref);
+/** ファイル置き場の中の名前か（旧スプレッドシートの Drive の URL・開発中の data URL ではないもの）。 */
+const isStoredKey = (ref: string) => !/^(https?:|data:)/.test(ref);
 
-function photoPath(itemId: string, slot: 'before' | 'after', mime: string): string {
-  const schema = (process.env.SUPABASE_SCHEMA ?? '').trim() || 'public';
+function photoKey(itemId: string, slot: 'before' | 'after', mime: string): string {
+  // dev と本番で同じ置き場を使っても混ざらないよう、Supabase の区画名（chishokan_dev / chishokan_prod）で分ける
+  const env = ((process.env.SUPABASE_SCHEMA ?? '').trim() || 'local').replace(/[^A-Za-z0-9_-]/g, '');
   const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
-  return `${schema}/${itemId}/${slot}-${Date.now()}.${ext}`;
+  return `kaizen/${env}/${itemId}/${slot}-${Date.now()}.${ext}`;
 }
 
 async function putPhoto(itemId: string, slot: 'before' | 'after', p: { data: string; mime: string }): Promise<string | Fail> {
-  if (backend() === 'local') return `data:${p.mime};base64,${p.data}`;
-  const path = photoPath(itemId, slot, p.mime);
-  const { error } = await supabaseAdmin()!.storage.from(BUCKET).upload(path, Buffer.from(p.data, 'base64'), {
-    contentType: p.mime,
-    upsert: false,
-  });
-  return error ? storageFail(`upload ${path}`, error) : path;
+  if (!filesConfigured()) {
+    // 置き場が未設定：開発中は data URL のまま持つ。本番では写真を受け付けない（写真なしの提出はできる）
+    return process.env.NODE_ENV !== 'production' ? `data:${p.mime};base64,${p.data}` : { ok: false, reason: 'files_not_configured' };
+  }
+  const key = photoKey(itemId, slot, p.mime);
+  const r = await putFile(key, Buffer.from(p.data, 'base64'), p.mime);
+  return r.ok ? key : r;
 }
 
-/** バケットの写真を消す（Drive の URL など、ほかの場所の写真には触らない）。失敗しても記録だけ残して続ける。 */
+/** 置き場の写真を消す（Drive の URL など、ほかの場所の写真には触らない）。失敗しても記録だけ残して続ける。 */
 async function removePhotos(refs: string[]): Promise<void> {
-  const paths = refs.filter(isStoragePath);
-  if (!paths.length || backend() !== 'db') return;
-  const { error } = await supabaseAdmin()!.storage.from(BUCKET).remove(paths);
-  if (error) console.log('[kaizen-storage] remove', error.message);
+  await deleteFiles(refs.filter(isStoredKey));
 }
 
-/** 画面に出せる形にする：バケットのパスを期限つきの URL に置き換える。署名できなかった写真は外す。 */
+/** 画面に出せる形にする：置き場の中の名前を期限つきの URL に置き換える。URL を作れない写真は外す。 */
 export async function withPhotoUrls<T extends Kaizen>(items: T[]): Promise<T[]> {
-  if (backend() !== 'db') return items;
-  const paths = Array.from(new Set(items.flatMap((k) => [...k.beforePhotos, ...k.afterPhotos]).filter(isStoragePath)));
-  if (!paths.length) return items;
-  const { data, error } = await supabaseAdmin()!.storage.from(BUCKET).createSignedUrls(paths, SIGN_SECONDS);
-  if (error) console.log('[kaizen-storage] sign', error.message);
-  const url = new Map<string, string>();
-  for (const d of data ?? []) if (d.path && d.signedUrl && !d.error) url.set(d.path, d.signedUrl);
-  const show = (refs: string[]) => refs.flatMap((r) => (isStoragePath(r) ? (url.has(r) ? [url.get(r)!] : []) : [r]));
+  const now = Date.now();
+  const show = (refs: string[]) =>
+    refs.flatMap((r) => {
+      if (!isStoredKey(r)) return [r];
+      const url = signedFileUrl(r, now);
+      return url ? [url] : [];
+    });
   return items.map((k) => ({ ...k, beforePhotos: show(k.beforePhotos), afterPhotos: show(k.afterPhotos) }));
 }
 
@@ -214,7 +205,7 @@ export async function loadKaizen(): Promise<({ ok: true } & KaizenData) | Fail> 
 
 /**
  * 新規なら追加、同じ ID があれば上書き。写真は photos の指示どおりに差し替える。
- * cur は今の内容（新規なら null）。外した・差し替えた写真は、保存できてからバケットから消す。
+ * cur は今の内容（新規なら null）。外した・差し替えた写真は、保存できてから置き場から消す。
  */
 export async function saveKaizen(k: Kaizen, photos: PhotoChanges, cur: Kaizen | null): Promise<{ ok: true } | Fail> {
   const b = backend();
@@ -257,7 +248,7 @@ export async function saveKaizen(k: Kaizen, photos: PhotoChanges, cur: Kaizen | 
   return { ok: true };
 }
 
-/** 消す（行は残して deleted_at を付ける。写真はバケットから消す）。 */
+/** 消す（行は残して deleted_at を付ける。写真は置き場から消す）。 */
 export async function deleteKaizen(cur: Kaizen, user: string): Promise<{ ok: true } | Fail> {
   const b = backend();
   if (!b) return { ok: false, reason: 'not_configured' };

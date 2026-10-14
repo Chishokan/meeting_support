@@ -11,3 +11,8 @@ tsconfig.tsbuildinfo
 
 # 問合せ管理（/inquiry-board）の開発用ローカル保存先（APPS_SCRIPT_URL 未設定時）
 .data/
+
+# Xサーバーのファイル置き場（xserver/kaigi-files/）の実値の設定と、手元で試したときの保存ファイル
+xserver/kaigi-files/config.php
+xserver/kaigi-files/storage/*
+!xserver/kaigi-files/storage/.htaccess

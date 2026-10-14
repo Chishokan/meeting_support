@@ -1,4 +1,5 @@
--- つきいち改善（/kaizen）のテーブルと写真の置き場。Supabase の SQL Editor に貼り付けて実行する。
+-- つきいち改善（/kaizen）のテーブル。Supabase の SQL Editor に貼り付けて実行する。
+-- 写真そのものは Xサーバーのファイル置き場（xserver/kaigi-files/）に置く。ここには置き場の中の名前だけを持つ。
 -- 何度実行しても壊れないよう「if not exists」「on conflict do nothing」で書いてある。
 --
 -- ★1つのプロジェクトに dev と本番を同居させるため、テーブルは区画（スキーマ）に分けて置く。
@@ -22,7 +23,7 @@ create table if not exists kaizen_items (
   title          text not null,
   before_text    text not null default '',
   after_text     text not null default '',
-  -- 写真。下の kaizen-photos バケットの中のパス（例 chishokan_prod/<改善ID>/before-1760000000000.jpg）。
+  -- 写真。Xサーバーのファイル置き場の中の名前（例 kaizen/chishokan_prod/<改善ID>/before-1760000000000.jpg）。
   -- 旧スプレッドシートから移した写真は Drive の URL のまま入る
   before_photos  text[] not null default '{}',
   after_photos   text[] not null default '{}',
@@ -56,14 +57,6 @@ create table if not exists kaizen_closes (
 alter table kaizen_items  enable row level security;
 alter table kaizen_votes  enable row level security;
 alter table kaizen_closes enable row level security;
-
--- 写真の置き場（Storage のバケット）。公開しない。
--- アプリのサーバが service_role で読み書きし、画面には期限つきの URL（12時間）だけを渡す。
--- バケットは dev と本番で1つを共用し、中のフォルダを区画名（chishokan_dev / chishokan_prod）で分ける。
--- 画面で長辺1600pxに縮めてから送るので、1枚5MBを上限にする。
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('kaizen-photos', 'kaizen-photos', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
-on conflict (id) do nothing;
 
 -- アプリのサーバ（service_role）だけが読み書きできるようにする（0001_monpai.sql と同じ）。
 do $$

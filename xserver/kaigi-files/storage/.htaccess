@@ -1,0 +1,6 @@
+# 写真の保存先。直接は開かせない（見るのは photo.php の署名つき URL だけ）。
+Require all denied
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>

@@ -1,0 +1,9 @@
+# 会議DX のファイル置き場。一覧を出さない・設定と部品は直接開かせない。
+Options -Indexes
+<FilesMatch "^(config\.php|config\.php\.example|lib\.php|README\.md)$">
+  Require all denied
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>

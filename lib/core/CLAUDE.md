@@ -13,6 +13,7 @@
 | `log.ts` | AIとの会話ログをスプレッドシートへ転記する |
 | `supabase.ts` | Supabase（データベース）への接続。サーバ専用 |
 | `dbError.ts` | Supabase のエラーを設定の直し方に言い換える（画面側で使う。門配管理・適性検査） |
+| `xserverFiles.ts` | Xサーバーのファイル置き場（`xserver/kaigi-files/`）への接続。写真を置く・消す・期限つきの URL を作る。サーバ専用（つきいち改善） |
 
 ## 置き場所の決め方
 

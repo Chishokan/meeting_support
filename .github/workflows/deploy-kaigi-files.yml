@@ -1,0 +1,112 @@
+name: Deploy kaigi-files to Xserver
+
+# xserver/kaigi-files/ 配下の PHP（会議DX のファイル置き場）を Xサーバーへ FTPS デプロイする。
+# 給与・シフト（colorhrm の deploy-payroll.yml）と同じ方式。会議DX 本体（Vercel）とは別に配置する。
+#   公開URL（例）：https://chishokan.co.jp/kaigi-files/
+#   配置先（例）：/chishokan.co.jp/public_html/kaigi-files/
+#
+# ★config.php は上げない（合言葉の実値はサーバー上にだけ置く。手順は xserver/kaigi-files/README.md）。
+# ★写真（storage/ の中）はサーバー上にだけあり、このデプロイでは消えない（上げるのは storage/.htaccess だけ）。
+#
+# 必要な GitHub Secrets（Settings → Secrets and variables → Actions）:
+#   FTP_FILES_SERVER    … FTPホスト名（例: sv8550.xserver.jp）
+#   FTP_FILES_USERNAME  … kaigi-files 用FTPユーザー名（ホーム＝kaigi-files ディレクトリ）
+#   FTP_FILES_PASSWORD  … FTPパスワード
+# 任意の Variables:
+#   FTP_FILES_SERVER_DIR … 配置先（既定: /。専用アカウントのホームが kaigi-files の想定）。末尾スラッシュ必須。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'xserver/kaigi-files/**'
+      - '.github/workflows/deploy-kaigi-files.yml'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run（アップロードせず差分の一覧だけ表示）'
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-xserver-kaigi-files
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # FTP の一時タイムアウト対策に最大3回まで再試行（1・2回目は失敗を握りつぶす）。
+      - name: FTPS Deploy (try 1)
+        id: ftp1
+        continue-on-error: true
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_FILES_SERVER }}
+          username: ${{ secrets.FTP_FILES_USERNAME }}
+          password: ${{ secrets.FTP_FILES_PASSWORD }}
+          protocol: ftps
+          port: 21
+          timeout: 60000
+          local-dir: ./xserver/kaigi-files/
+          server-dir: ${{ vars.FTP_FILES_SERVER_DIR || '/' }}
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          exclude: |
+            **/config.php
+            **/config.php.example
+            **/README.md
+            **/.git*
+            **/.DS_Store
+
+      - name: Wait before retry 2
+        if: steps.ftp1.outcome == 'failure'
+        run: sleep 15
+
+      - name: FTPS Deploy (try 2)
+        id: ftp2
+        if: steps.ftp1.outcome == 'failure'
+        continue-on-error: true
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_FILES_SERVER }}
+          username: ${{ secrets.FTP_FILES_USERNAME }}
+          password: ${{ secrets.FTP_FILES_PASSWORD }}
+          protocol: ftps
+          port: 21
+          timeout: 60000
+          local-dir: ./xserver/kaigi-files/
+          server-dir: ${{ vars.FTP_FILES_SERVER_DIR || '/' }}
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          exclude: |
+            **/config.php
+            **/config.php.example
+            **/README.md
+            **/.git*
+            **/.DS_Store
+
+      - name: Wait before retry 3
+        if: steps.ftp1.outcome == 'failure' && steps.ftp2.outcome == 'failure'
+        run: sleep 30
+
+      - name: FTPS Deploy (try 3, final)
+        if: steps.ftp1.outcome == 'failure' && steps.ftp2.outcome == 'failure'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_FILES_SERVER }}
+          username: ${{ secrets.FTP_FILES_USERNAME }}
+          password: ${{ secrets.FTP_FILES_PASSWORD }}
+          protocol: ftps
+          port: 21
+          timeout: 60000
+          local-dir: ./xserver/kaigi-files/
+          server-dir: ${{ vars.FTP_FILES_SERVER_DIR || '/' }}
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          exclude: |
+            **/config.php
+            **/config.php.example
+            **/README.md
+            **/.git*
+            **/.DS_Store

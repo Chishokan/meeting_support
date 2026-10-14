@@ -48,13 +48,21 @@ function reasonText(reason?: string, message?: string): string {
     const [, code = '', msg = ''] = r.split('|');
     return dbErrorText(code, msg);
   }
-  if (r.startsWith('storage_error')) {
-    const msg = r.split('|')[1] ?? '';
-    return `写真を保存できませんでした。管理者の方へ：Supabase の Storage に kaizen-photos があるか（supabase/migrations/0003_kaizen.sql を実行したか）確認してください（${msg || '詳細なし'}）。`;
+  // 写真の置き場（Xサーバー）の失敗は「files_error|理由」で返ってくる
+  if (r.startsWith('files_error')) {
+    const why = r.split('|')[1] ?? '';
+    if (why === 'too_large') return '写真が大きすぎます。別の写真にしてください。';
+    if (why === 'bad_type') return 'この写真の形式は使えません（JPEG・PNG・WebP のみ）。別の写真にしてください。';
+    if (why === 'unauthorized' || why === 'not_configured') {
+      return '写真を保存できませんでした。管理者の方へ：Vercel の FILES_SECRET と、Xサーバーの kaigi-files/config.php の secret が同じ値か確認してください。';
+    }
+    return `写真を保存できませんでした（${why || '理由不明'}）。少し待ってからやり直すか、写真を外して提出してください。`;
   }
   switch (r) {
     case 'not_configured':
       return 'データベース（Supabase）が未設定です。管理者に連絡してください。';
+    case 'files_not_configured':
+      return '写真の置き場（Xサーバー）がまだ設定されていないため、写真は付けられません。写真を外して提出してください。';
     case 'unauthorized':
       return 'ログインが切れました。画面を読み込み直してください。';
     case 'forbidden':

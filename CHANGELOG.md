@@ -15,9 +15,11 @@
   - 投票は翌月末で自動的に締め切る。管理部門は早めに締め切れる（再開もできる）
   - 管理部門は、まだ提出していない人・まだ投票していない人を確かめられる
   - 票は月ごとに残す（旧 Web アプリは翌月に投票すると前の月の票が消えていた）
-  - 写真はログインした人だけが見られる（Supabase Storage の非公開バケット。画面には期限つきの URL だけを渡す）
+  - 写真は Xサーバーの置き場（xserver/kaigi-files/。給与・シフトの報告写真と同じ考え方）に置き、直接は開けないフォルダに入れる。
+    画面には期限つき・署名つきの URL だけを渡すので、ログインした人しか見られない
   - 旧スプレッドシートの提出と票は、管理部門が CSV を画面から読み込ませて移せる（何度やっても二重にならない）
-  - ★本番で使うには Supabase で supabase/migrations/0003_kaizen.sql の実行が必要（手順は README の「つきいち改善」）
+  - ★本番で使うには、Supabase で supabase/migrations/0003_kaizen.sql の実行と、Xサーバーの置き場の設定
+    （FTP アカウント・GitHub Secrets・config.php・Vercel の FILES_URL／FILES_SECRET）が必要（手順は xserver/kaigi-files/README.md）
 
 ## [0.14.0] - 2026-10-13
 

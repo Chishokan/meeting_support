@@ -39,7 +39,7 @@ export type Kaizen = {
   title: string;
   before: string;
   after: string;
-  // 写真。保存先では Supabase Storage のパス（旧スプレッドシートから移したものは Drive の URL、開発中は data URL）。
+  // 写真。保存先では Xサーバーの置き場の中の名前（旧スプレッドシートから移したものは Drive の URL、開発中は data URL）。
   // 画面に渡すときは API が期限つきの URL に置き換える（lib/kaizen/store.ts の withPhotoUrls）
   beforePhotos: string[];
   afterPhotos: string[];
