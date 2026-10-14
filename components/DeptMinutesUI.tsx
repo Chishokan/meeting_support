@@ -34,19 +34,31 @@ type Source = 'record' | 'file' | 'paste';
 //   decoding  … ブラウザで音声を読み込み、送れる形（WAV）に変換している
 //   uploading … その区間をサーバへ送っている（1区間 約2.9MB）
 //   analyzing … サーバ側で Gemini が音声を文字にしている
+//   spacing   … 無料枠の上限を超えないよう、次を送るまで間隔をあけている（正常）
 //   waiting   … 送りすぎで断られたので、少し待ってから同じ区間を送り直す
-type Phase = 'idle' | 'decoding' | 'uploading' | 'analyzing' | 'waiting';
+type Phase = 'idle' | 'decoding' | 'uploading' | 'analyzing' | 'spacing' | 'waiting';
 
 const PHASE_LABEL: Record<Exclude<Phase, 'idle'>, string> = {
   decoding: '音声を読み込んでいます',
   uploading: 'アップロード中',
   analyzing: '解析中（AIが文字に起こしています）',
+  spacing: '無料枠の上限に合わせて間隔をあけています',
   waiting: '混み合っているため待っています',
 };
 
 // 送信が断られたときに待つ秒数（Gemini が待ち時間を指定してきたらそちらを使う）。
 // 無料枠は短い時間に続けて送ると断られるので、あきらめずに待って送り直す。
-const RETRY_WAITS = [10, 25, 60];
+const RETRY_WAITS = [15, 30, 60, 90];
+
+// 1分あたりの送信上限が分からないときの既定値（gemini-3.6-flash の無料枠と同じ）。
+const DEFAULT_RPM = 5;
+
+// 1分あたり rpm 回までに収まる、送信と送信の間隔（ミリ秒）。
+// 1秒ぶん余裕を足す（Google 側と時計がずれていても超えないようにするため）。
+function gapFromRpm(rpm: number): number {
+  const n = rpm > 0 ? rpm : DEFAULT_RPM;
+  return Math.ceil(60000 / n) + 1000;
+}
 
 // 待てば通る見込みのある失敗か。
 function isRetryable(reason: string): boolean {
@@ -189,6 +201,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [instruction, setInstruction] = useState('');
 
   const [configured, setConfigured] = useState<boolean | null>(null);
+  // 1分あたりに送ってよい回数（サーバの設定から受け取る）。無料枠は 5。
+  const [rpm, setRpm] = useState(DEFAULT_RPM);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [queued, setQueued] = useState(0); // 文字起こし待ちの区間数
@@ -248,6 +262,10 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const workingRef = useRef(false);
   // 録音は区切りごとに何度も pump() を通るので、成否の数はここにためる。
   const tallyRef = useRef<RunTally>({ total: 0, done: 0, ok: 0, failed: 0, reason: '', detail: '' });
+  // 直前に送り始めた時刻と、次を送るまであける間隔。
+  // 無料枠は1分あたりの回数で止まるので、これを守らないと必ず 429 になる。
+  const lastSendAt = useRef(0);
+  const gapRef = useRef(gapFromRpm(DEFAULT_RPM));
   const mimeRef = useRef('');
   // 下書きを読み終えたか。ref ではなく state にしているのは、
   // 読み込み直後の保存が「まだ反映されていない空の値」を書いてしまうのを防ぐため
@@ -289,7 +307,10 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       try {
         const res = await fetch('/api/dept-minutes/transcribe');
         const j = await res.json().catch(() => ({}));
-        if (alive) setConfigured(Boolean(j?.configured));
+        if (alive) {
+          setConfigured(Boolean(j?.configured));
+          if (Number(j?.rpm) > 0) setRpm(Number(j.rpm));
+        }
       } catch {
         if (alive) setConfigured(false);
       }
@@ -298,6 +319,10 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    gapRef.current = gapFromRpm(rpm);
+  }, [rpm]);
 
   // 音声を送る前に、キーとモデル名が正しいかを確かめる。
   async function checkSetup() {
@@ -353,6 +378,9 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       setCheckMsg('確認に失敗しました。通信状況をご確認ください。');
     } finally {
       setChecking(false);
+      // 接続テストも1分あたりの回数を1回ぶん使う。
+      // 押した直後に音声を送ると上限に当たるので、ここから間隔を数え直す。
+      lastSendAt.current = Date.now();
     }
   }
 
@@ -430,9 +458,25 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   // 断られた区間は、少し待ってから同じものを送り直す。
   // 無料枠は短い時間に続けて送ると断られるため、ここで粘らないと
   // 1区間の失敗がそのまま全区間の失敗に広がってしまう。
+  // 前回の送信から gapRef.current だけ経つまで待つ。
+  // 断られてから待つのではなく、はじめから超えない速さで送るための待ち時間なので、
+  // 画面には「混み合っている」ではなく「間隔をあけています」と出す。
+  const holdForRate = useCallback(async () => {
+    for (;;) {
+      const left = Math.ceil((lastSendAt.current + gapRef.current - Date.now()) / 1000);
+      if (left <= 0) return;
+      setPhase('spacing');
+      setWaitLeft(left);
+      await new Promise((done) => setTimeout(done, 1000));
+    }
+  }, []);
+
   const sendWithRetry = useCallback(
     async (blob: Blob, filename: string): Promise<SegResult> => {
       for (let attempt = 0; ; attempt++) {
+        await holdForRate();
+        lastSendAt.current = Date.now();
+        setWaitLeft(0);
         const r = await sendSegment(blob, filename);
         if (r.ok || !isRetryable(r.reason) || attempt >= RETRY_WAITS.length) return r;
         // Gemini が「この秒数だけ待て」と言ってきたらそれに従う（長すぎる指定は切り詰める）。
@@ -445,7 +489,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         setWaitLeft(0);
       }
     },
-    [sendSegment],
+    [sendSegment, holdForRate],
   );
 
   const pump = useCallback(async () => {
@@ -608,7 +652,14 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       // 1時間の音声だと読み込み（WAVへの変換）だけで数十秒かかる。無反応に見えないよう状態を出す。
       setPhase('decoding');
       const { segments, durationSec } = await splitAudioFile(file);
-      setNote(`${fmtDuration(durationSec)}の音声を${segments.length}区間に分けて文字起こしします。`);
+      // 無料枠は1分あたりの回数で止まるので、区間数が多いほど待ち時間で決まる。
+      // 「終わらない」と思われないよう、最初に目安を出しておく。
+      const estMin = Math.max(1, Math.ceil((segments.length * gapRef.current) / 60000));
+      setNote(
+        `${fmtDuration(durationSec)}の音声を${segments.length}区間に分けて文字起こしします。`
+        + `無料枠は1分あたり${rpm}回までのため、間隔をあけて送ります（目安 約${estMin}分）。`
+        + 'この画面を開いたままお待ちください。',
+      );
       setFileProgress({ done: 0, total: segments.length });
 
       // 1区間ごとに赤字を出すと、ほとんど成功していても警告だらけに見える。
@@ -1090,6 +1141,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                       <span className="dm-work-phase">
                         {phase === 'idle' ? '処理中' : PHASE_LABEL[phase]}
                         {phase === 'uploading' && ` ${uploadPct}%`}
+                        {phase === 'spacing' && waitLeft > 0 && `（あと${waitLeft}秒）`}
                         {phase === 'waiting' && waitLeft > 0 && `（あと${waitLeft}秒で送り直します）`}
                       </span>
                       {/* 読み込みが終わるまで区間数は決まらないので、決まってから出す */}
@@ -1116,6 +1168,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                         ? `ここまでに ${transcript.length.toLocaleString()} 字を文字にしました。`
                         : '最初の区間の結果が出るまで少しお待ちください。'}
                       {phase === 'analyzing' && ' 画面を閉じずにお待ちください。'}
+                      {phase === 'spacing'
+                        && ` 無料枠は1分あたり${rpm}回までのため、間隔をあけて送っています（異常ではありません）。`}
                       {/* 途中の取りこぼしは件数だけ控えめに出す。詳しい案内は終わってから1行で出す */}
                       {failedSegs > 0 && ` 取りこぼし ${failedSegs} 区間（このまま続けます）。`}
                     </p>

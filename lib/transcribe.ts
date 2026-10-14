@@ -29,6 +29,19 @@ const DEFAULT_MODEL = 'gemini-3.6-flash';
 // Vercel の関数実行時間（60秒）に当たる前に自分で打ち切る。
 const TIMEOUT_MS = 50000;
 
+// 無料枠は「1分あたりの送信回数（RPM）」で止まる。
+// gemini-3.6-flash の無料枠は 5 RPM で、1区間ずつ続けて送るとこれを超える
+//（1区間おおよそ10秒で終わるため、何もしないと 6回/分 になり必ず 429 になる）。
+// 画面はこの値を見て送信の間隔をあけるので、枠を上げたときはここも合わせて変える。
+const DEFAULT_RPM = 5;
+
+// 1分あたり何回まで送ってよいか（環境変数 GEMINI_RPM で変更可）。
+// 有料枠に切り替えたときは、この値を上げると文字起こしが速くなる。
+export function transcribeRpm(): number {
+  const n = Number(process.env.GEMINI_RPM);
+  return Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), 2000) : DEFAULT_RPM;
+}
+
 // 議事録用の文字起こしなので、要約させず・補完させず・前置きも書かせない。
 // 末尾に社内用語のヒント（lib/transcribeVocab.ts がナレッジから組み立てる）を足して誤変換を減らす。
 const PROMPT_BASE = `この音声は学習塾「智翔館」の部門会議の録音です。長い会議を区切ったうちの一部なので、

@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/core/auth';
-import { checkTranscribeSetup, isTranscribeConfigured, transcribeAudio } from '@/lib/transcribe';
+import { checkTranscribeSetup, isTranscribeConfigured, transcribeAudio, transcribeRpm } from '@/lib/transcribe';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -20,7 +20,8 @@ export async function GET(req: Request) {
     const r = await checkTranscribeSetup();
     return Response.json({ configured: isTranscribeConfigured(), ...r });
   }
-  return Response.json({ ok: true, configured: isTranscribeConfigured() });
+  // rpm は画面が送信の間隔をあけるために使う（無料枠は1分あたりの回数で止まるため）。
+  return Response.json({ ok: true, configured: isTranscribeConfigured(), rpm: transcribeRpm() });
 }
 
 export async function POST(req: Request) {
