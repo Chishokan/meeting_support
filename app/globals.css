@@ -1087,6 +1087,14 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .pre-when.today { color: #fff; background: var(--navy); border-color: var(--navy); }
 .pre-item.past .pre-when { color: #8a5a00; background: #fdf3d6; border-color: #f0dfa8; }
 .pre-place { margin-top: 2px; font-size: 12px; color: #667; overflow-wrap: anywhere; }
+/* カードの［議題を見る］［議事録をつくる］。幅が足りないときはボタンだけ次の行の右に回す */
+.pre-item .dm-meet-foot { flex-wrap: wrap; }
+.pre-actions { display: flex; gap: 6px; margin-left: auto; }
+.pre-start {
+  font-size: 12px; font-weight: 700; color: #fff; background: var(--navy);
+  border: 1px solid var(--navy); border-radius: 6px; padding: 4px 12px; cursor: pointer; white-space: nowrap;
+}
+.pre-start:hover { filter: brightness(1.12); }
 /* 会議中に読むので、議題・レジュメは議事録の本文より少し大きくする */
 .dm-modal-text.pre-agenda { font-size: 15px; }
 @media (max-width: 620px) {
@@ -1143,7 +1151,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
   .panel-more { padding: 11px 6px; margin: -11px -6px -11px auto; }
   .yq-toggle { padding: 11px 4px; margin: -11px -4px; }
   .doc-link { display: inline-block; padding: 11px 4px; margin: -11px -4px; }
-  .dm-detail, .dm-reload { min-height: 36px; padding: 7px 14px; }
+  .dm-detail, .dm-reload, .pre-start { min-height: 36px; padding: 7px 14px; }
   /* 画面の切り替えに使うボタンは押す回数が多いので、少し高くする */
   .dm-tab, .mode-btn, .reset-chat, .iqa-example { min-height: 40px; }
 

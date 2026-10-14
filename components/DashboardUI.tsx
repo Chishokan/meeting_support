@@ -321,6 +321,7 @@ export default function DashboardUI({
             views={upcoming.slice(0, MAX_SHOWN_PRESHARE)}
             grid
             onOpen={(row, when) => setOpenPreshare({ row, when })}
+            onStart={startFromPreshare}
           />
           {preshareRest > 0 && (
             <p className="dept-items-note">

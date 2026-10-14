@@ -11,11 +11,14 @@ export default function PreshareList({
   grid = false,
   agendaLines = 3,
   onOpen,
+  onStart,
 }: {
   views: PreshareView[];
   grid?: boolean; // ダッシュボードでは横に並べる
   agendaLines?: number;
   onOpen: (row: PreshareRow, when: string) => void;
+  // 渡されたときだけ、カードに［議事録をつくる］を出す（ダッシュボードから議事録の画面へ直接移る）。
+  onStart?: (row: PreshareRow) => void;
 }) {
   return (
     <ul className={`pre-list ${grid ? 'grid' : ''}`}>
@@ -42,7 +45,12 @@ export default function PreshareList({
               <span className="dm-meet-count">
                 {past ? '議事録はまだありません' : row.user && `共有：${row.user}`}
               </span>
-              <button className="dm-detail" onClick={() => onOpen(row, when)}>議題を見る</button>
+              <div className="pre-actions">
+                <button className="dm-detail" onClick={() => onOpen(row, when)}>議題を見る</button>
+                {onStart && (
+                  <button className="pre-start" onClick={() => onStart(row)}>議事録をつくる</button>
+                )}
+              </div>
             </div>
           </li>
         );
