@@ -201,8 +201,11 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [instruction, setInstruction] = useState('');
 
   const [configured, setConfigured] = useState<boolean | null>(null);
-  // 1分あたりに送ってよい回数（サーバの設定から受け取る）。無料枠は 5。
+  // キー1本あたり1分間に送ってよい回数（サーバの設定から受け取る）。無料枠は 5。
   const [rpm, setRpm] = useState(DEFAULT_RPM);
+  // 設定されているAPIキーの本数。別プロジェクトのキーは上限が別なので、
+  // 本数ぶんだけ速く送れる（2本なら1分あたり10回）。
+  const [keyCount, setKeyCount] = useState(1);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [queued, setQueued] = useState(0); // 文字起こし待ちの区間数
@@ -262,10 +265,12 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const workingRef = useRef(false);
   // 録音は区切りごとに何度も pump() を通るので、成否の数はここにためる。
   const tallyRef = useRef<RunTally>({ total: 0, done: 0, ok: 0, failed: 0, reason: '', detail: '' });
-  // 直前に送り始めた時刻と、次を送るまであける間隔。
-  // 無料枠は1分あたりの回数で止まるので、これを守らないと必ず 429 になる。
-  const lastSendAt = useRef(0);
+  // キーごとに「最後に送り始めた時刻」を持つ。
+  // 無料枠の上限は Google のプロジェクト単位なので、別アカウントのキーは別枠。
+  // キー1本ずつこの間隔を守れば、全体では本数ぶんだけ速く送れる。
+  const lastSendAt = useRef<number[]>([0]);
   const gapRef = useRef(gapFromRpm(DEFAULT_RPM));
+  const keyCountRef = useRef(1);
   const mimeRef = useRef('');
   // 下書きを読み終えたか。ref ではなく state にしているのは、
   // 読み込み直後の保存が「まだ反映されていない空の値」を書いてしまうのを防ぐため
@@ -310,6 +315,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         if (alive) {
           setConfigured(Boolean(j?.configured));
           if (Number(j?.rpm) > 0) setRpm(Number(j.rpm));
+          if (Number(j?.keys) > 0) setKeyCount(Number(j.keys));
         }
       } catch {
         if (alive) setConfigured(false);
@@ -322,7 +328,11 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
 
   useEffect(() => {
     gapRef.current = gapFromRpm(rpm);
-  }, [rpm]);
+    keyCountRef.current = Math.max(1, keyCount);
+    // 本数が変わったら、足りない分の「最後に送った時刻」を用意する。
+    const t = lastSendAt.current;
+    while (t.length < keyCountRef.current) t.push(0);
+  }, [rpm, keyCount]);
 
   // 音声を送る前に、キーとモデル名が正しいかを確かめる。
   async function checkSetup() {
@@ -378,9 +388,9 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       setCheckMsg('確認に失敗しました。通信状況をご確認ください。');
     } finally {
       setChecking(false);
-      // 接続テストも1分あたりの回数を1回ぶん使う。
+      // 接続テストはキーを1本ずつ全部試すので、どのキーも1回ぶん使っている。
       // 押した直後に音声を送ると上限に当たるので、ここから間隔を数え直す。
-      lastSendAt.current = Date.now();
+      lastSendAt.current = lastSendAt.current.map(() => Date.now());
     }
   }
 
@@ -409,10 +419,12 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   // 1区間は約2.9MB あり、回線によっては送信だけで時間がかかる。
   // 「アップロード中」と「解析中」を画面で区別するため、fetch ではなく
   // XMLHttpRequest を使って送信の進み具合（upload.onprogress）を拾う。
-  const sendSegment = useCallback((blob: Blob, filename: string): Promise<SegResult> => {
+  const sendSegment = useCallback((blob: Blob, filename: string, keyNo = 1): Promise<SegResult> => {
     return new Promise<SegResult>((resolve) => {
       const form = new FormData();
       form.append('audio', blob, filename);
+      // 何本目のキーで送るかは画面が決める（キーを均等に使うため）。
+      form.append('keyNo', String(keyNo));
 
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/dept-minutes/transcribe');
@@ -461,10 +473,20 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   // 前回の送信から gapRef.current だけ経つまで待つ。
   // 断られてから待つのではなく、はじめから超えない速さで送るための待ち時間なので、
   // 画面には「混み合っている」ではなく「間隔をあけています」と出す。
-  const holdForRate = useCallback(async () => {
+  // いちばん早く空くキーを選び、そのキーの間隔が明けるまで待つ。
+  // 返り値は使うキーの番号（1始まり）。これをサーバへ渡して、キーを均等に使う。
+  const holdForRate = useCallback(async (): Promise<number> => {
     for (;;) {
-      const left = Math.ceil((lastSendAt.current + gapRef.current - Date.now()) / 1000);
-      if (left <= 0) return;
+      const t = lastSendAt.current;
+      let best = 0;
+      for (let i = 1; i < keyCountRef.current; i++) {
+        if ((t[i] ?? 0) < (t[best] ?? 0)) best = i;
+      }
+      const left = Math.ceil(((t[best] ?? 0) + gapRef.current - Date.now()) / 1000);
+      if (left <= 0) {
+        t[best] = Date.now();
+        return best + 1;
+      }
       setPhase('spacing');
       setWaitLeft(left);
       await new Promise((done) => setTimeout(done, 1000));
@@ -474,10 +496,9 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const sendWithRetry = useCallback(
     async (blob: Blob, filename: string): Promise<SegResult> => {
       for (let attempt = 0; ; attempt++) {
-        await holdForRate();
-        lastSendAt.current = Date.now();
+        const keyNo = await holdForRate();
         setWaitLeft(0);
-        const r = await sendSegment(blob, filename);
+        const r = await sendSegment(blob, filename, keyNo);
         if (r.ok || !isRetryable(r.reason) || attempt >= RETRY_WAITS.length) return r;
         // Gemini が「この秒数だけ待て」と言ってきたらそれに従う（長すぎる指定は切り詰める）。
         const wait = r.retryAfterSec && r.retryAfterSec > 0 ? Math.min(r.retryAfterSec, 90) : RETRY_WAITS[attempt];
@@ -654,10 +675,13 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       const { segments, durationSec } = await splitAudioFile(file);
       // 無料枠は1分あたりの回数で止まるので、区間数が多いほど待ち時間で決まる。
       // 「終わらない」と思われないよう、最初に目安を出しておく。
-      const estMin = Math.max(1, Math.ceil((segments.length * gapRef.current) / 60000));
+      const perMin = rpm * Math.max(1, keyCount);
+      const estMin = Math.max(1, Math.ceil((segments.length * gapRef.current) / (60000 * Math.max(1, keyCount))));
       setNote(
         `${fmtDuration(durationSec)}の音声を${segments.length}区間に分けて文字起こしします。`
-        + `無料枠は1分あたり${rpm}回までのため、間隔をあけて送ります（目安 約${estMin}分）。`
+        + `無料枠は1分あたり${perMin}回まで`
+        + (keyCount > 1 ? `（1分${rpm}回 × APIキー${keyCount}本）` : '')
+        + `のため、間隔をあけて送ります（目安 約${estMin}分）。`
         + 'この画面を開いたままお待ちください。',
       );
       setFileProgress({ done: 0, total: segments.length });
@@ -1169,7 +1193,9 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                         : '最初の区間の結果が出るまで少しお待ちください。'}
                       {phase === 'analyzing' && ' 画面を閉じずにお待ちください。'}
                       {phase === 'spacing'
-                        && ` 無料枠は1分あたり${rpm}回までのため、間隔をあけて送っています（異常ではありません）。`}
+                        && ` 無料枠は1分あたり${rpm * Math.max(1, keyCount)}回まで`
+                        + (keyCount > 1 ? `（1分${rpm}回 × APIキー${keyCount}本）` : '')
+                        + 'のため、間隔をあけて送っています（異常ではありません）。'}
                       {/* 途中の取りこぼしは件数だけ控えめに出す。詳しい案内は終わってから1行で出す */}
                       {failedSegs > 0 && ` 取りこぼし ${failedSegs} 区間（このまま続けます）。`}
                     </p>
