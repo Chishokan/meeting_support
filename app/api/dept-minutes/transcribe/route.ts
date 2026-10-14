@@ -1,5 +1,11 @@
 import { getSession } from '@/lib/core/auth';
-import { checkTranscribeSetup, isTranscribeConfigured, transcribeAudio, transcribeRpm } from '@/lib/transcribe';
+import {
+  checkTranscribeSetup,
+  geminiKeyCount,
+  isTranscribeConfigured,
+  transcribeAudio,
+  transcribeRpm,
+} from '@/lib/transcribe';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -20,8 +26,14 @@ export async function GET(req: Request) {
     const r = await checkTranscribeSetup();
     return Response.json({ configured: isTranscribeConfigured(), ...r });
   }
-  // rpm は画面が送信の間隔をあけるために使う（無料枠は1分あたりの回数で止まるため）。
-  return Response.json({ ok: true, configured: isTranscribeConfigured(), rpm: transcribeRpm() });
+  // rpm（キー1本あたり1分間の上限）と keys（本数）は、画面が送信の間隔を決めるために使う。
+  // 別プロジェクトのキーを足すと上限は本数ぶん増えるので、画面は rpm × keys まで送る。
+  return Response.json({
+    ok: true,
+    configured: isTranscribeConfigured(),
+    rpm: transcribeRpm(),
+    keys: geminiKeyCount(),
+  });
 }
 
 export async function POST(req: Request) {
@@ -29,9 +41,10 @@ export async function POST(req: Request) {
   if (!session) return Response.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
   if (!isTranscribeConfigured()) return Response.json({ ok: false, reason: 'not_configured' });
 
+  let form: FormData;
   let audio: unknown;
   try {
-    const form = await req.formData();
+    form = await req.formData();
     audio = form.get('audio');
   } catch {
     return Response.json({ ok: false, reason: 'bad_request' }, { status: 400 });
@@ -44,7 +57,10 @@ export async function POST(req: Request) {
   const given = (audio as { name?: unknown }).name;
   const name = typeof given === 'string' && given ? given : 'segment.wav';
 
-  const r = await transcribeAudio(audio, name);
+  // どのキーで送るかは画面が決める（1つのタブが順番に送るので、本数ぶんを均等に使える）。
+  // サーバ側の記憶は呼び出しごとに消えることがあり、そこに任せると毎回1本目へ偏ってしまう。
+  const keyNo = Number(form.get('keyNo'));
+  const r = await transcribeAudio(audio, name, Number.isFinite(keyNo) ? keyNo : undefined);
   if (r.ok) return Response.json({ ok: true, text: r.text });
   // 理由のほかに、短い手がかり（HTTP 429 / RESOURCE_EXHAUSTED など）と
   // 「何秒待てば通るか」も返す。画面はこれを見て待ち時間を決め、原因も表示する。

@@ -35,11 +35,19 @@ const TIMEOUT_MS = 50000;
 // 画面はこの値を見て送信の間隔をあけるので、枠を上げたときはここも合わせて変える。
 const DEFAULT_RPM = 5;
 
-// 1分あたり何回まで送ってよいか（環境変数 GEMINI_RPM で変更可）。
+// キー1本あたり1分間に何回まで送ってよいか（環境変数 GEMINI_RPM で変更可）。
+// ★この上限は Google の「プロジェクト単位」なので、別アカウント（別プロジェクト）の
+//   キーを足すと、その本数ぶんだけ全体の上限が増える。
+//   画面は「この値 × キーの本数」まで送れるものとして間隔を決める。
 // 有料枠に切り替えたときは、この値を上げると文字起こしが速くなる。
 export function transcribeRpm(): number {
   const n = Number(process.env.GEMINI_RPM);
   return Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), 2000) : DEFAULT_RPM;
+}
+
+// 設定されているキーの本数（画面が何本ぶんの速さで送ってよいかを決めるために使う）。
+export function geminiKeyCount(): number {
+  return geminiKeys().length;
 }
 
 // 議事録用の文字起こしなので、要約させず・補完させず・前置きも書かせない。
@@ -154,9 +162,10 @@ export function geminiKeys(): string[] {
   return out;
 }
 
-// 直前に通ったキー（0始まり）。次の区間はここから試すので、
-// 枠を使い切ったキーに毎回当たりに行かずに済む。
-// サーバが入れ替わると 0 に戻るが、そのときは1回だけ余分に弾かれるだけで実害はない。
+// 直前に通ったキー（0始まり）。画面からキーの指定が無いときの開始位置。
+// ★サーバは呼び出しごとに別の実体で動くことがあり、そのたびに 0 に戻る。
+//   そのため「どのキーを使うか」は画面側（1つのタブが順番に送る）が決めて
+//   keyNo で渡す。ここはその指定が無いときの控えでしかない。
 let preferredKey = 0;
 
 // 次のキーに回す意味がある失敗か。
@@ -394,7 +403,12 @@ async function callGemini(
 // 1区間を文字起こしする。
 // キーが複数あるときは、枠を使い切った／制限に当たったキーを自動で次のキーへ回す。
 // （音声の base64 化と用語ヒントの組み立ては1回だけ行い、キーを変えて送り直す）
-export async function transcribeAudio(file: Blob, filename: string): Promise<TranscribeResult> {
+export async function transcribeAudio(
+  file: Blob,
+  filename: string,
+  // 何本目のキーから送るか（1始まり）。画面がキーを均等に使うために指定する。
+  startKeyNo?: number,
+): Promise<TranscribeResult> {
   const keys = geminiKeys();
   if (keys.length === 0) return { ok: false, reason: 'not_configured' };
   if (!file || file.size === 0) return { ok: false, reason: 'empty' };
@@ -414,10 +428,13 @@ export async function transcribeAudio(file: Blob, filename: string): Promise<Tra
     vocab = await buildVocabHint();
   } catch {}
 
-  // 直前に通ったキーから順に、ひと回りだけ試す。
+  // 指定されたキーから順に、ひと回りだけ試す（指定が無ければ直前に通ったキーから）。
+  const start = startKeyNo && startKeyNo >= 1 && startKeyNo <= keys.length
+    ? startKeyNo - 1
+    : preferredKey;
   let last: TranscribeResult = { ok: false, reason: 'upstream_error' };
   for (let n = 0; n < keys.length; n++) {
-    const idx = (preferredKey + n) % keys.length;
+    const idx = (start + n) % keys.length;
     const r = await callGemini(keys[idx], url, mime, data, vocab);
     if (r.ok) {
       preferredKey = idx; // 次の区間もこのキーから始める
