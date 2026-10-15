@@ -247,11 +247,8 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
       if (res.ok && j?.ok) {
         const shared = Number(j?.success ?? 0);
         setSaveStatus({
-          text: `✓ 会議ドキュメントに保存しました。${shared > 0 ? `成功事例${shared}件を全体共有に登録しました。` : ''}`
-            // 事前報告は従来どおり、LINE WORKS での完了報告までが提出（貼り付けの代わりに自動で転記される）。
-            + (mode === 'meeting'
-              ? `LINE WORKS の自部門トークルームに『${name} 提出完了』と送れば提出完了です。`
-              : 'これで報告は完了です。'),
+          // 事前報告も「報告完了」での保存で提出は終わり（貼り付け・LINE WORKS での完了報告は要らない）。
+          text: `✓ 会議ドキュメントに保存しました。${shared > 0 ? `成功事例${shared}件を全体共有に登録しました。` : ''}これで報告は完了です。`,
           done: true,
         });
         return;
