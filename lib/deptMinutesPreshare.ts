@@ -164,6 +164,9 @@ export type CarryDecision = { title: string; owner: string; due: string };
 // 次回の議題の下書きの見出し。カードの要約（agendaPreview）もこれを目印にする。
 const CARRY_HEAD = 'からの引き継ぎ】';
 const CURRENT_HEAD = '【今回の議題】';
+// 終わっていない ToDo を並べる見出し。議事録のAI（lib/deptMinutesPrompt.ts）は、この見出しの ToDo を
+// 会議で触れられなくても「■ ToDo」に残し、進捗を添える。そうすることで ToDo は終わるまで次回へ回り続ける。
+export const TODO_CHECK_HEADING = 'ToDo の進捗確認';
 
 export type NextAgendaInput = {
   title: string; // 前回の会議名
@@ -206,12 +209,40 @@ function itemsOf(section: string): string[] {
       .replace(/^\[\s?\]\s*/, '')
       .replace(/^\d+[.．)、]\s*/, '')
       .trim();
-    // 「持ち越す議題：〜」のような見出し付きの行は、中身が空なら落とす
-    const labeled = line.match(/^([^:：]{1,10})[:：]\s*(.*)$/);
+    // 「持ち越す議題：〜」のような見出し付きの行は、中身が空なら落とす。
+    // 見出しに「／」を含むもの（「資料共有 ／ 担当：」のような ToDo の行）は見出しとみなさない。
+    const labeled = line.match(/^([^:：／]{1,10})[:：]\s*(.*)$/);
     if (labeled && emptyValue(labeled[2])) continue;
     line = dropEmptyFields(line);
     if (emptyValue(line)) continue;
     out.push(line);
+  }
+  return out;
+}
+
+// 「■ ToDo」から、終わっていないものだけを「内容（担当：〜／期限：〜／進捗：〜）」の形で取り出す。
+// 済み（- [x]、または「進捗：完了」）は引き継がない。担当・期限・進捗の空欄は落とす。
+function openTodos(section: string): string[] {
+  const out: string[] = [];
+  for (const raw of section.split('\n')) {
+    let line = raw.trim();
+    if (!line || /^[-*・]?\s*\[[xX✓]\]/.test(line)) continue;
+    line = line
+      .replace(/^[-*・•]\s*/, '')
+      .replace(/^\[\s?\]\s*/, '')
+      .replace(/^\d+[.．)、]\s*/, '')
+      .trim();
+    const [head = '', ...rest] = line.split(/\s*／\s*/);
+    const what = head.replace(/^内容\s*[:：]\s*/, '').trim();
+    if (emptyValue(what)) continue;
+    const fields = rest
+      .map((p) => p.trim())
+      .filter((p) => {
+        const m = p.match(/^[^:：]{1,10}[:：]\s*(.*)$/);
+        return m ? !emptyValue(m[1]) : !emptyValue(p);
+      });
+    if (fields.some((f) => /^進捗\s*[:：]\s*完了/.test(f))) continue;
+    out.push(fields.length ? `${what}（${fields.join('／')}）` : what);
   }
   return out;
 }
@@ -248,7 +279,7 @@ export function buildNextAgenda(input: NextAgendaInput): string {
         }),
     },
     { heading: '継続審議・保留', items: itemsOf(input.pending) },
-    { heading: 'ToDo の確認', items: itemsOf(input.todos) },
+    { heading: TODO_CHECK_HEADING, items: openTodos(input.todos) },
     {
       heading: '前回決めた持ち越し・準備事項',
       // 開催日時の行は会議情報の「開催日時」に入れるので、ここには並べない
