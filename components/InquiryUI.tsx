@@ -208,7 +208,7 @@ export default function InquiryUI({ name, campus }: { name: string; campus: stri
   return (
     <div className="inquiry">
       <div className="page-head">
-        <h1>お問い合わせ</h1>
+        <h1>ご意見・不具合の報告</h1>
         <p>不具合の報告・改善要望・質問などをお寄せください（{campus}／{name} さん）。テスト運用中のご協力に感謝します。</p>
       </div>
 

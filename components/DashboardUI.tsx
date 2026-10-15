@@ -5,7 +5,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { STAFF } from '@/lib/core/staff';
 import YokoCard, { type YokoCardData } from '@/components/YokoCard';
 import MinutesDetail from '@/components/MinutesDetail';
-import { draftFromPreshare, draftFromRow, draftHasWork, readDraft, stashDraft } from '@/lib/deptMinutesDraft';
+import {
+  draftForNext,
+  draftFromPreshare,
+  draftFromRow,
+  draftHasWork,
+  readDraft,
+  stashDraft,
+  type MinutesDraft,
+} from '@/lib/deptMinutesDraft';
 import ShareItemDetail from '@/components/ShareItemDetail';
 import PreshareDetail from '@/components/PreshareDetail';
 import PreshareList from '@/components/PreshareList';
@@ -31,9 +39,15 @@ type ProgressItem = {
 //   false の間は中間報告の API も呼ばない。
 const SHOW_PROGRESS = false;
 
-// 中間報告の「直近の報告内容」カードだけは SHOW_PROGRESS と別に出す。
-// 提出状況（誰が出していないか）は止めたままで、報告の中身は全部門ぶん共有したいため。
-const SHOW_RECENT_PROGRESS = true;
+// 中間報告の「直近の報告内容」カードだけは SHOW_PROGRESS と別に出せる。
+// ★中間報告を左メニューから外したので、カードも止めている（古い報告が残り続けるため）。
+//   メニューに戻すときは、ここも true に戻す。
+const SHOW_RECENT_PROGRESS = false;
+
+// 直近の事前共有事項（会議AIの事前報告から集めた協議・決裁・報告）。
+// ★いまは部門会議の事前共有を優先して隠している。戻すときは true にするだけでよい
+//   （false の間は一覧の API も呼ばない）。
+const SHOW_SHARE_ITEMS = false;
 
 // クイックスタート（各画面への入口）。左メニューと同じ内容なので非表示にし、
 // その分を直近の議事録・事前共有事項に回している。再開するときは true に戻す。
@@ -103,7 +117,7 @@ export default function DashboardUI({
           fetch('/api/success').catch(() => null),
           fetch('/api/dept-minutes/list?scope=minutes').catch(() => null),
           fetch('/api/yoko-qa').catch(() => null),
-          fetch('/api/share-items').catch(() => null),
+          SHOW_SHARE_ITEMS ? fetch('/api/share-items').catch(() => null) : Promise.resolve(null),
           fetch('/api/dept-minutes/preshare').catch(() => null),
         ]);
         if (statusRes) {
@@ -223,7 +237,7 @@ export default function DashboardUI({
       {minutes.length === 0 ? (
         <p className="dash-empty">
           {loading ? '読み込み中…' : 'まだ保存された議事録はありません。'}
-          {!loading && <> <Link href="/dept-minutes">部門会議議事録</Link>から作れます。</>}
+          {!loading && <> <Link href="/dept-minutes">部門会議</Link>から作れます。</>}
         </p>
       ) : (
         <ul className="dm-meet-list">
@@ -300,7 +314,7 @@ export default function DashboardUI({
   const upcoming = upcomingPreshares(preshares, localDay());
   const preshareRest = upcoming.length - MAX_SHOWN_PRESHARE;
   const presharePanel = (
-    <div className="dash-panel full">
+    <div className="dash-panel">
       <h2>
         部門会議の事前共有
         <Link href="/dept-minutes" className="panel-more">事前共有する</Link>
@@ -311,7 +325,7 @@ export default function DashboardUI({
           {!loading && (
             <>
               {' '}
-              <Link href="/dept-minutes">部門会議議事録</Link>の「1 会議の情報」を入力して［事前共有で報告する］を押すと、ここに載ります。
+              <Link href="/dept-minutes">部門会議</Link>の「1 会議の情報・事前共有」を入力して［事前共有で報告する］を押すと、ここに載ります。
             </>
           )}
         </p>
@@ -325,7 +339,7 @@ export default function DashboardUI({
           />
           {preshareRest > 0 && (
             <p className="dept-items-note">
-              ほかに {preshareRest} 件あります。<Link href="/dept-minutes">部門会議議事録</Link>の画面ですべて見られます。
+              ほかに {preshareRest} 件あります。<Link href="/dept-minutes">部門会議</Link>の画面ですべて見られます。
             </p>
           )}
         </>
@@ -333,19 +347,33 @@ export default function DashboardUI({
     </div>
   );
 
-  // 事前共有の会議の議事録づくりを始める。会議情報を渡してから議事録の画面へ移る。
+  // 部門会議の画面へ、下書き（会議情報・議題）を渡してから移る。
   // この端末に作りかけの議事録（文字起こし・メモ・議事録）が残っていれば、消す前に確かめる。
-  function startFromPreshare(row: PreshareRow) {
-    const cur = readDraft();
-    if (cur?.preshareId !== row.id) {
-      if (
-        draftHasWork(cur)
-        && !confirm('この端末に作りかけの議事録があります。消して、この会議の議事録づくりを始めますか？')
-      ) return;
-      stashDraft(draftFromPreshare(row));
-    }
-    // 同じ会議を入力中なら、作りかけの内容を残したまま画面を開く。
+  function openInMinutes(d: MinutesDraft) {
+    if (draftHasWork(readDraft()) && !confirm('この端末に作りかけの議事録があります。消して、この会議の下書きを開きますか？')) return;
+    stashDraft(d);
     window.location.href = '/dept-minutes';
+  }
+
+  // 事前共有の会議の議事録づくりを始める。
+  function startFromPreshare(row: PreshareRow) {
+    // 同じ会議を入力中なら、作りかけの内容を残したまま画面を開く。
+    if (readDraft()?.preshareId === row.id) {
+      window.location.href = '/dept-minutes';
+      return;
+    }
+    openInMinutes({
+      ...draftFromPreshare(row),
+      notice: '事前共有の会議を読み込みました。手順2で音声を取り込んでください。議事録を保存すると、この事前共有に結び付きます。',
+    });
+  }
+
+  // 部門会議のループ：保存した議事録から、次回の会議の下書き（引き継ぎの議題つき）を作る。
+  function startNext(row: MinutesRow) {
+    openInMinutes({
+      ...draftForNext(row),
+      notice: '前回の議事録から、次回の会議情報と議題の下書きを作りました。開催日時と「今回の議題」を書き足して、［事前共有で報告する］を押してください。',
+    });
   }
 
   // 直近の中間報告（全部門）。
@@ -476,8 +504,7 @@ export default function DashboardUI({
           <h1>ダッシュボード</h1>
           <p>
             {campus}／{name} さん、おつかれさまです。
-            これからの部門会議の議題・直近の議事録・会議前に共有された協議事項・全部門の中間報告・
-            実施期間中の要項をまとめます。
+            これからの部門会議の議題（事前共有）・直近の議事録・実施期間中の要項をまとめます。
           </p>
         </div>
 
@@ -485,13 +512,14 @@ export default function DashboardUI({
 
         <div className="dash-grid">
           {SHOW_QUICKSTART && quickStart}
-          {/* 会議中に議題・レジュメを開くので、いちばん上に置く（今日の会議が先頭に来る） */}
-          {presharePanel}
-          {/* 直近の議事録と事前共有事項は、横幅いっぱいを2等分して並べる（毎日いちばん見る2つ） */}
+          {/* 部門会議の事前共有（左）と直近の議事録（右）を、横幅いっぱいを2等分して並べる。
+              会議前に議題を見て、会議のあとに議事録を見る（部門会議の行き来がひと目で分かる）。
+              直近の事前共有事項は SHOW_SHARE_ITEMS を true に戻すと、この下に出る。 */}
           <div className="dash-pair">
+            {presharePanel}
             {minutesPanel}
-            {sharePanel}
           </div>
+          {SHOW_SHARE_ITEMS && sharePanel}
           {SHOW_RECENT_PROGRESS && progressPanel}
           {yokoPanel}
           {successPanel}
@@ -507,6 +535,7 @@ export default function DashboardUI({
               stashDraft(draftFromRow(openMinutes));
               window.location.href = '/dept-minutes';
             }}
+            onNext={() => startNext(openMinutes)}
           />
         )}
         {openShare && (
