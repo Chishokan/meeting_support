@@ -1077,6 +1077,8 @@ button.primary:disabled { opacity: .5; cursor: default; }
   border: 1px solid #cfe0ee; border-radius: 10px;
 }
 .dm-share.done { background: #f1f8f4; border-color: #cfe6d9; }
+/* 保存済みの議事録を開いているとき（事前共有は出せないが、次の操作は案内する）。 */
+.dm-share.past { background: #f7f8fa; border-color: #dfe3e8; }
 .dm-share-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .dm-share-btn {
   flex: 0 0 auto; padding: 10px 20px; font-size: 14px; font-weight: 700; color: #fff;

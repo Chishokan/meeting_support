@@ -988,8 +988,12 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const hasWork = Boolean(transcript.trim() || memo.trim() || draft.trim());
   // 事前共有のあとで手順1を直したか（直したら「更新する」を押してもらう）。
   const shareDirty = Boolean(shareId) && metaKey(meta) !== shareSnap;
-  // 保存済みの議事録を直しているときは、会議はもう終わっているので事前共有の欄を出さない。
-  const showShare = !editingId || Boolean(shareId);
+  // 事前共有は「会議の前」のものなので、議事録の中身がまだ無いときに出す。
+  // ★以前は editingId（上書き保存のための議事録ID）で判断していたが、これは議事録を
+  //   保存したあとも残り、端末にも保存される。そのため事前共有をしていない会議を一度
+  //   保存すると、次に画面を開いたときもボタンが出ないままになっていた。
+  //   会議が終わったかどうかは議事録の中身で判断する（事前共有済みなら状態を出したいので常に出す）。
+  const showShare = Boolean(shareId) || !draft.trim();
   const upcoming = upcomingPreshares(preshares, localDay());
   const shownDecisions = decisions.filter((d) => (decFilter ? d.campus === decFilter : true));
   const shownMeetings = meetings.filter((m) => (decFilter ? m.campus === decFilter : true));
@@ -1086,6 +1090,22 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
 
             {/* 会議の前に手順1の内容を全部門へ出しておく。出席者はダッシュボードで
                 議題・レジュメを見ながら会議を進められる。 */}
+            {/* 出せないときに黙って消すと「ボタンが無くなった」と分からなくなるので、
+                理由と次にどうすればよいかを必ず出す。 */}
+            {!showShare && (
+              <div className="dm-share past">
+                <div className="dm-share-row">
+                  <button className="dm-share-btn" onClick={reset} disabled={generating || saving || recording}>
+                    新しい会議を始める
+                  </button>
+                  <span className="dm-share-text">
+                    いまは保存済みの議事録を開いています。会議はもう終わっているため、事前共有は出していません。
+                    次の会議の事前共有をするときは、左のボタンで新しい会議を始めてください。
+                  </span>
+                </div>
+              </div>
+            )}
+
             {showShare && (
               <div className={`dm-share ${shareId && !shareDirty ? 'done' : ''}`}>
                 <div className="dm-share-row">
