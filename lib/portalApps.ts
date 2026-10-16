@@ -40,14 +40,14 @@ export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'meeting',
     name: '会議DX',
-    desc: '会議AI・事前報告・議事録・中間報告など、会議の準備と振り返り',
+    desc: '部門会議（事前共有 → 録音 → 議事録 → 次回の事前共有）と、全体会議の数値報告・事前報告・振り返り',
     href: '/dashboard',
     status: 'ready',
   },
   {
     id: 'inquiry-board',
     name: '問合せ管理',
-    desc: '問い合わせを校舎ごとに登録し、体験・面談・入塾まで追いかける台帳',
+    desc: '問い合わせを校舎ごとに登録し、体験・面談・入塾まで追いかける台帳。台帳の内容をAIに聞くこともできる',
     href: '/inquiry-board',
     status: 'ready',
     canUse: canUseInquiryBoard,

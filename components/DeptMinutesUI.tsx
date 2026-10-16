@@ -3,16 +3,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SEGMENT_SECONDS, fmtDuration, splitAudioFile } from '@/lib/audioChunk';
 import { templateOutline } from '@/lib/deptMinutesTemplate';
-import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
+import { extractDecisions, extractMinutes, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
 import MinutesDetail from '@/components/MinutesDetail';
 import PreshareDetail from '@/components/PreshareDetail';
 import PreshareList from '@/components/PreshareList';
-import { DRAFT_KEY as STORE_KEY, draftFromPreshare, draftFromRow } from '@/lib/deptMinutesDraft';
+import {
+  DRAFT_KEY as STORE_KEY,
+  draftForNext,
+  draftFromPreshare,
+  draftFromRow,
+  type MinutesDraft,
+} from '@/lib/deptMinutesDraft';
 import {
   localDay,
   metaKey,
   missingForPreshare,
   upcomingPreshares,
+  type PreshareMeta,
   type PreshareRow,
 } from '@/lib/deptMinutesPreshare';
 import type { DecisionRow, MinutesRow } from '@/app/api/dept-minutes/list/route';
@@ -290,6 +297,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         if (typeof j?.draft === 'string') setDraft(j.draft);
         if (typeof j?.preshareId === 'string') setShareId(j.preshareId);
         if (typeof j?.preshareSnap === 'string') setShareSnap(j.preshareSnap);
+        // ダッシュボードから移ってきたときの案内（一度だけ出す。保存し直すときには書かないので消える）
+        if (typeof j?.notice === 'string' && j.notice) setShareMsg(j.notice);
       }
     } catch {}
     setHydrated(true);
@@ -814,34 +823,66 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     }
   }
 
-  // 事前共有された会議を、手順1に読み込んで議事録づくりを始める。
-  // 事前共有した端末と、会議で録音する端末が違うときに使う（入力し直さずに済み、議事録も結び付く）。
-  function loadPreshare(row: PreshareRow) {
-    if (recording || busyTranscribe || generating || saving) {
-      alert('録音・文字起こし・議事録の作成・保存が終わってから読み込んでください。');
-      return;
-    }
-    if (hasInput && !confirm('入力中の会議情報・文字起こし・議事録を消して、この事前共有の会議を読み込みますか？')) return;
-    const d = draftFromPreshare(row);
+  // 下書き（会議情報・議題）を手順1に読み込み、録音・議事録は空から始める。
+  // 事前共有からの読み込みと、議事録からの次回づくりで共通に使う。
+  function applyDraft(d: MinutesDraft, msg: string) {
     queueRef.current = [];
     setQueued(0);
     setFailedSegs(0);
     setLastRun(null);
     setMeta({ ...EMPTY_META, ...d.meta });
-    setTranscript('');
-    setMemo('');
-    setDraft('');
-    setEditingId('');
+    setTranscript(d.transcript);
+    setMemo(d.memo);
+    setDraft(d.draft);
+    setEditingId(d.editingId);
     setInstruction('');
     setShareId(d.preshareId ?? '');
     setShareSnap(d.preshareSnap ?? '');
     setOpenPreshare(null);
+    setOpenMeeting(null);
     setNote('');
     setWarn('');
     setErr('');
     setShareErr('');
-    setShareMsg('事前共有の会議を読み込みました。手順2で音声を取り込んでください。議事録を保存すると、この事前共有に結び付きます。');
+    setShareMsg(msg);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // 録音・文字起こし・作成・保存の途中で読み込むと、取り込み中の文字起こしが別の会議に混ざる。
+  function busyForLoad(): boolean {
+    if (recording || busyTranscribe || generating || saving) {
+      alert('録音・文字起こし・議事録の作成・保存が終わってから読み込んでください。');
+      return true;
+    }
+    return false;
+  }
+
+  // 事前共有された会議を、手順1に読み込んで議事録づくりを始める。
+  // 事前共有した端末と、会議で録音する端末が違うときに使う（入力し直さずに済み、議事録も結び付く）。
+  function loadPreshare(row: PreshareRow) {
+    if (busyForLoad()) return;
+    if (hasInput && !confirm('入力中の会議情報・文字起こし・議事録を消して、この事前共有の会議を読み込みますか？')) return;
+    applyDraft(
+      draftFromPreshare(row),
+      '事前共有の会議を読み込みました。手順2で音声を取り込んでください。議事録を保存すると、この事前共有に結び付きます。',
+    );
+  }
+
+  // 部門会議のループ：保存した議事録から次回の会議の下書きを作り、手順1に読み込む。
+  // 前回の決定事項・継続審議・ToDo などを議題に引き継ぐので、あとは今回の議題を足して事前共有するだけになる。
+  function startNext(prev: PreshareMeta & { minutes: string }) {
+    if (busyForLoad()) return;
+    if (
+      hasInput
+      && !confirm(
+        '次回の会議の下書きを作ります。いま開いている会議の入力（文字起こし・議事録の画面）は閉じます。\n'
+        + '保存済みの議事録はそのまま残ります（直しを保存していない場合は、先に保存してください）。',
+      )
+    ) return;
+    applyDraft(
+      draftForNext(prev),
+      '前回の議事録から、次回の会議情報と議題の下書きを作りました。開催日時と「今回の議題」を書き足して、［事前共有で報告する］を押してください。',
+    );
   }
 
   // ---- 保存 ----
@@ -942,10 +983,17 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     meta.title.trim() || meta.place.trim() || meta.attendees.trim() || meta.agenda.trim()
     || transcript.trim() || memo.trim() || draft.trim(),
   );
+  // 録音・メモ・議事録が残っているか（別の会議に混ざると困るもの）。
+  // 会議情報だけのとき（事前共有や次回の下書きを読み込んだ直後など）は「入力中の会議」として扱い、警告にはしない。
+  const hasWork = Boolean(transcript.trim() || memo.trim() || draft.trim());
   // 事前共有のあとで手順1を直したか（直したら「更新する」を押してもらう）。
   const shareDirty = Boolean(shareId) && metaKey(meta) !== shareSnap;
-  // 保存済みの議事録を直しているときは、会議はもう終わっているので事前共有の欄を出さない。
-  const showShare = !editingId || Boolean(shareId);
+  // 事前共有は「会議の前」のものなので、議事録の中身がまだ無いときに出す。
+  // ★以前は editingId（上書き保存のための議事録ID）で判断していたが、これは議事録を
+  //   保存したあとも残り、端末にも保存される。そのため事前共有をしていない会議を一度
+  //   保存すると、次に画面を開いたときもボタンが出ないままになっていた。
+  //   会議が終わったかどうかは議事録の中身で判断する（事前共有済みなら状態を出したいので常に出す）。
+  const showShare = Boolean(shareId) || !draft.trim();
   const upcoming = upcomingPreshares(preshares, localDay());
   const shownDecisions = decisions.filter((d) => (decFilter ? d.campus === decFilter : true));
   const shownMeetings = meetings.filter((m) => (decFilter ? m.campus === decFilter : true));
@@ -957,11 +1005,18 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   return (
     <div className="dm">
       <div className="page-head">
-        <h1>部門会議議事録</h1>
+        <h1>部門会議</h1>
         <p>
-          {campus}／{name} さん。会議を録音して文字起こしし、議事録テンプレートに沿って整えます。
-          内容を確認して保存すると、決定事項が全部門で見られるようになります。
+          {campus}／{name} さん。会議の前に議題を事前共有し、会議を録音して議事録にまとめ、
+          その議事録から次回の事前共有をつくります。保存した決定事項は全部門で見られます。
         </p>
+        {/* 部門会議のループ。押すとその手順へ移る。 */}
+        <ol className="dm-loop" aria-label="部門会議の流れ">
+          <li><a href="#dm-step-1">1 事前共有</a></li>
+          <li><a href="#dm-step-2">2 録音・取り込み</a></li>
+          <li><a href="#dm-step-3">3 議事録の確認・保存</a></li>
+          <li><a href="#dm-step-4">4 次回の事前共有へ</a></li>
+        </ol>
       </div>
 
       <div className="dm-body">
@@ -969,14 +1024,22 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           {/* 会議ごとに必ずここから始めてもらう。
               右上に置いていたときは気づかれず、前の会議の入力が残ったまま
               次の会議を書き足してしまうことがあったため、手順1のすぐ上に出している。 */}
-          <div className={`dm-start ${hasInput ? 'left' : ''}`}>
+          <div className={`dm-start ${hasWork ? 'left' : ''}`}>
             <div className="dm-start-text">
-              <strong>{hasInput ? '前の会議の内容が残っています' : 'まずはここから'}</strong>
+              <strong>
+                {hasWork
+                  ? '前の会議の内容が残っています'
+                  : hasInput
+                    ? `入力中の会議：${meta.title.trim() || '（会議名未入力）'}`
+                    : 'まずはここから'}
+              </strong>
               <span>
-                {hasInput
+                {hasWork
                   ? '別の会議を始めるときは、先に「新しい会議を始める」を押してください。'
                     + '会議情報・文字起こし・議事録をすべて消して、まっさらな状態にします。'
-                  : '新しい会議の状態です。このまま下の「1 会議の情報」から入力してください。'}
+                  : hasInput
+                    ? 'この会議の続きは、下の手順から進めてください。別の会議を始めるときは「新しい会議を始める」を押してください。'
+                    : '新しい会議の状態です。このまま下の「1 会議の情報・事前共有」から入力してください。'}
               </span>
             </div>
             <button className="dm-start-btn" onClick={reset} disabled={generating || saving || recording}>
@@ -985,8 +1048,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           </div>
 
           {/* ---------- 1. 会議情報 ---------- */}
-          <section className="dm-step">
-            <h2><span className="dm-num">1</span>会議の情報</h2>
+          <section className="dm-step" id="dm-step-1">
+            <h2><span className="dm-num">1</span>会議の情報・事前共有</h2>
             <div className="dm-fields">
               <label>
                 <span>会議名</span>
@@ -1027,6 +1090,22 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
 
             {/* 会議の前に手順1の内容を全部門へ出しておく。出席者はダッシュボードで
                 議題・レジュメを見ながら会議を進められる。 */}
+            {/* 出せないときに黙って消すと「ボタンが無くなった」と分からなくなるので、
+                理由と次にどうすればよいかを必ず出す。 */}
+            {!showShare && (
+              <div className="dm-share past">
+                <div className="dm-share-row">
+                  <button className="dm-share-btn" onClick={reset} disabled={generating || saving || recording}>
+                    新しい会議を始める
+                  </button>
+                  <span className="dm-share-text">
+                    いまは保存済みの議事録を開いています。会議はもう終わっているため、事前共有は出していません。
+                    次の会議の事前共有をするときは、左のボタンで新しい会議を始めてください。
+                  </span>
+                </div>
+              </div>
+            )}
+
             {showShare && (
               <div className={`dm-share ${shareId && !shareDirty ? 'done' : ''}`}>
                 <div className="dm-share-row">
@@ -1058,7 +1137,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           </section>
 
           {/* ---------- 2. 音声 → 文字起こし ---------- */}
-          <section className="dm-step">
+          <section className="dm-step" id="dm-step-2">
             <h2><span className="dm-num">2</span>会議の音声を取り込む</h2>
 
             {configured === false && (
@@ -1260,7 +1339,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           </section>
 
           {/* ---------- 3. 確認・保存 ---------- */}
-          <section className="dm-step">
+          <section className="dm-step" id="dm-step-3">
             <h2><span className="dm-num">3</span>内容を確認して保存</h2>
             {!draft && !generating ? (
               <p className="dm-hint">議事録を作成すると、ここに表示されます。そのまま手で直せます。</p>
@@ -1329,6 +1408,35 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
             {note && <p className="dm-note ok">{note}</p>}
             {warn && <p className="dm-note warn">{warn}</p>}
             {err && <p className="dm-note err">{err}</p>}
+          </section>
+
+          {/* ---------- 4. 次回の会議へ（部門会議のループ） ---------- */}
+          <section className="dm-step" id="dm-step-4">
+            <h2><span className="dm-num">4</span>次回の事前共有へ</h2>
+            {editingId && draft.trim() ? (
+              <>
+                <p className="dm-hint">
+                  この議事録から、次回の会議の下書きを作ります。会議名・場所・出席者はそのまま、
+                  開催日時は「■ 次回会議」に日付があれば入ります。議題には、前回話し合えなかった議題・
+                  決定事項の進捗確認・継続審議・ToDo・持ち越しを引き継ぎます。
+                </p>
+                <div className="dm-actions">
+                  <button
+                    className="dm-primary"
+                    onClick={() => startNext({ ...meta, minutes: extractMinutes(draft) })}
+                    disabled={generating || saving || recording}
+                  >
+                    次回の事前共有をつくる
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="dm-hint">
+                議事録を保存すると、その内容から次回の会議の下書き（前回の決定事項・継続審議・ToDo などを
+                引き継いだ議題）を作れます。前に保存した議事録からは、右の「保存済みの議事録」の［詳細］→
+                ［次回の事前共有をつくる］で作れます。
+              </p>
+            )}
           </section>
         </div>
 
@@ -1478,6 +1586,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           row={openMeeting}
           onClose={() => setOpenMeeting(null)}
           onEdit={() => startEdit(openMeeting)}
+          onNext={() => startNext(openMeeting)}
         />
       )}
       {/* 事前共有の詳細。いま入力中の会議なら、読み込み直す必要が無いので［この会議の議事録をつくる］を出さない。 */}

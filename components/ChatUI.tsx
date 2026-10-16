@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/core/sanitize';
 import { extractFinalBlock, isSubmitCommand } from '@/lib/reportSubmit';
@@ -15,8 +16,8 @@ const MODES: { id: Mode; label: string; title: string; desc: string; hint: strin
     id: 'meeting',
     label: '事前報告',
     title: '会議AI',
-    desc: '会議前の報告を、AIとの対話で「協議・報告・決裁」に整理します。',
-    hint: '事前報告をまとめましょう。下の入力欄に「会議の報告を始めたい」などと送るか、共有したいことを箇条書きで貼り付けてください。',
+    desc: '会議前の報告を、AIとの対話で「協議・報告・決裁」に整理します。最後に「報告完了」と送ると、会議ドキュメントへ自動で転記されます。',
+    hint: '事前報告をまとめましょう。下の入力欄に「会議の報告を始めたい」などと送るか、共有したいことを箇条書きで貼り付けてください。最後に「報告完了」と送ると、会議ドキュメントへ自動で保存されます。',
   },
   {
     id: 'monthly',
@@ -122,7 +123,8 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
   const [attachNote, setAttachNote] = useState('');
   const [mode, setMode] = useState<Mode>('meeting');
   // 「報告完了」での自動保存の状態（月次報告・講習の結果報告のみ）。
-  const [saveStatus, setSaveStatus] = useState<{ text: string; done: boolean } | null>(null);
+  // fallback：自動保存できなかったとき、手で転記する画面（/report）への案内を添える。
+  const [saveStatus, setSaveStatus] = useState<{ text: string; done: boolean; fallback?: boolean } | null>(null);
 
   async function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -245,6 +247,7 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
       if (res.ok && j?.ok) {
         const shared = Number(j?.success ?? 0);
         setSaveStatus({
+          // 事前報告も「報告完了」での保存で提出は終わり（貼り付け・LINE WORKS での完了報告は要らない）。
           text: `✓ 会議ドキュメントに保存しました。${shared > 0 ? `成功事例${shared}件を全体共有に登録しました。` : ''}これで報告は完了です。`,
           done: true,
         });
@@ -257,10 +260,11 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
             ? '保存できませんでした。転記先ドキュメントの連携（Apps Script）が未設定です。'
             : `保存に失敗しました（理由：${j?.reason ?? '不明'}）。もう一度「報告完了」と送ってください。`,
         done: false,
+        fallback: true,
       });
     } catch {
       savedBlocks.current.delete(block);
-      setSaveStatus({ text: '通信エラーで保存できませんでした。もう一度「報告完了」と送ってください。', done: false });
+      setSaveStatus({ text: '通信エラーで保存できませんでした。もう一度「報告完了」と送ってください。', done: false, fallback: true });
     }
   }
 
@@ -306,9 +310,9 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
         }
         return c;
       });
-      // 月次報告・講習の結果報告：「報告完了」と送って確定ブロックが出たら、そのまま保存する。
+      // 事前報告・月次報告・講習の結果報告：「報告完了」と送って確定ブロックが出たら、そのまま保存する。
       // 報告者が「報告完了」と送ったときに限る（AI が先走って囲みを出しても保存しない）。
-      if (mode !== 'meeting' && isSubmitCommand(t)) {
+      if (isSubmitCommand(t)) {
         const block = extractFinalBlock(stripRoleBleed(acc));
         if (block) void saveReport(block);
       }
@@ -390,7 +394,13 @@ export default function ChatUI({ name, campus }: { name: string; campus: string 
       </div>
 
       {saveStatus && (
-        <div className={`report-note progress-transfer in-chat ${saveStatus.done ? 'done' : ''}`}>{saveStatus.text}</div>
+        <div className={`report-note progress-transfer in-chat ${saveStatus.done ? 'done' : ''}`}>
+          {saveStatus.text}
+          {/* 何度送っても保存できないときの逃げ道。報告文（＝＝＝ の囲み）をコピーして手で転記する。 */}
+          {saveStatus.fallback && (
+            <> 続けて失敗する場合は、AIの報告文（＝＝＝ の行を含む）をコピーして<Link href="/report">手で転記する</Link>こともできます。</>
+          )}
+        </div>
       )}
 
       <div className="composer">

@@ -3,8 +3,7 @@
 // 部門会議の事前共有のカード一覧。ダッシュボードと「部門会議議事録」画面の両方で使う。
 // ★並べる順・出す範囲は lib/deptMinutesPreshare.ts の upcomingPreshares() で決める。
 
-import { shortDate, whenLabel, type PreshareRow, type PreshareView } from '@/lib/deptMinutesPreshare';
-import { summarizeSection } from '@/lib/deptMinutesParse';
+import { agendaPreview, shortDate, whenLabel, type PreshareRow, type PreshareView } from '@/lib/deptMinutesPreshare';
 
 export default function PreshareList({
   views,
@@ -25,7 +24,7 @@ export default function PreshareList({
       {views.map((v) => {
         const { row } = v;
         const when = whenLabel(v);
-        const agenda = summarizeSection(row.agenda, agendaLines);
+        const agenda = agendaPreview(row.agenda, agendaLines);
         const past = v.offset < 0;
         return (
           <li key={row.id || `${row.ts}-${row.title}`} className={`pre-item ${when === '今日' ? 'today' : ''} ${past ? 'past' : ''}`}>

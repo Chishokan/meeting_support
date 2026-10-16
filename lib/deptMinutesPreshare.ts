@@ -151,3 +151,136 @@ export function whenLabel(v: Pick<PreshareView, 'offset' | 'dated'>): string {
 export function shortDate(date: string): string {
   return date.trim().replace(/^\d{4}\s*[/\-.年]\s*/, '');
 }
+
+// ---- 議事録 → 次回の事前共有（部門会議のループ） ----
+// 保存した議事録から、次回の会議情報と議題の下書きを作る。
+// 引き継ぐのは「話し合えなかった議題」「決定事項（進捗確認）」「継続審議・保留」「ToDo」
+// 「次回会議の持ち越し・準備事項」。会議名・場所・出席者は前回と同じものを入れておく。
+// ★議事録の見出しは lib/deptMinutesTemplate.ts の MINUTES_SECTIONS と対になっている。
+//   見出しの切り出しは lib/deptMinutesDraft.ts の draftForNext() で行い、ここには文字列だけを渡す。
+
+export type CarryDecision = { title: string; owner: string; due: string };
+
+// 次回の議題の下書きの見出し。カードの要約（agendaPreview）もこれを目印にする。
+const CARRY_HEAD = 'からの引き継ぎ】';
+const CURRENT_HEAD = '【今回の議題】';
+
+export type NextAgendaInput = {
+  title: string; // 前回の会議名
+  date: string; // 前回の開催日時
+  agenda: string; // ■ 議題
+  decisions: CarryDecision[]; // ■ 決定事項
+  pending: string; // ■ 継続審議・保留
+  todos: string; // ■ ToDo（アクション項目）
+  next: string; // ■ 次回会議
+};
+
+// 中身の無い行（テンプレートのままの「（〜）」・該当なし・【要確認】だけ）か。
+function emptyValue(v: string): boolean {
+  const t = v.trim();
+  return !t || /^[（(].*[）)]$/.test(t) || /^(該当なし|特になし|なし|未定|空欄|【要確認】)$/.test(t);
+}
+
+// 「担当：池田 ／ 期限：」のように「／」で並んだ項目から、空の項目を落とす。
+// 区切りは全角の「／」だけ（半角の「/」は「10/21」のような日付に使われるため）。
+function dropEmptyFields(line: string): string {
+  return line
+    .split(/\s*／\s*/)
+    .filter((part) => {
+      const m = part.match(/^[^:：]{1,10}[:：]\s*(.*)$/);
+      return m ? !emptyValue(m[1]) : !emptyValue(part);
+    })
+    .join('／');
+}
+
+// 見出しの中身を、1行1件の引き継ぎ項目にする（箇条書きの記号・番号・チェック欄を落とす）。
+function itemsOf(section: string): string[] {
+  const out: string[] = [];
+  for (const raw of section.split('\n')) {
+    let line = raw.trim();
+    if (!line) continue;
+    // 済みの ToDo は引き継がない
+    if (/^[-*・]?\s*\[[xX✓]\]/.test(line)) continue;
+    line = line
+      .replace(/^[-*・•]\s*/, '')
+      .replace(/^\[\s?\]\s*/, '')
+      .replace(/^\d+[.．)、]\s*/, '')
+      .trim();
+    // 「持ち越す議題：〜」のような見出し付きの行は、中身が空なら落とす
+    const labeled = line.match(/^([^:：]{1,10})[:：]\s*(.*)$/);
+    if (labeled && emptyValue(labeled[2])) continue;
+    line = dropEmptyFields(line);
+    if (emptyValue(line)) continue;
+    out.push(line);
+  }
+  return out;
+}
+
+const DATE_IN_LINE = /(\d{4}\s*[/\-.年]\s*)?\d{1,2}\s*[/月]\s*\d{1,2}/;
+
+/** 議事録の「■ 次回会議」から次回の開催日時を読む（「日時：10/21 18:00〜」→「10/21 18:00〜」）。無ければ空文字。 */
+export function nextMeetingDate(next: string): string {
+  for (const raw of next.split('\n')) {
+    const line = raw.trim().replace(/^[-*・•]\s*/, '');
+    if (!DATE_IN_LINE.test(line) || line.includes('要確認')) continue;
+    const labeled = line.match(/^(?:次回)?(?:日時|日程|開催日時?)\s*[:：]\s*(.*)$/);
+    return (labeled ? labeled[1] : line).trim();
+  }
+  return '';
+}
+
+/** 前回の議事録から、次回の「予定していた議題・レジュメ」の下書きを作る。 */
+export function buildNextAgenda(input: NextAgendaInput): string {
+  const groups: { heading: string; items: string[] }[] = [
+    {
+      heading: '前回話し合えなかった議題',
+      items: itemsOf(input.agenda)
+        .filter((l) => /[（(]未実施[）)]/.test(l))
+        .map((l) => l.replace(/\s*[（(]未実施[）)]\s*/, '').trim()),
+    },
+    {
+      heading: '前回の決定事項の進捗確認',
+      items: input.decisions
+        .filter((d) => d.title.trim())
+        .map((d) => {
+          const meta = [d.owner && `担当：${d.owner}`, d.due && `期限：${d.due}`].filter(Boolean).join('／');
+          return meta ? `${d.title}（${meta}）` : d.title;
+        }),
+    },
+    { heading: '継続審議・保留', items: itemsOf(input.pending) },
+    { heading: 'ToDo の確認', items: itemsOf(input.todos) },
+    {
+      heading: '前回決めた持ち越し・準備事項',
+      // 開催日時の行は会議情報の「開催日時」に入れるので、ここには並べない
+      items: itemsOf(input.next).filter((l) => !(DATE_IN_LINE.test(l) && /^(?:次回)?(?:日時|日程|開催日時?)/.test(l))),
+    },
+  ].filter((g) => g.items.length > 0);
+
+  const from = [shortDate(input.date), input.title].filter(Boolean).join(' ');
+  const lines = [`【前回${from ? `（${from}）` : ''}からの引き継ぎ】`];
+  if (groups.length === 0) {
+    lines.push('引き継ぐ項目はありませんでした。');
+  } else {
+    groups.forEach((g, i) => {
+      lines.push(`${i + 1}. ${g.heading}`);
+      for (const it of g.items) lines.push(`   ・${it}`);
+    });
+  }
+  lines.push('', CURRENT_HEAD, '');
+  return lines.join('\n');
+}
+
+/**
+ * 事前共有のカードに出す議題の要約（先頭 max 行）。
+ * 次回の下書き（buildNextAgenda）から作った議題は、今回の議題を先に出し、
+ * 前回からの引き継ぎは「前回からの引き継ぎ N件」の1行にまとめる（見出しだけでカードが埋まらないように）。
+ */
+export function agendaPreview(agenda: string, max = 3): string[] {
+  const notHeading = (l: string) => !/^【.*】$/.test(l);
+  const at = agenda.indexOf(CURRENT_HEAD);
+  if (at < 0 || !agenda.slice(0, at).includes(CARRY_HEAD)) return itemsOf(agenda).filter(notHeading).slice(0, max);
+  const current = itemsOf(agenda.slice(at + CURRENT_HEAD.length)).filter(notHeading);
+  const carried = agenda.slice(0, at).split('\n').filter((l) => /^\s*・/.test(l)).length;
+  if (carried === 0) return current.slice(0, max);
+  return [...current.slice(0, max - 1), `前回からの引き継ぎ ${carried}件`];
+}
