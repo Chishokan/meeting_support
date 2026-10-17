@@ -101,6 +101,8 @@ figure img {
   border: 1px solid var(--shot-frame); border-radius: 10px; background: #fff;
 }
 figcaption { font-size: 13px; color: var(--muted); }
+.video video { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--shot-frame); background: #0e1520; }
+.print-only { display: none; }
 .fig-narrow img { max-width: 520px; }
 .fig-card img { max-width: 480px; }
 .side-by-side { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px; align-items: start; }
@@ -198,6 +200,8 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
   .w-side { width: 78mm; }
   a { color: var(--ink); text-decoration: none; }
   footer.end { display: none; }
+  .video { display: none; }
+  .print-only { display: block; color: var(--muted); }
 }
 </style>
 
@@ -319,6 +323,14 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
     <h2>部門会議の使い方</h2>
     <p>左メニューの「部門会議」を押して開きます。会議の前の準備から、議事録の保存、次の会議の準備までを1つの画面で行います。</p>
   </header>
+
+  <figure class="video">
+    <video controls preload="metadata" playsinline poster="video/poster.jpg" width="1920" height="1080">
+      <source src="video/dept-meeting.mp4" type="video/mp4">
+    </video>
+    <figcaption>動画で見る：部門会議の進め方（約3分。手順1 事前共有 → 手順2 録音 → 手順3 議事録 → 手順4 次回の事前共有）</figcaption>
+  </figure>
+  <p class="print-only">この章の手順1〜4の流れは、Web版のマニュアルで動画（約3分）でも見られます。</p>
 
   <section class="sec" id="s2-1">
     <h3><span class="no">2-1</span>部門会議の流れと画面</h3>
