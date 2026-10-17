@@ -36,9 +36,8 @@ const ONLY = (() => {
   return i >= 0 ? new Set(String(args[i + 1] || '').split(',').filter(Boolean)) : null;
 })();
 
-// 読み上げの指示。指示の部分は読まれず、本文だけが読まれる。
-// 聞き取り確認で指示まで読まれていると分かったら、指示なしで作り直す。
-const STYLE = '次の文章を、社内研修動画のナレーションとして、落ち着いた聞き取りやすい声で、少しゆっくり読み上げてください：\n';
+// 原稿だけを送る。「落ち着いた声で読み上げてください」のような指示を前に付けると、
+// gemini-3.8-flash-tts は指示まで読み上げてしまう（systemInstruction も受け付けない）。
 
 function keys() {
   const list = String(process.env.GEMINI_API_KEY || '').split(',').map((k) => k.trim()).filter(Boolean);
@@ -166,9 +165,9 @@ function wavSeconds(buf) {
   return len / bytesPerSec;
 }
 
-async function speak(model, text, withStyle) {
+async function speak(model, text) {
   const j = await call(model, {
-    contents: [{ parts: [{ text: (withStyle ? STYLE : '') + text }] }],
+    contents: [{ parts: [{ text }] }],
     generationConfig: {
       responseModalities: ['AUDIO'],
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } },
@@ -184,7 +183,8 @@ async function transcribe(wav) {
     contents: [{
       parts: [
         { inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } },
-        { text: 'この音声を、聞こえたとおりに日本語で書き起こしてください。書き起こした文だけを出力してください。' },
+        // 「聞こえたとおりに」だけだと、指示のように聞こえる部分を省いて書き起こすことがある
+        { text: 'この音声で話されている言葉を、最初から最後まで、一字一句そのまま日本語で書き起こしてください。指示のように聞こえる部分も含め、省略・要約・言い換えはしないでください。書き起こした文だけを出力してください。' },
       ],
     }],
   }, VERIFY_RPM);
@@ -216,34 +216,40 @@ async function main() {
     const wavPath = path.join(AUDIO, `${s.id}.wav`);
     const metaPath = path.join(AUDIO, `${s.id}.json`);
     const prev = existsSync(metaPath) ? JSON.parse(readFileSync(metaPath, 'utf8')) : null;
-    if (!FORCE && prev && prev.text === s.say && prev.voice === VOICE && existsSync(wavPath)) {
+    // style: true は、指示文ごと読み上げていた以前の作り方の音声。作り直す
+    if (!FORCE && prev && !prev.style && prev.text === s.say && prev.voice === VOICE && existsSync(wavPath)) {
       report.push(prev);
       continue;
     }
     console.log(`${s.id}：作成中…`);
     let wav; let meta;
-    for (const withStyle of [true, false]) {
-      wav = await speak(model, s.say, withStyle);
-      meta = { id: s.id, text: s.say, voice: VOICE, model, style: withStyle, sec: Number(wavSeconds(wav).toFixed(2)) };
-      if (!VERIFY) break;
-      const heard = await transcribe(wav);
-      meta.heard = heard;
-      meta.similarity = Number(similarity(s.say, heard).toFixed(2));
-      const lenRatio = norm(heard).length / Math.max(1, norm(s.say).length);
-      meta.ok = meta.similarity >= 0.55 && lenRatio > 0.7 && lenRatio < 1.4;
-      if (meta.ok) break;
-      console.log(`  聞き取り確認で食い違いがありました（一致度 ${meta.similarity}）。${withStyle ? '指示なしで作り直します' : 'このまま残します'}`);
+    for (let round = 1; round <= 2; round++) {
+      const w = await speak(model, s.say);
+      const m = { id: s.id, text: s.say, voice: VOICE, model, sec: Number(wavSeconds(w).toFixed(2)) };
+      // 1秒あたりの文字数。原稿にない言葉まで読んだり、途中で切れたりすると外れる
+      // （文字起こしは、そうした食い違いを言い直して書くことがあり、それだけでは見逃す）
+      m.cps = Number((norm(s.say).length / Math.max(0.1, m.sec)).toFixed(2));
+      m.ok = m.cps >= 2.4 && m.cps <= 8;
+      if (VERIFY) {
+        m.heard = await transcribe(w);
+        m.similarity = Number(similarity(s.say, m.heard).toFixed(2));
+        const lenRatio = norm(m.heard).length / Math.max(1, norm(s.say).length);
+        m.ok = m.ok && m.similarity >= 0.55 && lenRatio > 0.7 && lenRatio < 1.4;
+      }
+      if (!meta || (m.ok && !meta.ok) || (m.ok === meta.ok && (m.similarity || 0) > (meta.similarity || 0))) { wav = w; meta = m; }
+      if (m.ok) break;
+      console.log(`  食い違いがありました（${VERIFY ? `一致度 ${m.similarity}、` : ''}1秒あたり${m.cps}字）。${round === 1 ? 'もう一度作ります' : 'よいほうを残します'}`);
     }
     writeFileSync(wavPath, wav);
     writeFileSync(metaPath, JSON.stringify(meta, null, 1));
     report.push(meta);
     made += 1;
-    console.log(`  ${meta.sec}秒${VERIFY ? `／一致度 ${meta.similarity}` : ''}`);
+    console.log(`  ${meta.sec}秒／1秒あたり${meta.cps}字${VERIFY ? `／一致度 ${meta.similarity}` : ''}`);
   }
   const total = report.reduce((a, m) => a + (m.sec || 0), 0);
   const bad = report.filter((m) => m.ok === false);
   console.log(`\n${made}件を作成、${report.length}/${todo.length}件そろっています（読み上げ合計 ${total.toFixed(1)}秒）。`);
-  if (bad.length) console.log(`聞き取り確認で食い違いが残っています：${bad.map((m) => `${m.id}（${m.similarity}）`).join('、')}。audio/<id>.json の heard を見て、原稿の読み方を直してください。`);
+  if (bad.length) console.log(`聞き取り確認で食い違いが残っています：${bad.map((m) => `${m.id}（一致度 ${m.similarity}、1秒あたり${m.cps}字）`).join('、')}。audio/<id>.json の heard を見て、原稿の読み方を直してください。`);
 }
 
 main().catch((e) => {
