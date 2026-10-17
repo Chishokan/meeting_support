@@ -1,0 +1,648 @@
+<title>会議DX 操作マニュアル</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+/* 縦1段の手引き。画面の写真に付けた赤い番号と、本文の赤い番号を対応させて読む。 */
+:root {
+  --bg: #f4f6f8;
+  --paper: #ffffff;
+  --ink: #1c2430;
+  --muted: #5b6573;
+  --navy: #1f4e78;
+  --navy-soft: #e8f0f8;
+  --line: #dde2e8;
+  --mark: #e0262f;
+  --warn-bg: #fff5e6;
+  --warn-line: #d98a1c;
+  --shot-frame: #cfd6de;
+  --font: 'BIZ UDPGothic', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+    --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+    --shot-frame: #3a4553; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+  --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+  --shot-frame: #3a4553; color-scheme: dark;
+}
+
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font); font-size: 15.5px; line-height: 1.85;
+  font-variant-numeric: tabular-nums;
+}
+.page {
+  max-width: 880px; margin: 0 auto;
+  padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px;
+}
+.sheet {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+  padding: clamp(20px, 4vw, 40px); min-width: 0;
+}
+
+/* 表紙 */
+.cover { display: grid; gap: 18px; }
+.cover .org { font-size: 13px; letter-spacing: .12em; color: var(--muted); }
+.cover h1 { margin: 0; font-size: clamp(28px, 5vw, 40px); line-height: 1.3; text-wrap: balance; color: var(--navy); }
+.cover .lead { margin: 0; max-width: 40em; }
+.cover dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 18px; font-size: 14px; }
+.cover dt { color: var(--muted); }
+.cover dd { margin: 0; }
+.note-sample { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; margin: 0; }
+
+/* 目次 */
+.toc h2 { font-size: 18px; margin: 0 0 10px; }
+.toc ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 14px; }
+.toc > ol > li > a { font-weight: 700; }
+.toc ol ol { display: grid; gap: 2px; margin-top: 4px; padding-left: 1.2em; font-size: 14px; }
+.toc a { color: var(--ink); text-decoration: none; }
+.toc a:hover, .toc a:focus-visible { color: var(--navy); text-decoration: underline; }
+
+/* 見出し */
+.chapter { display: grid; gap: 22px; }
+.chapter > header { display: grid; gap: 6px; border-bottom: 3px solid var(--navy); padding-bottom: 12px; }
+.eyebrow { font-size: 13px; letter-spacing: .14em; color: var(--navy); font-weight: 700; }
+.chapter h2 { margin: 0; font-size: clamp(22px, 3.6vw, 28px); line-height: 1.35; text-wrap: balance; }
+.chapter > header p { margin: 0; color: var(--muted); }
+section.sec { display: grid; gap: 14px; min-width: 0; }
+section.sec + section.sec { border-top: 1px solid var(--line); padding-top: 24px; }
+h3 { margin: 0; font-size: 19px; line-height: 1.45; text-wrap: balance; display: flex; gap: 10px; align-items: baseline; }
+h3 .no { color: var(--navy); font-size: 15px; flex: none; }
+h4 { margin: 6px 0 0; font-size: 16px; }
+p { margin: 0; }
+a { color: var(--navy); }
+
+/* 画面写真の赤い番号と同じ形 */
+.n {
+  display: inline-grid; place-items: center; flex: none;
+  width: 1.6em; height: 1.6em; border-radius: 50%;
+  background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 1;
+  vertical-align: .05em;
+}
+.btn {
+  display: inline-block; padding: 0 .5em; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--navy-soft); color: var(--navy); font-weight: 700; font-size: .92em; line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* 写真 */
+figure { margin: 0; display: grid; gap: 8px; break-inside: avoid; min-width: 0; }
+figure img {
+  display: block; width: 100%; max-width: 100%; height: auto;
+  border: 1px solid var(--shot-frame); border-radius: 10px; background: #fff;
+}
+figcaption { font-size: 13px; color: var(--muted); }
+.fig-narrow img { max-width: 520px; }
+.side-by-side { display: grid; grid-template-columns: minmax(0, 250px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.phones { display: flex; flex-wrap: wrap; gap: 20px; }
+.phones figure { width: min(240px, 100%); }
+
+/* 番号の説明 */
+.legend { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.legend li { display: grid; grid-template-columns: 1.6em 1fr; gap: 10px; align-items: start; }
+.legend .n { margin-top: .2em; font-size: 13px; }
+.legend b { font-weight: 700; }
+
+/* 手順 */
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: st; display: grid; gap: 10px; }
+.steps > li { counter-increment: st; display: grid; grid-template-columns: 2em 1fr; gap: 8px; }
+.steps > li::before {
+  content: counter(st); width: 1.75em; height: 1.75em; border-radius: 6px; margin-top: .15em;
+  display: grid; place-items: center; background: var(--navy); color: var(--paper); font-weight: 700; font-size: 14px;
+}
+ul.plain { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
+
+/* 補足 */
+.box { border-radius: 10px; padding: 14px 18px; display: grid; gap: 6px; border: 1px solid var(--line); }
+.box > .box-title { font-weight: 700; font-size: 14px; letter-spacing: .04em; }
+.box.tip { background: var(--navy-soft); border-color: transparent; }
+.box.tip > .box-title { color: var(--navy); }
+.box.warn { background: var(--warn-bg); border-color: transparent; border-left: 4px solid var(--warn-line); }
+.box.warn > .box-title { color: var(--warn-line); }
+.box.recommend { border: 2px solid var(--navy); }
+.box.recommend > .box-title { color: var(--navy); font-size: 15px; }
+
+/* 流れ図 */
+.loop { display: grid; gap: 10px; }
+.loop ol { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.loop li {
+  position: relative; border: 1.5px solid var(--navy); border-radius: 10px; padding: 10px 12px;
+  display: grid; gap: 2px; background: var(--paper);
+}
+.loop li .k { font-size: 12px; color: var(--navy); font-weight: 700; letter-spacing: .08em; }
+.loop li .t { font-weight: 700; line-height: 1.4; }
+.loop li .d { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.loop li:not(:last-child)::after {
+  content: "→"; position: absolute; right: -10px; top: 50%; transform: translate(50%, -50%);
+  color: var(--navy); font-weight: 700; background: var(--paper); line-height: 1;
+}
+.loop .back {
+  border: 1.5px dashed var(--navy); border-radius: 10px; padding: 6px 12px; text-align: center;
+  color: var(--navy); font-weight: 700; font-size: 14px;
+}
+
+/* 表 */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+th { background: var(--navy-soft); color: var(--ink); font-weight: 700; }
+td.num { white-space: nowrap; font-weight: 700; }
+
+footer.end { text-align: center; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 680px) {
+  .side-by-side { grid-template-columns: 1fr; }
+  .side-by-side figure { max-width: 260px; }
+  .loop ol { grid-template-columns: 1fr 1fr; }
+  .loop li:nth-child(2)::after { content: none; }
+}
+@media (max-width: 420px) {
+  .loop ol { grid-template-columns: 1fr; }
+  .loop li::after { content: none !important; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+@media print {
+  :root { --bg: #fff; }
+  body { font-size: 10.5pt; line-height: 1.75; }
+  .page { max-width: none; padding: 0; gap: 0; }
+  .sheet { border: 0; border-radius: 0; padding: 0; }
+  .cover { min-height: 240mm; align-content: center; }
+  .toc, .chapter { break-before: page; }
+  section.sec { break-before: auto; }
+  .page, .cover, .chapter, section.sec, figure { display: block; }
+  .chapter > * + *, section.sec > * + * { margin-top: 12px; }
+  .chapter > header + * { margin-top: 18px; }
+  section.sec + section.sec { margin-top: 22px; }
+  .cover > * + * { margin-top: 14px; }
+  figcaption { margin-top: 4px; }
+  h3, h4 { break-after: avoid; }
+  figure, .box, .loop, table, .legend li { break-inside: avoid; }
+  figure img { max-height: 200mm; width: auto; max-width: 100%; }
+  .tall img { max-height: 120mm; }
+  a { color: var(--ink); text-decoration: none; }
+  footer.end { display: none; }
+}
+</style>
+
+<div class="page">
+
+<header class="sheet cover" id="top">
+  <div class="org">株式会社智翔館　社内向け</div>
+  <h1>会議DX 操作マニュアル</h1>
+  <p class="lead">会議DXアプリのうち、<b>メニュー画面</b>・<b>部門会議</b>・<b>要項QA</b>の使い方をまとめた手引きです。画面の写真に付けた赤い番号（<span class="n">1</span>）は、本文の同じ番号の説明に対応しています。</p>
+  <dl>
+    <dt>対象</dt><dd>全職員</dd>
+    <dt>アプリ</dt><dd>智翔館アプリ › 会議DX（バージョン v0.16.1 時点）</dd>
+    <dt>作成</dt><dd>2026年10月</dd>
+  </dl>
+  <p class="note-sample">※ 写真に写っている会議名・人名・数値は、説明のために用意した架空の例です。AIの回答や議事録の文面も例で、実際の文面は会議や質問の内容によって変わります。</p>
+</header>
+
+<nav class="sheet toc" aria-label="目次">
+  <h2>目次</h2>
+  <ol>
+    <li><a href="#ch1">第1章　メニュー画面</a>
+      <ol>
+        <li><a href="#s1-1">1-1　左メニュー</a></li>
+        <li><a href="#s1-2">1-2　ダッシュボード</a></li>
+        <li><a href="#s1-3">1-3　スマートフォンで使うとき</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch2">第2章　部門会議の使い方</a>
+      <ol>
+        <li><a href="#s2-1">2-1　部門会議の流れと画面</a></li>
+        <li><a href="#s2-2">2-2　会議を始める前に</a></li>
+        <li><a href="#s2-3">2-3　手順1　会議の情報を入れて事前共有する</a></li>
+        <li><a href="#s2-4">2-4　手順2　会議の音声を取り込む</a></li>
+        <li><a href="#s2-5">2-5　手順3　議事録を確認して保存する</a></li>
+        <li><a href="#s2-6">2-6　手順4　次回の事前共有をつくる</a></li>
+        <li><a href="#s2-7">2-7　右側の一覧を使う</a></li>
+        <li><a href="#s2-8">2-8　困ったとき</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch3">第3章　要項QAの使い方</a>
+      <ol>
+        <li><a href="#s3-1">3-1　画面の見方</a></li>
+        <li><a href="#s3-2">3-2　要項カードの見方</a></li>
+        <li><a href="#s3-3">3-3　質問する</a></li>
+        <li><a href="#s3-4">3-4　未確定の要項について</a></li>
+        <li><a href="#s3-5">3-5　上手な聞き方と注意</a></li>
+      </ol>
+    </li>
+  </ol>
+</nav>
+
+<!-- ============ 第1章 ============ -->
+<article class="sheet chapter" id="ch1">
+  <header>
+    <div class="eyebrow">第1章</div>
+    <h2>メニュー画面</h2>
+    <p>会議DXを開くと、画面の左にメニューが、右にダッシュボードが出ます。</p>
+  </header>
+
+  <section class="sec" id="s1-1">
+    <h3><span class="no">1-1</span>左メニュー</h3>
+    <p>使いたい画面の名前を押すと、その画面に切り替わります。いま開いている画面は水色で表示されます。</p>
+    <div class="side-by-side">
+      <figure class="tall">
+        <img src="images/01_sidebar.png" alt="会議DXの左メニュー。上から、メニューへ戻るリンク、ダッシュボード、部門会議、全体会議の3項目、要項QA、ご意見・不具合の報告、ログイン中の名前とログアウト" width="476" height="1600" loading="lazy">
+        <figcaption>図1　左メニュー</figcaption>
+      </figure>
+      <ol class="legend">
+        <li><span class="n">1</span><div><b>← メニューへ</b><br>智翔館アプリのメニュー（使うアプリを選ぶ画面）に戻ります。</div></li>
+        <li><span class="n">2</span><div><b>ダッシュボード</b><br>会議DXの最初の画面です。これからの部門会議・直近の議事録・実施中の要項がひと目で分かります（<a href="#s1-2">1-2</a>）。</div></li>
+        <li><span class="n">3</span><div><b>部門会議</b><br>会議の事前共有 → 録音 → 議事録 → 次回の事前共有、までを行います（<a href="#ch2">第2章</a>）。</div></li>
+        <li><span class="n">4</span><div><b>全体会議</b><br>全体会議の前後に使う画面です。<br>・<b>数値報告</b>：会議の前に、月次・講習期の数値を登録します。<br>・<b>会議AI</b>：会議の前に、事前報告・月次報告・講習の結果報告をAIと対話しながら作ります。<br>・<b>全体会議振り返り</b>：会議のあとに、感想・気づき・やると決めたことを残します。</div></li>
+        <li><span class="n">5</span><div><b>AIに聞く › 要項QA</b><br>講習会・イベントの申込方法・支払い・日程などを、確定した実施要項をもとにAIに聞けます（<a href="#ch3">第3章</a>）。</div></li>
+        <li><span class="n">6</span><div><b>ご意見・不具合の報告</b><br>アプリへの意見や、うまく動かないときの報告を送れます。</div></li>
+        <li><span class="n">7</span><div><b>ログイン中の部門と名前・ログアウト</b><br>自分の部門と名前が正しいか確認できます。共用のパソコンでは、使い終わったら<span class="btn">ログアウト</span>を押してください。一番下の「v0.16.1」はアプリのバージョンです。</div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="sec" id="s1-2">
+    <h3><span class="no">1-2</span>ダッシュボード</h3>
+    <p>全部門の部門会議と、いま使う要項をまとめて表示します。会議の前に議題を確認したり、ほかの部門で決まったことを見たりするときに使います。</p>
+    <figure>
+      <img src="images/02_dashboard_top.png" alt="ダッシュボードの上半分。左に部門会議の事前共有、右に直近の議事録" width="2086" height="1638" loading="lazy">
+      <figcaption>図2　ダッシュボード（上）</figcaption>
+    </figure>
+    <figure>
+      <img src="images/02_dashboard_bottom.png" alt="ダッシュボードの下半分。実施期間中の要項のカードと、成功事例" width="2048" height="1462" loading="lazy">
+      <figcaption>図3　ダッシュボード（下）</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>部門会議の事前共有</b><br>全部門の「これからの部門会議」です。開催日が近い順に並び、「今日」「3日後」のような印が付きます。<span class="btn">議題を見る</span>で議題・レジュメの全体を、<span class="btn">議事録をつくる</span>でその会議の議事録づくりを始められます（部門会議の画面に移ります）。議事録が保存された会議は、ここから外れて <span class="n">2</span> に移ります。</div></li>
+      <li><span class="n">2</span><div><b>直近の議事録</b><br>全部門の保存済みの議事録です。<span class="btn">詳細</span>で全文を読めます。右上の「すべて見る」で部門会議の画面に移ります。</div></li>
+      <li><span class="n">3</span><div><b>実施期間中の要項</b><br>実施中の要項と、30日以内に始まる要項のカードです。受講料と講座ごとの日程が出ます。詳しく知りたいときは「要項QAで聞く」から質問できます。</div></li>
+      <li><span class="n">4</span><div><b>成功事例（全部門）</b><br>会議AIの報告に書かれた成功事例が、全部門分たまっていきます。<span class="btn">成功事例を見る</span>で開きます。</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s1-3">
+    <h3><span class="no">1-3</span>スマートフォンで使うとき</h3>
+    <p>スマートフォンでは左メニューが隠れています。画面左上の <b>☰</b>（<span class="n">1</span>）を押すとメニューが開きます。メニューの外側（暗くなった部分）を押すと閉じます。</p>
+    <div class="phones">
+      <figure>
+        <img src="images/03_mobile_top.png" alt="スマートフォンで開いたダッシュボード。左上に三本線のメニューボタン" width="780" height="1560" loading="lazy">
+        <figcaption>図4　スマートフォンの画面</figcaption>
+      </figure>
+      <figure>
+        <img src="images/04_mobile_menu.png" alt="スマートフォンでメニューを開いたところ" width="780" height="1560" loading="lazy">
+        <figcaption>図5　☰ を押してメニューを開いたところ</figcaption>
+      </figure>
+    </div>
+  </section>
+</article>
+
+<!-- ============ 第2章 ============ -->
+<article class="sheet chapter" id="ch2">
+  <header>
+    <div class="eyebrow">第2章</div>
+    <h2>部門会議の使い方</h2>
+    <p>左メニューの「部門会議」を押して開きます。会議の前の準備から、議事録の保存、次の会議の準備までを1つの画面で行います。</p>
+  </header>
+
+  <section class="sec" id="s2-1">
+    <h3><span class="no">2-1</span>部門会議の流れと画面</h3>
+    <p>部門会議は、次の4つの手順をくり返します。手順4で作った下書きが、次の会議の手順1になります。</p>
+    <div class="loop" role="img" aria-label="部門会議の流れ：1 事前共有、2 録音・取り込み、3 議事録の確認・保存、4 次回の事前共有へ。4のあと次の会議の1へ戻る">
+      <ol>
+        <li><span class="k">手順1</span><span class="t">事前共有</span><span class="d">会議名・日時・議題を入れて全部門に共有</span></li>
+        <li><span class="k">手順2</span><span class="t">録音・取り込み</span><span class="d">会議の音声を文字にする</span></li>
+        <li><span class="k">手順3</span><span class="t">議事録の確認・保存</span><span class="d">AIが作った議事録を直して保存</span></li>
+        <li><span class="k">手順4</span><span class="t">次回の事前共有へ</span><span class="d">議事録から次の会議の下書きを作る</span></li>
+      </ol>
+      <div class="back">↻ 手順4のあとは、次の会議の手順1に戻ります</div>
+    </div>
+    <figure>
+      <img src="images/10_dm_overview.png" alt="部門会議の画面。上に手順のボタン、左に新しい会議を始めるボタンと手順1の入力欄、右にこれからの部門会議と保存済みの議事録" width="2086" height="1600" loading="lazy">
+      <figcaption>図6　部門会議の画面（開いたところ）</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>手順のボタン</b><br>押すと、画面の中のその手順の場所に移動します。</div></li>
+      <li><span class="n">2</span><div><b>まずはここから／新しい会議を始める</b><br>いまの入力の状態が出ます。別の会議を始めるときは、ここの<span class="btn">新しい会議を始める</span>を押します（<a href="#s2-2">2-2</a>）。</div></li>
+      <li><span class="n">3</span><div><b>手順1〜4の入力欄</b><br>上から順に、手順1・2・3・4と並んでいます。</div></li>
+      <li><span class="n">4</span><div><b>これからの部門会議</b><br>全部門の事前共有された会議です（<a href="#s2-7">2-7</a>）。</div></li>
+      <li><span class="n">5</span><div><b>保存済みの議事録</b><br>全部門の議事録と決定事項です（<a href="#s2-7">2-7</a>）。</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s2-2">
+    <h3><span class="no">2-2</span>会議を始める前に</h3>
+    <p>手順1のすぐ上の枠に「<b>前の会議の内容が残っています</b>」と出ているときは、前の会議の文字起こしや議事録が画面に残っています。そのまま書き足すと別の会議と混ざるので、先に<span class="btn">新しい会議を始める</span>を押して、まっさらな状態にしてください。</p>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <ul class="plain">
+        <li><span class="btn">新しい会議を始める</span>で消えるのは、この画面の入力中の内容だけです。保存済みの議事録は消えません。</li>
+        <li>入力中の内容は、同じ端末・同じブラウザなら、画面を閉じたり再読み込みしたりしても残っています。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec" id="s2-3">
+    <h3><span class="no">2-3</span>手順1　会議の情報を入れて事前共有する</h3>
+    <p>会議の前に行います。出席者は、ダッシュボードに載った議題を見ながら会議を進められます。</p>
+    <figure class="fig-narrow">
+      <img src="images/11_dm_step1.png" alt="手順1の入力欄。会議名・開催日時・場所・出席者・予定していた議題を入れ、事前共有で報告するボタンを押す" width="1296" height="1556" loading="lazy">
+      <figcaption>図7　手順1（入力したところ）</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><div><b>会議名・開催日時・場所・出席者</b>を入れます（<span class="n">1</span>）。開催日時は「2026/10/20 18:00〜19:30」のように、日付と時刻を入れてください。</div></li>
+      <li><div><b>予定していた議題</b>を入れます（<span class="n">2</span>）。1行に1件の箇条書きでも、会議のレジュメをそのまま貼り付けても構いません。</div></li>
+      <li><div><span class="btn">事前共有で報告する</span>を押します（<span class="n">3</span>）。</div></li>
+    </ol>
+    <figure>
+      <img src="images/12_dm_step1_shared.png" alt="事前共有のあと。ボタンが事前共有済みに変わり、右のこれからの部門会議に会議が載っている" width="2014" height="1760" loading="lazy">
+      <figcaption>図8　事前共有したあと</figcaption>
+    </figure>
+    <p>ボタンが<span class="btn">✓ 事前共有済み</span>に変わり（<span class="n">1</span>）、右の「これからの部門会議」とダッシュボードに会議が載ります（<span class="n">2</span>）。</p>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <ul class="plain">
+        <li>会議名・開催日時・議題の3つが入っていないと事前共有できません。足りないときは、ボタンの下に何が足りないかが出ます。</li>
+        <li>事前共有のあとで内容を直したときは、ボタンが<span class="btn">事前共有を更新する</span>に変わります。押すとダッシュボードにも反映されます。</li>
+        <li>議題を入れておくと、議事録の議題に「予定どおり」「予定外」「未実施」が付き、話し合えなかった議題が分かります。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec" id="s2-4">
+    <h3><span class="no">2-4</span>手順2　会議の音声を取り込む</h3>
+    <p>会議の音声を文字にします（文字起こし）。取り込み方は「その場で録音」「録音ファイルを添付」「文字起こしを貼り付け」の3つから選べます。</p>
+
+    <div class="box recommend">
+      <div class="box-title">おすすめ：録音ファイルを添付</div>
+      <p>会議はスマートフォンの録音アプリ（iPhoneの「ボイスメモ」など）で録音し、会議のあとにその音声ファイルを添付する方法をおすすめします。</p>
+      <ul class="plain">
+        <li>会議中にこの画面を開いておく必要がありません。</li>
+        <li>録音が手元に残るので、うまくいかなかったときもやり直せます。</li>
+      </ul>
+    </div>
+
+    <h4>録音ファイルを添付する</h4>
+    <figure class="fig-narrow">
+      <img src="images/13_dm_step2.png" alt="手順2。録音ファイルを添付のタブを選び、ファイルを選択ボタンで音声ファイルを選ぶ。下に議事録メモの欄" width="1296" height="1206" loading="lazy">
+      <figcaption>図9　手順2（録音ファイルを添付）</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><div><span class="btn">録音ファイルを添付</span>を押します（<span class="n">1</span>）。</div></li>
+      <li><div><span class="btn">ファイルを選択</span>を押して、会議の音声ファイル（mp3・m4a・wav など）を選びます（<span class="n">2</span>）。スマートフォンで録音した場合は、スマートフォンからそのまま選んでも、パソコンに送ってから選んでも構いません。</div></li>
+      <li><div>選ぶとすぐに文字起こしが始まります。終わるまで待ちます（下の「かかる時間の目安」）。</div></li>
+      <li><div>会議中に取ったメモがあれば、<b>議事録メモ</b>に貼り付けます（<span class="n">3</span>　任意。<a href="#memo">下の説明</a>）。</div></li>
+    </ol>
+
+    <figure>
+      <img src="images/14_dm_step2_progress.png" alt="文字起こしの途中。進み具合のバーと区間数、所要時間の目安の案内" width="2086" height="1100" loading="lazy">
+      <figcaption>図10　文字起こしの途中</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>進み具合</b><br>音声を約1分半ずつの区間に分けて、順番に文字にしていきます。いま何をしているか（音声を読み込んでいます・アップロード中・解析中・間隔をあけています）と、「4 / 40 区間」のように、いくつ終わったかが出ます。</div></li>
+      <li><span class="n">2</span><div><b>かかる時間の目安</b><br>ファイルを選んだ直後に「1時間00分の音声を40区間に分けて文字起こしします。…（目安 約5分）」のように出ます。</div></li>
+    </ol>
+
+    <h4>かかる時間の目安</h4>
+    <p>ファイルを選んでから文字起こしが終わるまでの目安です。混み合っているときは、これより長くかかることがあります。長い音声は、始めに「音声を読み込んでいます」と出て、読み込みに数十秒かかります。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">会議の長さ</th><th scope="col">文字起こしが終わるまで</th></tr></thead>
+        <tbody>
+          <tr><td>30分</td><td class="num">約3〜5分</td></tr>
+          <tr><td>1時間</td><td class="num">約5〜10分</td></tr>
+          <tr><td>1時間30分</td><td class="num">約8〜15分</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="box tip">
+      <div class="box-title">待っているあいだは、別の作業をしていて大丈夫です</div>
+      <p>文字起こしは、<b>このタブ（画面）を閉じなければ</b>進み続けます。ほかのタブやほかのアプリで別の作業をしていて構いません。終わると「文字起こし完了（○字）」に変わります。</p>
+      <p>「無料枠の上限に合わせて間隔をあけています（あと○秒）」と出ても、異常ではありません。そのままお待ちください。</p>
+    </div>
+    <div class="box warn">
+      <div class="box-title">注意</div>
+      <ul class="plain">
+        <li>終わる前に<b>タブを閉じる・再読み込みする・パソコンをスリープさせる</b>と、文字起こしが止まります。</li>
+        <li>スマートフォンで添付した場合は、ほかのアプリに切り替えると止まることがあります。終わるまで画面を開いたままにしてください。</li>
+      </ul>
+    </div>
+
+    <figure>
+      <img src="images/15_dm_step2_done.png" alt="文字起こしが終わったところ。文字起こし完了の表示、議事録メモ、議事録を作成ボタン" width="2086" height="1200" loading="lazy">
+      <figcaption>図11　文字起こしが終わったところ</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>文字起こし完了（○字）</b><br><span class="btn">文字起こしを確認</span>で中身を見られます。ふだんは直す必要はありません（議事録は手順3で直せます）。</div></li>
+      <li id="memo"><span class="n">2</span><div><b>議事録メモ（任意）</b><br>会議中に取ったメモを、箇条書き・断片のまま貼り付けます。数字・固有名詞・担当者名が録音と食い違うときは、メモのほうが使われます。録音が無い会議は、メモだけでも議事録を作れます。</div></li>
+      <li><span class="n">3</span><div><span class="btn">議事録を作成</span>を押すと、AIが議事録を作り、手順3に表示します。</div></li>
+    </ol>
+
+    <h4>そのほかの取り込み方</h4>
+    <ul class="plain">
+      <li><b>その場で録音</b>：会議の場でこの画面を開き、<span class="btn">● 録音を開始</span>を押します。会議が終わったら<span class="btn">■ 録音を終了</span>を押します。録音しながら約1分半ごとに文字起こしが進むので、会議が終わるころには文字起こしもほぼ終わっています。初めて使うときは、ブラウザのマイクの使用を「許可」してください。録音中に画面を閉じると録音が止まります。</li>
+      <li><b>文字起こしを貼り付け</b>：ほかのアプリで文字起こしした文章があるときに、そのまま貼り付けます。</li>
+    </ul>
+  </section>
+
+  <section class="sec" id="s2-5">
+    <h3><span class="no">2-5</span>手順3　議事録を確認して保存する</h3>
+    <figure>
+      <img src="images/16_dm_step3.png" alt="手順3。AIが作った議事録の欄、AIに直してほしいことを書く欄と修正を依頼ボタン、確認しました・保存するボタン" width="2086" height="1500" loading="lazy">
+      <figcaption>図12　手順3（AIが作った議事録）</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><div>AIが作った議事録を読みます（<span class="n">1</span>）。この欄で、そのまま書き直せます。<br>議事録のあとには「<b>会議の質チェック</b>」が付きます。話し合えなかった議題、担当や期限が決まっていない決定事項など、次の会議で気をつけたい点が書かれています。</div></li>
+      <li><div>AIに直してほしいことがあれば、下の欄に書いて<span class="btn">修正を依頼</span>を押します（<span class="n">2</span>）。例：「決定事項2の期限を10/28に」。⌘ / Ctrl ＋ Enter でも送れます。</div></li>
+      <li><div>内容を確認したら、<span class="btn">確認しました・保存する</span>を押します（<span class="n">3</span>）。</div></li>
+    </ol>
+    <figure>
+      <img src="images/17_dm_step3_saved.png" alt="保存したあと。保存しましたの表示と、手順4の次回の事前共有をつくるボタン" width="2086" height="700" loading="lazy">
+      <figcaption>図13　保存したあと</figcaption>
+    </figure>
+    <p>「保存しました（決定事項 ○ 件を全社共有に登録）」と出れば完了です（<span class="n">1</span>）。議事録の「■ 決定事項」が1件ずつ取り出され、全部門の決定事項の一覧に載ります。事前共有していた会議は、ダッシュボードの「部門会議の事前共有」から外れて「直近の議事録」に移ります。</p>
+    <div class="box warn">
+      <div class="box-title">保存の前に確認してください</div>
+      <ul class="plain">
+        <li>まだ決まっていないことが「決定事項」に入っていないか。決定事項は全部門に共有されます。</li>
+        <li>担当・期限が空欄のままの決定事項がないか。</li>
+      </ul>
+    </div>
+    <p><span class="btn">コピー</span>を押すと、議事録の全文をコピーできます。ほかの資料に貼るときに使います。</p>
+  </section>
+
+  <section class="sec" id="s2-6">
+    <h3><span class="no">2-6</span>手順4　次回の事前共有をつくる</h3>
+    <p>保存した議事録から、次の会議の下書きを作ります。図13の<span class="btn">次回の事前共有をつくる</span>（<span class="n">2</span>）を押し、確認が出たら「OK」を押します。</p>
+    <figure class="fig-narrow">
+      <img src="images/18_dm_step4_next.png" alt="次回の下書きが手順1に入ったところ。開催日時に次回の日付、議題に前回からの持ち越しが入っている" width="1296" height="1700" loading="lazy">
+      <figcaption>図14　次回の下書きが手順1に入ったところ</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>開催日時</b><br>議事録の「■ 次回会議」に書かれた日時が入ります。会議名・場所・出席者は前回と同じものが入ります。</div></li>
+      <li><span class="n">2</span><div><b>議題</b><br>前回話し合えなかった議題、決定事項の進み具合の確認、継続審議・保留、終わっていないToDo、持ち越しが入ります。今回話したい議題を書き足してください。</div></li>
+      <li><span class="n">3</span><div>内容を確かめたら<span class="btn">事前共有で報告する</span>を押します。ここからまた手順1（<a href="#s2-3">2-3</a>）の流れになります。</div></li>
+    </ol>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <p>前に保存した議事録からも次回の下書きを作れます。右の「保存済みの議事録」の<span class="btn">詳細</span>から<span class="btn">次回の事前共有をつくる</span>を押してください（<a href="#s2-7">2-7</a>）。</p>
+    </div>
+  </section>
+
+  <section class="sec" id="s2-7">
+    <h3><span class="no">2-7</span>右側の一覧を使う</h3>
+    <div class="side-by-side">
+      <figure class="tall">
+        <img src="images/19_dm_side.png" alt="画面右側。これからの部門会議と、保存済みの議事録（会議ごと・決定事項の切り替え、部門の絞り込み、詳細ボタン）" width="760" height="2400" loading="lazy">
+        <figcaption>図15　画面右側の一覧</figcaption>
+      </figure>
+      <ol class="legend">
+        <li><span class="n">1</span><div><b>これからの部門会議</b><br>全部門の事前共有された会議です。<span class="btn">議題を見る</span>で議題・レジュメ全体を読めます。</div></li>
+        <li><span class="n">2</span><div><b>会議ごと／決定事項</b><br>「会議ごと」は保存済みの議事録の一覧、「決定事項」は全部門で決まったことを1件ずつ（担当・期限つきで）並べた一覧です。</div></li>
+        <li><span class="n">3</span><div><b>部門の絞り込み</b><br>部門を選ぶと、その部門の議事録・決定事項だけを表示します。</div></li>
+        <li><span class="n">4</span><div><span class="btn">詳細</span><br>議事録の全文と会議の質チェックを開きます（図16）。</div></li>
+      </ol>
+    </div>
+
+    <h4>保存済みの議事録を直す・次回につなげる</h4>
+    <figure>
+      <img src="images/20_dm_minutes_detail.png" alt="議事録の詳細。下に次回の事前共有をつくるボタンと修正するボタン" width="2560" height="1720" loading="lazy">
+      <figcaption>図16　議事録の詳細</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><span class="btn">次回の事前共有をつくる</span><br>この議事録から次回の下書きを作り、手順1に入れます（<a href="#s2-6">2-6</a>）。</div></li>
+      <li><span class="n">2</span><div><span class="btn">修正する</span><br>議事録を手順3の欄に読み込みます。直して<span class="btn">確認しました・保存する</span>を押すと、元の議事録が上書きされます。</div></li>
+    </ol>
+
+    <h4>別の端末で続きをする</h4>
+    <p>事前共有はパソコンで行い、録音ファイルの添付はスマートフォンで行う、というように端末が変わるときは、続きの端末で「これからの部門会議」の<span class="btn">議題を見る</span>を押し、<span class="btn">この会議の議事録をつくる</span>（<span class="n">1</span>）を押します。会議の情報が手順1に読み込まれるので、手順2から続けられます。保存すると、事前共有した会議と議事録が結び付きます。ダッシュボードの<span class="btn">議事録をつくる</span>からも同じことができます。</p>
+    <figure>
+      <img src="images/21_dm_preshare_detail.png" alt="事前共有の詳細。予定している議題と、この会議の議事録をつくるボタン" width="2560" height="1720" loading="lazy">
+      <figcaption>図17　事前共有の詳細（議題を見る）</figcaption>
+    </figure>
+  </section>
+
+  <section class="sec" id="s2-8">
+    <h3><span class="no">2-8</span>困ったとき</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">こんなとき</th><th scope="col">どうする</th></tr></thead>
+        <tbody>
+          <tr><td>「○○を入れてから事前共有してください」と出る</td><td>会議名・開催日時・議題の3つを入れてから、もう一度押してください。</td></tr>
+          <tr><td>「無料枠の上限に合わせて間隔をあけています」と出たまま進みが遅い</td><td>異常ではありません。区間ごとに間隔をあけて送っています。タブを閉じずにお待ちください。</td></tr>
+          <tr><td>「○区間は文字にできませんでした」と黄色で出る</td><td>その部分は議事録に入りません。足りないところを議事録メモに書き足してから<span class="btn">議事録を作成</span>を押してください。</td></tr>
+          <tr><td>「文字起こしできませんでした」と赤で出る</td><td>表示された理由を確認し、時間をおいてもう一度試してください。「1日あたりの利用枠を使い切りました」と出たときは、日付が変わると使えるようになります。急ぐときは、ほかのアプリで文字起こしした文章を「文字起こしを貼り付け」から入れてください。</td></tr>
+          <tr><td>「この音声ファイルを読み込めませんでした」と出る</td><td>mp3・m4a・wav などの音声ファイルを選んでください。</td></tr>
+          <tr><td>「マイクを使えませんでした」と出る</td><td>ブラウザでマイクの使用を許可してください。うまくいかないときは、録音アプリで録音して「録音ファイルを添付」を使ってください。</td></tr>
+          <tr><td>前の会議の内容が残っている</td><td><span class="btn">新しい会議を始める</span>を押してから入力してください（<a href="#s2-2">2-2</a>）。</td></tr>
+          <tr><td>「保存に失敗しました」と出る</td><td>議事録は画面に残っています。時間をおいてもう一度<span class="btn">確認しました・保存する</span>を押してください。念のため<span class="btn">コピー</span>で控えを取っておくと安心です。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>解決しないときは、左メニューの「ご意見・不具合の報告」から、出ていた表示と一緒に送ってください。</p>
+  </section>
+</article>
+
+<!-- ============ 第3章 ============ -->
+<article class="sheet chapter" id="ch3">
+  <header>
+    <div class="eyebrow">第3章</div>
+    <h2>要項QAの使い方</h2>
+    <p>左メニューの「要項QA」を押して開きます。講習会・イベントの申込方法・申込期限・受講料・支払い方法・日程・対象などを、確定した実施要項をもとにAIが答えます。保護者や生徒に聞かれたときに、その場で確認するために使います。</p>
+  </header>
+
+  <section class="sec" id="s3-1">
+    <h3><span class="no">3-1</span>画面の見方</h3>
+    <figure>
+      <img src="images/30_yq_top.png" alt="要項QAの画面の上側。実施中・まもなく実施の要項のカードが並ぶ" width="2086" height="1800" loading="lazy">
+      <figcaption>図18　要項QA（画面の上側）</figcaption>
+    </figure>
+    <figure>
+      <img src="images/30b_yq_bottom.png" alt="要項QAの画面の下側。回答に使える要項、未確定の要項、質問の例、質問の入力欄" width="2086" height="822" loading="lazy">
+      <figcaption>図19　要項QA（画面の下側）</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>実施中・まもなく実施の要項</b><br>実施中の要項と、30日以内に始まる要項がカードで並びます（<a href="#s3-2">3-2</a>）。</div></li>
+      <li><span class="n">2</span><div><b>回答に使える要項</b><br>押すと、AIが回答に使う確定済みの要項の一覧が開きます。終わった講習の要項も含まれるので、過去の要項についても質問できます。</div></li>
+      <li><span class="n">3</span><div><b>未確定の要項</b><br>まだ内容が確定していない要項です。AIはこれらには答えません（<a href="#s3-4">3-4</a>）。</div></li>
+      <li><span class="n">4</span><div><b>質問の例</b><br>押すと、その文のまま質問できます。最初の質問の前だけ表示されます。</div></li>
+      <li><span class="n">5</span><div><b>質問の入力欄</b><br>聞きたいことを書いて<span class="btn">質問</span>を押します（<a href="#s3-3">3-3</a>）。</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s3-2">
+    <h3><span class="no">3-2</span>要項カードの見方</h3>
+    <div class="side-by-side">
+      <figure>
+        <img src="images/31_yq_card.png" alt="要項カード1枚。状態の印、要項名、受講料、講座ごとの日程と受講料" width="1120" height="1236" loading="lazy">
+        <figcaption>図20　要項カード</figcaption>
+      </figure>
+      <ol class="legend">
+        <li><span class="n">1</span><div><b>状態・対象・期間</b><br>「実施中」「あと○日で開始」「本日開始」の印と、対象学年・実施期間です。</div></li>
+        <li><span class="n">2</span><div><b>要項名</b></div></li>
+        <li><span class="n">3</span><div><b>受講料（要項全体）</b><br>要項全体に共通する受講料です。</div></li>
+        <li><span class="n">4</span><div><b>講座ごとの日程と受講料</b><br>講座ごとに、日程と塾生・一般生それぞれの受講料が並びます。</div></li>
+      </ol>
+    </div>
+    <p>カードには、よく聞かれる「どの講座が・いつから・いくらで」だけを載せています。申込方法・会場・持ち物などは、下の入力欄から質問してください。ダッシュボードのカードでは講座が3件までしか出ず、残りは「ほか○講座」と表示されます。</p>
+  </section>
+
+  <section class="sec" id="s3-3">
+    <h3><span class="no">3-3</span>質問する</h3>
+    <ol class="steps">
+      <li><div>画面下の入力欄に、聞きたいことを書きます（例：「秋の定期テスト対策の、一般生の申込方法と期限は？」）。</div></li>
+      <li><div><span class="btn">質問</span>を押します。⌘ / Ctrl ＋ Enter でも送れます。</div></li>
+      <li><div>回答が表示されます。続けて質問すると、前のやり取りをふまえて答えます。</div></li>
+    </ol>
+    <figure>
+      <img src="images/33_yq_answer.png" alt="質問と回答の例。結論、申込方法、申込期限、補足、出典の順に表示されている" width="2086" height="1492" loading="lazy">
+      <figcaption>図21　質問と回答の例</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>質問</b></div></li>
+      <li><span class="n">2</span><div><b>回答</b><br>はじめに結論を1〜3行で答え、そのあとに詳しい条件を書きます。塾生と一般生で扱いが違う項目は、両方を分けて書きます。最後に、どの要項をもとにしたか（<b>出典</b>）が付きます。</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s3-4">
+    <h3><span class="no">3-4</span>未確定の要項について</h3>
+    <figure>
+      <img src="images/32_yq_pending.png" alt="未確定の要項を開いたところ。説明文と要項名の一覧" width="2086" height="342" loading="lazy">
+      <figcaption>図22　未確定の要項を開いたところ</figcaption>
+    </figure>
+    <p>案が複数あったり編集中だったりする要項は、受講料や期限を誤って伝えないよう、内容をAIに渡していません（<span class="n">1</span>）。これらについて聞くと、AIは「まだ確定していないため回答できません」と答えます。要項の担当者に確認してください。</p>
+  </section>
+
+  <section class="sec" id="s3-5">
+    <h3><span class="no">3-5</span>上手な聞き方と注意</h3>
+    <h4>上手な聞き方</h4>
+    <ul class="plain">
+      <li><b>講座名・学年・校舎を入れる</b>：「申込期限は？」より「中3の秋の定期テスト対策（大野校）の申込期限は？」のほうが、確実に答えられます。</li>
+      <li><b>塾生か一般生かを入れる</b>：申込の要否や支払い方法は、塾生と一般生で違うことがあります。</li>
+      <li><b>1回に1つのことを聞く</b>：答えが長くなりすぎず、読み違いが減ります。</li>
+    </ul>
+    <h4>注意</h4>
+    <div class="box warn">
+      <div class="box-title">保護者に伝える前に</div>
+      <ul class="plain">
+        <li>AIが答えるのは、<b>確定済みの要項に書いてあることだけ</b>です。要項に書かれていないことは「その要項には記載がありません」と答え、推測では答えません。</li>
+        <li>金額・日付・期限を保護者に伝えるときは、念のため要項の本文でも確認してください。</li>
+        <li>ほかの画面に移ったり、ページを再読み込みしたりすると、それまでのやり取りは消えます。</li>
+        <li>探している要項が「回答に使える要項」に無い、内容が古いと感じたときは、要項の担当者に連絡してください。</li>
+      </ul>
+    </div>
+  </section>
+</article>
+
+<footer class="end"><a href="#top">↑ 表紙へ戻る</a></footer>
+
+</div>
