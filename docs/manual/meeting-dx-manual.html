@@ -102,7 +102,10 @@ figure img {
 }
 figcaption { font-size: 13px; color: var(--muted); }
 .fig-narrow img { max-width: 520px; }
-.side-by-side { display: grid; grid-template-columns: minmax(0, 250px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.fig-card img { max-width: 480px; }
+.side-by-side { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px; align-items: start; }
+.w-sidebar { width: 238px; }
+.w-side { width: 340px; }
 .phones { display: flex; flex-wrap: wrap; gap: 20px; }
 .phones figure { width: min(240px, 100%); }
 
@@ -160,8 +163,8 @@ td.num { white-space: nowrap; font-weight: 700; }
 footer.end { text-align: center; color: var(--muted); font-size: 13px; }
 
 @media (max-width: 680px) {
-  .side-by-side { grid-template-columns: 1fr; }
-  .side-by-side figure { max-width: 260px; }
+  .side-by-side { grid-template-columns: minmax(0, 1fr); }
+  .w-sidebar, .w-side { width: auto; max-width: min(340px, 100%); }
   .loop ol { grid-template-columns: 1fr 1fr; }
   .loop li:nth-child(2)::after { content: none; }
 }
@@ -188,7 +191,11 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
   h3, h4 { break-after: avoid; }
   figure, .box, .loop, table, .legend li { break-inside: avoid; }
   figure img { max-height: 200mm; width: auto; max-width: 100%; }
-  .tall img { max-height: 120mm; }
+  .side-by-side { display: flow-root; }
+  .side-by-side > figure { float: left; margin: 0 8mm 4mm 0; }
+  .side-by-side > figure img { width: 100%; max-height: none; }
+  .w-sidebar { width: 60mm; }
+  .w-side { width: 78mm; }
   a { color: var(--ink); text-decoration: none; }
   footer.end { display: none; }
 }
@@ -254,7 +261,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
     <h3><span class="no">1-1</span>左メニュー</h3>
     <p>使いたい画面の名前を押すと、その画面に切り替わります。いま開いている画面は水色で表示されます。</p>
     <div class="side-by-side">
-      <figure class="tall">
+      <figure class="w-sidebar">
         <img src="images/01_sidebar.png" alt="会議DXの左メニュー。上から、メニューへ戻るリンク、ダッシュボード、部門会議、全体会議の3項目、要項QA、ご意見・不具合の報告、ログイン中の名前とログアウト" width="476" height="1600" loading="lazy">
         <figcaption>図1　左メニュー</figcaption>
       </figure>
@@ -501,7 +508,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
   <section class="sec" id="s2-7">
     <h3><span class="no">2-7</span>右側の一覧を使う</h3>
     <div class="side-by-side">
-      <figure class="tall">
+      <figure class="w-side">
         <img src="images/19_dm_side.png" alt="画面右側。これからの部門会議と、保存済みの議事録（会議ごと・決定事項の切り替え、部門の絞り込み、詳細ボタン）" width="760" height="2400" loading="lazy">
         <figcaption>図15　画面右側の一覧</figcaption>
       </figure>
@@ -581,18 +588,16 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
 
   <section class="sec" id="s3-2">
     <h3><span class="no">3-2</span>要項カードの見方</h3>
-    <div class="side-by-side">
-      <figure>
-        <img src="images/31_yq_card.png" alt="要項カード1枚。状態の印、要項名、受講料、講座ごとの日程と受講料" width="1120" height="1236" loading="lazy">
-        <figcaption>図20　要項カード</figcaption>
-      </figure>
-      <ol class="legend">
-        <li><span class="n">1</span><div><b>状態・対象・期間</b><br>「実施中」「あと○日で開始」「本日開始」の印と、対象学年・実施期間です。</div></li>
-        <li><span class="n">2</span><div><b>要項名</b></div></li>
-        <li><span class="n">3</span><div><b>受講料（要項全体）</b><br>要項全体に共通する受講料です。</div></li>
-        <li><span class="n">4</span><div><b>講座ごとの日程と受講料</b><br>講座ごとに、日程と塾生・一般生それぞれの受講料が並びます。</div></li>
-      </ol>
-    </div>
+    <figure class="fig-card">
+      <img src="images/31_yq_card.png" alt="要項カード1枚。状態の印、要項名、受講料、講座ごとの日程と受講料" width="1120" height="1236" loading="lazy">
+      <figcaption>図20　要項カード</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>状態・対象・期間</b><br>「実施中」「あと○日で開始」「本日開始」の印と、対象学年・実施期間です。</div></li>
+      <li><span class="n">2</span><div><b>要項名</b></div></li>
+      <li><span class="n">3</span><div><b>受講料（要項全体）</b><br>要項全体に共通する受講料です。</div></li>
+      <li><span class="n">4</span><div><b>講座ごとの日程と受講料</b><br>講座ごとに、日程と塾生・一般生それぞれの受講料が並びます。</div></li>
+    </ol>
     <p>カードには、よく聞かれる「どの講座が・いつから・いくらで」だけを載せています。申込方法・会場・持ち物などは、下の入力欄から質問してください。ダッシュボードのカードでは講座が3件までしか出ず、残りは「ほか○講座」と表示されます。</p>
   </section>
 
