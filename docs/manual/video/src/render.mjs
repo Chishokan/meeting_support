@@ -125,15 +125,17 @@ if (!SILENT) {
   audioFilter = ['-af', 'loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000', '-ac', '2'];
 }
 
+// Web 版マニュアル（Artifact）に載せられる1ファイルは15MBまで。ナレーション入り（4分半ほど）で14MBを切るよう、
+// 画質は crf 24、音声は 96k にしている（crf 20 との違いは、静止したコマの細かい字でも見分けられない）
 const mp4 = path.join(OUT, 'dept-meeting.mp4');
 ff([
   '-f', 'concat', '-safe', '0', '-i', path.join(OUT, 'frames.txt'),
   ...audioIn,
   '-map', '0:v', '-map', '1:a',
   '-vf', `fps=${FPS},format=yuv420p`,
-  '-c:v', 'libx264', '-preset', 'slow', '-crf', '20', '-tune', 'stillimage',
+  '-c:v', 'libx264', '-preset', 'slow', '-crf', '24', '-tune', 'stillimage',
   ...audioFilter,
-  '-c:a', 'aac', '-b:a', SILENT ? '64k' : '128k', '-shortest',
+  '-c:a', 'aac', '-b:a', SILENT ? '64k' : '96k', '-shortest',
   '-movflags', '+faststart',
   mp4,
 ]);
