@@ -9,6 +9,7 @@ type NavGroup = { title?: string; items: NavItem[] };
 
 // 左メニュー。会議DXの基本は「部門会議」（事前共有 → 録音 → 議事録 → 次回の事前共有）なので、
 // ダッシュボードのすぐ下に置く。全体会議で使うものは見出しの下にまとめる。
+// 要項QAと「ご意見・不具合の報告」はヘルプデスク（総合メニューのアプリ・/helpdesk）へ移した。
 // ★hidden: true はメニューに出さないだけで、画面は URL で開ける。戻すときは hidden を外す。
 const NAV: NavGroup[] = [
   {
@@ -28,20 +29,11 @@ const NAV: NavGroup[] = [
       { href: '/progress', label: '中間報告', desc: '次の会議まで｜決議事項の進捗', hidden: true },
     ],
   },
-  {
-    title: 'AIに聞く',
-    items: [
-      { href: '/yoko-qa', label: '要項QA', desc: '申込方法・支払い・日程を要項から確認' },
-    ],
-  },
 ];
 
-// アプリそのものへの意見・不具合の報告。業務のメニューと混ざらないよう、下のほうに置く。
-const FEEDBACK: NavItem = { href: '/inquiry', label: 'ご意見・不具合の報告' };
+const ALL_ITEMS: NavItem[] = NAV.flatMap((g) => g.items);
 
-const ALL_ITEMS: NavItem[] = [...NAV.flatMap((g) => g.items), FEEDBACK];
-
-// 前方一致だけだと /inquiry が /inquiry-qa にも一致してしまうので、
+// 前方一致だけだと、頭が同じ別の画面（/report と /report-xxx など）までアクティブになるので、
 // 完全一致か「その配下のパス」だけをアクティブとみなす。
 function isActive(pathname: string | null, href: string): boolean {
   if (!pathname) return false;
@@ -106,13 +98,6 @@ export default function Sidebar({ name, campus }: { name: string; campus: string
         </nav>
 
         <div className="sidebar-foot">
-          <Link
-            href={FEEDBACK.href}
-            className={`sidebar-feedback ${isActive(pathname, FEEDBACK.href) ? 'active' : ''}`}
-            onClick={() => setOpen(false)}
-          >
-            {FEEDBACK.label}
-          </Link>
           <div className="sidebar-user">
             <div className="user-campus">{campus}</div>
             <div className="user-name">{name} さん</div>

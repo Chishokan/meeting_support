@@ -19,7 +19,8 @@
   - 本日の日付と期（5月始まり・4月締め）は実行時に Asia/Tokyo で算出する。定数で持たない
   - 〔要確認〕と書かれた箇所は未確定。裏取りができ次第そこだけ差し替える
 - 左メニュー（会議DX）: components/Sidebar.tsx
-  - ダッシュボード・部門会議 ／ 全体会議（数値報告・会議AI・全体会議振り返り）／ AIに聞く（要項QA）／ 下に「ご意見・不具合の報告」
+  - ダッシュボード・部門会議 ／ 全体会議（数値報告・会議AI・全体会議振り返り）
+  - 要項QAと「ご意見・不具合の報告」は、総合メニューのアプリ「ヘルプデスク」（/helpdesk）へ移した（下の「ヘルプデスク」の節）
   - 「報告の転記」（/report）と「中間報告」（/progress）は hidden: true でメニューから外している（画面は URL で開ける）。戻すときは hidden を外す
   - ダッシュボードの「直近の事前共有事項」「直近の中間報告」も止めている（components/DashboardUI.tsx の SHOW_SHARE_ITEMS / SHOW_RECENT_PROGRESS を true に戻すと出る）
 - 会話の進め方（プロンプト）: lib/systemPrompt.ts（会議AI「事前報告」モード）
@@ -213,7 +214,7 @@ WordPress 側の設定（Contact Form 7 の場合。フォームごとに設定�
 ## 問い合わせQA（小中等部 問合せ管理）
 小中等部の問合せ管理を読み、各校舎の状況を AI が答える（問合せ管理アプリの「AIに聞く」・`/inquiry-board/qa`。テスト中）。
 旧 URL の `/inquiry-qa` は `/inquiry-board/qa` へ転送する。
-職員からのアプリへの意見・不具合の報告（会議DXの左メニュー下「ご意見・不具合の報告」）とは別物。
+職員からのアプリへの意見・不具合の報告（ヘルプデスクの「ご意見・不具合の報告」）とは別物。
 
 読む先は **問合せ管理アプリの台帳「問合せ台帳」を優先**し、台帳が空のあいだは旧スプレッドシート
 （INQUIRY_BOARD_ID）を校舎タブごとに読む（apps_script/Code.gs の listInquiryBoard_）。
@@ -353,11 +354,25 @@ WAV は圧縮しないので通信量は増える（1時間の会議でおよそ
 `app/api/dept-minutes/transcribe/route.ts` の実行時間上限に収まるか必ず確認すること
 （録音の区切りは `components/DeptMinutesUI.tsx` で `SEGMENT_SECONDS` に合わせてある）。
 
+## ヘルプデスク（要項QA・ご意見・不具合の報告）
+困ったときに開く画面をまとめた、総合メニューのアプリ（URL は **`/helpdesk`**）。全部門が利用できる（どちらも個人情報を含まないため）。
+上のタブで「要項QA」と「ご意見・不具合の報告」を切り替える。v0.16 までは会議DXの左メニューにあった。
+
+| タブ | URL | 中身 |
+|---|---|---|
+| 要項QA | `/helpdesk` | 下の「要項QA」の節 |
+| ご意見・不具合の報告 | `/helpdesk/feedback` | アプリへの意見・不具合の報告と、管理部門の回答（components/InquiryUI.tsx、API は app/api/inquiry/route.ts） |
+
+- 画面: app/(helpdesk)/helpdesk/（専用レイアウト・サイドバー無し。ヘッダは門配管理などと同じ components/AppHeader.tsx）
+- 旧 URL の `/yoko-qa` は `/helpdesk` へ、`/inquiry` は `/helpdesk/feedback` へ転送する（API の URL は変えていない）
+- ダッシュボードの「実施期間中の要項」は会議DXに残したまま。「要項QAで聞く」からヘルプデスクの要項QAへ移る
+- 操作マニュアル（docs/manual/）の直し方は docs/manual/反映待ち_v0.17.0_ヘルプデスク.md
+
 ## 要項QA（実施要項の確認）
 講習会・イベントの実施要項について、申込方法・申込期限・受講料・支払い方法・日程などを
-AI が答える（メニュー「要項QA」）。全部門が利用できる（個人情報を含まないため）。
+AI が答える（ヘルプデスクの「要項QA」・`/helpdesk`）。全部門が利用できる（個人情報を含まないため）。
 
-- 画面: app/(app)/yoko-qa/page.tsx ／ components/YokoQaUI.tsx
+- 画面: app/(helpdesk)/helpdesk/page.tsx ／ components/YokoQaUI.tsx
 - API: app/api/yoko-qa/route.ts（GET＝要項の一覧、POST＝QA のストリーム）
 - 読み込み: lib/core/knowledgeDocs.ts ／ プロンプト: lib/yokoQaPrompt.ts
 - 要項の本体: knowledge/40_要項/ 配下の Markdown
