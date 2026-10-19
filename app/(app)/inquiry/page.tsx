@@ -1,9 +1,6 @@
 import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/core/auth';
-import InquiryUI from '@/components/InquiryUI';
 
+// ご意見・不具合の報告はヘルプデスクへ移した。古いリンク・ブックマークはそちらへ送る。
 export default function InquiryPage() {
-  const s = getSession();
-  if (!s) redirect('/login');
-  return <InquiryUI name={s.name} campus={s.campus} />;
+  redirect('/helpdesk/feedback');
 }
