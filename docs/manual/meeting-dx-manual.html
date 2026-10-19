@@ -210,10 +210,10 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
 <header class="sheet cover" id="top">
   <div class="org">株式会社智翔館　社内向け</div>
   <h1>会議DX 操作マニュアル</h1>
-  <p class="lead">会議DXアプリのうち、<b>メニュー画面</b>・<b>部門会議</b>・<b>要項QA</b>の使い方をまとめた手引きです。画面の写真に付けた赤い番号（<span class="n">1</span>）は、本文の同じ番号の説明に対応しています。</p>
+  <p class="lead">会議DX（<b>メニュー画面</b>・<b>部門会議</b>）と、ヘルプデスクの<b>要項QA</b>の使い方をまとめた手引きです。画面の写真に付けた赤い番号（<span class="n">1</span>）は、本文の同じ番号の説明に対応しています。</p>
   <dl>
     <dt>対象</dt><dd>全職員</dd>
-    <dt>アプリ</dt><dd>智翔館アプリ › 会議DX（バージョン v0.16.1 時点）</dd>
+    <dt>アプリ</dt><dd>智翔館アプリ › 会議DX・ヘルプデスク（バージョン v0.17.0 時点）</dd>
     <dt>作成</dt><dd>2026年10月</dd>
   </dl>
   <p class="note-sample">※ 写真に写っている会議名・人名・数値は、説明のために用意した架空の例です。AIの回答や議事録の文面も例で、実際の文面は会議や質問の内容によって変わります。</p>
@@ -241,13 +241,15 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
         <li><a href="#s2-8">2-8　困ったとき</a></li>
       </ol>
     </li>
-    <li><a href="#ch3">第3章　要項QAの使い方</a>
+    <li><a href="#ch3">第3章　ヘルプデスク（要項QA）の使い方</a>
       <ol>
-        <li><a href="#s3-1">3-1　画面の見方</a></li>
-        <li><a href="#s3-2">3-2　要項カードの見方</a></li>
-        <li><a href="#s3-3">3-3　質問する</a></li>
-        <li><a href="#s3-4">3-4　未確定の要項について</a></li>
-        <li><a href="#s3-5">3-5　上手な聞き方と注意</a></li>
+        <li><a href="#s3-1">3-1　ヘルプデスクを開く</a></li>
+        <li><a href="#s3-2">3-2　要項QAの画面の見方</a></li>
+        <li><a href="#s3-3">3-3　要項カードの見方</a></li>
+        <li><a href="#s3-4">3-4　質問する</a></li>
+        <li><a href="#s3-5">3-5　未確定の要項について</a></li>
+        <li><a href="#s3-6">3-6　上手な聞き方と注意</a></li>
+        <li><a href="#s3-7">3-7　ご意見・不具合の報告</a></li>
       </ol>
     </li>
   </ol>
@@ -266,17 +268,15 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
     <p>使いたい画面の名前を押すと、その画面に切り替わります。いま開いている画面は水色で表示されます。</p>
     <div class="side-by-side">
       <figure class="w-sidebar">
-        <img src="images/01_sidebar.png" alt="会議DXの左メニュー。上から、メニューへ戻るリンク、ダッシュボード、部門会議、全体会議の3項目、要項QA、ご意見・不具合の報告、ログイン中の名前とログアウト" width="476" height="1600" loading="lazy">
+        <img src="images/01_sidebar.png" alt="会議DXの左メニュー。上から、メニューへ戻るリンク、ダッシュボード、部門会議、全体会議の3項目、ログイン中の名前とログアウト" width="476" height="1600" loading="lazy">
         <figcaption>図1　左メニュー</figcaption>
       </figure>
       <ol class="legend">
-        <li><span class="n">1</span><div><b>← メニューへ</b><br>智翔館アプリのメニュー（使うアプリを選ぶ画面）に戻ります。</div></li>
+        <li><span class="n">1</span><div><b>← メニューへ</b><br>智翔館アプリのメニュー（使うアプリを選ぶ画面）に戻ります。要項QAと「ご意見・不具合の報告」は、メニュー画面の「ヘルプデスク」から開きます（<a href="#ch3">第3章</a>）。</div></li>
         <li><span class="n">2</span><div><b>ダッシュボード</b><br>会議DXの最初の画面です。これからの部門会議・直近の議事録・実施中の要項がひと目で分かります（<a href="#s1-2">1-2</a>）。</div></li>
         <li><span class="n">3</span><div><b>部門会議</b><br>会議の事前共有 → 録音 → 議事録 → 次回の事前共有、までを行います（<a href="#ch2">第2章</a>）。</div></li>
         <li><span class="n">4</span><div><b>全体会議</b><br>全体会議の前後に使う画面です。<br>・<b>数値報告</b>：会議の前に、月次・講習期の数値を登録します。<br>・<b>会議AI</b>：会議の前に、事前報告・月次報告・講習の結果報告をAIと対話しながら作ります。<br>・<b>全体会議振り返り</b>：会議のあとに、感想・気づき・やると決めたことを残します。</div></li>
-        <li><span class="n">5</span><div><b>AIに聞く › 要項QA</b><br>講習会・イベントの申込方法・支払い・日程などを、確定した実施要項をもとにAIに聞けます（<a href="#ch3">第3章</a>）。</div></li>
-        <li><span class="n">6</span><div><b>ご意見・不具合の報告</b><br>アプリへの意見や、うまく動かないときの報告を送れます。</div></li>
-        <li><span class="n">7</span><div><b>ログイン中の部門と名前・ログアウト</b><br>自分の部門と名前が正しいか確認できます。共用のパソコンでは、使い終わったら<span class="btn">ログアウト</span>を押してください。一番下の「v0.16.1」はアプリのバージョンです。</div></li>
+        <li><span class="n">5</span><div><b>ログイン中の部門と名前・ログアウト</b><br>自分の部門と名前が正しいか確認できます。共用のパソコンでは、使い終わったら<span class="btn">ログアウト</span>を押してください。一番下の「v0.17.0」はアプリのバージョンです。</div></li>
       </ol>
     </div>
   </section>
@@ -295,7 +295,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
     <ol class="legend">
       <li><span class="n">1</span><div><b>部門会議の事前共有</b><br>全部門の「これからの部門会議」です。開催日が近い順に並び、「今日」「3日後」のような印が付きます。<span class="btn">議題を見る</span>で議題・レジュメの全体を、<span class="btn">議事録をつくる</span>でその会議の議事録づくりを始められます（部門会議の画面に移ります）。議事録が保存された会議は、ここから外れて <span class="n">2</span> に移ります。</div></li>
       <li><span class="n">2</span><div><b>直近の議事録</b><br>全部門の保存済みの議事録です。<span class="btn">詳細</span>で全文を読めます。右上の「すべて見る」で部門会議の画面に移ります。</div></li>
-      <li><span class="n">3</span><div><b>実施期間中の要項</b><br>実施中の要項と、30日以内に始まる要項のカードです。受講料と講座ごとの日程が出ます。詳しく知りたいときは「要項QAで聞く」から質問できます。</div></li>
+      <li><span class="n">3</span><div><b>実施期間中の要項</b><br>実施中の要項と、30日以内に始まる要項のカードです。受講料と講座ごとの日程が出ます。右上の「要項QAで聞く」を押すと、ヘルプデスクの要項QAが開き、そこで質問できます。</div></li>
       <li><span class="n">4</span><div><b>成功事例（全部門）</b><br>会議AIの報告に書かれた成功事例が、全部門分たまっていきます。<span class="btn">成功事例を見る</span>で開きます。</div></li>
     </ol>
   </section>
@@ -328,9 +328,9 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
     <video controls preload="metadata" playsinline poster="video/poster.jpg" width="1920" height="1080">
       <source src="video/dept-meeting.mp4" type="video/mp4">
     </video>
-    <figcaption>動画で見る：部門会議の進め方（約3分。手順1 事前共有 → 手順2 録音 → 手順3 議事録 → 手順4 次回の事前共有）</figcaption>
+    <figcaption>動画で見る：部門会議の進め方（約5分・音声つき。手順1 事前共有 → 手順2 録音 → 手順3 議事録 → 手順4 次回の事前共有）</figcaption>
   </figure>
-  <p class="print-only">この章の手順1〜4の流れは、Web版のマニュアルで動画（約3分）でも見られます。</p>
+  <p class="print-only">この章の手順1〜4の流れは、Web版のマニュアルで動画（約5分・音声つき）でも見られます。</p>
 
   <section class="sec" id="s2-1">
     <h3><span class="no">2-1</span>部門会議の流れと画面</h3>
@@ -567,7 +567,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
         </tbody>
       </table>
     </div>
-    <p>解決しないときは、左メニューの「ご意見・不具合の報告」から、出ていた表示と一緒に送ってください。</p>
+    <p>解決しないときは、メニュー画面の「ヘルプデスク」→「ご意見・不具合の報告」から、出ていた表示と一緒に送ってください（<a href="#s3-7">3-7</a>）。</p>
   </section>
 </article>
 
@@ -575,34 +575,55 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
 <article class="sheet chapter" id="ch3">
   <header>
     <div class="eyebrow">第3章</div>
-    <h2>要項QAの使い方</h2>
-    <p>左メニューの「要項QA」を押して開きます。講習会・イベントの申込方法・申込期限・受講料・支払い方法・日程・対象などを、確定した実施要項をもとにAIが答えます。保護者や生徒に聞かれたときに、その場で確認するために使います。</p>
+    <h2>ヘルプデスク（要項QA）の使い方</h2>
+    <p>ヘルプデスクは、困ったときに開くアプリです。<b>要項QA</b>と<b>ご意見・不具合の報告</b>の2つの画面があり、全部門が使えます。</p>
+    <p>要項QAでは、講習会・イベントの申込方法・申込期限・受講料・支払い方法・日程・対象などを、確定した実施要項をもとにAIが答えます。保護者や生徒に聞かれたときに、その場で確認するために使います。</p>
   </header>
 
   <section class="sec" id="s3-1">
-    <h3><span class="no">3-1</span>画面の見方</h3>
+    <h3><span class="no">3-1</span>ヘルプデスクを開く</h3>
+    <p>智翔館アプリのメニュー画面で「ヘルプデスク」（<span class="n">1</span>）を押すと、最初に要項QAが開きます。会議DXのダッシュボードの「要項QAで聞く」からも開けます。会議DXの中にいるときは、左メニューの一番上の「← メニューへ」でメニュー画面に戻れます。</p>
     <figure>
-      <img src="images/30_yq_top.png" alt="要項QAの画面の上側。実施中・まもなく実施の要項のカードが並ぶ" width="2086" height="1800" loading="lazy">
-      <figcaption>図18　要項QA（画面の上側）</figcaption>
+      <img src="images/34_portal.png" alt="智翔館アプリのメニュー画面。アプリのカードが並び、ヘルプデスクのカードに赤枠" width="2560" height="1236" loading="lazy">
+      <figcaption>図18　メニュー画面の「ヘルプデスク」</figcaption>
     </figure>
+    <p>ヘルプデスクの画面の上には、紺色の帯（ヘッダ）があります。</p>
     <figure>
-      <img src="images/30b_yq_bottom.png" alt="要項QAの画面の下側。回答に使える要項、未確定の要項、質問の例、質問の入力欄" width="2086" height="822" loading="lazy">
-      <figcaption>図19　要項QA（画面の下側）</figcaption>
+      <img src="images/35_helpdesk_head.png" alt="ヘルプデスクの上の帯。左からメニューへ戻るリンク、ヘルプデスクの名前、要項QAとご意見・不具合の報告のタブ、右端に部門と名前とログアウト" width="2560" height="268" loading="lazy">
+      <figcaption>図19　ヘルプデスクの上の帯（ヘッダ）</figcaption>
     </figure>
     <ol class="legend">
-      <li><span class="n">1</span><div><b>実施中・まもなく実施の要項</b><br>実施中の要項と、30日以内に始まる要項がカードで並びます（<a href="#s3-2">3-2</a>）。</div></li>
-      <li><span class="n">2</span><div><b>回答に使える要項</b><br>押すと、AIが回答に使う確定済みの要項の一覧が開きます。終わった講習の要項も含まれるので、過去の要項についても質問できます。</div></li>
-      <li><span class="n">3</span><div><b>未確定の要項</b><br>まだ内容が確定していない要項です。AIはこれらには答えません（<a href="#s3-4">3-4</a>）。</div></li>
-      <li><span class="n">4</span><div><b>質問の例</b><br>押すと、その文のまま質問できます。最初の質問の前だけ表示されます。</div></li>
-      <li><span class="n">5</span><div><b>質問の入力欄</b><br>聞きたいことを書いて<span class="btn">質問</span>を押します（<a href="#s3-3">3-3</a>）。</div></li>
+      <li><span class="n">1</span><div><b>← メニュー</b><br>智翔館アプリのメニュー画面に戻ります。会議DXに戻るときは、メニュー画面で「会議DX」を押します。</div></li>
+      <li><span class="n">2</span><div><b>要項QA</b><br>要項についてAIに聞く画面です（<a href="#s3-2">3-2</a>〜<a href="#s3-6">3-6</a>）。</div></li>
+      <li><span class="n">3</span><div><b>ご意見・不具合の報告</b><br>アプリへの意見や、うまく動かないときの報告を送る画面です（<a href="#s3-7">3-7</a>）。</div></li>
+      <li><span class="n">4</span><div><b>部門と名前・ログアウト</b><br>ログイン中の部門と名前です。共用のパソコンでは、使い終わったら<span class="btn">ログアウト</span>を押してください。</div></li>
     </ol>
   </section>
 
   <section class="sec" id="s3-2">
-    <h3><span class="no">3-2</span>要項カードの見方</h3>
+    <h3><span class="no">3-2</span>要項QAの画面の見方</h3>
+    <figure>
+      <img src="images/30_yq_top.png" alt="要項QAの画面の上側。上に紺色の帯、その下に実施中・まもなく実施の要項のカードが並ぶ" width="2560" height="1800" loading="lazy">
+      <figcaption>図20　要項QA（画面の上側）</figcaption>
+    </figure>
+    <figure>
+      <img src="images/30b_yq_bottom.png" alt="要項QAの画面の下側。回答に使える要項、未確定の要項、質問の例、質問の入力欄" width="2560" height="822" loading="lazy">
+      <figcaption>図21　要項QA（画面の下側）</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>実施中・まもなく実施の要項</b><br>実施中の要項と、30日以内に始まる要項がカードで並びます（<a href="#s3-3">3-3</a>）。</div></li>
+      <li><span class="n">2</span><div><b>回答に使える要項</b><br>押すと、AIが回答に使う確定済みの要項の一覧が開きます。終わった講習の要項も含まれるので、過去の要項についても質問できます。</div></li>
+      <li><span class="n">3</span><div><b>未確定の要項</b><br>まだ内容が確定していない要項です。AIはこれらには答えません（<a href="#s3-5">3-5</a>）。</div></li>
+      <li><span class="n">4</span><div><b>質問の例</b><br>押すと、その文のまま質問できます。最初の質問の前だけ表示されます。</div></li>
+      <li><span class="n">5</span><div><b>質問の入力欄</b><br>聞きたいことを書いて<span class="btn">質問</span>を押します（<a href="#s3-4">3-4</a>）。</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s3-3">
+    <h3><span class="no">3-3</span>要項カードの見方</h3>
     <figure class="fig-card">
-      <img src="images/31_yq_card.png" alt="要項カード1枚。状態の印、要項名、受講料、講座ごとの日程と受講料" width="1120" height="1236" loading="lazy">
-      <figcaption>図20　要項カード</figcaption>
+      <img src="images/31_yq_card.png" alt="要項カード1枚。状態の印、要項名、受講料、講座ごとの日程と受講料" width="920" height="1236" loading="lazy">
+      <figcaption>図22　要項カード</figcaption>
     </figure>
     <ol class="legend">
       <li><span class="n">1</span><div><b>状態・対象・期間</b><br>「実施中」「あと○日で開始」「本日開始」の印と、対象学年・実施期間です。</div></li>
@@ -613,16 +634,16 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
     <p>カードには、よく聞かれる「どの講座が・いつから・いくらで」だけを載せています。申込方法・会場・持ち物などは、下の入力欄から質問してください。ダッシュボードのカードでは講座が3件までしか出ず、残りは「ほか○講座」と表示されます。</p>
   </section>
 
-  <section class="sec" id="s3-3">
-    <h3><span class="no">3-3</span>質問する</h3>
+  <section class="sec" id="s3-4">
+    <h3><span class="no">3-4</span>質問する</h3>
     <ol class="steps">
       <li><div>画面下の入力欄に、聞きたいことを書きます（例：「秋の定期テスト対策の、一般生の申込方法と期限は？」）。</div></li>
       <li><div><span class="btn">質問</span>を押します。⌘ / Ctrl ＋ Enter でも送れます。</div></li>
       <li><div>回答が表示されます。続けて質問すると、前のやり取りをふまえて答えます。</div></li>
     </ol>
     <figure>
-      <img src="images/33_yq_answer.png" alt="質問と回答の例。結論、申込方法、申込期限、補足、出典の順に表示されている" width="2086" height="1492" loading="lazy">
-      <figcaption>図21　質問と回答の例</figcaption>
+      <img src="images/33_yq_answer.png" alt="質問と回答の例。結論、申込方法、申込期限、補足、出典の順に表示されている" width="2560" height="1492" loading="lazy">
+      <figcaption>図23　質問と回答の例</figcaption>
     </figure>
     <ol class="legend">
       <li><span class="n">1</span><div><b>質問</b></div></li>
@@ -630,17 +651,17 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
     </ol>
   </section>
 
-  <section class="sec" id="s3-4">
-    <h3><span class="no">3-4</span>未確定の要項について</h3>
+  <section class="sec" id="s3-5">
+    <h3><span class="no">3-5</span>未確定の要項について</h3>
     <figure>
-      <img src="images/32_yq_pending.png" alt="未確定の要項を開いたところ。説明文と要項名の一覧" width="2086" height="342" loading="lazy">
-      <figcaption>図22　未確定の要項を開いたところ</figcaption>
+      <img src="images/32_yq_pending.png" alt="未確定の要項を開いたところ。説明文と要項名の一覧" width="2560" height="342" loading="lazy">
+      <figcaption>図24　未確定の要項を開いたところ</figcaption>
     </figure>
     <p>案が複数あったり編集中だったりする要項は、受講料や期限を誤って伝えないよう、内容をAIに渡していません（<span class="n">1</span>）。これらについて聞くと、AIは「まだ確定していないため回答できません」と答えます。要項の担当者に確認してください。</p>
   </section>
 
-  <section class="sec" id="s3-5">
-    <h3><span class="no">3-5</span>上手な聞き方と注意</h3>
+  <section class="sec" id="s3-6">
+    <h3><span class="no">3-6</span>上手な聞き方と注意</h3>
     <h4>上手な聞き方</h4>
     <ul class="plain">
       <li><b>講座名・学年・校舎を入れる</b>：「申込期限は？」より「中3の秋の定期テスト対策（大野校）の申込期限は？」のほうが、確実に答えられます。</li>
@@ -657,6 +678,22 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
         <li>探している要項が「回答に使える要項」に無い、内容が古いと感じたときは、要項の担当者に連絡してください。</li>
       </ul>
     </div>
+  </section>
+
+  <section class="sec" id="s3-7">
+    <h3><span class="no">3-7</span>ご意見・不具合の報告</h3>
+    <p>アプリへの意見・要望や、うまく動かないときの報告、使い方の質問を送れます。ヘルプデスクの上のタブ「ご意見・不具合の報告」を押して開きます。</p>
+    <figure>
+      <img src="images/36_feedback.png" alt="ご意見・不具合の報告の画面。左に種別・内容・画像・送信するボタン、右に過去の問い合わせと回答" width="2560" height="1204" loading="lazy">
+      <figcaption>図25　ご意見・不具合の報告</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><div><b>種別</b>を選びます（<span class="n">1</span>）。「不具合（バグ）」「改善要望」「使い方の質問」「プロンプトの修正」「その他」から選びます。</div></li>
+      <li><div><b>内容</b>を書きます（<span class="n">2</span>）。不具合のときは、どの画面で・何をしたら・どうなったかを、できるだけ具体的に書いてください。</div></li>
+      <li><div>画面の写真（スクリーンショット）があれば、<b>画像</b>の<span class="btn">ファイルを選択</span>で添えます（<span class="n">3</span>　任意）。出ていた表示が分かると、原因を早く見つけられます。</div></li>
+      <li><div><span class="btn">送信する</span>を押します（<span class="n">4</span>）。</div></li>
+    </ol>
+    <p>右の「<b>過去の問い合わせ</b>」には、全部門から送られた内容が新しい順に並びます（<span class="n">5</span>）。管理部門が回答すると、その下に緑色の枠で回答が出ます。キーワードや種別で絞り込めます。自分が送ったものは<span class="btn">編集</span>で直せます。</p>
   </section>
 </article>
 
