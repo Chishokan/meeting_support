@@ -71,4 +71,11 @@ export const PORTAL_APPS: PortalApp[] = [
     canUse: canUseAptitude,
     deniedNote: `${APTITUDE_DEPTS.join('、')}のみ利用できます`,
   },
+  {
+    id: 'helpdesk',
+    name: 'ヘルプデスク',
+    desc: '要項QA（申込方法・支払い・日程を要項から確認）と、アプリへのご意見・不具合の報告',
+    href: '/helpdesk',
+    status: 'ready',
+  },
 ];
