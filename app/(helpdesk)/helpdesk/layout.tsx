@@ -4,15 +4,17 @@ import { getSession } from '@/lib/core/auth';
 import AppHeader from '@/components/AppHeader';
 
 // ヘルプデスク。困ったときに開く画面をまとめたアプリ（旧・会議DXの左メニューにあった要項QAと、
-// ご意見・不具合の報告）。どちらも個人情報を含まないので、全部門が利用できる。ログインは全アプリ共通。
+// ご意見・不具合の報告、操作マニュアルのダウンロード）。どれも個人情報を含まないので、全部門が利用できる。
+// ログインは全アプリ共通。
 
 export const metadata = {
   title: '智翔館 ヘルプデスク',
-  description: '要項QA（実施要項の確認）と、アプリへのご意見・不具合の報告',
+  description: '要項QA（実施要項の確認）、操作マニュアル、アプリへのご意見・不具合の報告',
 };
 
 const NAV = [
   { href: '/helpdesk', label: '要項QA' },
+  { href: '/helpdesk/manual', label: 'マニュアル' },
   { href: '/helpdesk/feedback', label: 'ご意見・不具合の報告' },
 ];
 
