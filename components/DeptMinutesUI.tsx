@@ -174,7 +174,8 @@ function transcribeError(reason: string): string {
     case 'rate_limited':
       return '短い時間に送りすぎて断られました（無料枠の制限）。時間をおいてお試しください。';
     case 'upstream_busy':
-      return 'Gemini 側が混み合っています。時間をおいてお試しください。';
+      return 'Gemini 側が混み合っています（使えるモデルを順に試しましたが、どれも空いていませんでした）。'
+        + '時間をおいてお試しください。';
     case 'too_large':
       return '音声の区間が大きすぎて送れませんでした。管理者にご連絡ください。';
     case 'unsupported_type':
