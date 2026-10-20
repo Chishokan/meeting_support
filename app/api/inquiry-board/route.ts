@@ -1,7 +1,8 @@
 // 問合せ管理（/inquiry-board）の API。
 //   GET    … 台帳の全件（校舎の絞り込みは画面側で行う。全件でも数百行なので一度に返す）
 //   POST   … 新規登録
-//   PUT    … 更新（body.id で指定）
+//   PUT    … 更新（body.id で指定。body.base＝編集を始めた時点の行があれば変えた項目だけを書き、
+//             他の人が同じ項目を別の値に直していたら 409 conflict を返す）
 //   DELETE … 削除（?id=）
 //
 // 生徒・保護者の個人情報を扱うため、閲覧・編集できる部門を小中等部と管理部門に限定する
@@ -9,7 +10,7 @@
 
 import { getSession } from '@/lib/core/auth';
 import { fiscalPeriod } from '@/lib/core/companyKnowledge';
-import { validateInput } from '@/lib/inquiryRecords';
+import { baseFrom, validateInput } from '@/lib/inquiryRecords';
 import { createRecord, deleteRecord, listRecords, updateRecord } from '@/lib/inquiryStore';
 import { canUseInquiryBoard } from '@/lib/inquiryBoardAccess';
 
@@ -50,10 +51,16 @@ export async function PUT(req: Request) {
   const body = await req.json().catch(() => ({}));
   const id = String(body?.id ?? '').trim();
   if (!id) return Response.json({ ok: false, reason: 'bad_id' }, { status: 400 });
-  const v = validateInput(body, fiscalPeriod().startYear);
+  const year = fiscalPeriod().startYear;
+  const v = validateInput(body, year);
   if (!v.ok) return Response.json({ ok: false, reason: 'invalid', errors: v.errors }, { status: 400 });
-  const r = await updateRecord(id, v.value, g.session!.name);
+  // base＝画面で編集を始めた時点の行。あれば変えた項目だけを書く（他の人の変更を上書きしない）
+  const base = baseFrom(body?.base);
+  const r = await updateRecord(id, v.value, g.session!.name, { base: base?.id === id ? base : null, fallbackYear: year });
   if (!r.ok) {
+    if (r.reason === 'conflict') {
+      return Response.json({ ok: false, reason: 'conflict', item: r.item, conflicts: r.conflicts ?? [] }, { status: 409 });
+    }
     const status = r.reason === 'not_found' ? 404 : r.reason === 'not_configured' ? 200 : 502;
     return Response.json({ ok: false, reason: r.reason }, { status });
   }
