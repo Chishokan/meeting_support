@@ -352,8 +352,11 @@ button.primary:disabled { opacity: .5; cursor: default; }
   .dash-panel .iqa-cards { padding: 12px 0 0; }
   .dash-panel .prog-list { grid-template-columns: 1fr; }
   /* 区分の名前が長い料金（「一般生／全コース一括申込み（上記5つ）」など）は
-     折り返さないと金額が右端へ押し出されて読みにくい。 */
-  .yq-whole-fee, .yq-item-fee { white-space: normal; overflow-wrap: anywhere; }
+     折り返さないと金額が右端へ押し出されて読みにくい（320px では画面の外にはみ出す）。
+     ふだんの指定（.yq-whole-fee の nowrap）はこの下にあるので、.yq-card を付けて優先させる。 */
+  .yq-card .yq-whole-fee, .yq-card .yq-item-fee { white-space: normal; overflow-wrap: anywhere; }
+  /* 金額（5,500円）は途中で折り返さない */
+  .yq-card .yq-whole-fee b, .yq-card .yq-item-fee b { white-space: nowrap; }
   .yq-item { grid-template-columns: 5.4em 1fr; gap: 2px 8px; }
 }
 .soon-panel { background: #fbfcfd; border-style: dashed; }
@@ -690,9 +693,10 @@ button.primary:disabled { opacity: .5; cursor: default; }
   font-size: 13px; font-weight: 700; color: #2a2f36;
 }
 .yq-cards-sub { font-size: 12px; font-weight: 600; color: #8a94a0; }
-/* 要項カードは題名と3行が入るので、問い合わせQAの190pxでは折り返しが増える。 */
+/* 要項カードは題名と3行が入るので、問い合わせQAの190pxでは折り返しが増える。
+   360px より狭い画面（スマホ）では 360px の列が入らず横にはみ出すので、画面幅の1列にする（min）。 */
 .yq-cards-wrap .iqa-cards {
-  padding-top: 10px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  padding-top: 10px; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
 }
 .yq-empty { padding: 10px 24px 0; font-size: 12px; color: #8a94a0; line-height: 1.9; }
 
@@ -714,7 +718,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
   background: #f6f8fa; border-radius: 8px; padding: 8px 10px;
 }
 .yq-whole-label { font-size: 11px; font-weight: 700; color: #8a94a0; flex: none; }
-.yq-whole-fees { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.yq-whole-fees { display: flex; flex-wrap: wrap; gap: 4px 14px; min-width: 0; }
 .yq-whole-fee, .yq-item-fee { font-size: 12px; white-space: nowrap; }
 .yq-whole-fee i, .yq-item-fee i { font-style: normal; color: #8a94a0; margin-right: 5px; }
 .yq-whole-fee b, .yq-item-fee b { font-weight: 700; color: #2a2f36; font-variant-numeric: tabular-nums; }
@@ -1265,6 +1269,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .ib-list-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; color: #4b535c; margin: 4px 0 6px; }
 .ib-meta { font-size: 12px; color: #97a1ac; }
 .ib-empty { font-size: 13px; color: #8a94a0; padding: 24px 0; text-align: center; }
+.ib-table td.ib-empty { white-space: normal; }
 .ib-hint { font-size: 12px; color: #8a94a0; margin: 8px 0 0; line-height: 1.6; }
 
 /* 一覧 */
@@ -1644,7 +1649,7 @@ a.portal-card:hover { border-color: var(--navy); box-shadow: 0 2px 10px rgba(31,
 }
 .mp-tab:hover { background: #eaf1f8; }
 .mp-tab.active { color: #fff; background: var(--navy); border-color: var(--navy); }
-.mp-month { display: flex; align-items: center; gap: 6px; }
+.mp-month { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .mp-month-label { font-weight: 800; font-size: 15px; min-width: 96px; text-align: center; }
 .mp-btn {
   font-size: 13px; padding: 6px 12px; border-radius: 8px; border: 1px solid #cdd3da; background: #fff; cursor: pointer; color: #333;
@@ -1777,13 +1782,12 @@ a.portal-card:hover { border-color: var(--navy); box-shadow: 0 2px 10px rgba(31,
 .board-back, .board-title, .app-nav-item, .board-logout, .mp-btn { white-space: nowrap; }
 @media (max-width: 600px) {
   .board-head { padding: 8px 12px; gap: 8px; }
-  .board-brand:has(.app-nav) .board-title { display: none; }
-  .app-nav { margin-left: 2px; }
-  .app-nav-item { padding: 4px 8px; }
-  .board-logout { padding: 4px 8px; }
+  .board-logout { padding: 6px 10px; }
 }
 /* 横に長い月間一覧でも日付と曜日が見えるよう、左の2列を固定する */
-.mp-grid .mp-day { position: sticky; left: 0; background: #fff; z-index: 1; }
+/* 学校の列が多いと日の列が 34px より細くなり（31.5px）、曜日の列（left: 34px）との間から
+   横にスクロールした数字が覗いていた。日の列は 34px より細くしない。 */
+.mp-grid .mp-day { position: sticky; left: 0; background: #fff; z-index: 1; min-width: 34px; }
 .mp-grid .mp-day + .mp-day { left: 34px; }
 .mp-grid th.mp-day { z-index: 2; background: #f7f9fb; }
 .mp-grid tr.today td.mp-day { background: #fffbea; }
@@ -1834,14 +1838,27 @@ button.mp-btn.primary { width: auto; margin-top: 0; padding: 6px 14px; font-size
 .mp-kpi.warn b { color: #a0402c; }
 .mp-subtotal td { font-weight: 700; background: #f7f9fb; }
 .mp-summary td.mp-wrap { white-space: normal; min-width: 200px; }
-/* スマホでは .ib-table-wrap が枠からはみ出す設定（問合せ管理のカード表示用）なので、集計の表は枠の中で横にスクロールさせる */
-.mp-summary-page .ib-table-wrap { overflow-x: auto; }
-/* スマホ：画面の切り替え（月間一覧・実績報告…）が入りきらないときは横にスクロールする（ヘッダは1行のまま） */
+/* スマホでは .ib-table-wrap が枠からはみ出す設定（問合せ管理のカード表示用）なので、
+   門配管理の表（月間一覧の集計・集計・配布物・学校）は枠の中で横にスクロールさせる */
+.mp .ib-table-wrap { overflow-x: auto; }
+/* スマホ：画面の切り替え（タブ）があるヘッダは2段にする。
+   1段目に「← メニュー・アプリ名・ログアウト」、2段目にタブを横幅いっぱいに並べる。
+   1段のままだとタブが入りきらず、門配管理の「配布物」「学校」やヘルプデスクの「ご意見・不具合の報告」が
+   横にスクロールしないと見えなかった。2段目でも入りきらないとき（320px の門配管理など）は2段目だけ横にスクロールする。
+   .board-brand を display: contents にして、中の部品をヘッダの並びに直接参加させている。 */
 @media (max-width: 600px) {
-  .board-brand:has(.app-nav) { min-width: 0; }
-  .app-nav { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .board-head:has(.app-nav) { flex-wrap: wrap; row-gap: 4px; }
+  .board-brand:has(.app-nav) { display: contents; }
+  .board-head:has(.app-nav) .board-who { margin-left: auto; }
+  .app-nav {
+    order: 1; flex-basis: 100%; min-width: 0; margin-left: 0;
+    overflow-x: auto; scrollbar-width: none;
+  }
   .app-nav::-webkit-scrollbar { display: none; }
   .board-back, .board-who { flex-shrink: 0; }
+  /* 指で押す部品。文字だけだと高さ 17〜25px しかなく押し外すので、当たり判定を広げる */
+  .app-nav-item { display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px; }
+  .board-back { padding: 10px 6px; margin: -10px 0 -10px -6px; }
 }
 
 /* ───────── 適性検査（/aptitude）─────────
