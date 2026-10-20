@@ -88,11 +88,19 @@ export type TranscribeFail =
 
 export type TranscribeResult =
   // keyNo は何本目のキーで通った／落ちたか（1始まり）。keysTried は試した本数。
-  | { ok: true; text: string; keyNo?: number }
+  | { ok: true; text: string; keyNo?: number; model?: string }
   // detail は「HTTP 429 / RESOURCE_EXHAUSTED」のような短い手がかり。
   // 原因が分からないまま何十区間も失敗するのを防ぐため、画面にも出す。
   // retryAfterSec は Gemini が「この秒数だけ待て」と返してきたときだけ入る。
-  | { ok: false; reason: TranscribeFail; detail?: string; retryAfterSec?: number; keyNo?: number; keysTried?: number };
+  | {
+      ok: false;
+      reason: TranscribeFail;
+      detail?: string;
+      retryAfterSec?: number;
+      keyNo?: number;
+      keysTried?: number;
+      model?: string;
+    };
 
 // Gemini のエラー応答を、画面で扱える理由に分ける。
 // 本文をそのまま画面へ出すと分かりにくいうえ量も多いので、
@@ -162,6 +170,36 @@ export function geminiKeys(): string[] {
   return out;
 }
 
+// 「モデルが混み合っている（503）」ときに代わりに使うモデル。
+// 環境変数 GEMINI_MODEL_FALLBACK に書けばその順で使う（カンマ区切り）。
+// 空のときは、そのキーで実際に使えるモデルの一覧（ListModels）から自動で選ぶ。
+// ★ListModels は利用枠を消費しないので、ここで一覧を引いても無料枠は減らない。
+let fallbackCache: { key: string; model: string; models: string[] } | null = null;
+
+function fallbackFromEnv(primary: string): string[] {
+  return String(process.env.GEMINI_MODEL_FALLBACK || '')
+    .split(/[,\s]+/)
+    .map((m) => m.trim())
+    .filter((m) => m && m !== primary);
+}
+
+// 設定が無いときに、そのキーで使える flash 系モデルから予備を選ぶ（最大2つ）。
+async function fallbackModels(base: string, key: string, primary: string): Promise<string[]> {
+  const fromEnv = fallbackFromEnv(primary);
+  if (fromEnv.length > 0) return fromEnv.slice(0, 2);
+  if (fallbackCache && fallbackCache.key === key && fallbackCache.model === primary) return fallbackCache.models;
+
+  const all = await listUsableModels(base, key);
+  // 音声の文字起こしは flash 系で十分。primary と同系統を先に試す。
+  const flash = all.filter((m) => m !== primary && m.includes('flash'));
+  const models = flash.slice(0, 2);
+  fallbackCache = { key, model: primary, models };
+  try {
+    console.error('[TRANSCRIBE] fallback models', models.join(' / ') || '(なし)');
+  } catch {}
+  return models;
+}
+
 // 直前に通ったキー（0始まり）。画面からキーの指定が無いときの開始位置。
 // ★サーバは呼び出しごとに別の実体で動くことがあり、そのたびに 0 に戻る。
 //   そのため「どのキーを使うか」は画面側（1つのタブが順番に送る）が決めて
@@ -172,6 +210,13 @@ let preferredKey = 0;
 // Gemini 側の不調（5xx）やタイムアウトはどのキーでも同じ結果になるので回さない。
 function shouldSwitchKey(reason: TranscribeFail): boolean {
   return reason === 'quota_exceeded' || reason === 'rate_limited' || reason === 'invalid_key';
+}
+
+// モデルを変えれば通る見込みがある失敗か。
+//   upstream_busy … そのモデルが混み合っている（503）。別のモデルなら空いていることが多い
+//   model_not_found … モデル名が違う（404）。設定ミスなので、使える別のモデルで続ける
+function shouldSwitchModel(reason: TranscribeFail): boolean {
+  return reason === 'upstream_busy' || reason === 'model_not_found';
 }
 
 // 文字起こしが使える状態か（画面の出し分けに使う）。
@@ -268,7 +313,32 @@ export async function checkTranscribeSetup(): Promise<SetupCheck> {
     const r = await probeQuota(base, model, keys[i]);
     rows.push({ no: i + 1, ok: r.ok, reason: r.reason, detail: r.detail });
   }
-  const usable = rows.filter((r) => r.ok).length;
+  let usable = rows.filter((r) => r.ok).length;
+
+  // 設定のモデルが混み合っている（503）／名前が違う（404）ときは、
+  // 本番の文字起こしと同じように予備モデルへ回せるかまで確かめる。
+  // ここで「予備なら通る」と分かれば、利用者は待たずに進められる。
+  let usedModel = model;
+  if (usable === 0 && rows.some((r) => shouldSwitchModel(r.reason || 'upstream_error'))) {
+    const extra = await fallbackModels(base, keys[0], model);
+    for (const alt of extra) {
+      const r = await probeQuota(base, alt, keys[0]);
+      if (r.ok) {
+        usedModel = alt;
+        // 止めていたのはモデルであってキーではないので、
+        // モデルが原因で落ちていた行は「使えます」に直す。
+        for (const row of rows) {
+          if (!row.ok && shouldSwitchModel(row.reason || 'upstream_error')) {
+            row.ok = true;
+            row.detail = `予備モデル ${alt} で確認`;
+            row.reason = undefined;
+          }
+        }
+        usable = rows.filter((x) => x.ok).length;
+        break;
+      }
+    }
+  }
 
   // どのキーでも「そのモデルは無い」と言われたときだけ、使えるモデル名の候補を取りに行く。
   const badModel = usable === 0 && rows.some((r) => r.reason === 'model_not_found');
@@ -279,7 +349,8 @@ export async function checkTranscribeSetup(): Promise<SetupCheck> {
     suggestions = await listUsableModels(base, key);
   }
 
-  return { ok: true, model, keys: rows, usable, modelOk: !badModel, suggestions };
+  // model は「実際に文字起こしに使えるモデル」を返す（予備に回った場合はそちら）。
+  return { ok: true, model: usedModel, keys: rows, usable, modelOk: !badModel, suggestions };
 }
 
 // 設定に使えるモデル名の候補（flash 系を優先して数件だけ）。
@@ -335,6 +406,8 @@ async function callGemini(
   mime: string,
   data: string,
   vocab: string,
+  // 全体の締め切り（ミリ秒）。何回か試すので、1回あたりの待ち時間を残り時間に収める。
+  deadline?: number,
 ): Promise<TranscribeResult> {
   const body = {
     contents: [
@@ -351,7 +424,8 @@ async function callGemini(
   };
 
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const left = deadline ? Math.max(5000, deadline - Date.now()) : TIMEOUT_MS;
+  const timer = setTimeout(() => ctrl.abort(), Math.min(left, TIMEOUT_MS));
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -417,8 +491,7 @@ export async function transcribeAudio(
   if (!mime) return { ok: false, reason: 'unsupported_type' };
 
   const base = process.env.GEMINI_API_URL || DEFAULT_BASE;
-  const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
-  const url = `${base}/models/${model}:generateContent`;
+  const primary = process.env.GEMINI_MODEL || DEFAULT_MODEL;
 
   const data = Buffer.from(await file.arrayBuffer()).toString('base64');
   // 社内用語のヒントはナレッジ（GLOSSARY.md / 10_理念・方針/COMPANY.md）から毎回組み立てる。
@@ -428,23 +501,68 @@ export async function transcribeAudio(
     vocab = await buildVocabHint();
   } catch {}
 
-  // 指定されたキーから順に、ひと回りだけ試す（指定が無ければ直前に通ったキーから）。
+  // 指定されたキーから順に試す（指定が無ければ直前に通ったキーから）。
   const start = startKeyNo && startKeyNo >= 1 && startKeyNo <= keys.length
     ? startKeyNo - 1
     : preferredKey;
+
+  // サーバ関数の実行時間に収まる範囲でしか試せないので、残り時間を見ながら進める。
+  const deadline = Date.now() + TIMEOUT_MS;
+  const enoughTimeLeft = () => deadline - Date.now() > 12000;
+
+  // 試す順番：まず設定のモデルでキーを一巡し、それでも「混み合っている」なら
+  // 別のモデルに替えてもう一度キーを一巡する。
+  let models = [primary];
+  // 予備モデルを調べるのは一度だけ。ここを忘れると、
+  // 全部のモデルが混み合っているときに候補を足し続けて止まらなくなる。
+  let looked = false;
+  // 送りすぎを防ぐ上限。失敗した呼び出しも先方の記録には残るので、無制限に試さない。
+  const MAX_CALLS = 6;
+  let calls = 0;
   let last: TranscribeResult = { ok: false, reason: 'upstream_error' };
-  for (let n = 0; n < keys.length; n++) {
-    const idx = (start + n) % keys.length;
-    const r = await callGemini(keys[idx], url, mime, data, vocab);
-    if (r.ok) {
-      preferredKey = idx; // 次の区間もこのキーから始める
-      return { ...r, keyNo: idx + 1 };
+  let keysTried = 0;
+
+  for (let mi = 0; mi < models.length; mi++) {
+    const model = models[mi];
+    const url = `${base}/models/${model}:generateContent`;
+    let switchModel = false;
+
+    for (let n = 0; n < keys.length; n++) {
+      if (calls >= MAX_CALLS) return { ...last, keysTried };
+      if (!enoughTimeLeft() && (mi > 0 || n > 0)) return { ...last, keysTried };
+      calls += 1;
+      const idx = (start + n) % keys.length;
+      const r = await callGemini(keys[idx], url, mime, data, vocab, deadline);
+      keysTried = Math.max(keysTried, n + 1);
+      if (r.ok) {
+        preferredKey = idx; // 次の区間もこのキーから始める
+        if (mi > 0) {
+          try {
+            console.error('[TRANSCRIBE] used fallback model', model);
+          } catch {}
+        }
+        return { ...r, keyNo: idx + 1, model };
+      }
+      last = { ...r, keyNo: idx + 1, keysTried, model };
+      if (shouldSwitchModel(r.reason)) {
+        // 混んでいるのはモデルなので、キーを替えても同じ。別のモデルへ回す。
+        switchModel = true;
+        break;
+      }
+      if (!shouldSwitchKey(r.reason)) return last;
+      try {
+        console.error('[TRANSCRIBE] switch key', `${idx + 1} -> ${((idx + 1) % keys.length) + 1}`, r.reason);
+      } catch {}
     }
-    last = { ...r, keyNo: idx + 1, keysTried: n + 1 };
-    if (!shouldSwitchKey(r.reason)) return last;
-    try {
-      console.error('[TRANSCRIBE] switch key', `${idx + 1} -> ${((idx + 1) % keys.length) + 1}`, r.reason);
-    } catch {}
+
+    // モデルを替える理由が無いなら、ここで終わり（キーの一巡はすでに済んでいる）。
+    if (!switchModel) break;
+    // 予備モデルは、必要になった時点で1度だけ調べる（ListModels は枠を消費しない）。
+    if (!looked && enoughTimeLeft() && calls < MAX_CALLS) {
+      looked = true;
+      const extra = await fallbackModels(base, keys[start], primary);
+      if (extra.length > 0) models = [...models, ...extra];
+    }
   }
-  return { ...last, keysTried: keys.length };
+  return { ...last, keysTried };
 }
