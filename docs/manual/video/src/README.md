@@ -42,8 +42,9 @@
    node render.mjs --silent   # ナレーションなし（字幕だけ）
    ```
 
-4. できた `out/dept-meeting.mp4` と `out/poster.jpg` を `docs/manual/video/` に上書きし、
-   操作マニュアルの Web 版（`docs/manual/meeting-dx-manual.html` を Artifact として公開しているページ）を公開し直す
+4. できた `out/dept-meeting.mp4` を `public/manual/dept-meeting.mp4` に、`out/poster.jpg` を `public/manual/dept-meeting-poster.jpg` に
+   上書きする（ヘルプデスクの「マニュアル」タブで配っている）。長さや大きさが変わったら `lib/manuals.ts` の `meta` も直す。
+   操作マニュアルの Web 版（`docs/manual/meeting-dx-manual.html` を Artifact として公開しているページ）も公開し直す
 
 ## 直すとき
 

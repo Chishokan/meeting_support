@@ -354,19 +354,22 @@ WAV は圧縮しないので通信量は増える（1時間の会議でおよそ
 `app/api/dept-minutes/transcribe/route.ts` の実行時間上限に収まるか必ず確認すること
 （録音の区切りは `components/DeptMinutesUI.tsx` で `SEGMENT_SECONDS` に合わせてある）。
 
-## ヘルプデスク（要項QA・ご意見・不具合の報告）
-困ったときに開く画面をまとめた、総合メニューのアプリ（URL は **`/helpdesk`**）。全部門が利用できる（どちらも個人情報を含まないため）。
-上のタブで「要項QA」と「ご意見・不具合の報告」を切り替える。v0.16 までは会議DXの左メニューにあった。
+## ヘルプデスク（要項QA・マニュアル・ご意見・不具合の報告）
+困ったときに開く画面をまとめた、総合メニューのアプリ（URL は **`/helpdesk`**）。全部門が利用できる（どれも個人情報を含まないため）。
+上のタブで「要項QA」「マニュアル」「ご意見・不具合の報告」を切り替える。要項QAとご意見・不具合の報告は、v0.16 までは会議DXの左メニューにあった。
 
 | タブ | URL | 中身 |
 |---|---|---|
 | 要項QA | `/helpdesk` | 下の「要項QA」の節 |
+| マニュアル | `/helpdesk/manual` | 操作マニュアル（PDF）と動画マニュアルのダウンロード・再生。並べる資料は lib/manuals.ts、ファイルは public/manual/ |
 | ご意見・不具合の報告 | `/helpdesk/feedback` | アプリへの意見・不具合の報告と、管理部門の回答（components/InquiryUI.tsx、API は app/api/inquiry/route.ts） |
 
 - 画面: app/(helpdesk)/helpdesk/（専用レイアウト・サイドバー無し。ヘッダは門配管理などと同じ components/AppHeader.tsx）
 - 旧 URL の `/yoko-qa` は `/helpdesk` へ、`/inquiry` は `/helpdesk/feedback` へ転送する（API の URL は変えていない）
 - ダッシュボードの「実施期間中の要項」は会議DXに残したまま。「要項QAで聞く」からヘルプデスクの要項QAへ移る
-- 操作マニュアル（docs/manual/）の直し方は docs/manual/反映待ち_v0.17.0_ヘルプデスク.md
+- マニュアルのファイル（public/manual/）は、ログインしている人だけが開ける（middleware.ts が見張る。静的ファイルは画面のレイアウトの
+  ログイン確認を通らないため）。Vercel の関数は約4.5MBより大きいファイルを返せないので、API を通さず静的ファイルとして配る
+- 操作マニュアルの原稿・写真・作り方は docs/manual/（README.md）。作り直したら PDF を public/manual/ に置き、lib/manuals.ts の版を直す
 
 ## 要項QA（実施要項の確認）
 講習会・イベントの実施要項について、申込方法・申込期限・受講料・支払い方法・日程などを
