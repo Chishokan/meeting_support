@@ -26,6 +26,15 @@ export const MANUALS: ManualDoc[] = [
     meta: 'v0.18.0｜PDF・A4｜約5MB',
   },
   {
+    id: 'monpai',
+    title: '門配管理 操作マニュアル',
+    desc: '門配の月間計画（AIの計画案を含む）・実績報告・集計と、配布物の在庫・学校マスタの使い方。画面の写真つき',
+    kind: 'pdf',
+    href: '/manual/monpai-manual-v0.18.0.pdf',
+    downloadName: '門配管理操作マニュアル_v0.18.0.pdf',
+    meta: 'v0.18.0｜PDF・A4｜約3MB',
+  },
+  {
     id: 'dept-meeting-video',
     title: '動画：部門会議の進め方',
     desc: '事前共有 → 録音 → 議事録 → 次回の事前共有の流れを、画面と音声で説明します',
