@@ -1556,6 +1556,155 @@ button.primary:disabled { opacity: .5; cursor: default; }
   .ib-alerts-box { max-height: 150px; }
 }
 
+/* ============ 問合せ管理：編集パネル（v0.18.0）============ */
+/* PC は右に開き、一覧はその左に残る（一覧を見ながら［前へ］［次へ］で順に直す）。スマホは画面いっぱい */
+.ib { --ib-panel-w: min(580px, 46vw); }
+.ib-panel { position: fixed; top: 0; right: 0; bottom: 0; width: var(--ib-panel-w); z-index: 40; display: flex; }
+.ib-panel .dm-modal.ib-modal {
+  width: 100%; max-width: none; height: 100%; max-height: none; border-radius: 0;
+  box-shadow: -10px 0 30px rgba(0,0,0,.14); border-left: 1px solid var(--line);
+}
+@media (min-width: 901px) {
+  .ib.has-panel { max-width: none; margin: 0 var(--ib-panel-w) 0 0; }
+}
+@media (max-width: 900px) {
+  .ib-panel { width: 100%; }
+  .ib-panel .dm-modal.ib-modal { box-shadow: none; border-left: none; }
+}
+.ib-panel-head { align-items: flex-start; }
+.ib-panel-title { min-width: 0; flex: 1 1 auto; }
+.ib-panel-title h2 small { margin-left: 8px; font-size: 13px; font-weight: 700; color: #6b7580; }
+.ib-panel-tel { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; font-size: 14px; }
+.ib-panel-tel small { font-size: 12px; color: #6b7580; }
+.ib-panel-nav { display: flex; align-items: center; gap: 6px; flex: none; }
+.ib-nav-btn {
+  padding: 6px 10px; font-size: 12.5px; font-weight: 700; color: var(--navy); background: #fff;
+  border: 1px solid #cdd8e3; border-radius: 8px; cursor: pointer; white-space: nowrap; font-family: inherit;
+}
+.ib-nav-btn:hover { background: #f2f5f9; }
+.ib-nav-btn:disabled { opacity: .4; cursor: default; }
+.ib-nav-pos { font-size: 12px; color: #6b7580; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ib-row.current td { background: #eaf1f8; }
+.ib-row.current td:first-child { box-shadow: inset 3px 0 0 var(--navy); }
+
+/* 項目：ボタンで選ぶ・日付など label で包めないもの（見た目は label の項目と同じ） */
+.ib-grid .ib-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 12px; font-weight: 700; color: #4b535c; }
+.ib-grid .ib-field.full { grid-column: 1 / -1; }
+.ib-grid .ib-field small { font-weight: 400; color: #97a1ac; }
+.ib-grid .ib-field .req { font-size: 10px; font-weight: 700; color: #b03a2e; margin-left: 4px; }
+.ib-grid .ib-field small.ib-attn { color: #8a6d1a; }
+.ib-grid .ib-field.attention input { border-color: #e6c14a; background-color: #fffbe9; }
+.ib-choice { display: flex; flex-wrap: wrap; gap: 6px; }
+.ib-choice button {
+  min-height: 34px; padding: 5px 13px; font-size: 13px; font-weight: 700; color: #4b535c; background: #fff;
+  border: 1px solid #cdd3da; border-radius: 999px; cursor: pointer; font-family: inherit;
+}
+.ib-choice button:hover { background: #f2f5f9; }
+.ib-choice button.on { color: #fff; background: var(--navy); border-color: var(--navy); }
+.ib-datein { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ib-datein input[type="date"] { flex: 0 1 180px; min-width: 0; }
+.ib-quick {
+  padding: 5px 10px; font-size: 12px; font-weight: 700; color: var(--navy); background: #eef3f8;
+  border: 1px solid #cfe0ee; border-radius: 999px; cursor: pointer; font-family: inherit; white-space: nowrap;
+}
+.ib-quick:hover { background: #e3edf7; }
+.ib-quick.on { color: #fff; background: var(--navy); border-color: var(--navy); }
+
+/* 対応を記録 */
+.ib-form section.ib-log { background: #f7f9fb; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.ib-log h3 { border-bottom: none; padding-bottom: 0; }
+.ib-log-memo { width: 100%; padding: 8px 10px; font-size: 14px; border: 1px solid #cdd3da; border-radius: 8px; font-family: inherit; background: #fff; }
+.ib-log-btns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+.ib-log-btns button {
+  padding: 9px 6px; font-size: 13px; font-weight: 700; color: var(--navy); background: #fff;
+  border: 1px solid #cfe0ee; border-radius: 8px; cursor: pointer; font-family: inherit;
+}
+.ib-log-btns button:hover { background: #eaf1f8; }
+.ib-log-btns button:disabled { opacity: .45; cursor: default; }
+.ib-log-done { margin-top: 8px; font-size: 12.5px; color: #2e6b4f; line-height: 1.6; }
+.ib-log-done ul { margin: 0; padding-left: 18px; }
+.ib-log-done small { color: #6b7580; }
+
+/* 新規登録：重複のお知らせ・［詳しく入力する］ */
+.ib-dups { margin-top: 10px; padding: 10px 12px; background: #fdf3d6; border: 1px solid #f0dfa8; border-radius: 8px; font-size: 13px; color: #5c4a12; line-height: 1.6; }
+.ib-dups ul { margin: 6px 0 0; padding-left: 18px; }
+.ib-dups li { margin-bottom: 2px; }
+.ib-dups li small { color: #8a6d1a; margin-left: 4px; }
+.ib-dups .ib-link { font-weight: 700; }
+.ib-more {
+  width: 100%; padding: 12px; font-size: 14px; font-weight: 700; color: var(--navy); background: #f7f9fb;
+  border: 1px dashed #cdd8e3; border-radius: 10px; cursor: pointer; font-family: inherit;
+}
+.ib-merge-note { margin: 0 0 12px; font-size: 12.5px; color: #8a6d1a; }
+.ib-danger-zone { margin-top: 20px; padding-top: 12px; border-top: 1px dashed var(--line); text-align: right; }
+.ib-secondary {
+  padding: 9px 16px; font-size: 13px; font-weight: 700; color: var(--navy); background: #fff;
+  border: 1px solid var(--navy); border-radius: 8px; cursor: pointer; font-family: inherit;
+}
+.ib-secondary:disabled { opacity: .5; cursor: default; }
+
+/* PC の一覧：横にずらしても生徒氏名までの列を残す（元のスプレッドシートの「固定」） */
+@media (min-width: 901px) {
+  .ib-table .frz { position: sticky; z-index: 1; background: #fff; }
+  .ib-table thead .frz { z-index: 3; background: #f7f9fb; }
+  .ib-table .ib-filter-row .frz { background: #eef2f6; }
+  .ib-table .frz-act { left: var(--frz-act, 0); }
+  .ib-table .frz-campus { left: var(--frz-campus, 0); }
+  .ib-table .frz-no { left: var(--frz-no, 0); }
+  .ib-table .frz-dm { left: var(--frz-dm, 0); }
+  .ib-table .frz-date { left: var(--frz-date, 0); }
+  .ib-table .frz-studentName { left: var(--frz-studentName, 0); }
+  .ib-table .frz-last { box-shadow: 6px 0 6px -6px rgba(0,0,0,.2); }
+  .ib-row.current td.frz-last { box-shadow: 6px 0 6px -6px rgba(0,0,0,.2); }
+}
+
+/* スマホの一覧：氏名・結果・経過日数・電話・備考1行の短いカード */
+.ib-table td.ib-card { display: none; }
+.ib-fab { display: none; }
+@media (max-width: 900px) {
+  .ib { padding-bottom: 96px; }
+  .ib-table tr.has-card { display: block; padding: 10px 12px; }
+  .ib-table tr.has-card > td { display: none; }
+  .ib-table tr.has-card > td.ib-card { display: block; padding: 0; }
+  .ib-table td.ib-card::before { display: none; }
+  .ib-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .ib-card-top b { font-size: 16px; line-height: 1.35; }
+  .ib-card-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 3px; font-size: 12.5px; color: #6b7580; }
+  .ib-card-meta .ib-over { color: #b03a2e; font-weight: 700; }
+  .ib-card-meta .ib-untouched { color: #8a6d1a; font-weight: 700; }
+  .ib-card-tel { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 8px; }
+  .ib-call {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 14px;
+    font-size: 14px; font-weight: 700; color: #fff; background: var(--navy); border-radius: 999px; text-decoration: none;
+  }
+  .ib-call span { font-weight: 600; font-variant-numeric: tabular-nums; opacity: .92; }
+  .ib-card-tel small { font-size: 12px; color: #6b7580; }
+  .ib-card-note { margin-top: 6px; font-size: 12.5px; color: #4b535c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 新規登録は画面の下に常に置く（ツールバーのボタンは隠す） */
+  .ib-toolbar .ib-primary { display: none; }
+  .ib-fab {
+    display: block; position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 30;
+    padding: 14px 20px; font-size: 15px; font-weight: 800; color: #fff; background: var(--navy);
+    border: none; border-radius: 999px; box-shadow: 0 6px 18px rgba(31,78,120,.35); font-family: inherit;
+  }
+}
+@media (max-width: 620px) {
+  .ib-choice button { min-height: 42px; padding: 8px 14px; font-size: 15px; }
+  .ib-quick { padding: 9px 12px; font-size: 14px; }
+  .ib-datein input[type="date"] { flex: 1 1 100%; }
+  .ib-grid .ib-field { font-size: 13px; }
+  .ib-log-memo { font-size: 16px; min-height: 46px; border-radius: 10px; }
+  .ib-log-btns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ib-log-btns button { min-height: 46px; font-size: 15px; border-radius: 10px; }
+  .ib-more { font-size: 15px; padding: 14px; }
+  .ib-nav-word { display: none; }
+  .ib-nav-btn { min-width: 40px; min-height: 40px; font-size: 18px; padding: 4px 10px; }
+  .ib-modal .ib-secondary { flex: 1; padding: 13px 10px; font-size: 15px; border-radius: 10px; }
+  /* ［保存して次へ］が2行にならないように、［閉じる］は文字の幅だけにして残りを分ける */
+  .ib-panel .ib-foot .ib-cancel { flex: 0 0 auto; padding-left: 14px; padding-right: 14px; }
+  .ib-panel .ib-foot .dm-modal-done { flex: 1.5; white-space: nowrap; }
+}
+
 /* 本番以外で出す「テスト環境」の帯（components/EnvBanner.tsx）。
    画面の配置を崩さないよう重ねて表示し、クリックは下に素通しする。 */
 .env-banner {

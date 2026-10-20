@@ -3,11 +3,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  addDays,
+  applyLog,
   applyPatch,
+  daysSince,
   editPatch,
   emptyInput,
+  findDuplicates,
   isFollowing,
   isOverdue,
+  normalizePhone,
   rebaseDraft,
   statsByGrade,
   type InquiryInput,
@@ -107,4 +112,44 @@ test('rebaseDraft: 自分が変えていない項目は新しい行の値にな�
   assert.equal(out.contacted, '済');   // 他の人の変更を取り込む
   assert.equal(out.result, '入塾');    // 自分の変更は残す（衝突した項目は画面で選ぶ）
   assert.equal(out.note, 'メモ');
+});
+
+test('normalizePhone: 全角を半角にし、落ちた先頭の 0 を補う', () => {
+  assert.equal(normalizePhone('０９０－１２３４－５６７８'), '090-1234-5678');
+  assert.equal(normalizePhone(' 090 1234 5678 '), '09012345678');
+  assert.equal(normalizePhone('956123456'), '0956123456');
+  assert.equal(normalizePhone('不明'), '不明');
+});
+
+test('findDuplicates: 電話番号（10桁以上）か氏名が同じ行。両方一致を先に', () => {
+  const rows = [
+    rec({ id: 'a', studentName: '佐藤 陽向', phone: '090-1111-2222', date: '2026-09-01' }),
+    rec({ id: 'b', studentName: '佐藤 結衣', phone: '09011112222', date: '2026-10-01' }), // 兄弟（電話だけ同じ）
+    rec({ id: 'c', studentName: '佐藤陽向', phone: '080-0000-0000', date: '2026-08-01' }),
+    rec({ id: 'd', studentName: '田中 蓮', phone: '090-9999-9999' }),
+  ];
+  const hits = findDuplicates(rows, { studentName: '佐藤　陽向', phone: '０９０−１１１１−２２２２' });
+  assert.deepEqual(hits.map((h) => h.record.id), ['a', 'b', 'c']);
+  assert.deepEqual(hits[0].reasons, ['電話番号', '氏名']);
+  assert.deepEqual(findDuplicates(rows, { studentName: '', phone: '090-1' }), []);
+});
+
+test('applyLog: 備考の先頭に1行足し、連絡を変える', () => {
+  const v = { contacted: '', note: '[10/1 10:00 山田] 資料送付', trialDate: '' };
+  const ng = applyLog(v, 'ng', '夕方かけ直し', '10/20 14:05 鈴木');
+  assert.equal(ng.contacted, '不通');
+  assert.equal(ng.note, '[10/20 14:05 鈴木] 不通：夕方かけ直し\n[10/1 10:00 山田] 資料送付');
+  assert.equal(applyLog({ ...v, contacted: '済' }, 'ng', '', 's').contacted, '済'); // 一度つながった人は戻さない
+  assert.equal(applyLog(v, 'ok', '', 's').contacted, '済');
+  assert.equal(applyLog({ ...v, trialDate: '2026-10-25' }, 'trial', '', '10/20 14:05 鈴木').note.split('\n')[0], '[10/20 14:05 鈴木] 体験予約（10/25）');
+  const memo = applyLog({ ...v, note: '' }, 'memo', '兄が在籍', 's');
+  assert.equal(memo.note, '[s] 兄が在籍');
+  assert.equal(memo.contacted, '');
+});
+
+test('addDays・daysSince: 月またぎも数える', () => {
+  assert.equal(addDays('2026-10-28', 7), '2026-11-04');
+  assert.equal(addDays('2026-12-31', 1), '2027-01-01');
+  assert.equal(daysSince('2026-09-30', '2026-10-20'), 20);
+  assert.equal(daysSince('5/21.6/29', '2026-10-20'), null);
 });

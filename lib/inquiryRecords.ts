@@ -145,6 +145,27 @@ export function normalizeGrade(v: string): string {
   return s.replace(/[0-9]/g, (d) => FULLWIDTH_DIGITS[Number(d)]);
 }
 
+/**
+ * 電話番号を整える（画面の入力・HP フォームの取り込みの両方）。
+ * - 全角数字・全角ハイフンを半角に、空白を取る
+ * - 先頭の 0 が落ちているもの（9〜10桁で 0 始まりでない）は 0 を補う。
+ *   日本の電話番号は必ず 0 始まりなので、途中で数値扱いされて 0 が落ちたケースの復元。
+ */
+export function normalizePhone(raw: string): string {
+  let s = (raw || '').trim()
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[－ー‐―]/g, '-')
+    .replace(/[\s　]+/g, '');
+  const d = phoneDigits(s);
+  if (/^[0-9-]+$/.test(s) && (d.length === 9 || d.length === 10) && !d.startsWith('0')) s = '0' + s;
+  return s;
+}
+
+/** 電話番号の数字だけ（同じ番号かを比べるため）。 */
+export function phoneDigits(s: string): string {
+  return (s || '').replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/[^0-9]/g, '');
+}
+
 /** 〇○◯⚪︎ → 〇、×✕✖ → ✕。目印の表記ゆれを揃える。 */
 export function normalizeMark(v: string): string {
   const s = (v || '').trim();
@@ -245,7 +266,7 @@ export function normalizeInput(raw: unknown, fallbackYear: number): InquiryInput
     kana: str(r.kana),
     school: str(r.school),
     grade: normalizeGrade(str(r.grade)),
-    phone: str(r.phone),
+    phone: normalizePhone(str(r.phone)),
     source: str(r.source),
     referrer: str(r.referrer),
     term: str(r.term),
@@ -466,6 +487,64 @@ export function rebaseDraft<T extends InquiryInput>(draft: T, prev: InquiryRecor
     if (str(draft[k]) === str(prev[k])) out[k] = next[k];
   }
   return out as T;
+}
+
+// ---- 新規登録の重複のお知らせ -----------------------------------------------------
+//
+// 新規登録の入力中に、同じ人がもう台帳にいないかを知らせる（登録してから統合するより先に気づけるように）。
+// 電話番号（10桁以上）が同じか、氏名（空白を除く）が同じ行。兄弟は電話番号が同じになるので、理由を並べて出す。
+
+export type DuplicateHit = { record: InquiryRecord; reasons: ('電話番号' | '氏名')[] };
+
+export function findDuplicates(rows: InquiryRecord[], v: Pick<InquiryInput, 'phone' | 'studentName'>, limit = 5): DuplicateHit[] {
+  const tel = phoneDigits(v.phone);
+  const name = (v.studentName || '').replace(/[\s　]/g, '');
+  if (tel.length < 10 && !name) return [];
+  const hits: DuplicateHit[] = [];
+  for (const r of rows) {
+    const reasons: DuplicateHit['reasons'] = [];
+    if (tel.length >= 10 && phoneDigits(r.phone) === tel) reasons.push('電話番号');
+    if (name && (r.studentName || '').replace(/[\s　]/g, '') === name) reasons.push('氏名');
+    if (reasons.length) hits.push({ record: r, reasons });
+  }
+  // 両方一致 → 新しい問い合わせ順
+  hits.sort((a, b) => b.reasons.length - a.reasons.length || (b.record.date || '').localeCompare(a.record.date || ''));
+  return hits.slice(0, limit);
+}
+
+// ---- 対応の記録 -------------------------------------------------------------------
+//
+// 編集画面の［不通］［話せた］［体験予約］［メモ］。備考の先頭に「[10/20 14:05 山田] 不通：夕方かけ直し」を足し、
+// 連絡欄を変える（HP フォームの取り込みが備考に書く「[9/18 14:05 HPフォーム:資料請求] …」と同じ形）。
+
+export type LogKind = 'ng' | 'ok' | 'trial' | 'memo';
+export const LOG_LABEL: Record<LogKind, string> = { ng: '不通', ok: '話せた', trial: '体験予約', memo: 'メモ' };
+
+/** stamp は「10/20 14:05 山田」。不通は連絡が空のときだけ「不通」にする（一度つながった人を戻さない）。 */
+export function applyLog(
+  v: Pick<InquiryInput, 'contacted' | 'note' | 'trialDate'>, kind: LogKind, memo: string, stamp: string,
+): { contacted: string; note: string } {
+  const m = memo.trim();
+  const what = kind === 'memo' ? m
+    : `${LOG_LABEL[kind]}${kind === 'trial' && parseIso(v.trialDate) ? `（${shortDate(v.trialDate)}）` : ''}${m ? `：${m}` : ''}`;
+  const line = `[${stamp}] ${what}`;
+  const contacted = kind === 'ng' ? (v.contacted || '不通') : kind === 'memo' ? v.contacted : '済';
+  return { contacted, note: v.note ? `${line}\n${v.note}` : line };
+}
+
+/** YYYY-MM-DD に n 日足す（日付ボタンの「明日」「1週間後」）。 */
+export function addDays(iso: string, n: number): string {
+  const p = parseIso(iso);
+  if (!p) return iso;
+  const d = new Date(Date.UTC(p.y, p.m - 1, p.d + n));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** 問い合わせ日から今日まで何日たったか（一覧の「○日経過」）。日付が読めなければ null。 */
+export function daysSince(iso: string, today: string): number | null {
+  const a = parseIso(iso); const b = parseIso(today);
+  if (!a || !b) return null;
+  return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86400000);
 }
 
 // ---- CSV ---------------------------------------------------------------
