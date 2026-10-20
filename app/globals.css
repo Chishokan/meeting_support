@@ -1599,6 +1599,32 @@ a.portal-card:hover { border-color: var(--navy); box-shadow: 0 2px 10px rgba(31,
   .env-banner-label { font-size: 10.5px; padding: 1px 8px; }
 }
 
+/* ============ ヘルプデスク：マニュアル（/helpdesk/manual）============ */
+.manual-list { list-style: none; margin: 0 auto; padding: 20px 24px 48px; max-width: 860px; display: grid; gap: 16px; }
+.manual-item { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: grid; gap: 10px; }
+.manual-head { display: flex; align-items: center; gap: 10px; }
+.manual-kind {
+  flex: none; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 8px;
+  color: var(--navy); background: #eaf1f8;
+}
+.manual-kind.video { color: #8a4b0f; background: #fdf0e1; }
+.manual-title { font-weight: 800; font-size: 16px; color: var(--navy); }
+.manual-desc { margin: 0; font-size: 13px; line-height: 1.7; color: #444; }
+.manual-video { width: 100%; max-width: 100%; height: auto; border-radius: 10px; background: #0e1520; }
+.manual-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.manual-meta { font-size: 12px; color: #8a94a0; }
+.manual-actions { display: flex; gap: 8px; }
+.manual-open, .manual-download {
+  font-size: 13px; font-weight: 700; text-decoration: none; border-radius: 8px; padding: 8px 16px;
+}
+.manual-open { color: var(--navy); background: #fff; border: 1px solid #cdd8e3; }
+.manual-download { color: #fff; background: var(--navy); border: 1px solid var(--navy); }
+.manual-open:hover { background: #f2f5f9; }
+.manual-download:hover { opacity: .9; }
+@media (max-width: 600px) {
+  .manual-list { padding: 14px 14px 40px; }
+}
+
 /* 今のバージョン表示（package.json の version。docs/release.md） */
 .app-version { font-size: 10.5px; color: #a0a8b2; margin-top: 8px; }
 .portal-version { margin: 32px 0 0; font-size: 11.5px; color: #a0a8b2; text-align: center; }
@@ -1833,6 +1859,10 @@ button.mp-btn.primary { width: auto; margin-top: 0; padding: 6px 14px; font-size
   /* 指で押す部品。文字だけだと高さ 17〜25px しかなく押し外すので、当たり判定を広げる */
   .app-nav-item { display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px; }
   .board-back { padding: 10px 6px; margin: -10px 0 -10px -6px; }
+}
+/* 320px ではヘルプデスクのタブ3つ（要項QA・マニュアル・ご意見・不具合の報告）が数px はみ出すので、左右の余白を詰める */
+@media (max-width: 340px) {
+  .app-nav-item { padding: 0 9px; }
 }
 
 /* ───────── 適性検査（/aptitude）─────────
