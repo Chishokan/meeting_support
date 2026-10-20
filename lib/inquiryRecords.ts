@@ -214,21 +214,34 @@ function str(v: unknown): string {
 export function validateInput(raw: unknown, fallbackYear: number): ValidationResult {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const errors: string[] = [];
+  const value = normalizeInput(r, fallbackYear);
 
-  const campus = normalizeCampus(str(r.campus));
-  if (!campus) errors.push('校舎を選んでください。');
+  if (!value.campus) errors.push('校舎を選んでください。');
+  if (!value.studentName && !value.guardianName) errors.push('生徒氏名（または保護者名）を入力してください。');
+  if (!value.date) errors.push('問い合わせ日を入力してください。');
 
-  const studentName = str(r.studentName);
-  const guardianName = str(r.guardianName);
-  if (!studentName && !guardianName) errors.push('生徒氏名（または保護者名）を入力してください。');
+  if (r.no != null && str(r.no) !== '') {
+    const n = Number(r.no);
+    if (!Number.isInteger(n) || n < 0) errors.push('No. は 0 以上の整数で入力してください。');
+    else value.no = n;
+  }
 
-  const date = normalizeDate(str(r.date), fallbackYear);
-  if (!date) errors.push('問い合わせ日を入力してください。');
+  // 結果＝入塾なのに入塾日が無いのは記入漏れになりやすい。エラーにはせず画面側で注意を出す。
+  for (const [k, max] of Object.entries(TEXT_MAX) as [keyof InquiryInput, number][]) {
+    const v = value[k];
+    if (typeof v === 'string' && v.length > max) errors.push(`${labelOf(k)}が長すぎます（${max}文字まで）。`);
+  }
 
-  const value: InquiryInput = {
-    campus,
-    date,
-    studentName,
+  return errors.length ? { ok: false, errors } : { ok: true, value };
+}
+
+/** 入力の表記を揃える（検証はしない）。No. は含めない（validateInput が見る）。 */
+export function normalizeInput(raw: unknown, fallbackYear: number): InquiryInput {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  return {
+    campus: normalizeCampus(str(r.campus)),
+    date: normalizeDate(str(r.date), fallbackYear),
+    studentName: str(r.studentName),
     kana: str(r.kana),
     school: str(r.school),
     grade: normalizeGrade(str(r.grade)),
@@ -245,26 +258,13 @@ export function validateInput(raw: unknown, fallbackYear: number): ValidationRes
     result: str(r.result),
     enrollDate: normalizeDate(str(r.enrollDate), fallbackYear),
     note: str(r.note),
-    guardianName,
+    guardianName: str(r.guardianName),
     postal: str(r.postal),
     address: str(r.address),
     email: str(r.email),
     dm: normalizeMark(str(r.dm)),
     intakeId: str(r.intakeId),
   };
-  if (r.no != null && str(r.no) !== '') {
-    const n = Number(r.no);
-    if (!Number.isInteger(n) || n < 0) errors.push('No. は 0 以上の整数で入力してください。');
-    else value.no = n;
-  }
-
-  // 結果＝入塾なのに入塾日が無いのは記入漏れになりやすい。エラーにはせず画面側で注意を出す。
-  for (const [k, max] of Object.entries(TEXT_MAX) as [keyof InquiryInput, number][]) {
-    const v = value[k];
-    if (typeof v === 'string' && v.length > max) errors.push(`${labelOf(k)}が長すぎます（${max}文字まで）。`);
-  }
-
-  return errors.length ? { ok: false, errors } : { ok: true, value };
 }
 
 export function labelOf(key: keyof InquiryRecord): string {
@@ -295,14 +295,24 @@ export const STATUS_LABEL: Record<RecordStatus, string> = {
   other: 'その他',
 };
 
+/**
+ * まだ決着していない（追客を続ける）行か。結果が空（追客中）と「検討中」。
+ * 「検討中」は結果欄に入っていても決着ではないので、期限超過や注意点の対象に含める
+ * （含めないと、検討中にした途端にどの注意にも出なくなる）。
+ */
+export function isFollowing(result: string): boolean {
+  const st = statusOf(result);
+  return st === 'open' || st === 'considering';
+}
+
 /** 連絡も結果も未記入＝まだ着手できていない。 */
 export function isUntouched(r: Pick<InquiryRecord, 'contacted' | 'result'>): boolean {
   return !r.contacted && !r.result;
 }
 
-/** クローズ予定日を過ぎているのに結果が未記入＝滞留。today は YYYY-MM-DD。 */
+/** クローズ予定日を過ぎているのに結果が決まっていない（未記入・検討中）＝滞留。today は YYYY-MM-DD。 */
 export function isOverdue(r: Pick<InquiryRecord, 'closeDate' | 'result'>, today: string): boolean {
-  if (r.result) return false;
+  if (!isFollowing(r.result)) return false;
   const p = parseIso(r.closeDate);
   return !!p && r.closeDate.slice(0, 10) < today;
 }
@@ -312,7 +322,7 @@ export function isOverdue(r: Pick<InquiryRecord, 'closeDate' | 'result'>, today:
 // 元シート右側の「問合・入面・問入率・体験・入体率」の表を、学年ごとに再現する。
 // シートの式は一部 #REF! で壊れていたため、ここでは次の定義で数える。
 //   問合：行数 ／ 面談：入塾提案面談日あり ／ 体験：体験=〇 ／ 入塾：結果=入塾 ／
-//   申込：結果=講習会申込・模試申込 ／ 見送り ／ 追客中：結果が空
+//   申込：結果=講習会申込・模試申込 ／ 検討中 ／ 見送り ／ 追客中：結果が空
 
 export type GradeStat = {
   grade: string;
@@ -321,6 +331,7 @@ export type GradeStat = {
   trial: number;
   joined: number;
   applied: number;
+  considering: number;
   declined: number;
   open: number;
 };
@@ -332,7 +343,7 @@ const GRADE_GROUPS: { label: string; grades: readonly string[] }[] = [
 ];
 
 function blank(grade: string): GradeStat {
-  return { grade, total: 0, meeting: 0, trial: 0, joined: 0, applied: 0, declined: 0, open: 0 };
+  return { grade, total: 0, meeting: 0, trial: 0, joined: 0, applied: 0, considering: 0, declined: 0, open: 0 };
 }
 
 function add(s: GradeStat, r: InquiryRecord) {
@@ -342,6 +353,7 @@ function add(s: GradeStat, r: InquiryRecord) {
   const st = statusOf(r.result);
   if (st === 'joined') s.joined++;
   else if (st === 'applied') s.applied++;
+  else if (st === 'considering') s.considering++;
   else if (st === 'declined') s.declined++;
   else if (st === 'open') s.open++;
 }
@@ -366,7 +378,7 @@ export function statsByGrade(rows: InquiryRecord[]): { grades: GradeStat[]; grou
       const x = map.get(g);
       if (!x) continue;
       s.total += x.total; s.meeting += x.meeting; s.trial += x.trial;
-      s.joined += x.joined; s.applied += x.applied; s.declined += x.declined; s.open += x.open;
+      s.joined += x.joined; s.applied += x.applied; s.considering += x.considering; s.declined += x.declined; s.open += x.open;
     }
     return s;
   }).filter((s) => s.total > 0);
@@ -377,6 +389,83 @@ export function statsByGrade(rows: InquiryRecord[]): { grades: GradeStat[]; grou
 export function pct(n: number, d: number): string {
   if (!d) return '—';
   return `${Math.round((n / d) * 1000) / 10}%`;
+}
+
+// ---- 同時編集 -------------------------------------------------------------
+//
+// 保存は1行まるごと送るので、そのままでは「開いたあとに他の人が直した項目」を古い値で上書きしてしまう。
+// 画面は編集を始めた時点の行（base）も送り、保存する側は「この保存で変えた項目」だけを書く。
+//   - 自分が変えていない項目       … いまの台帳の値を残す（他の人の変更を消さない）
+//   - 自分だけが変えた項目         … 自分の値にする
+//   - 自分も他の人も同じ項目を別の値に変えた … 衝突。保存せずに画面へ返し、どちらにするか選んでもらう
+// 台帳（Apps Script の saveInquiryRecord_）とローカル保存（lib/inquiryStore.ts）が同じ決まりで動く。
+
+/** 画面から直せる項目（同時編集で比べる対象）。ID・作成/更新の記録は除く。 */
+export const EDIT_KEYS = RECORD_FIELDS.map((f) => f.key).filter(
+  (k): k is keyof InquiryInput => !['id', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'].includes(k),
+);
+
+/** 画面から来た「開いた時点の行」を InquiryRecord の形にする。無い・形が違えば null。 */
+export function baseFrom(raw: unknown): InquiryRecord | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const f of RECORD_FIELDS) out[f.key] = f.key === 'no' ? Number(r.no ?? 0) || 0 : str(r[f.key]);
+  return out.id ? (out as InquiryRecord) : null;
+}
+
+/**
+ * この保存で変えた項目。base（開いた時点の行）と input（保存する値）を同じ決まりで揃えてから比べるので、
+ * 旧データの表記（「中2」と「中２」など）が違うだけの項目は「変えた」に入れない（黙って書き換えない）。
+ * patch＝書く値、expect＝その項目の開いた時点の値（台帳にある形のまま）。
+ */
+export function editPatch(base: InquiryRecord, input: InquiryInput, fallbackYear: number): {
+  patch: Partial<Record<keyof InquiryInput, string | number>>;
+  expect: Partial<Record<keyof InquiryInput, string | number>>;
+} {
+  const was = normalizeInput(base, fallbackYear);
+  const patch: Partial<Record<keyof InquiryInput, string | number>> = {};
+  const expect: Partial<Record<keyof InquiryInput, string | number>> = {};
+  for (const k of EDIT_KEYS) {
+    if (k === 'no') {
+      if (input.no != null && input.no !== base.no) { patch.no = input.no; expect.no = base.no; }
+      continue;
+    }
+    if (input[k] !== was[k]) { patch[k] = input[k]; expect[k] = base[k]; }
+  }
+  return { patch, expect };
+}
+
+/**
+ * いまの行（current）に patch を当てる。expect と違う値に誰かが変えていて、しかも patch とも違う項目は衝突。
+ * 衝突があれば何も当てずに conflicts を返す。
+ */
+export function applyPatch(
+  current: InquiryRecord,
+  patch: Partial<Record<keyof InquiryInput, string | number>>,
+  expect: Partial<Record<keyof InquiryInput, string | number>>,
+): { ok: true; next: InquiryRecord } | { ok: false; conflicts: (keyof InquiryInput)[] } {
+  const conflicts: (keyof InquiryInput)[] = [];
+  for (const k of Object.keys(patch) as (keyof InquiryInput)[]) {
+    const now = str(current[k]);
+    if (now !== str(expect[k]) && now !== str(patch[k])) conflicts.push(k);
+  }
+  if (conflicts.length) return { ok: false, conflicts };
+  const next = { ...current } as Record<string, unknown>;
+  for (const [k, v] of Object.entries(patch)) next[k] = v;
+  return { ok: true, next: next as InquiryRecord };
+}
+
+/**
+ * 衝突のあと、編集中の値（draft）を新しい行（next）に載せ替える。
+ * 自分が変えていない項目（draft が開いた時点の値 prev のまま）は、他の人が直した next の値にする。
+ */
+export function rebaseDraft<T extends InquiryInput>(draft: T, prev: InquiryRecord, next: InquiryRecord): T {
+  const out = { ...draft } as Record<string, unknown>;
+  for (const k of EDIT_KEYS) {
+    if (str(draft[k]) === str(prev[k])) out[k] = next[k];
+  }
+  return out as T;
 }
 
 // ---- CSV ---------------------------------------------------------------

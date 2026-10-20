@@ -6,20 +6,23 @@
 // - 校舎タブで切り替え、一覧の行を押すとその件の編集フォームが開く
 // - DM（発送する〇／しない✕）は一覧上の切り替えで即保存。「一覧で編集」を押すと各セルが入力欄になり、
 //   変えた項目はその場で保存される（セルを離れたとき／選び直したとき）
-// - 「結果」が空＝追客中。連絡も結果も無い行（未着手）とクローズ予定日を過ぎた行（期限超過）は色を付ける
+// - 「結果」が空＝追客中。「検討中」も決着していないので追客の一種として扱う（期限超過・注意点の対象）。
+//   連絡も結果も無い行（未着手）とクローズ予定日を過ぎた行（期限超過）は色を付ける
 // - 画面上部の「今日の注意点」は /api/inquiry-board/alerts が返す（ルールで数えた事実＋AIの一言）。
-//   チップを押すとその区分で一覧を絞り込む
+//   チップを押すと、その注意に数えた行だけに一覧を絞り込む（件数と一覧が一致する）
+// - 保存は「編集を始めた時点の行（base）」も送り、変えた項目だけを書く。他の人が同じ項目を
+//   別の値に直していたら保存せず、どちらにするか選んでもらう（lib/inquiryRecords.ts の「同時編集」）
 // - 集計（学年別の問合・面談・体験・入塾）は元シート右側の表を再現したもの
 // - 保存先は Apps Script 経由のスプレッドシート「問合せ台帳」（lib/inquiryStore.ts）
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BOARD_CAMPUSES, GRADES, SOURCES, TERMS, CONTACTS, MARKS, RESULTS,
-  emptyInput, isOverdue, isUntouched, normalizeGrade, parseIso, pct, shortDate,
+  emptyInput, isOverdue, isUntouched, labelOf, normalizeGrade, parseIso, pct, rebaseDraft, shortDate,
   statsByGrade, statusOf, STATUS_LABEL, toCsv, ymOf, RECORD_FIELDS,
   type InquiryInput, type InquiryRecord, type RecordStatus,
 } from '@/lib/inquiryRecords';
-import { useModalDismiss } from '@/lib/useModalDismiss';
+import { useBackdropClose, useModalDismiss } from '@/lib/useModalDismiss';
 import type { Alert, KpiLine } from '@/lib/inquiryAlerts';
 import { mergePreview } from '@/lib/inquiryMerge';
 
@@ -36,7 +39,15 @@ const REASON_TEXT: Record<string, string> = {
   unauthorized: 'ログインし直してください。',
   not_found: 'その件は見つかりませんでした（他の人が削除した可能性があります）。',
   invalid: '入力内容を確認してください。',
+  conflict: '他の人が先に同じ項目を変更していたため、保存できませんでした。',
 };
+
+/** 衝突（他の人が同じ項目を別の値に直していた）を知らせる文。 */
+function conflictText(cur: InquiryRecord, keys: (keyof InquiryRecord)[]): string {
+  const who = cur.updatedBy ? `${cur.updatedBy}さん` : '他の人';
+  const what = keys.length ? `（${keys.map(labelOf).join('・')}）` : '';
+  return `保存できませんでした：${who}が ${fmtTs(cur.updatedAt)} に同じ項目${what}を変更していました。最新の内容を表示しています。`;
+}
 
 const STORAGE_KEY = 'ib_campus';
 const INLINE_KEY = 'ib_inline';
@@ -50,6 +61,9 @@ const VIEWS: { key: View; label: string; desc: string }[] = [
   { key: 'all', label: 'すべて', desc: '区分なし' },
 ];
 const ALL = 'すべて';
+
+// 件数カードの区分（結果の区分＋未着手・期限超過）。'' は絞り込みなし
+type StatusFilter = '' | RecordStatus | 'untouched' | 'overdue';
 
 type SortDir = 'asc' | 'desc';
 
@@ -158,7 +172,9 @@ export default function InquiryBoardUI({ name }: { name: string }) {
 
   const [campus, setCampus] = useState<string>(ALL);
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState<'' | RecordStatus | 'untouched' | 'overdue'>('');
+  const [status, setStatus] = useState<StatusFilter>('');
+  // 今日の注意点のチップで絞り込んだ行（その注意に数えた行の ID）。校舎・表示区分より優先して出す
+  const [alertSel, setAlertSel] = useState<{ label: string; ids: Set<string> } | null>(null);
   const [month, setMonth] = useState('');
   const [sortKey, setSortKey] = useState<ColKey>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -205,6 +221,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
   }
   function changeCampus(c: string) {
     setCampus(c);
+    setAlertSel(null); // 注意点は校舎ごとに数えているので、校舎を変えたら外す
     try { localStorage.setItem(STORAGE_KEY, c); } catch {}
   }
 
@@ -258,6 +275,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
   const statsRows = useMemo(() => {
     const q = query.trim().toLowerCase();
     const rows = campusRows.filter((r) => {
+      if (alertSel && !alertSel.ids.has(r.id)) return false;
       if (status) {
         if (status === 'untouched') { if (!isUntouched(r)) return false; }
         else if (status === 'overdue') { if (!isOverdue(r, today)) return false; }
@@ -275,7 +293,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
     });
     rows.sort((a, b) => compareRows(a, b, sortKey, sortDir));
     return rows;
-  }, [campusRows, query, status, month, colF, sortKey, sortDir, today]);
+  }, [campusRows, alertSel, query, status, month, colF, sortKey, sortDir, today]);
 
   // 見出しを押すと、その列で昇順 → 降順 → 昇順… と切り替わる（別の列を押すと昇順から）
   const toggleSort = useCallback((key: ColKey) => {
@@ -307,19 +325,17 @@ export default function InquiryBoardUI({ name }: { name: string }) {
   }, [campusRows]);
 
   const shown = useMemo(() => {
-    if (view === 'all') return statsRows;
+    // 注意点で絞り込んだときは表示区分を掛けない（入塾日が空の入塾者など、区分の外の行も数えているため）
+    if (view === 'all' || alertSel) return statsRows;
     if (view === 'joined') return statsRows.filter((r) => statusOf(r.result) === 'joined');
     return statsRows.filter((r) => statusOf(r.result) !== 'joined');
-  }, [statsRows, view]);
+  }, [statsRows, view, alertSel]);
 
+  // 件数カード。結果の区分（追客中・検討中・入塾・申込・見送り・その他）の合計が「問合せ」と一致する
   const counts = useMemo(() => {
-    const c = { total: viewRows.length, open: 0, joined: 0, applied: 0, declined: 0, untouched: 0, overdue: 0 };
+    const c = { total: viewRows.length, open: 0, considering: 0, joined: 0, applied: 0, declined: 0, other: 0, untouched: 0, overdue: 0 };
     for (const r of viewRows) {
-      const st = statusOf(r.result);
-      if (st === 'open') c.open++;
-      else if (st === 'joined') c.joined++;
-      else if (st === 'applied') c.applied++;
-      else if (st === 'declined') c.declined++;
+      c[statusOf(r.result)]++;
       if (isUntouched(r)) c.untouched++;
       if (isOverdue(r, today)) c.overdue++;
     }
@@ -345,19 +361,25 @@ export default function InquiryBoardUI({ name }: { name: string }) {
     setVersion((v) => v + 1);
   }
 
-  // 一覧上の直接編集（DM の切り替え・「一覧で編集」の各セル）。行まるごと PUT して、返ってきた値で置き換える。
-  const saveInline = useCallback(async (next: InquiryRecord): Promise<boolean> => {
+  // 一覧上の直接編集（DM の切り替え・「一覧で編集」の各セル）。base（変える前の行）と一緒に PUT し、
+  // 変えた項目だけを書く。返ってきた値（他の人の変更も入った最新の行）で置き換える。
+  const saveInline = useCallback(async (next: InquiryRecord, base: InquiryRecord): Promise<boolean> => {
     try {
       const res = await fetch('/api/inquiry-board', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
+        body: JSON.stringify({ ...next, base }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok && j.item) {
         applySaved(j.item as InquiryRecord);
         setFlash('');
         return true;
+      }
+      if (j?.reason === 'conflict' && j.item) {
+        applySaved(j.item as InquiryRecord);
+        setFlash(conflictText(j.item as InquiryRecord, j.conflicts ?? []));
+        return false;
       }
       setFlash(
         Array.isArray(j?.errors) && j.errors.length
@@ -380,7 +402,21 @@ export default function InquiryBoardUI({ name }: { name: string }) {
     URL.revokeObjectURL(a.href);
   }
 
-  const filtered = !!(query || status || month || Object.values(colF).some(Boolean));
+  const filtered = !!(alertSel || query || status || month || Object.values(colF).some(Boolean));
+  function clearFilters() { setAlertSel(null); setQuery(''); setStatus(''); setMonth(''); setColF({}); }
+  // 件数カード：押すとその区分で絞り込む（もう一度押すと外す）。注意点の絞り込みは外す
+  function pickStatus(s: StatusFilter) { setAlertSel(null); setStatus((cur) => (cur === s ? '' : s)); }
+  const cards: { key: StatusFilter; label: string; n: number; cls?: string; hide?: boolean }[] = [
+    { key: '', label: '問合せ', n: counts.total },
+    { key: 'open', label: '追客中', n: counts.open },
+    { key: 'considering', label: '検討中', n: counts.considering },
+    { key: 'joined', label: '入塾', n: counts.joined, hide: view === 'active' },
+    { key: 'applied', label: '申込', n: counts.applied },
+    { key: 'declined', label: '見送り', n: counts.declined },
+    { key: 'other', label: 'その他', n: counts.other, hide: !counts.other },
+    { key: 'untouched', label: '未着手', n: counts.untouched, cls: 'warn' },
+    { key: 'overdue', label: '期限超過', n: counts.overdue, cls: 'danger' },
+  ];
 
   // 一覧の枠を「画面の残りの高さ」に合わせる。枠の下端が常に画面内に来るので、横スクロールバーが
   // いちばん下まで行かなくても見える（PC のみ。スマホはカード表示なので枠の高さは触らない）。
@@ -447,37 +483,27 @@ export default function InquiryBoardUI({ name }: { name: string }) {
         <AlertPanel
           campus={campus}
           version={version}
-          onFilter={(f) => {
-            if (f === 'joined' && view === 'active') changeView('joined');
-            setStatus((cur) => (cur === f ? '' : f));
+          selected={alertSel?.label ?? ''}
+          onFilter={(a) => {
+            // その注意に数えた行だけを出す。ほかの絞り込みは外す（件数と一覧を一致させるため）
+            if (alertSel?.label === a.label) { setAlertSel(null); return; }
+            setQuery(''); setStatus(''); setMonth(''); setColF({});
+            setAlertSel({ label: a.label ?? '注意点', ids: new Set(a.ids ?? []) });
           }}
         />
       )}
 
       <div className="ib-summary">
-        <button className={`ib-sum ${status === '' ? 'active' : ''}`} onClick={() => setStatus('')}>
-          <b>{counts.total}</b><span>問合せ</span>
-        </button>
-        <button className={`ib-sum ${status === 'open' ? 'active' : ''}`} onClick={() => setStatus(status === 'open' ? '' : 'open')}>
-          <b>{counts.open}</b><span>追客中</span>
-        </button>
-        {view !== 'active' && (
-          <button className={`ib-sum ${status === 'joined' ? 'active' : ''}`} onClick={() => setStatus(status === 'joined' ? '' : 'joined')}>
-            <b>{counts.joined}</b><span>入塾</span>
+        {cards.filter((c) => !c.hide).map((c) => (
+          <button
+            key={c.key || 'total'}
+            className={`ib-sum ${c.cls ?? ''} ${status === c.key && !alertSel ? 'active' : ''}`}
+            onClick={() => { if (c.key) pickStatus(c.key); else { setAlertSel(null); setStatus(''); } }}
+            title={c.key === 'considering' ? '結果が「検討中」。まだ決着していないので、期限超過・注意点の対象にも入る' : c.key === 'overdue' ? 'クローズ予定日を過ぎて結果が決まっていない（追客中・検討中）' : undefined}
+          >
+            <b>{c.n}</b><span>{c.label}</span>
           </button>
-        )}
-        <button className={`ib-sum ${status === 'applied' ? 'active' : ''}`} onClick={() => setStatus(status === 'applied' ? '' : 'applied')}>
-          <b>{counts.applied}</b><span>申込</span>
-        </button>
-        <button className={`ib-sum ${status === 'declined' ? 'active' : ''}`} onClick={() => setStatus(status === 'declined' ? '' : 'declined')}>
-          <b>{counts.declined}</b><span>見送り</span>
-        </button>
-        <button className={`ib-sum warn ${status === 'untouched' ? 'active' : ''}`} onClick={() => setStatus(status === 'untouched' ? '' : 'untouched')}>
-          <b>{counts.untouched}</b><span>未着手</span>
-        </button>
-        <button className={`ib-sum danger ${status === 'overdue' ? 'active' : ''}`} onClick={() => setStatus(status === 'overdue' ? '' : 'overdue')}>
-          <b>{counts.overdue}</b><span>期限超過</span>
-        </button>
+        ))}
       </div>
 
       <div className="ib-toolbar">
@@ -529,9 +555,15 @@ export default function InquiryBoardUI({ name }: { name: string }) {
 
       <div className="ib-list-head">
         <span>
-          {filtered ? `${shown.length}件（${viewRows.length}件中）` : `${shown.length}件`}
+          {filtered ? `${shown.length}件（${alertSel ? alertSel.ids.size : viewRows.length}件中）` : `${shown.length}件`}
+          {alertSel && (
+            <span className="ib-filter-chip">
+              注意点：{alertSel.label}
+              <button type="button" onClick={() => setAlertSel(null)} aria-label="注意点の絞り込みを外す">×</button>
+            </span>
+          )}
           {filtered && (
-            <button className="ib-link" onClick={() => { setQuery(''); setStatus(''); setMonth(''); setColF({}); }}>
+            <button className="ib-link" onClick={clearFilters}>
               絞り込みを解除
             </button>
           )}
@@ -615,11 +647,12 @@ export default function InquiryBoardUI({ name }: { name: string }) {
       {editing && (
         <RecordForm
           record={editing === 'new' ? null : editing}
-          defaultCampus={campus === ALL ? BOARD_CAMPUSES[0] : campus}
+          defaultCampus={campus === ALL ? '' : campus /* 「すべて」からは校舎を選んでもらう（黙って先頭の校舎に入れない） */}
           today={today}
           user={name}
           onClose={() => setEditing(null)}
           onSaved={(item) => { applySaved(item); setEditing(null); }}
+          onSynced={applySaved}
           onDeleted={(id) => { applyDeleted(id); setEditing(null); }}
           candidates={items}
           onMerged={(item, droppedId) => { applyDeleted(droppedId); applySaved(item); setEditing(null); setOkMsg(`${item.campus} #${item.no} に統合しました。まとめた行は削除され、内容は備考に残っています。`); }}
@@ -647,7 +680,7 @@ function timeOf(ts: string): string {
   return m ? `${Number(m[1])}:${m[2]}` : ts;
 }
 
-function AlertPanel({ campus, version, onFilter }: { campus: string; version: number; onFilter: (f: NonNullable<Alert['filter']>) => void }) {
+function AlertPanel({ campus, version, selected, onFilter }: { campus: string; version: number; selected: string; onFilter: (a: Alert) => void }) {
   const [data, setData] = useState<AlertsRes | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(true);
@@ -726,16 +759,22 @@ function AlertPanel({ campus, version, onFilter }: { campus: string; version: nu
             <span className="ib-kpi" title="問い合わせ日で数えた件数">
               問合せ <b>{ok.facts.inquiriesThisMonth}</b><small>（前月 {ok.facts.inquiriesPrevMonth}）</small>
             </span>
-            <span className="ib-kpi" title="この月の問い合わせのその後（問い合わせQAのカードと同じ数え方）">
-              入塾 <b>{ok.facts.monthOutcome.joined}</b><small>／申込 {ok.facts.monthOutcome.applied}／見送り {ok.facts.monthOutcome.declined}／追客中 {ok.facts.monthOutcome.open}</small>
+            <span className="ib-kpi" title="この月の問い合わせのその後（問い合わせQAのカードと同じ数え方。「その他」は検討中など）">
+              入塾 <b>{ok.facts.monthOutcome.joined}</b><small>／申込 {ok.facts.monthOutcome.applied}／見送り {ok.facts.monthOutcome.declined}／追客中 {ok.facts.monthOutcome.open}{ok.facts.monthOutcome.other > 0 && `／その他 ${ok.facts.monthOutcome.other}`}</small>
             </span>
           </div>
 
           {ok.alerts.map((a, i) => (
             <div key={i} className={`ib-line lv-${a.level}`} role="listitem">
               <span className="ib-dot" />
-              {a.filter ? (
-                <button type="button" onClick={() => onFilter(a.filter!)} title="押すとこの区分で一覧を絞り込む">{a.text}</button>
+              {a.ids?.length ? (
+                <button
+                  type="button"
+                  className={selected && selected === a.label ? 'on' : ''}
+                  aria-pressed={selected === a.label}
+                  onClick={() => onFilter(a)}
+                  title={selected === a.label ? 'もう一度押すと絞り込みを外す' : `押すとこの ${a.ids.length} 件だけを一覧に出す`}
+                >{a.text}</button>
               ) : (
                 <span>{a.text}</span>
               )}
@@ -759,12 +798,15 @@ type RowProps = {
   inline: boolean;
   today: string;
   onOpen: () => void;
-  onSave: (next: InquiryRecord) => Promise<boolean>;
+  onSave: (next: InquiryRecord, base: InquiryRecord) => Promise<boolean>;
 };
 
 function BoardRow({ r, show, inline, today, onOpen, onSave }: RowProps) {
   const [draft, setDraft] = useState<InquiryRecord>(r);
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  // 保存に失敗したときに戻す先。保存の応答（衝突なら他の人が直した最新の行）で r が先に変わることがあるので、いまの r を見る
+  const latest = useRef(r);
+  latest.current = r;
 
   // サーバの値が変わったら（自分の保存・更新ボタン）下書きを揃える
   useEffect(() => { setDraft(r); }, [r]);
@@ -779,9 +821,9 @@ function BoardRow({ r, show, inline, today, onOpen, onSave }: RowProps) {
     setDraft(next);
     if (RECORD_FIELDS.every((f) => next[f.key] === r[f.key])) return;
     setState('saving');
-    const ok = await onSave(next);
+    const ok = await onSave(next, r);
     setState(ok ? 'saved' : 'error');
-    if (!ok) setDraft(r);
+    if (!ok) setDraft(latest.current);
   }
 
   const st = statusOf(r.result);
@@ -970,7 +1012,7 @@ function StatsPanel({ stats, count, filtered }: { stats: ReturnType<typeof stats
           <thead>
             <tr>
               <th>学年</th><th>問合</th><th>面談</th><th>問面率</th><th>体験</th><th>問体率</th>
-              <th>入塾</th><th>問入率</th><th>申込</th><th>見送り</th><th>追客中</th>
+              <th>入塾</th><th>問入率</th><th>申込</th><th>検討中</th><th>見送り</th><th>追客中</th>
             </tr>
           </thead>
           <tbody>
@@ -985,6 +1027,7 @@ function StatsPanel({ stats, count, filtered }: { stats: ReturnType<typeof stats
                 <td>{s.joined}</td>
                 <td>{pct(s.joined, s.total)}</td>
                 <td>{s.applied}</td>
+                <td>{s.considering}</td>
                 <td>{s.declined}</td>
                 <td>{s.open}</td>
               </tr>
@@ -992,7 +1035,7 @@ function StatsPanel({ stats, count, filtered }: { stats: ReturnType<typeof stats
           </tbody>
         </table>
       </div>
-      <p className="ib-hint">面談＝入塾提案面談日あり／体験＝体験が〇／入塾＝結果が入塾／申込＝講習会・模試申込／追客中＝結果が未記入。</p>
+      <p className="ib-hint">面談＝入塾提案面談日あり／体験＝体験が〇／入塾＝結果が入塾／申込＝講習会・模試申込／検討中＝結果が検討中／追客中＝結果が未記入。</p>
     </div>
   );
 }
@@ -1007,17 +1050,39 @@ type FormProps = {
   onClose: () => void;
   onSaved: (item: InquiryRecord) => void;
   onDeleted: (id: string) => void;
+  onSynced: (item: InquiryRecord) => void;                       // 保存できなかったが最新の行が分かった（一覧だけ直す）
   candidates: InquiryRecord[];                                   // 統合先の候補（台帳の全件）
   onMerged: (item: InquiryRecord, droppedId: string) => void;    // 統合が済んだ（item=残った行、droppedId=消えた行）
 };
 
-function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDeleted, candidates, onMerged }: FormProps) {
-  const [v, setV] = useState<InquiryInput>(() => (record ? { ...record } : { ...emptyInput(defaultCampus), date: today }));
+function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDeleted, onSynced, candidates, onMerged }: FormProps) {
+  // 開いた時点の値。編集中かどうか（閉じる前に確かめる）の比べ先
+  const [start] = useState<InquiryInput>(() => (record ? { ...record } : { ...emptyInput(defaultCampus), date: today }));
+  const [v, setV] = useState<InquiryInput>(start);
+  // 編集を始めた時点の行。保存のときに一緒に送り、変えた項目だけを書いてもらう（衝突したら最新の行に差し替える）
+  const [base, setBase] = useState<InquiryRecord | null>(record);
+  const [conflict, setConflict] = useState<{ item: InquiryRecord; keys: (keyof InquiryRecord)[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const firstRef = useRef<HTMLInputElement>(null);
+  const conflictRef = useRef<HTMLDivElement>(null);
 
-  useModalDismiss(onClose);
+  const dirty = !sameDraft(v, base ?? start);
+  // ×・キャンセル・Esc・背景のどれで閉じても、保存していない入力があれば確かめる
+  const requestClose = useCallback(() => {
+    if (dirty && !window.confirm('入力した内容はまだ保存されていません。閉じると消えます。閉じてよいですか？')) return;
+    onClose();
+  }, [dirty, onClose]);
+  useModalDismiss(requestClose);
+  const backdrop = useBackdropClose(requestClose);
+  // 入力中にページを閉じる・再読み込みするときも、ブラウザの確認を出す
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+  useEffect(() => { if (conflict) conflictRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [conflict]);
   // 新規登録だけ氏名にフォーカスする（編集で当てるとスマホで最上段の「重複の統合」が隠れ、キーボードも出てしまう）
   useEffect(() => { if (!record) firstRef.current?.focus(); }, [record]);
 
@@ -1025,19 +1090,26 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
     setV((p) => ({ ...p, [k]: val }));
   }
 
-  async function save() {
+  // over：衝突のあと［自分の入力で上書きする］を押したときの値（state の反映を待たずに送る）
+  async function save(over?: { v: InquiryInput; base: InquiryRecord | null }) {
     if (busy) return;
+    const val = over?.v ?? v;
+    const b = over?.base ?? base;
     setBusy(true);
     setErrors([]);
+    setConflict(null);
     try {
       const res = await fetch('/api/inquiry-board', {
         method: record ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(record ? { ...v, id: record.id } : v),
+        body: JSON.stringify(record ? { ...val, id: record.id, base: b } : val),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok && j.item) {
         onSaved(j.item as InquiryRecord);
+      } else if (j?.reason === 'conflict' && j.item) {
+        onSynced(j.item as InquiryRecord);
+        setConflict({ item: j.item as InquiryRecord, keys: j.conflicts ?? [] });
       } else if (Array.isArray(j?.errors) && j.errors.length) {
         setErrors(j.errors);
       } else {
@@ -1071,10 +1143,28 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void save(); }
   }
 
+  // 衝突のあと：どちらの場合も、自分が触っていない項目は他の人が直した最新の値に載せ替える
+  function keepMine() {
+    if (!conflict || !base) return;
+    const nv = rebaseDraft(v, base, conflict.item);
+    setV(nv);
+    setBase(conflict.item);
+    void save({ v: nv, base: conflict.item });
+  }
+  function takeTheirs() {
+    if (!conflict || !base) return;
+    const nv = rebaseDraft(v, base, conflict.item) as unknown as Record<string, unknown>;
+    for (const k of conflict.keys) nv[k] = conflict.item[k];
+    setV(nv as unknown as InquiryInput);
+    setBase(conflict.item);
+    setConflict(null);
+  }
+  const otherName = conflict?.item.updatedBy ? `${conflict.item.updatedBy}さん` : '他の人';
+
   const needsEnrollDate = statusOf(v.result) === 'joined' && !v.enrollDate;
 
   return (
-    <div className="dm-modal-bg" onClick={onClose}>
+    <div className="dm-modal-bg" {...backdrop}>
       <div className="dm-modal ib-modal" role="dialog" aria-modal="true" aria-label={record ? '問い合わせの編集' : '問い合わせの新規登録'} onClick={(e) => e.stopPropagation()} onKeyDown={onKey}>
         <div className="dm-modal-head">
           <div>
@@ -1083,7 +1173,7 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
             </div>
             <h2>{record ? '問い合わせの編集' : '問い合わせの新規登録'}</h2>
           </div>
-          <button className="dm-modal-close" onClick={onClose} aria-label="閉じる">×</button>
+          <button className="dm-modal-close" onClick={requestClose} aria-label="閉じる">×</button>
         </div>
 
         <div className="dm-modal-body ib-form">
@@ -1092,7 +1182,7 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
           {record && (
             <MergeSection
               record={record}
-              draft={v}
+              dirty={dirty}
               candidates={candidates}
               busy={busy}
               setBusy={setBusy}
@@ -1104,8 +1194,9 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
           <section>
             <h3>基本（必須）</h3>
             <div className="ib-grid">
-              <label>校舎 <span className="req">必須</span>
+              <label className={v.campus ? '' : 'attention'}>校舎 <span className="req">必須</span>
                 <select value={v.campus} onChange={(e) => set('campus', e.target.value)}>
+                  {!v.campus && <option value="">校舎を選ぶ</option>}
                   {withCurrent(BOARD_CAMPUSES, v.campus).map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </label>
@@ -1224,6 +1315,26 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
             </div>
           </section>
 
+          {conflict && (
+            <div className="ib-conflict" role="alert" ref={conflictRef}>
+              <p>
+                <b>保存できませんでした。</b>この画面を開いたあとに、{otherName}が {fmtTs(conflict.item.updatedAt)} に同じ項目を変更しています。
+                どちらの値にするか選んでください（ほかの項目の変更はそのまま残ります）。
+              </p>
+              <ul>
+                {conflict.keys.map((k) => (
+                  <li key={k}>
+                    {labelOf(k)}：{otherName}「<b>{String(conflict.item[k] ?? '') || '空欄'}</b>」／あなた「<b>{String(v[k as keyof InquiryInput] ?? '') || '空欄'}</b>」
+                  </li>
+                ))}
+              </ul>
+              <div className="ib-conflict-actions">
+                <button type="button" className="dm-modal-done" onClick={keepMine} disabled={busy}>自分の入力で上書きして保存</button>
+                <button type="button" className="ib-cancel" onClick={takeTheirs} disabled={busy}>{otherName}の値に合わせる</button>
+              </div>
+            </div>
+          )}
+
           {errors.length > 0 && (
             <ul className="ib-errors">
               {errors.map((e) => <li key={e}>{e}</li>)}
@@ -1236,8 +1347,8 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
             <button className="ib-delete" onClick={remove} disabled={busy}>削除</button>
           )}
           <span className="ib-foot-hint">⌘/Ctrl + Enter で保存</span>
-          <button className="ib-cancel" onClick={onClose} disabled={busy}>キャンセル</button>
-          <button className="dm-modal-done" onClick={save} disabled={busy}>{busy ? '保存中…' : '保存'}</button>
+          <button className="ib-cancel" onClick={requestClose} disabled={busy}>キャンセル</button>
+          <button className="dm-modal-done" onClick={() => void save()} disabled={busy}>{busy ? '保存中…' : '保存'}</button>
         </div>
       </div>
     </div>
@@ -1259,17 +1370,20 @@ function nameKeyOf(sname: string): string {
   return (sname || '').replace(/[\s　]/g, '');
 }
 
-function sameDraft(a: InquiryInput, b: InquiryRecord): boolean {
+/** 編集中の値が比べ先（開いた時点の値・編集を始めた時点の行）と同じか。ID・作成/更新の記録は見ない。 */
+function sameDraft(a: InquiryInput, b: InquiryInput | InquiryRecord): boolean {
   for (const f of RECORD_FIELDS) {
-    if (f.key === 'id' || f.key === 'no' || f.key === 'createdAt' || f.key === 'createdBy' || f.key === 'updatedAt' || f.key === 'updatedBy') continue;
-    if (String((a as unknown as Record<string, unknown>)[f.key] ?? '') !== String(b[f.key] ?? '')) return false;
+    if (f.key === 'id' || f.key === 'createdAt' || f.key === 'createdBy' || f.key === 'updatedAt' || f.key === 'updatedBy') continue;
+    const x = (a as unknown as Record<string, unknown>)[f.key];
+    const y = (b as unknown as Record<string, unknown>)[f.key];
+    if (String(x ?? '') !== String(y ?? '')) return false;
   }
   return true;
 }
 
-function MergeSection({ record, draft, candidates, busy, setBusy, setErrors, onMerged }: {
+function MergeSection({ record, dirty, candidates, busy, setBusy, setErrors, onMerged }: {
   record: InquiryRecord;
-  draft: InquiryInput;
+  dirty: boolean;
   candidates: InquiryRecord[];
   busy: boolean;
   setBusy: (b: boolean) => void;
@@ -1305,7 +1419,6 @@ function MergeSection({ record, draft, candidates, busy, setBusy, setErrors, onM
   const keep = other ? ((otherIsOlder !== swap) ? other : record) : null;
   const drop = other ? (keep === other ? record : other) : null;
   const preview = keep && drop ? mergePreview(keep, drop) : null;
-  const dirty = !sameDraft(draft, record);
 
   const label = (r: InquiryRecord) =>
     `${r.campus} #${r.no} ${r.studentName || r.guardianName || '（氏名なし）'}${r.grade ? `・${r.grade}` : ''}${r.phone ? `・${r.phone}` : ''}${r.date ? `・${shortDate(r.date)}` : ''}`;
