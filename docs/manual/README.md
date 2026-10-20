@@ -21,3 +21,28 @@
 - 画面の文言・ボタン名を変えたら、このマニュアルの該当箇所と写真・動画も直す
   - 第2章の「かかる時間の目安」は、文字起こしの区間の長さ（`lib/audioChunk.ts` の `SEGMENT_SECONDS`）と
     送信間隔（環境変数 `GEMINI_RPM`・APIキーの本数）から出している。これらを変えたら表も見直す
+
+## 門配管理 操作マニュアル
+
+門配管理（月間一覧・AIの計画案・実績報告・集計・配布物・学校マスタ）の使い方。v0.18.0 の画面で作成。会議DXのマニュアルと同じ形式（見た目の CSS も同じ）。
+
+| ファイル | 中身 |
+|---|---|
+| `../../public/manual/monpai-manual-v0.18.0.pdf` | 配布用の PDF（A4・17ページ）。ダウンロード時の名前は `門配管理操作マニュアル_v0.18.0.pdf` |
+| `monpai-manual.html` | マニュアルの原稿（PDF はここから作る） |
+| `images/50_mp_*.png` 〜 `images/59_mp_*.png` | 画面の写真（赤枠・番号つき） |
+| `monpai-shots/` | 架空データ・撮影・PDF 作成のスクリプト（作り方は下） |
+
+- 写真の担当者名・部数・在庫は架空の例。学校名と生徒数は `lib/monpai/seed.ts` の初期値。AIの計画案は撮影用に作った応答を返している
+- 作り直し方（手元で、Supabase の環境変数なしで起動する。門配は `.data/monpai.json` に保存される）
+
+  ```sh
+  node docs/manual/monpai-shots/gen.mjs .data/monpai.json   # 架空データを入れる（今ある .data/monpai.json は上書きされる）
+  npx next dev -p 3100                                      # 別のターミナルで起動しておく
+  node docs/manual/monpai-shots/shoot.mjs docs/manual/images
+  node docs/manual/monpai-shots/pdf.mjs "$PWD/docs/manual/monpai-manual.html" "$PWD/public/manual/monpai-manual-v0.18.0.pdf"
+  ```
+
+  - データの日付は 2026年9〜10月で、撮影は「今日＝2026-10-20」を前提にしている（別の日に撮るなら `gen.mjs` の日付をずらす）
+  - 撮影では開発環境の帯を隠し、Noto Sans JP の字体と日本語の日付表示（`LANG=ja_JP.UTF-8`）にしている
+- 作り直したら、PDF の版をファイル名に入れて古い PDF を消し、`lib/manuals.ts` の `monpai` の `href`・`downloadName`・`meta` を直す

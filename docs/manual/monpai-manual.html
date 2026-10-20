@@ -1,0 +1,614 @@
+<title>門配管理 操作マニュアル</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+/* 縦1段の手引き。画面の写真に付けた赤い番号と、本文の赤い番号を対応させて読む。 */
+:root {
+  --bg: #f4f6f8;
+  --paper: #ffffff;
+  --ink: #1c2430;
+  --muted: #5b6573;
+  --navy: #1f4e78;
+  --navy-soft: #e8f0f8;
+  --line: #dde2e8;
+  --mark: #e0262f;
+  --warn-bg: #fff5e6;
+  --warn-line: #d98a1c;
+  --shot-frame: #cfd6de;
+  --font: 'BIZ UDPGothic', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+    --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+    --shot-frame: #3a4553; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+  --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+  --shot-frame: #3a4553; color-scheme: dark;
+}
+
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font); font-size: 15.5px; line-height: 1.85;
+  font-variant-numeric: tabular-nums;
+}
+.page {
+  max-width: 880px; margin: 0 auto;
+  padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px;
+}
+.sheet {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+  padding: clamp(20px, 4vw, 40px); min-width: 0;
+}
+
+/* 表紙 */
+.cover { display: grid; gap: 18px; }
+.cover .org { font-size: 13px; letter-spacing: .12em; color: var(--muted); }
+.cover h1 { margin: 0; font-size: clamp(28px, 5vw, 40px); line-height: 1.3; text-wrap: balance; color: var(--navy); }
+.cover .lead { margin: 0; max-width: 40em; }
+.cover dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 18px; font-size: 14px; }
+.cover dt { color: var(--muted); }
+.cover dd { margin: 0; }
+.note-sample { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; margin: 0; }
+
+/* 目次 */
+.toc h2 { font-size: 18px; margin: 0 0 10px; }
+.toc ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 14px; }
+.toc > ol > li > a { font-weight: 700; }
+.toc ol ol { display: grid; gap: 2px; margin-top: 4px; padding-left: 1.2em; font-size: 14px; }
+.toc a { color: var(--ink); text-decoration: none; }
+.toc a:hover, .toc a:focus-visible { color: var(--navy); text-decoration: underline; }
+
+/* 見出し */
+.chapter { display: grid; gap: 22px; }
+.chapter > header { display: grid; gap: 6px; border-bottom: 3px solid var(--navy); padding-bottom: 12px; }
+.eyebrow { font-size: 13px; letter-spacing: .14em; color: var(--navy); font-weight: 700; }
+.chapter h2 { margin: 0; font-size: clamp(22px, 3.6vw, 28px); line-height: 1.35; text-wrap: balance; }
+.chapter > header p { margin: 0; color: var(--muted); }
+section.sec { display: grid; gap: 14px; min-width: 0; }
+section.sec + section.sec { border-top: 1px solid var(--line); padding-top: 24px; }
+h3 { margin: 0; font-size: 19px; line-height: 1.45; text-wrap: balance; display: flex; gap: 10px; align-items: baseline; }
+h3 .no { color: var(--navy); font-size: 15px; flex: none; }
+h4 { margin: 6px 0 0; font-size: 16px; }
+p { margin: 0; }
+a { color: var(--navy); }
+
+/* 画面写真の赤い番号と同じ形 */
+.n {
+  display: inline-grid; place-items: center; flex: none;
+  width: 1.6em; height: 1.6em; border-radius: 50%;
+  background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 1;
+  vertical-align: .05em;
+}
+.btn {
+  display: inline-block; padding: 0 .5em; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--navy-soft); color: var(--navy); font-weight: 700; font-size: .92em; line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* 写真 */
+figure { margin: 0; display: grid; gap: 8px; break-inside: avoid; min-width: 0; }
+figure img {
+  display: block; width: 100%; max-width: 100%; height: auto;
+  border: 1px solid var(--shot-frame); border-radius: 10px; background: #fff;
+}
+figcaption { font-size: 13px; color: var(--muted); }
+.video video { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--shot-frame); background: #0e1520; }
+.print-only { display: none; }
+.fig-narrow img { max-width: 520px; }
+.fig-card img { max-width: 480px; }
+.side-by-side { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px; align-items: start; }
+.w-sidebar { width: 238px; }
+.w-side { width: 340px; }
+.phones { display: flex; flex-wrap: wrap; gap: 20px; }
+.phones figure { width: min(240px, 100%); }
+
+/* 番号の説明 */
+.legend { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.legend li { display: grid; grid-template-columns: 1.6em 1fr; gap: 10px; align-items: start; }
+.legend .n { margin-top: .2em; font-size: 13px; }
+.legend b { font-weight: 700; }
+
+/* 手順 */
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: st; display: grid; gap: 10px; }
+.steps > li { counter-increment: st; display: grid; grid-template-columns: 2em 1fr; gap: 8px; }
+.steps > li::before {
+  content: counter(st); width: 1.75em; height: 1.75em; border-radius: 6px; margin-top: .15em;
+  display: grid; place-items: center; background: var(--navy); color: var(--paper); font-weight: 700; font-size: 14px;
+}
+ul.plain { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
+
+/* 補足 */
+.box { border-radius: 10px; padding: 14px 18px; display: grid; gap: 6px; border: 1px solid var(--line); }
+.box > .box-title { font-weight: 700; font-size: 14px; letter-spacing: .04em; }
+.box.tip { background: var(--navy-soft); border-color: transparent; }
+.box.tip > .box-title { color: var(--navy); }
+.box.warn { background: var(--warn-bg); border-color: transparent; border-left: 4px solid var(--warn-line); }
+.box.warn > .box-title { color: var(--warn-line); }
+.box.recommend { border: 2px solid var(--navy); }
+.box.recommend > .box-title { color: var(--navy); font-size: 15px; }
+
+/* 流れ図 */
+.loop { display: grid; gap: 10px; }
+.loop ol { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.loop li {
+  position: relative; border: 1.5px solid var(--navy); border-radius: 10px; padding: 10px 12px;
+  display: grid; gap: 2px; background: var(--paper);
+}
+.loop li .k { font-size: 12px; color: var(--navy); font-weight: 700; letter-spacing: .08em; }
+.loop li .t { font-weight: 700; line-height: 1.4; }
+.loop li .d { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.loop li:not(:last-child)::after {
+  content: "→"; position: absolute; right: -10px; top: 50%; transform: translate(50%, -50%);
+  color: var(--navy); font-weight: 700; background: var(--paper); line-height: 1;
+}
+.loop .back {
+  border: 1.5px dashed var(--navy); border-radius: 10px; padding: 6px 12px; text-align: center;
+  color: var(--navy); font-weight: 700; font-size: 14px;
+}
+
+/* 表 */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+th { background: var(--navy-soft); color: var(--ink); font-weight: 700; }
+td.num { white-space: nowrap; font-weight: 700; }
+
+footer.end { text-align: center; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 680px) {
+  .side-by-side { grid-template-columns: minmax(0, 1fr); }
+  .w-sidebar, .w-side { width: auto; max-width: min(340px, 100%); }
+  .loop ol { grid-template-columns: 1fr 1fr; }
+  .loop li:nth-child(2)::after { content: none; }
+}
+@media (max-width: 420px) {
+  .loop ol { grid-template-columns: 1fr; }
+  .loop li::after { content: none !important; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+@media print {
+  :root { --bg: #fff; }
+  body { font-size: 10.5pt; line-height: 1.75; }
+  .page { max-width: none; padding: 0; gap: 0; }
+  .sheet { border: 0; border-radius: 0; padding: 0; }
+  .cover { min-height: 240mm; align-content: center; }
+  .toc, .chapter { break-before: page; }
+  section.sec { break-before: auto; }
+  .page, .cover, .chapter, section.sec, figure { display: block; }
+  .chapter > * + *, section.sec > * + * { margin-top: 12px; }
+  .chapter > header + * { margin-top: 18px; }
+  section.sec + section.sec { margin-top: 22px; }
+  .cover > * + * { margin-top: 14px; }
+  figcaption { margin-top: 4px; }
+  h3, h4 { break-after: avoid; }
+  figure, .box, .loop, table, .legend li { break-inside: avoid; }
+  figure img { max-height: 200mm; width: auto; max-width: 100%; }
+  .side-by-side { display: flow-root; }
+  .side-by-side > figure { float: left; margin: 0 8mm 4mm 0; }
+  .side-by-side > figure img { width: 100%; max-height: none; }
+  .w-sidebar { width: 60mm; }
+  .w-side { width: 78mm; }
+  a { color: var(--ink); text-decoration: none; }
+  footer.end { display: none; }
+  .video { display: none; }
+  .print-only { display: block; color: var(--muted); }
+}
+/* 門配管理の手引きだけで使う */
+.fig-phone img { max-width: 300px; }
+.fig-modal img { max-width: 560px; }
+.key { display: inline-block; width: 1.1em; height: 1.1em; border-radius: 3px; vertical-align: -.15em; margin-right: .3em; border: 1px solid rgba(0,0,0,.08); }
+.key.plan { background: #eaf2fb; } .key.done { background: #e3f2e7; } .key.unreported { background: #fdebd6; }
+.key.canceled { background: #ececec; } .key.today { background: #fffbea; } .key.holiday { background: #e05a4f; }
+@media print { .fig-phone img { width: 70mm; } .fig-modal img { width: 120mm; } }
+</style>
+
+<div class="page">
+
+<header class="sheet cover" id="top">
+  <div class="org">株式会社智翔館　社内向け</div>
+  <h1>門配管理 操作マニュアル</h1>
+  <p class="lead">門配（校門前でのチラシ・ノベルティの配布）の<b>月間計画</b>・<b>実績報告</b>・<b>集計</b>と、配布物の在庫・学校マスタの使い方をまとめた手引きです。画面の写真に付けた赤い番号（<span class="n">1</span>）は、本文の同じ番号の説明に対応しています。</p>
+  <dl>
+    <dt>対象</dt><dd>門配を計画・担当する職員、集計・在庫を管理する職員</dd>
+    <dt>アプリ</dt><dd>智翔館アプリ › 門配管理（バージョン v0.18.0 時点）</dd>
+    <dt>最新版</dt><dd>ヘルプデスクの「マニュアル」タブからダウンロードできます</dd>
+    <dt>作成</dt><dd>2026年10月</dd>
+  </dl>
+  <p class="note-sample">※ 写真に写っている担当者名・部数・在庫などの数値は、説明のために用意した架空の例です。AIの計画案の文面も例で、実際の案は地区の実績によって変わります。</p>
+</header>
+
+<nav class="sheet toc" aria-label="目次">
+  <h2>目次</h2>
+  <ol>
+    <li><a href="#ch1">第1章　門配管理のあらまし</a>
+      <ol>
+        <li><a href="#s1-1">1-1　門配管理でできること</a></li>
+        <li><a href="#s1-2">1-2　ボトム（最低配布数）の考え方</a></li>
+        <li><a href="#s1-3">1-3　門配管理を開く</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch2">第2章　月間一覧で計画を立てる</a>
+      <ol>
+        <li><a href="#s2-1">2-1　月間一覧の画面の見方</a></li>
+        <li><a href="#s2-2">2-2　日付 × 学校の表の見方</a></li>
+        <li><a href="#s2-3">2-3　門配を追加する・直す</a></li>
+        <li><a href="#s2-4">2-4　AIで計画案を作る</a></li>
+        <li><a href="#s2-5">2-5　ボトムの率をこの月だけ変える</a></li>
+        <li><a href="#s2-6">2-6　担当の重なりを直す</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch3">第3章　実績を報告する</a>
+      <ol>
+        <li><a href="#s3-1">3-1　実績報告の画面（スマートフォン）</a></li>
+        <li><a href="#s3-2">3-2　配った部数を報告する</a></li>
+        <li><a href="#s3-3">3-3　中止を報告する</a></li>
+        <li><a href="#s3-4">3-4　担当以外の人が入れるとき</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch4">第4章　集計・配布物・学校</a>
+      <ol>
+        <li><a href="#s4-1">4-1　月の集計を見る・CSVで保存する</a></li>
+        <li><a href="#s4-2">4-2　配布物・ノベルティの在庫</a></li>
+        <li><a href="#s4-3">4-3　学校マスタと月別設定</a></li>
+        <li><a href="#s4-4">4-4　困ったとき</a></li>
+      </ol>
+    </li>
+  </ol>
+</nav>
+
+<!-- ============ 第1章 ============ -->
+<article class="sheet chapter" id="ch1">
+  <header>
+    <div class="eyebrow">第1章</div>
+    <h2>門配管理のあらまし</h2>
+    <p>地区（教室）ごとに、どの学校で・いつ・誰が・何部配るかを計画し、配ったあとに実績を報告します。報告した実績は、そのまま月の集計と配布物の在庫に反映されます。</p>
+  </header>
+
+  <section class="sec" id="s1-1">
+    <h3><span class="no">1-1</span>門配管理でできること</h3>
+    <p>門配は、次の4つをくり返します。</p>
+    <div class="loop" role="img" aria-label="門配の流れ：1 計画、2 配布、3 実績報告、4 集計。4のあと次の月の1へ戻る">
+      <ol>
+        <li><span class="k">月のはじめ</span><span class="t">計画</span><span class="d">月間一覧で、学校ごとの日付・担当・部数を決める</span></li>
+        <li><span class="k">当日</span><span class="t">配布</span><span class="d">校門前でチラシ・ノベルティを配る</span></li>
+        <li><span class="k">配ったら</span><span class="t">実績報告</span><span class="d">スマートフォンで、配った部数と様子を入れる</span></li>
+        <li><span class="k">月の終わり</span><span class="t">集計</span><span class="d">地区・学校・担当ごとの達成率を確かめる</span></li>
+      </ol>
+      <div class="back">↻ 集計で足りなかった学校を、次の月の計画に生かします</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>画面（上のタブ）</th><th>使う場面</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td class="num">月間一覧</td><td>計画を立てる・見渡す</td><td><a href="#ch2">第2章</a></td></tr>
+          <tr><td class="num">実績報告</td><td>配ったあと（スマートフォン）</td><td><a href="#ch3">第3章</a></td></tr>
+          <tr><td class="num">集計</td><td>月の実績報告・会議資料</td><td><a href="#s4-1">4-1</a></td></tr>
+          <tr><td class="num">配布物</td><td>チラシ・ノベルティの在庫と使用数</td><td><a href="#s4-2">4-2</a></td></tr>
+          <tr><td class="num">学校</td><td>学校・生徒数・募集期の設定</td><td><a href="#s4-3">4-3</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="sec" id="s1-2">
+    <h3><span class="no">1-2</span>ボトム（最低配布数）の考え方</h3>
+    <p>学校ごとに「その月に最低これだけは配る」という部数を<b>ボトム</b>と呼びます。ボトムは<b>生徒数 × 率</b>で、アプリが自動で計算します。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>学校</th><th>生徒数として数える人数</th><th>通常の月の率</th><th>募集期の率</th></tr></thead>
+        <tbody>
+          <tr><td class="num">中学校</td><td>全校生徒数</td><td>20%</td><td>60%</td></tr>
+          <tr><td class="num">小学校</td><td>小2〜小6の生徒数</td><td>30%</td><td>60%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>例：生徒数 546人の中学校なら、通常の月のボトムは 546 × 20% ＝ <b>109部</b>です。</p>
+    <p><b>達成率</b>は「実績（実際に配った部数）÷ ボトム」です。計画の段階で計画部数がボトムに届いていない学校は、数字が赤で表示されます。</p>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <ul class="plain">
+        <li>募集期の月や、開校した月など、率を変えたいときは「学校」の画面の月別設定で変えます（<a href="#s4-3">4-3</a>）。1校だけその月の率を変えるときは、月間一覧からも変えられます（<a href="#s2-5">2-5</a>）。</li>
+        <li>中止した回は、計画にも実績にも数えません。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec" id="s1-3">
+    <h3><span class="no">1-3</span>門配管理を開く</h3>
+    <p>智翔館アプリにログインすると、使うアプリを選ぶメニュー画面が出ます。「<b>門配管理</b>」（<span class="n">1</span>）を押して開きます。門配管理は全部門の職員が使えます。</p>
+    <figure>
+      <img src="images/50_mp_portal.png" alt="智翔館アプリのメニュー画面。門配管理のカードに赤枠" width="2560" height="1040" loading="lazy">
+      <figcaption>図1　メニュー画面</figcaption>
+    </figure>
+    <p>門配管理の画面の上には、「月間一覧・実績報告・集計・配布物・学校」の5つのタブが並びます（<a href="#s2-1">図2</a> の <span class="n">1</span>）。左上の「← メニュー」でメニュー画面に戻ります。共用のパソコンでは、使い終わったら右上の<span class="btn">ログアウト</span>を押してください。</p>
+  </section>
+</article>
+
+<!-- ============ 第2章 ============ -->
+<article class="sheet chapter" id="ch2">
+  <header>
+    <div class="eyebrow">第2章</div>
+    <h2>月間一覧で計画を立てる</h2>
+    <p>門配管理を開くと、最初に「月間一覧」が出ます。地区ごとに、1か月の計画と実績を1つの画面で見渡せます。</p>
+  </header>
+
+  <section class="sec" id="s2-1">
+    <h3><span class="no">2-1</span>月間一覧の画面の見方</h3>
+    <figure>
+      <img src="images/51_mp_board_top.png" alt="月間一覧の上半分。タブ、地区の切り替え、月の切り替えとAIで計画案を作るボタン、学校ごとのボトム・計画・実績・達成率の表" width="2560" height="1022" loading="lazy">
+      <figcaption>図2　月間一覧（上）</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>画面のタブ</b><br>月間一覧・実績報告・集計・配布物・学校を切り替えます。いま開いている画面は明るく表示されます。</div></li>
+      <li><span class="n">2</span><div><b>地区の切り替え</b><br>駅前・大野・広田・日宇・日野・佐々・西海大島の7地区です。押した地区の学校が表に並びます。最後に見た地区は、次に開いたときも選ばれたままです（端末ごと）。</div></li>
+      <li><span class="n">3</span><div><b>月の切り替え・AIで計画案を作る</b><br><span class="btn">◀</span><span class="btn">▶</span>で前の月・次の月に移ります。別の月を見ているときは<span class="btn">今月</span>で戻れます。<span class="btn">AIで計画案を作る</span>は<a href="#s2-4">2-4</a>。</div></li>
+      <li><span class="n">4</span><div><b>学校ごとの集計表</b><br>学校ごとに、生徒数・ボトム・計画・実績・達成率が並びます。棒グラフは、薄い色が計画、濃い色が実績です（実績がボトムに届くと緑）。計画がボトムに届かない学校は、計画の数字が<b>赤</b>になります。一番下の「地区合計」は地区全体の数字です。</div></li>
+      <li><span class="n">5</span><div><b>ボトムの率</b><br>ボトムの下の「20% ✎」は、その学校のこの月の率です。押すと率を変えられます（<a href="#s2-5">2-5</a>）。率を変えた学校は「（変更）」と色付きで出ます。</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s2-2">
+    <h3><span class="no">2-2</span>日付 × 学校の表の見方</h3>
+    <p>集計表の下に、縦に日付、横に学校を並べた表があります。マスの数字は「<b>計画/実績</b>」（例 60/58 は、60部の計画で58部配った）、その下が配布の開始時刻と担当です。まだ実績が無いマスは「60/—」のように出ます。</p>
+    <figure>
+      <img src="images/52_mp_board_grid.png" alt="日付と学校の表。色の付いたマスに計画と実績の部数、開始時刻、担当が書かれている。上に担当の重なりの知らせ" width="2560" height="3274" loading="lazy">
+      <figcaption>図3　月間一覧（日付 × 学校の表）</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>担当の重なり</b><br>同じ人が同じ日に、時間の重なる門配を2か所以上持っていると出ます（<a href="#s2-6">2-6</a>）。重なりが無ければ出ません。</div></li>
+      <li><span class="n">2</span><div><span class="key done"></span><b>緑のマス</b>：計画どおり（計画以上）配り終えた門配です。</div></li>
+      <li><span class="n">3</span><div><span class="key unreported"></span><b>オレンジのマス</b>：日付が過ぎたのに、実績がまだ報告されていない門配です。担当の人は実績報告をお願いします（<a href="#ch3">第3章</a>）。</div></li>
+      <li><span class="n">4</span><div><span class="key canceled"></span><b>灰色のマス（中止）</b>：雨などで中止した門配です。計画・実績には数えません。</div></li>
+      <li><span class="n">5</span><div><b>⚠ の付いたマス</b>：担当の予定が、ほかの門配と時間が重なっています。</div></li>
+      <li><span class="n">6</span><div><b>空いているマス</b>：押すと、その日・その学校の門配を追加できます（<a href="#s2-3">2-3</a>）。</div></li>
+    </ol>
+    <p>そのほかの色：<span class="key plan"></span>青いマスはこれからの予定、または計画より少なく配った門配です。<span class="key today"></span>黄色い行は今日、<span class="key holiday"></span>赤い曜日は土曜・日曜です。</p>
+  </section>
+
+  <section class="sec" id="s2-3">
+    <h3><span class="no">2-3</span>門配を追加する・直す</h3>
+    <p>表のマスを押すと、門配の入力画面が開きます。空いているマスなら「門配を追加」、予定の入ったマスならその門配の「門配を編集」になります。1つのマスに2件以上あるときは、先に一覧が出るので、直したいものを押します（<span class="btn">＋ 追加</span>でもう1件足せます）。</p>
+    <figure class="fig-modal">
+      <img src="images/53_mp_record_form.png" alt="門配を編集の画面。日付、学校、時間、担当1・2、配布物、計画部数・実施部数、中止のチェック、理由、反応・様子の欄と保存ボタン" width="1216" height="1732" loading="lazy">
+      <figcaption>図4　門配の入力画面</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><div><b>日付</b>を選びます（<span class="n">1</span>）。曜日が横に出ます。学校と<b>時間</b>（例 16:00-17:00）も入れます。</div></li>
+      <li><div><b>担当1・担当2</b>を入れます（<span class="n">2</span>）。入れ始めると職員の名前の候補が出ます。2人で行くときは担当2にも入れます。</div></li>
+      <li><div><b>配布物・ノベルティ</b>を入れます（<span class="n">3</span>）。「配布物」画面に登録した品名が候補に出ます。2つ以上渡すときは「冬期講習チラシ、ノート」のように「、」で区切ります。ここに書いた品名の在庫が、実績の部数だけ減ります（<a href="#s4-2">4-2</a>）。</div></li>
+      <li><div><b>計画部数</b>を入れます（<span class="n">4</span>）。<b>実施部数</b>は配ったあとに入れます。計画の段階では空けておきます。</div></li>
+      <li><div><span class="btn">保存</span>を押します（<span class="n">7</span>）。表のマスに反映されます。</div></li>
+    </ol>
+    <p>配れなかったときは「<b>中止した（配れなかった）</b>」にチェックを入れ（<span class="n">5</span>）、<b>不実施理由</b>（例 雨天、学校行事で下校時刻変更）を入れます（<span class="n">6</span>）。理由の欄は、中止にしたときと、実施部数が計画部数より少ないときに出ます。<b>反応・様子</b>には、受け取りの様子など次の計画に役立つことを書いておきます。</p>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <ul class="plain">
+        <li>入力画面の一番下に、最後に直した日時と人が出ます。</li>
+        <li>予定そのものを取り消すときは、左下の<span class="btn">削除</span>を押します。雨などで配れなかったときは、削除せずに「中止」にしてください（集計の中止の一覧に残ります）。</li>
+        <li>中止にしたときは、不実施理由を入れないと保存できません。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec" id="s2-4">
+    <h3><span class="no">2-4</span>AIで計画案を作る</h3>
+    <p>月のはじめに、地区の計画をAIに下書きさせることができます。地区と月を選んでから、右上の<span class="btn">AIで計画案を作る</span>を押します。</p>
+    <figure class="fig-modal">
+      <img src="images/54_mp_ai_plan.png" alt="AIの計画案の画面。案の考え方の説明と、日付・時間・学校・部数・担当・理由の付いた案が3件。チェックを外した案は薄く表示。下に選んだ2件を登録のボタン" width="1616" height="1104" loading="lazy">
+      <figcaption>図5　AIの計画案</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>案の考え方</b><br>どの学校が足りないので、何を足したかの説明です。その上の行に、何か月分の実績をもとに作ったかが出ます。</div></li>
+      <li><span class="n">2</span><div><b>案1件</b><br>日付・時間・学校・部数・担当・配布物と、その案を出した理由です。</div></li>
+      <li><span class="n">3</span><div><b>チェック</b><br>登録したくない案は、チェックを外します（薄く表示されます）。</div></li>
+      <li><span class="n">4</span><div><span class="btn">選んだ ○ 件を登録</span><br>チェックの付いた案だけが、表に予定として登録されます。</div></li>
+    </ol>
+    <div class="box tip">
+      <div class="box-title">AIの案について</div>
+      <ul class="plain">
+        <li>直近6か月の実績（受け取りの多い曜日・時間・担当）と、いまの計画とボトムの差をもとに作ります。<b>押しただけでは何も登録されません</b>。</li>
+        <li>担当は、その地区で門配をしたことがある人の中から選びます。ほかの地区の予定と時間が重なる人や、ふさわしい人がいないときは「未定」になります。</li>
+        <li>土日・地区外の学校・すでにある予定と重なる案などは、自動で除かれます（除いた件数が下に出ます）。</li>
+        <li>登録したあとは、表のマスから日付・担当・部数を直せます。担当が「未定」の予定は、必ず担当を入れてください。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec" id="s2-5">
+    <h3><span class="no">2-5</span>ボトムの率をこの月だけ変える</h3>
+    <p>集計表のボトムの下にある「20% ✎」（<a href="#s2-1">図2</a> の <span class="n">5</span>）を押すと、その学校のこの月の率を入れる欄が出ます。</p>
+    <ol class="steps">
+      <li><div>率（%）を入れて<span class="btn">保存</span>を押します（Enter キーでも保存できます）。ボトムがすぐに計算し直されます。</div></li>
+      <li><div>元の率に戻すときは<span class="btn">既定</span>、やめるときは<span class="btn">×</span>を押します。</div></li>
+    </ol>
+    <p>ここで変えた率は、「学校」画面の月別設定（<a href="#s4-3">4-3</a>）にも同じものとして入ります。</p>
+  </section>
+
+  <section class="sec" id="s2-6">
+    <h3><span class="no">2-6</span>担当の重なりを直す</h3>
+    <p>全地区の予定を見比べて、同じ人が同じ日に時間の重なる門配を持っていると、表の上に「<b>担当の重なり（全地区）</b>」が出ます（<a href="#s2-2">図3</a> の <span class="n">1</span>）。いま見ている地区に関係するものが上に並びます。</p>
+    <ul class="plain">
+      <li><b>時間が重なる</b>：両方の時間が書かれていて、重なっています。</li>
+      <li><b>時間未定のため要確認</b>：どちらかの時間が空欄で、重なっているか分かりません。時間を入れてください。</li>
+    </ul>
+    <p>並んでいる「地区・学校 時間」のリンクを押すと、その地区に切り替わり、その門配の入力画面が開きます。担当か時間を直して保存すると、知らせは消えます。15:15 と 17:30 のように時間がずれていれば、同じ日に2か所担当しても重なりにはなりません。</p>
+  </section>
+</article>
+
+<!-- ============ 第3章 ============ -->
+<article class="sheet chapter" id="ch3">
+  <header>
+    <div class="eyebrow">第3章</div>
+    <h2>実績を報告する</h2>
+    <p>門配を終えたら、その場でスマートフォンから実績を報告します。報告した部数が、月間一覧・集計・配布物の在庫にすぐ反映されます。</p>
+  </header>
+
+  <section class="sec" id="s3-1">
+    <h3><span class="no">3-1</span>実績報告の画面（スマートフォン）</h3>
+    <p>上のタブの「<b>実績報告</b>」を押します。自分が担当の門配が、次の3つに分かれて並びます。</p>
+    <div class="side-by-side">
+      <figure class="w-side fig-phone">
+        <img src="images/55_mp_report.png" alt="スマートフォンの実績報告の画面。報告待ちのカードに配った部数・反応・理由の欄と、中止を報告・実績を報告のボタン。下にこれからの予定" width="780" height="1872" loading="lazy">
+        <figcaption>図6　実績報告（スマートフォン）</figcaption>
+      </figure>
+      <div style="display:grid; gap:12px">
+        <ul class="plain">
+          <li><b>報告待ち</b>：今日までの門配で、まだ実績を入れていないもの。件数が横に出ます。</li>
+          <li><b>これからの予定（14日先まで）</b>：これから担当する門配の日時・学校・部数・配布物。</li>
+          <li><b>最近の報告（1週間）</b>：この1週間に報告したもの（報告が無いときは出ません）。</li>
+        </ul>
+        <ol class="legend">
+          <li><span class="n">1</span><div><b>自分の担当だけ</b><br>チェックを外すと、ほかの人の担当も含めた全員分が並びます。代わりに報告するときに使います。</div></li>
+          <li><span class="n">2</span><div><b>入力欄</b><br>配った部数・反応・様子・理由を入れます（<a href="#s3-2">3-2</a>）。</div></li>
+          <li><span class="n">3</span><div><span class="btn">実績を報告</span></div></li>
+          <li><span class="n">4</span><div><span class="btn">中止を報告</span>（<a href="#s3-3">3-3</a>）</div></li>
+        </ol>
+      </div>
+    </div>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <p>担当者は、名前（姓だけでも可）で見分けています。月間一覧の担当の欄に自分の名前が入っていないと、ここに出ません。</p>
+    </div>
+  </section>
+
+  <section class="sec" id="s3-2">
+    <h3><span class="no">3-2</span>配った部数を報告する</h3>
+    <ol class="steps">
+      <li><div>報告待ちのカードの<b>配った部数</b>を確かめます。最初は計画部数が入っているので、違うときだけ直します。</div></li>
+      <li><div><b>反応・様子</b>（例 部活生が多く受け取りが良かった）を入れます（任意）。</div></li>
+      <li><div>計画より少なかったときは、<b>少なかった理由</b>（例 雨が降り出し早めに切り上げ）を入れます。</div></li>
+      <li><div><span class="btn">実績を報告</span>を押します。カードが「最近の報告」に移れば完了です。</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s3-3">
+    <h3><span class="no">3-3</span>中止を報告する</h3>
+    <p>雨天や学校行事などで配れなかったときは、<b>配れなかった理由</b>（例 雨天）を入れてから<span class="btn">中止を報告</span>を押します。理由が空のままでは報告できません。中止にした門配は、集計の「中止」の一覧に理由と一緒に載ります。</p>
+    <div class="box warn">
+      <div class="box-title">報告は忘れずに</div>
+      <ul class="plain">
+        <li>報告されるまで、その門配は実績に入りません。月間一覧ではオレンジのマスになり、集計の「未報告」に載ります。</li>
+        <li>報告したあとで部数を直すときは、月間一覧の表のマスから直します（<a href="#s2-3">2-3</a>）。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec" id="s3-4">
+    <h3><span class="no">3-4</span>担当以外の人が入れるとき</h3>
+    <p>担当の人の代わりに入れるときは、次のどちらかで入れられます。</p>
+    <ul class="plain">
+      <li>実績報告の画面で「自分の担当だけ」のチェックを外し、その門配のカードから報告する。</li>
+      <li>月間一覧の表のマスを押し、入力画面の<b>実施部数</b>を入れて<span class="btn">保存</span>を押す。</li>
+    </ul>
+  </section>
+</article>
+
+<!-- ============ 第4章 ============ -->
+<article class="sheet chapter" id="ch4">
+  <header>
+    <div class="eyebrow">第4章</div>
+    <h2>集計・配布物・学校</h2>
+    <p>月の終わりの集計、チラシ・ノベルティの在庫、学校と生徒数の設定を行う画面です。</p>
+  </header>
+
+  <section class="sec" id="s4-1">
+    <h3><span class="no">4-1</span>月の集計を見る・CSVで保存する</h3>
+    <p>上のタブの「<b>集計</b>」を押すと、全地区の1か月分の門配がまとめて出ます。終わった月を見ることが多いので、<b>先月</b>から開きます。数え方は月間一覧の集計表と同じです。</p>
+    <figure>
+      <img src="images/56_mp_summary.png" alt="集計の画面。月の切り替え、集計CSVと記録CSVのボタン、未報告の知らせ、実績・ボトム・達成率などの数字、地区別の表" width="2560" height="1278" loading="lazy">
+      <figcaption>図7　月の集計（上）</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>月の切り替え</b><br><span class="btn">◀</span><span class="btn">▶</span>で月を移ります。<span class="btn">先月</span>で先月に戻ります。</div></li>
+      <li><span class="n">2</span><div><span class="btn">集計CSV</span><br>地区・学校ごとの集計（ボトム・計画・実績・達成率・回数）を CSV ファイルで保存します。Excel でそのまま開けます。</div></li>
+      <li><span class="n">3</span><div><span class="btn">記録CSV</span><br>この月の門配の記録を、1件1行で保存します（日付・地区・学校・担当・部数・理由・反応など）。</div></li>
+      <li><span class="n">4</span><div><b>未報告の知らせ</b><br>実績が未報告の門配があると出ます。報告されるまで実績に入らないので、会議の資料にする前に報告を集めてください。</div></li>
+      <li><span class="n">5</span><div><b>全地区の数字</b><br>実績（実施部数）・ボトム・達成率・計画・実施回数・中止・未報告です。</div></li>
+      <li><span class="n">6</span><div><b>地区別の表</b><br>地区ごとの数字です。実施回数は実績を報告した回数（0部の回も含む）です。</div></li>
+    </ol>
+    <p>下に向かって、<b>学校別</b>・<b>担当別</b>・<b>未報告</b>・<b>中止</b>の表が続きます。</p>
+    <figure>
+      <img src="images/57_mp_summary_lists.png" alt="集計の画面の下の方。担当別の実施回数と配布部数、未報告の一覧、中止の一覧と理由" width="2560" height="1366" loading="lazy">
+      <figcaption>図8　月の集計（担当別・未報告・中止）</figcaption>
+    </figure>
+    <ul class="plain">
+      <li><b>担当別</b>：担当ごとの実施回数・配布部数です。2人で担当した回はそれぞれに数えるので、担当別の合計は全体の実績と一致しません。</li>
+      <li><b>未報告</b>：日付が過ぎたのに実績が無い門配の一覧です。担当の人に報告を頼んでください。</li>
+      <li><b>中止</b>：中止した門配と、その理由です。</li>
+    </ul>
+  </section>
+
+  <section class="sec" id="s4-2">
+    <h3><span class="no">4-2</span>配布物・ノベルティの在庫</h3>
+    <p>上のタブの「<b>配布物</b>」を押します。チラシやノベルティの品目ごとに、教室（地区）ごとの使用数と在庫が分かります。</p>
+    <figure>
+      <img src="images/58_mp_materials.png" alt="配布物・ノベルティの画面。期間の選択、教室ごとの使用数の表、在庫の表、入庫・調整を記録と品目を追加・変更の入力欄" width="2560" height="2082" loading="lazy">
+      <figcaption>図9　配布物・ノベルティ</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>期間</b><br>使用数を数える期間です。「今年度（4月〜）」か、1か月ずつを選べます。</div></li>
+      <li><span class="n">2</span><div><b>教室ごとの使用数</b><br>門配の記録の「配布物」欄に品名がある実績の、実施部数の合計です（中止・未報告は数えません）。品目に登録していない品名が書かれていると「品目に未登録」と出ます。</div></li>
+      <li><span class="n">3</span><div><b>在庫</b><br>在庫 ＝ 入庫計 − 配布済み です。実績を報告すると、配布物の欄に書いた品目から自動で減ります。在庫が発注目安を下回ると、画面の上に「残りわずか」と出て、数字が赤になります。準備担当に手配を頼んでください。</div></li>
+      <li><span class="n">4</span><div><b>入庫・調整を記録</b><br>納品されたときは、品名を選び、数量（例 500）・日付・メモ（例 NEPから納品）を入れて<span class="btn">記録する</span>を押します。廃棄や数え直しで減らすときは、数量をマイナス（例 −20）で入れます。記録したものは下の「最近の入出庫」に並びます。</div></li>
+      <li><span class="n">5</span><div><b>品目を追加・変更</b><br>新しいチラシ・ノベルティを使うときに登録します。品名・種類（チラシ／ノベルティ／その他）・準備担当・発注目安・備考を入れて<span class="btn">保存する</span>を押します。登録済みの品名を入れると、その品目の内容が出て、直して保存できます。</div></li>
+    </ol>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <p>在庫を正しく減らすには、門配の記録の「配布物」欄に、ここに登録したのと<b>同じ品名</b>を書いてください（入力画面では候補から選べます）。</p>
+    </div>
+  </section>
+
+  <section class="sec" id="s4-3">
+    <h3><span class="no">4-3</span>学校マスタと月別設定</h3>
+    <p>上のタブの「<b>学校</b>」を押すと、地区ごとの学校と生徒数、月ごとの率の設定が出ます。学校の追加・変更ができるのは<b>総務・人事・支援・管理</b>の部門だけです。ほかの部門の人には「閲覧のみです」と出るので、変更は管理部門に依頼してください。</p>
+    <figure>
+      <img src="images/59_mp_schools.png" alt="学校マスタの画面。地区のタブ、学校の一覧（並び順・学校名・種別・生徒数・ボトム・備考）、学校を追加する欄、月別設定の一覧と設定する欄" width="2560" height="1818" loading="lazy">
+      <figcaption>図10　学校マスタ（管理部門の画面）</figcaption>
+    </figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>地区のタブ</b><br>地区名の横の数字は、登録されている学校の数です。</div></li>
+      <li><span class="n">2</span><div><b>学校の一覧</b><br>並び順（月間一覧で左から並ぶ順）・種別（中／小）・生徒数・備考を直して<span class="btn">保存</span>を押します。<span class="btn">外す</span>で一覧から外します（過去の門配の記録は残ります）。ボトム（通常）は通常の月の値です。</div></li>
+      <li><span class="n">3</span><div><b>学校を追加</b><br>学校名・種別・生徒数・並び順・備考を入れて<span class="btn">追加</span>を押します。生徒数は、中学校は全校生徒数、小学校は小2〜小6の生徒数です。</div></li>
+      <li><span class="n">4</span><div><b>月別設定の一覧</b><br>上の月の欄で選んだ月の設定です。<span class="btn">削除</span>で設定を消すと、通常の率に戻ります。</div></li>
+      <li><span class="n">5</span><div><b>月別設定を追加</b><br>対象（全校、または1校）を選び、募集期にチェックを入れるか、率の上書き（%）を入れて<span class="btn">設定する</span>を押します。</div></li>
+    </ol>
+    <div class="box tip">
+      <div class="box-title">設定の例</div>
+      <ul class="plain">
+        <li>2月は全校が募集期：対象「全校」・募集期にチェック（率は中学校・小学校とも60%）。</li>
+        <li>開校した月の大野中だけ50%：対象「大野・大野中」・率の上書き 50。</li>
+        <li>学校ごとの設定は、「全校」の設定より優先します。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec" id="s4-4">
+    <h3><span class="no">4-4</span>困ったとき</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>こんなとき</th><th>確かめること</th></tr></thead>
+        <tbody>
+          <tr><td>実績報告に自分の担当が出ない</td><td>月間一覧で、その門配の担当の欄に自分の名前（姓だけでも可）が入っているか確かめてください。日付が15日以上先の予定はまだ出ません。</td></tr>
+          <tr><td>「○○地区の学校がまだ登録されていません」と出る</td><td>その地区の学校が学校マスタにありません。管理部門に追加を依頼してください（<a href="#s4-3">4-3</a>）。</td></tr>
+          <tr><td>マスがオレンジのまま</td><td>実績が報告されていません。実績報告か、マスの入力画面で実施部数を入れてください。</td></tr>
+          <tr><td>在庫が減らない</td><td>門配の記録の「配布物」欄の品名が、配布物の画面に登録した品名と同じか確かめてください。未報告・中止の回は減りません。</td></tr>
+          <tr><td>保存できない</td><td>入力画面に出ている赤い文字を確かめてください（中止のときは不実施理由が必要です）。直らないときは、ヘルプデスクの「ご意見・不具合の報告」から、画面の写真を添えて知らせてください。</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</article>
+
+<footer class="end"><a href="#top">↑ 表紙へ戻る</a></footer>
+
+</div>
