@@ -11,7 +11,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import type { MaterialItem, MaterialMovement, MonpaiRecord, MonthSetting, RecordInput, School, SchoolKind, Status } from './model';
+import type { MaterialItem, MaterialMovement, MonpaiRecord, MonpaiStaff, MonthSetting, RecordInput, School, SchoolKind, Status } from './model';
 import { SEED_SCHOOLS } from './seed';
 import { jpDateTime, supabaseAdmin } from '../core/supabase';
 
@@ -159,7 +159,7 @@ async function callGas(payload: Record<string, unknown>): Promise<Gas> {
 
 type Local = {
   schools: School[]; settings: MonthSetting[]; records: MonpaiRecord[];
-  materials?: MaterialItem[]; movements?: MaterialMovement[];
+  materials?: MaterialItem[]; movements?: MaterialMovement[]; staff?: MonpaiStaff[];
 };
 const LOCAL_FILE = path.join(process.cwd(), '.data', 'monpai.json');
 
@@ -465,6 +465,60 @@ export async function deleteSetting(month: string, school: string): Promise<Simp
   if (!useLocal()) return notSupported;
   const d = await readLocal();
   d.settings = d.settings.filter((x) => !(x.month === month && x.school === school));
+  await writeLocal(d);
+  return { ok: true };
+}
+
+// ---- 門配スタッフの名簿（Supabase と手元のファイルだけ。スプレッドシートの保存先では使えない） ----
+
+export type StaffListResult = { ok: true; items: MonpaiStaff[] } | Fail;
+
+export async function listStaff(): Promise<StaffListResult> {
+  const db = supabaseAdmin();
+  if (db) {
+    const { data, error } = await db.from('monpai_staff').select('*');
+    if (error) return dbFail('listStaff', error);
+    return {
+      ok: true,
+      items: (data as Row[]).map((r) => ({
+        affiliation: s(r.affiliation), name: s(r.name), order: Number(r.sort_order) || 0, active: r.active !== false, note: s(r.note),
+      })),
+    };
+  }
+  if (!useLocal()) return notSupported;
+  return { ok: true, items: (await readLocal()).staff ?? [] };
+}
+
+/** 所属と名前が同じなら上書き、無ければ追加。 */
+export async function saveStaff(st: MonpaiStaff): Promise<Simple> {
+  const db = supabaseAdmin();
+  if (db) {
+    const { error } = await db.from('monpai_staff').upsert(
+      { affiliation: st.affiliation, name: st.name, sort_order: st.order, active: st.active, note: st.note },
+      { onConflict: 'affiliation,name' },
+    );
+    return error ? dbFail('saveStaff', error) : { ok: true };
+  }
+  if (!useLocal()) return notSupported;
+  const d = await readLocal();
+  const list = d.staff ?? [];
+  const i = list.findIndex((x) => x.affiliation === st.affiliation && x.name === st.name);
+  if (i >= 0) list[i] = st; else list.push(st);
+  d.staff = list;
+  await writeLocal(d);
+  return { ok: true };
+}
+
+/** 名簿から外す（過去の門配の記録は担当の名前のまま残る）。 */
+export async function deleteStaff(affiliation: string, name: string): Promise<Simple> {
+  const db = supabaseAdmin();
+  if (db) {
+    const { error } = await db.from('monpai_staff').delete().eq('affiliation', affiliation).eq('name', name);
+    return error ? dbFail('deleteStaff', error) : { ok: true };
+  }
+  if (!useLocal()) return notSupported;
+  const d = await readLocal();
+  d.staff = (d.staff ?? []).filter((x) => !(x.affiliation === affiliation && x.name === name));
   await writeLocal(d);
   return { ok: true };
 }
