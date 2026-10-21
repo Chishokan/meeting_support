@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { isMine, shiftMonth, todayJst, weekOf, type MonpaiRecord } from '@/lib/monpai/model';
-import { fetchRecords, reasonText, saveRecordApi } from '@/lib/monpai/client';
+import { fetchRecords, reasonText, saveRecordApi, type ReportInput, type ReportResult } from '@/lib/monpai/client';
 
 const UPCOMING_DAYS = 14;
 
@@ -83,7 +83,15 @@ export default function MonpaiReportUI({ me }: { me: string }) {
   );
 }
 
-function ReportCard({ r, onSaved }: { r: MonpaiRecord; onSaved: (r: MonpaiRecord) => void }) {
+// 社員の画面は記録をまるごと送り直す。スタッフ専用画面（/monpai-staff）は submit を差し替えて実績だけを送る。
+const saveWhole = (r: MonpaiRecord, x: ReportInput): Promise<ReportResult> =>
+  saveRecordApi({ ...r, done: x.done, status: x.cancel ? '中止' : '予定', reason: x.reason, memo: x.memo });
+
+export function ReportCard({ r, onSaved, submit = saveWhole }: {
+  r: MonpaiRecord;
+  onSaved: (r: MonpaiRecord) => void;
+  submit?: (r: MonpaiRecord, x: ReportInput) => Promise<ReportResult>;
+}) {
   const [done, setDone] = useState(String(r.planned || ''));
   const [reason, setReason] = useState(r.reason);
   const [memo, setMemo] = useState(r.memo);
@@ -93,13 +101,7 @@ function ReportCard({ r, onSaved }: { r: MonpaiRecord; onSaved: (r: MonpaiRecord
   async function send(cancel: boolean) {
     setBusy(true);
     setErr('');
-    const res = await saveRecordApi({
-      ...r,
-      done: cancel ? 0 : done === '' ? null : Number(done),
-      status: cancel ? '中止' : '予定',
-      reason,
-      memo,
-    });
+    const res = await submit(r, { done: cancel ? 0 : done === '' ? null : Number(done), cancel, reason, memo });
     setBusy(false);
     if (!res.ok) return setErr(res.errors?.join(' ') || reasonText(res.reason));
     onSaved(res.item);

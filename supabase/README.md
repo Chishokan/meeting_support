@@ -5,7 +5,7 @@
 
 | アプリ | 状態 |
 |---|---|
-| 門配管理 | `migrations/0001_monpai.sql`（v0.6.0〜） |
+| 門配管理 | `migrations/0001_monpai.sql`（v0.6.0〜）・`0003_monpai_staff.sql`（門配スタッフの名簿。スタッフ専用画面 /monpai-staff のログインに使う） |
 | 適性検査 | `migrations/0002_aptitude.sql`（v0.13.0〜）。Supabase 専用（スプレッドシートには置かない） |
 | 問合せ管理 | 未移行（Apps Script） |
 | 会議DX | 未移行（Apps Script） |
