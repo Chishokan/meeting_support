@@ -25,6 +25,7 @@ export default function MonpaiLayout({ children }: { children: ReactNode }) {
           { href: '/monpai/summary', label: '集計' },
           { href: '/monpai/materials', label: '配布物' },
           { href: '/monpai/schools', label: '学校' },
+          { href: '/monpai/staff', label: 'スタッフ' },
         ]}
       />
       <main className="board-main">{children}</main>
