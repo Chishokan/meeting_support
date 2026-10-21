@@ -431,3 +431,48 @@ export function summarizeMonth(
     canceled: rs.filter((r) => r.status === '中止'),
   };
 }
+
+// ---- 門配スタッフ（大学生・アルバイト。/monpai-staff だけを使う人） -----------------------
+//
+// 社員は職員マスタ（lib/core/staff.ts）でログインする。門配スタッフは別の名簿で、別のログインにする
+// （会議DXなど他のアプリには入れない）。名簿の編集は学校マスタと同じく MASTER_EDIT_DEPTS だけ。
+
+export type MonpaiStaff = {
+  affiliation: string; // 所属
+  name: string;
+  order: number;
+  active: boolean; // false＝ログインできない
+  note: string;
+};
+
+export function validateStaff(b: Record<string, unknown>): { ok: true; value: MonpaiStaff } | { ok: false; errors: string[] } {
+  const str = (k: string, max: number) => String(b[k] ?? '').replace(/[\s　]+/g, ' ').trim().slice(0, max);
+  const errors: string[] = [];
+  const affiliation = str('affiliation', 40);
+  if (!affiliation) errors.push('所属を入力してください。');
+  // 名前の間の空白は落とす（記録の担当欄は空白なしで書くので、そろえないと担当として一致しない）
+  const name = str('name', 30).replace(/ /g, '');
+  if (name.length < 2) errors.push('名前を2文字以上で入力してください。');
+  const order = Number(b.order ?? 0);
+  if (errors.length) return { ok: false, errors };
+  return {
+    ok: true,
+    value: {
+      affiliation, name,
+      order: Number.isFinite(order) ? Math.trunc(order) : 0,
+      active: b.active !== false && b.active !== 'false',
+      note: str('note', 100),
+    },
+  };
+}
+
+/** 所属ごとにまとめる（ログイン画面のプルダウン用）。並び順 → 名前の順。 */
+export function groupStaff(list: MonpaiStaff[]): { affiliation: string; names: string[] }[] {
+  const sorted = [...list].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'ja'));
+  const out: { affiliation: string; names: string[] }[] = [];
+  for (const s of sorted) {
+    const g = out.find((x) => x.affiliation === s.affiliation);
+    if (g) g.names.push(s.name); else out.push({ affiliation: s.affiliation, names: [s.name] });
+  }
+  return out;
+}
