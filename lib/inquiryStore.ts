@@ -10,12 +10,18 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { RECORD_FIELDS, UNASSIGNED_CAMPUS, normalizeCampus, type InquiryInput, type InquiryRecord } from './inquiryRecords';
+import {
+  RECORD_FIELDS, UNASSIGNED_CAMPUS, applyPatch, editPatch, normalizeCampus,
+  type InquiryInput, type InquiryRecord,
+} from './inquiryRecords';
 
 export type ListResult =
   | { ok: true; items: InquiryRecord[]; fetchedAt: string; backend: 'sheet' | 'local' }
   | { ok: false; reason: string };
-export type SaveResult = { ok: true; item: InquiryRecord } | { ok: false; reason: string };
+export type SaveResult =
+  | { ok: true; item: InquiryRecord }
+  // reason が 'conflict' のときは、いまの行（item）と衝突した項目（conflicts）が付く
+  | { ok: false; reason: string; item?: InquiryRecord; conflicts?: (keyof InquiryInput)[] };
 export type DeleteResult = { ok: true } | { ok: false; reason: string };
 
 // ---- 共通 ---------------------------------------------------------------
@@ -54,7 +60,7 @@ function useLocal(): boolean {
 
 // ---- Apps Script ---------------------------------------------------------
 
-export type GasResult = { ok?: boolean; reason?: string; items?: unknown[]; item?: Record<string, unknown>; fetchedAt?: string };
+export type GasResult = { ok?: boolean; reason?: string; items?: unknown[]; item?: Record<string, unknown>; conflicts?: string[]; fetchedAt?: string };
 
 /** Apps Script を叩く共通口。lib/aiNotesStore.ts など台帳以外の保存もここを通る。 */
 export async function callGas(payload: Record<string, unknown>): Promise<GasResult> {
@@ -131,19 +137,37 @@ export async function createRecord(input: InquiryInput, user: string): Promise<S
   return { ok: true, item: fromSheetRow(j.item) };
 }
 
-export async function updateRecord(id: string, input: InquiryInput, user: string): Promise<SaveResult> {
+/**
+ * 更新。base（画面で編集を始めた時点の行）を渡すと、この保存で変えた項目だけを書く
+ * （開いたあとに他の人が直した項目を消さない。同じ項目を別の値に直していたら reason:'conflict'）。
+ * base が無いとき（HP フォームの取り込み・重複の統合）は従来どおり行まるごと書く。
+ */
+export async function updateRecord(
+  id: string, input: InquiryInput, user: string,
+  opts: { base?: InquiryRecord | null; fallbackYear?: number } = {},
+): Promise<SaveResult> {
   const ts = nowJp();
+  const edit = opts.base ? editPatch(opts.base, input, opts.fallbackYear ?? new Date().getFullYear()) : null;
   if (useLocal()) {
     const rows = await readLocal();
     const i = rows.findIndex((r) => r.id === id);
     if (i === -1) return { ok: false, reason: 'not_found' };
     const cur = rows[i];
-    const next: InquiryRecord = {
-      ...cur, ...input, id,
-      no: input.no ?? cur.no,
-      updatedAt: ts, updatedBy: user,
-    };
-    if (next.campus !== cur.campus && input.no == null) next.no = nextNo(rows, next.campus);
+    let next: InquiryRecord;
+    if (edit) {
+      if (!Object.keys(edit.patch).length) return { ok: true, item: cur };
+      const r = applyPatch(cur, edit.patch, edit.expect);
+      if (!r.ok) return { ok: false, reason: 'conflict', item: cur, conflicts: r.conflicts };
+      next = { ...r.next, updatedAt: ts, updatedBy: user };
+      if (next.campus !== cur.campus && edit.patch.no == null) next.no = nextNo(rows, next.campus);
+    } else {
+      next = {
+        ...cur, ...input, id,
+        no: input.no ?? cur.no,
+        updatedAt: ts, updatedBy: user,
+      };
+      if (next.campus !== cur.campus && input.no == null) next.no = nextNo(rows, next.campus);
+    }
     rows[i] = next;
     await writeLocal(rows);
     return { ok: true, item: next };
@@ -152,9 +176,28 @@ export async function updateRecord(id: string, input: InquiryInput, user: string
     ...input, id, no: input.no ?? 0,
     createdAt: '', createdBy: '', updatedAt: ts, updatedBy: user,
   };
-  const j = await callGas({ action: 'saveInquiryRecord', record: toSheetRow(rec) });
+  // record は行まるごと（patch を知らない古い Apps Script でも今までどおり保存できるように残す）。
+  // patch・expect があれば、新しい Apps Script は変えた項目だけを書き、衝突なら conflict を返す。
+  const j = await callGas({
+    action: 'saveInquiryRecord',
+    record: toSheetRow(rec),
+    ...(edit ? { patch: headerKeyed(edit.patch), expect: headerKeyed(edit.expect) } : {}),
+  });
+  if (j.reason === 'conflict' && j.item) {
+    const conflicts = (j.conflicts ?? [])
+      .map((h) => RECORD_FIELDS.find((f) => f.header === h)?.key)
+      .filter((k): k is keyof InquiryInput => !!k && k !== 'id');
+    return { ok: false, reason: 'conflict', item: fromSheetRow(j.item), conflicts };
+  }
   if (!j.ok || !j.item) return { ok: false, reason: j.reason || 'upstream_error' };
   return { ok: true, item: fromSheetRow(j.item) };
+}
+
+/** { result: '入塾' } → { '結果': '入塾' }（Apps Script は見出し名で列を引く）。 */
+function headerKeyed(o: Partial<Record<keyof InquiryRecord, unknown>>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const f of RECORD_FIELDS) if (f.key in o) out[f.header] = o[f.key];
+  return out;
 }
 
 export async function deleteRecord(id: string, user: string): Promise<DeleteResult> {

@@ -26,6 +26,8 @@
  *   - action:'listInquiryBoard' … 問い合わせQA用の小中等部問合せ管理 → 「問合せ台帳」（下記）を優先し、無ければ旧スプレッドシート（INQUIRY_BOARD_ID）を校舎シートごとに読む。いずれも個人情報を落として返す
  *   - action:'listInquiryRecords' / 'saveInquiryRecord' / 'deleteInquiryRecord'
  *                               … 問合せ管理 Web アプリ（/inquiry-board）の台帳 → スプレッドシート「問合せ台帳」（INQUIRY_DB_ID）に1件1行
+ *     ※ 画面からの更新は patch（変えた項目）と expect（開いた時点の値）付きで来る。変えた項目だけを書き、
+ *       他の人が同じ項目を別の値に直していたら conflict を返す（saveInquiryRecord_）。
  *     ※ 旧スプレッドシートの行を台帳へ移すときは、GAS エディタで importLegacyInquiryBoard() を一度実行する（何度実行しても二重登録しない）。
  *   - action:'listGoals'        … 目標管理用 → 中等部会議議事録（GOALS_BOOK_ID）の「秋～冬行動計画」タブから月×校舎×指標の目標／実績を返す
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
@@ -1265,6 +1267,9 @@ function dbNextNo_(sh, col, campus) {
 
 // 新規（ID が台帳に無い）なら追加、あれば上書き。No. が空なら校舎内で採番する。
 // LockService で同時登録の No. 重複を防ぐ。
+// 画面からの更新は data.patch（この保存で変えた項目）と data.expect（その項目の開いた時点の値）が付く。
+// そのときは変えた項目だけを書き、開いたあとに他の人が直した項目は残す。同じ項目を他の人が別の値に
+// 直していたら書かずに conflict を返す（決まりは lib/inquiryRecords.ts の applyPatch と同じ）。
 function saveInquiryRecord_(data) {
   var rec = data.record || {};
   var id = String(rec['ID'] || '').trim();
@@ -1295,6 +1300,25 @@ function saveInquiryRecord_(data) {
 
     var cur = dbRowToObj_(sh.getRange(row, 1, 1, width).getValues()[0], col);
     if (cur['削除'] === '1') return { ok: false, reason: 'not_found' };
+    if (data.patch && typeof data.patch === 'object') {
+      var keys = inquiryPatchKeys_(data.patch);
+      var expect = data.expect || {};
+      var conflicts = [];
+      for (var k = 0; k < keys.length; k++) {
+        var h = keys[k];
+        var now = dbCellStr_(cur[h]);
+        if (now !== dbCellStr_(expect[h]) && now !== dbCellStr_(data.patch[h])) conflicts.push(h);
+      }
+      if (conflicts.length) return { ok: false, reason: 'conflict', conflicts: conflicts, item: cur };
+      if (!keys.length) return { ok: true, item: cur };
+      var merged = {};
+      for (var c in cur) merged[c] = cur[c];
+      for (var m = 0; m < keys.length; m++) merged[keys[m]] = data.patch[keys[m]];
+      // 校舎だけ変えたときは、移った校舎で No. を採番し直す（下の共通処理）
+      if (keys.indexOf('校舎') !== -1 && keys.indexOf('No.') === -1) merged['No.'] = '';
+      merged['更新者'] = rec['更新者'] || '';
+      rec = merged;
+    }
     // 作成情報は元の値を守る。No. も空で来たら元の値を使う（校舎が変わったときだけ採番し直す）。
     rec['作成日時'] = cur['作成日時'];
     rec['作成者'] = cur['作成者'];
@@ -1310,6 +1334,16 @@ function saveInquiryRecord_(data) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// patch のうち、画面から直してよい項目（ID・作成/更新の記録・削除は除く）。
+function inquiryPatchKeys_(patch) {
+  var skip = { 'ID': 1, '作成日時': 1, '作成者': 1, '更新日時': 1, '更新者': 1, '削除': 1 };
+  var keys = [];
+  for (var h in patch) {
+    if (!skip[h] && INQUIRY_DB_HEADERS.indexOf(h) !== -1) keys.push(h);
+  }
+  return keys;
 }
 
 function deleteInquiryRecord_(data) {

@@ -3,23 +3,27 @@
 // 問合せ管理（/inquiry-board）の画面。
 // スプレッドシート「2026小中等部問合せ管理」の校舎タブを、校舎タブ＋一覧＋登録フォームに置き換える。
 //
-// - 校舎タブで切り替え、一覧の行を押すとその件の編集フォームが開く
+// - 校舎タブで切り替え、一覧の行を押すとその件の編集パネルが開く（PC は右側に開き、一覧を見ながら［前へ］［次へ］で順に直せる）
+// - スマホの一覧は「氏名・結果・経過日数・電話」だけの短いカード。PC の一覧は横にずらしても氏名までの列が残る
 // - DM（発送する〇／しない✕）は一覧上の切り替えで即保存。「一覧で編集」を押すと各セルが入力欄になり、
 //   変えた項目はその場で保存される（セルを離れたとき／選び直したとき）
-// - 「結果」が空＝追客中。連絡も結果も無い行（未着手）とクローズ予定日を過ぎた行（期限超過）は色を付ける
+// - 「結果」が空＝追客中。「検討中」も決着していないので追客の一種として扱う（期限超過・注意点の対象）。
+//   連絡も結果も無い行（未着手）とクローズ予定日を過ぎた行（期限超過）は色を付ける
 // - 画面上部の「今日の注意点」は /api/inquiry-board/alerts が返す（ルールで数えた事実＋AIの一言）。
-//   チップを押すとその区分で一覧を絞り込む
+//   チップを押すと、その注意に数えた行だけに一覧を絞り込む（件数と一覧が一致する）
+// - 保存は「編集を始めた時点の行（base）」も送り、変えた項目だけを書く。他の人が同じ項目を
+//   別の値に直していたら保存せず、どちらにするか選んでもらう（lib/inquiryRecords.ts の「同時編集」）
 // - 集計（学年別の問合・面談・体験・入塾）は元シート右側の表を再現したもの
 // - 保存先は Apps Script 経由のスプレッドシート「問合せ台帳」（lib/inquiryStore.ts）
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   BOARD_CAMPUSES, GRADES, SOURCES, TERMS, CONTACTS, MARKS, RESULTS,
-  emptyInput, isOverdue, isUntouched, normalizeGrade, parseIso, pct, shortDate,
+  addDays, applyLog, daysSince, emptyInput, findDuplicates, isFollowing, isOverdue, isUntouched, labelOf,
+  normalizeGrade, normalizePhone, parseIso, pct, phoneDigits, rebaseDraft, shortDate,
   statsByGrade, statusOf, STATUS_LABEL, toCsv, ymOf, RECORD_FIELDS,
-  type InquiryInput, type InquiryRecord, type RecordStatus,
+  type InquiryInput, type InquiryRecord, type LogKind, type RecordStatus,
 } from '@/lib/inquiryRecords';
-import { useModalDismiss } from '@/lib/useModalDismiss';
 import type { Alert, KpiLine } from '@/lib/inquiryAlerts';
 import { mergePreview } from '@/lib/inquiryMerge';
 
@@ -36,7 +40,15 @@ const REASON_TEXT: Record<string, string> = {
   unauthorized: 'ログインし直してください。',
   not_found: 'その件は見つかりませんでした（他の人が削除した可能性があります）。',
   invalid: '入力内容を確認してください。',
+  conflict: '他の人が先に同じ項目を変更していたため、保存できませんでした。',
 };
+
+/** 衝突（他の人が同じ項目を別の値に直していた）を知らせる文。 */
+function conflictText(cur: InquiryRecord, keys: (keyof InquiryRecord)[]): string {
+  const who = cur.updatedBy ? `${cur.updatedBy}さん` : '他の人';
+  const what = keys.length ? `（${keys.map(labelOf).join('・')}）` : '';
+  return `保存できませんでした：${who}が ${fmtTs(cur.updatedAt)} に同じ項目${what}を変更していました。最新の内容を表示しています。`;
+}
 
 const STORAGE_KEY = 'ib_campus';
 const INLINE_KEY = 'ib_inline';
@@ -51,19 +63,23 @@ const VIEWS: { key: View; label: string; desc: string }[] = [
 ];
 const ALL = 'すべて';
 
+// 件数カードの区分（結果の区分＋未着手・期限超過）。'' は絞り込みなし
+type StatusFilter = '' | RecordStatus | 'untouched' | 'overdue';
+
 type SortDir = 'asc' | 'desc';
 
 // 一覧の列。簡易表示（simple）はふだんの追客に要る列だけ、詳細表示は全列。
 // filter: 見出しの下の絞り込み行に何を出すか（select＝選択肢、text＝含む文字）。
 type ColKey = 'campus' | 'no' | 'dm' | 'date' | 'studentName' | 'phone' | 'grade' | 'school' | 'source' | 'term'
   | 'contacted' | 'trial' | 'meetingDate' | 'agreed' | 'closeDate' | 'result' | 'enrollDate' | 'note';
-type ColDef = { key: ColKey; label: string; simple: boolean; filter: 'none' | 'select' | 'text'; sortable: boolean; th?: string };
+// freeze：横にずらしても残す列（元のスプレッドシートの「固定」と同じく、生徒氏名までを左に固定する）
+type ColDef = { key: ColKey; label: string; simple: boolean; filter: 'none' | 'select' | 'text'; sortable: boolean; th?: string; freeze?: boolean };
 const COLUMNS: ColDef[] = [
-  { key: 'campus', label: '校舎', simple: true, filter: 'select', sortable: true },
-  { key: 'no', label: 'No.', simple: true, filter: 'none', sortable: true },
-  { key: 'dm', label: 'DM', simple: true, filter: 'select', sortable: true },
-  { key: 'date', label: '日付', simple: true, filter: 'none', sortable: true },
-  { key: 'studentName', label: '生徒氏名', simple: true, filter: 'text', sortable: true },
+  { key: 'campus', label: '校舎', simple: true, filter: 'select', sortable: true, freeze: true },
+  { key: 'no', label: 'No.', simple: true, filter: 'none', sortable: true, freeze: true },
+  { key: 'dm', label: 'DM', simple: true, filter: 'select', sortable: true, freeze: true },
+  { key: 'date', label: '日付', simple: true, filter: 'none', sortable: true, freeze: true },
+  { key: 'studentName', label: '生徒氏名', simple: true, filter: 'text', sortable: true, freeze: true },
   { key: 'phone', label: '電話番号', simple: true, filter: 'text', sortable: false },
   { key: 'grade', label: '学年', simple: true, filter: 'select', sortable: true },
   { key: 'school', label: '学校', simple: true, filter: 'text', sortable: true },
@@ -144,6 +160,12 @@ function fmtTs(s: string): string {
   return m ? `${Number(m[2])}/${Number(m[3])} ${m[4]}:${m[5]}` : s;
 }
 
+/** 固定する列のクラス。left は一覧の見出しの幅を測って --frz-<列> に入れる（固定列の幅は中身で変わるため）。 */
+function frz(key: ColKey | 'act'): string {
+  return key === 'studentName' ? 'frz frz-studentName frz-last' : `frz frz-${key}`;
+}
+const FREEZE_KEYS: (ColKey | 'act')[] = ['act', ...COLUMNS.filter((c) => c.freeze).map((c) => c.key)];
+
 /** 選択肢に無い値（旧データの移行値など）も選べるように、現在値を選択肢に足す。 */
 function withCurrent(options: readonly string[], current: string): string[] {
   return current && !options.includes(current) ? [...options, current] : [...options];
@@ -158,7 +180,9 @@ export default function InquiryBoardUI({ name }: { name: string }) {
 
   const [campus, setCampus] = useState<string>(ALL);
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState<'' | RecordStatus | 'untouched' | 'overdue'>('');
+  const [status, setStatus] = useState<StatusFilter>('');
+  // 今日の注意点のチップで絞り込んだ行（その注意に数えた行の ID）。校舎・表示区分より優先して出す
+  const [alertSel, setAlertSel] = useState<{ label: string; ids: Set<string> } | null>(null);
   const [month, setMonth] = useState('');
   const [sortKey, setSortKey] = useState<ColKey>('date');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -176,6 +200,13 @@ export default function InquiryBoardUI({ name }: { name: string }) {
   const [version, setVersion] = useState(0);
 
   const [editing, setEditing] = useState<InquiryRecord | 'new' | null>(null);
+  // ［前へ］［次へ］の順番。一覧から開いたときの並び（ID）をそのまま持つ（保存で一覧から外れる人がいても崩れない）
+  const [queue, setQueue] = useState<string[]>([]);
+  // パネルに保存していない入力があるか（一覧の別の行を押して切り替えるときに確かめる）
+  const dirtyRef = useRef(false);
+  const setDirty = useCallback((d: boolean) => { dirtyRef.current = d; }, []);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   const today = useMemo(() => todayIso(), []);
 
@@ -205,6 +236,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
   }
   function changeCampus(c: string) {
     setCampus(c);
+    setAlertSel(null); // 注意点は校舎ごとに数えているので、校舎を変えたら外す
     try { localStorage.setItem(STORAGE_KEY, c); } catch {}
   }
 
@@ -258,6 +290,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
   const statsRows = useMemo(() => {
     const q = query.trim().toLowerCase();
     const rows = campusRows.filter((r) => {
+      if (alertSel && !alertSel.ids.has(r.id)) return false;
       if (status) {
         if (status === 'untouched') { if (!isUntouched(r)) return false; }
         else if (status === 'overdue') { if (!isOverdue(r, today)) return false; }
@@ -275,7 +308,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
     });
     rows.sort((a, b) => compareRows(a, b, sortKey, sortDir));
     return rows;
-  }, [campusRows, query, status, month, colF, sortKey, sortDir, today]);
+  }, [campusRows, alertSel, query, status, month, colF, sortKey, sortDir, today]);
 
   // 見出しを押すと、その列で昇順 → 降順 → 昇順… と切り替わる（別の列を押すと昇順から）
   const toggleSort = useCallback((key: ColKey) => {
@@ -307,19 +340,17 @@ export default function InquiryBoardUI({ name }: { name: string }) {
   }, [campusRows]);
 
   const shown = useMemo(() => {
-    if (view === 'all') return statsRows;
+    // 注意点で絞り込んだときは表示区分を掛けない（入塾日が空の入塾者など、区分の外の行も数えているため）
+    if (view === 'all' || alertSel) return statsRows;
     if (view === 'joined') return statsRows.filter((r) => statusOf(r.result) === 'joined');
     return statsRows.filter((r) => statusOf(r.result) !== 'joined');
-  }, [statsRows, view]);
+  }, [statsRows, view, alertSel]);
 
+  // 件数カード。結果の区分（追客中・検討中・入塾・申込・見送り・その他）の合計が「問合せ」と一致する
   const counts = useMemo(() => {
-    const c = { total: viewRows.length, open: 0, joined: 0, applied: 0, declined: 0, untouched: 0, overdue: 0 };
+    const c = { total: viewRows.length, open: 0, considering: 0, joined: 0, applied: 0, declined: 0, other: 0, untouched: 0, overdue: 0 };
     for (const r of viewRows) {
-      const st = statusOf(r.result);
-      if (st === 'open') c.open++;
-      else if (st === 'joined') c.joined++;
-      else if (st === 'applied') c.applied++;
-      else if (st === 'declined') c.declined++;
+      c[statusOf(r.result)]++;
       if (isUntouched(r)) c.untouched++;
       if (isOverdue(r, today)) c.overdue++;
     }
@@ -345,19 +376,25 @@ export default function InquiryBoardUI({ name }: { name: string }) {
     setVersion((v) => v + 1);
   }
 
-  // 一覧上の直接編集（DM の切り替え・「一覧で編集」の各セル）。行まるごと PUT して、返ってきた値で置き換える。
-  const saveInline = useCallback(async (next: InquiryRecord): Promise<boolean> => {
+  // 一覧上の直接編集（DM の切り替え・「一覧で編集」の各セル）。base（変える前の行）と一緒に PUT し、
+  // 変えた項目だけを書く。返ってきた値（他の人の変更も入った最新の行）で置き換える。
+  const saveInline = useCallback(async (next: InquiryRecord, base: InquiryRecord): Promise<boolean> => {
     try {
       const res = await fetch('/api/inquiry-board', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
+        body: JSON.stringify({ ...next, base }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok && j.item) {
         applySaved(j.item as InquiryRecord);
         setFlash('');
         return true;
+      }
+      if (j?.reason === 'conflict' && j.item) {
+        applySaved(j.item as InquiryRecord);
+        setFlash(conflictText(j.item as InquiryRecord, j.conflicts ?? []));
+        return false;
       }
       setFlash(
         Array.isArray(j?.errors) && j.errors.length
@@ -380,7 +417,77 @@ export default function InquiryBoardUI({ name }: { name: string }) {
     URL.revokeObjectURL(a.href);
   }
 
-  const filtered = !!(query || status || month || Object.values(colF).some(Boolean));
+  // ---- 編集パネル ----------------------------------------------------------
+  function leaveOk(): boolean {
+    return !dirtyRef.current || window.confirm('入力した内容はまだ保存されていません。保存せずに移ってよいですか？');
+  }
+  function openRecord(r: InquiryRecord) {
+    if (editing && editing !== 'new' && editing.id === r.id) return;
+    if (!leaveOk()) return;
+    setQueue(shown.map((x) => x.id));
+    setEditing(r);
+  }
+  function openNew() {
+    if (editing === 'new' || !leaveOk()) return;
+    setEditing('new');
+  }
+  // パネルの中から別の人へ（前へ・次へ・保存して次へ・重複のお知らせ）。未保存の確認はパネル側で済んでいる
+  const gotoId = useCallback((id: string) => {
+    const r = itemsRef.current.find((x) => x.id === id);
+    if (r) setEditing(r);
+  }, []);
+  const editingId = editing && editing !== 'new' ? editing.id : '';
+  const nav = useMemo(() => {
+    if (!editingId) return null;
+    const i = queue.indexOf(editingId);
+    if (i === -1) return null;
+    const alive = new Set(items.map((r) => r.id));
+    let prevId: string | null = null;
+    for (let j = i - 1; j >= 0; j--) if (alive.has(queue[j])) { prevId = queue[j]; break; }
+    let nextId: string | null = null;
+    for (let j = i + 1; j < queue.length; j++) if (alive.has(queue[j])) { nextId = queue[j]; break; }
+    return { pos: i + 1, total: queue.length, prevId, nextId };
+  }, [editingId, queue, items]);
+  // 開いている人の行を一覧の見える位置へ（前へ・次へで移ったとき）
+  useEffect(() => {
+    if (!editingId) return;
+    document.querySelector(`tr[data-id="${editingId}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [editingId]);
+
+  const filtered = !!(alertSel || query || status || month || Object.values(colF).some(Boolean));
+  function clearFilters() { setAlertSel(null); setQuery(''); setStatus(''); setMonth(''); setColF({}); }
+  // 件数カード：押すとその区分で絞り込む（もう一度押すと外す）。注意点の絞り込みは外す
+  function pickStatus(s: StatusFilter) { setAlertSel(null); setStatus((cur) => (cur === s ? '' : s)); }
+  const cards: { key: StatusFilter; label: string; n: number; cls?: string; hide?: boolean }[] = [
+    { key: '', label: '問合せ', n: counts.total },
+    { key: 'open', label: '追客中', n: counts.open },
+    { key: 'considering', label: '検討中', n: counts.considering },
+    { key: 'joined', label: '入塾', n: counts.joined, hide: view === 'active' },
+    { key: 'applied', label: '申込', n: counts.applied },
+    { key: 'declined', label: '見送り', n: counts.declined },
+    { key: 'other', label: 'その他', n: counts.other, hide: !counts.other },
+    { key: 'untouched', label: '未着手', n: counts.untouched, cls: 'warn' },
+    { key: 'overdue', label: '期限超過', n: counts.overdue, cls: 'danger' },
+  ];
+
+  // 固定する列（生徒氏名まで）の左端を測る。列の幅は中身で変わるので、見出しの実際の幅を左から足していく
+  const tableRef = useRef<HTMLTableElement>(null);
+  useEffect(() => {
+    const t = tableRef.current;
+    if (!t) return;
+    const measure = () => {
+      let left = 0;
+      t.querySelectorAll<HTMLTableCellElement>('thead tr:first-child th.frz').forEach((th) => {
+        const key = [...th.classList].find((c) => c.startsWith('frz-') && c !== 'frz-last')?.slice(4);
+        if (key) t.style.setProperty(`--frz-${key}`, `${left}px`);
+        left += th.getBoundingClientRect().width;
+      });
+    };
+    measure();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(t);
+    return () => ro?.disconnect();
+  }, [cols, inlineEdit, bigFont, shown.length, loading]);
 
   // 一覧の枠を「画面の残りの高さ」に合わせる。枠の下端が常に画面内に来るので、横スクロールバーが
   // いちばん下まで行かなくても見える（PC のみ。スマホはカード表示なので枠の高さは触らない）。
@@ -402,7 +509,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
   }, [loading, shown.length, showStats, showFilters, dense, bigFont]);
 
   return (
-    <div className={`ib ${bigFont ? 'ib-big' : ''}`}>
+    <div className={`ib ${bigFont ? 'ib-big' : ''} ${editing ? 'has-panel' : ''}`}>
       <div className="ib-tabs" role="tablist">
         {[ALL, ...BOARD_CAMPUSES].map((c) => (
           <button
@@ -447,41 +554,31 @@ export default function InquiryBoardUI({ name }: { name: string }) {
         <AlertPanel
           campus={campus}
           version={version}
-          onFilter={(f) => {
-            if (f === 'joined' && view === 'active') changeView('joined');
-            setStatus((cur) => (cur === f ? '' : f));
+          selected={alertSel?.label ?? ''}
+          onFilter={(a) => {
+            // その注意に数えた行だけを出す。ほかの絞り込みは外す（件数と一覧を一致させるため）
+            if (alertSel?.label === a.label) { setAlertSel(null); return; }
+            setQuery(''); setStatus(''); setMonth(''); setColF({});
+            setAlertSel({ label: a.label ?? '注意点', ids: new Set(a.ids ?? []) });
           }}
         />
       )}
 
       <div className="ib-summary">
-        <button className={`ib-sum ${status === '' ? 'active' : ''}`} onClick={() => setStatus('')}>
-          <b>{counts.total}</b><span>問合せ</span>
-        </button>
-        <button className={`ib-sum ${status === 'open' ? 'active' : ''}`} onClick={() => setStatus(status === 'open' ? '' : 'open')}>
-          <b>{counts.open}</b><span>追客中</span>
-        </button>
-        {view !== 'active' && (
-          <button className={`ib-sum ${status === 'joined' ? 'active' : ''}`} onClick={() => setStatus(status === 'joined' ? '' : 'joined')}>
-            <b>{counts.joined}</b><span>入塾</span>
+        {cards.filter((c) => !c.hide).map((c) => (
+          <button
+            key={c.key || 'total'}
+            className={`ib-sum ${c.cls ?? ''} ${status === c.key && !alertSel ? 'active' : ''}`}
+            onClick={() => { if (c.key) pickStatus(c.key); else { setAlertSel(null); setStatus(''); } }}
+            title={c.key === 'considering' ? '結果が「検討中」。まだ決着していないので、期限超過・注意点の対象にも入る' : c.key === 'overdue' ? 'クローズ予定日を過ぎて結果が決まっていない（追客中・検討中）' : undefined}
+          >
+            <b>{c.n}</b><span>{c.label}</span>
           </button>
-        )}
-        <button className={`ib-sum ${status === 'applied' ? 'active' : ''}`} onClick={() => setStatus(status === 'applied' ? '' : 'applied')}>
-          <b>{counts.applied}</b><span>申込</span>
-        </button>
-        <button className={`ib-sum ${status === 'declined' ? 'active' : ''}`} onClick={() => setStatus(status === 'declined' ? '' : 'declined')}>
-          <b>{counts.declined}</b><span>見送り</span>
-        </button>
-        <button className={`ib-sum warn ${status === 'untouched' ? 'active' : ''}`} onClick={() => setStatus(status === 'untouched' ? '' : 'untouched')}>
-          <b>{counts.untouched}</b><span>未着手</span>
-        </button>
-        <button className={`ib-sum danger ${status === 'overdue' ? 'active' : ''}`} onClick={() => setStatus(status === 'overdue' ? '' : 'overdue')}>
-          <b>{counts.overdue}</b><span>期限超過</span>
-        </button>
+        ))}
       </div>
 
       <div className="ib-toolbar">
-        <button className="ib-primary" onClick={() => setEditing('new')}>＋ 新規登録</button>
+        <button className="ib-primary" onClick={openNew}>＋ 新規登録</button>
         <button
           className={`ib-ghost ib-toggle ${inlineEdit ? 'active' : ''}`}
           onClick={toggleInline}
@@ -529,9 +626,15 @@ export default function InquiryBoardUI({ name }: { name: string }) {
 
       <div className="ib-list-head">
         <span>
-          {filtered ? `${shown.length}件（${viewRows.length}件中）` : `${shown.length}件`}
+          {filtered ? `${shown.length}件（${alertSel ? alertSel.ids.size : viewRows.length}件中）` : `${shown.length}件`}
+          {alertSel && (
+            <span className="ib-filter-chip">
+              注意点：{alertSel.label}
+              <button type="button" onClick={() => setAlertSel(null)} aria-label="注意点の絞り込みを外す">×</button>
+            </span>
+          )}
           {filtered && (
-            <button className="ib-link" onClick={() => { setQuery(''); setStatus(''); setMonth(''); setColF({}); }}>
+            <button className="ib-link" onClick={clearFilters}>
               絞り込みを解除
             </button>
           )}
@@ -547,14 +650,14 @@ export default function InquiryBoardUI({ name }: { name: string }) {
         <p className="ib-empty">{items.length === 0 && !note ? 'まだ登録がありません。「＋ 新規登録」から追加してください。' : '該当する問い合わせはありません。'}</p>
       ) : (
         <div className="ib-table-wrap" ref={wrapRef}>
-          <table className={`ib-table ${inlineEdit ? 'inline' : ''}`}>
+          <table className={`ib-table ${inlineEdit ? 'inline' : ''}`} ref={tableRef}>
             <thead>
               <tr>
-                {inlineEdit && <th></th>}
+                {inlineEdit && <th className={frz('act')}></th>}
                 {cols.map((c) => (
                   <th
                     key={c.key}
-                    className={`${c.th ?? ''} ${c.sortable ? 'ib-sortable' : ''} ${sortKey === c.key ? 'sorted' : ''}`}
+                    className={`${c.th ?? ''} ${c.sortable ? 'ib-sortable' : ''} ${sortKey === c.key ? 'sorted' : ''} ${c.freeze ? frz(c.key) : ''}`}
                     onClick={c.sortable ? () => toggleSort(c.key) : undefined}
                     title={c.sortable ? '押すとこの列で並び替え（昇順⇄降順）' : undefined}
                     aria-sort={sortKey === c.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
@@ -566,9 +669,9 @@ export default function InquiryBoardUI({ name }: { name: string }) {
               </tr>
               {showFilters && (
                 <tr className="ib-filter-row">
-                  {inlineEdit && <th></th>}
+                  {inlineEdit && <th className={frz('act')}></th>}
                   {cols.map((c) => (
-                    <th key={c.key}>
+                    <th key={c.key} className={c.freeze ? frz(c.key) : undefined}>
                       {c.filter === 'select' && (
                         <select
                           className={colF[c.key] ? 'on' : ''}
@@ -603,7 +706,8 @@ export default function InquiryBoardUI({ name }: { name: string }) {
                   show={show}
                   inline={inlineEdit}
                   today={today}
-                  onOpen={() => setEditing(r)}
+                  current={r.id === editingId}
+                  onOpen={() => openRecord(r)}
                   onSave={saveInline}
                 />
               ))}
@@ -612,14 +716,22 @@ export default function InquiryBoardUI({ name }: { name: string }) {
         </div>
       )}
 
+      {/* スマホの新規登録は画面の下に常に置く（一覧の上まで戻らなくてよいように） */}
+      {!editing && <button type="button" className="ib-fab" onClick={openNew}>＋ 新規登録</button>}
+
       {editing && (
         <RecordForm
+          key={editing === 'new' ? 'new' : editing.id}
           record={editing === 'new' ? null : editing}
-          defaultCampus={campus === ALL ? BOARD_CAMPUSES[0] : campus}
+          defaultCampus={campus === ALL ? '' : campus /* 「すべて」からは校舎を選んでもらう（黙って先頭の校舎に入れない） */}
           today={today}
           user={name}
+          nav={nav}
           onClose={() => setEditing(null)}
-          onSaved={(item) => { applySaved(item); setEditing(null); }}
+          onSaved={(item, thenId) => { applySaved(item); if (thenId) gotoId(thenId); else setEditing(null); }}
+          onGoto={gotoId}
+          onDirty={setDirty}
+          onSynced={applySaved}
           onDeleted={(id) => { applyDeleted(id); setEditing(null); }}
           candidates={items}
           onMerged={(item, droppedId) => { applyDeleted(droppedId); applySaved(item); setEditing(null); setOkMsg(`${item.campus} #${item.no} に統合しました。まとめた行は削除され、内容は備考に残っています。`); }}
@@ -647,7 +759,7 @@ function timeOf(ts: string): string {
   return m ? `${Number(m[1])}:${m[2]}` : ts;
 }
 
-function AlertPanel({ campus, version, onFilter }: { campus: string; version: number; onFilter: (f: NonNullable<Alert['filter']>) => void }) {
+function AlertPanel({ campus, version, selected, onFilter }: { campus: string; version: number; selected: string; onFilter: (a: Alert) => void }) {
   const [data, setData] = useState<AlertsRes | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(true);
@@ -726,16 +838,22 @@ function AlertPanel({ campus, version, onFilter }: { campus: string; version: nu
             <span className="ib-kpi" title="問い合わせ日で数えた件数">
               問合せ <b>{ok.facts.inquiriesThisMonth}</b><small>（前月 {ok.facts.inquiriesPrevMonth}）</small>
             </span>
-            <span className="ib-kpi" title="この月の問い合わせのその後（問い合わせQAのカードと同じ数え方）">
-              入塾 <b>{ok.facts.monthOutcome.joined}</b><small>／申込 {ok.facts.monthOutcome.applied}／見送り {ok.facts.monthOutcome.declined}／追客中 {ok.facts.monthOutcome.open}</small>
+            <span className="ib-kpi" title="この月の問い合わせのその後（問い合わせQAのカードと同じ数え方。「その他」は検討中など）">
+              入塾 <b>{ok.facts.monthOutcome.joined}</b><small>／申込 {ok.facts.monthOutcome.applied}／見送り {ok.facts.monthOutcome.declined}／追客中 {ok.facts.monthOutcome.open}{ok.facts.monthOutcome.other > 0 && `／その他 ${ok.facts.monthOutcome.other}`}</small>
             </span>
           </div>
 
           {ok.alerts.map((a, i) => (
             <div key={i} className={`ib-line lv-${a.level}`} role="listitem">
               <span className="ib-dot" />
-              {a.filter ? (
-                <button type="button" onClick={() => onFilter(a.filter!)} title="押すとこの区分で一覧を絞り込む">{a.text}</button>
+              {a.ids?.length ? (
+                <button
+                  type="button"
+                  className={selected && selected === a.label ? 'on' : ''}
+                  aria-pressed={selected === a.label}
+                  onClick={() => onFilter(a)}
+                  title={selected === a.label ? 'もう一度押すと絞り込みを外す' : `押すとこの ${a.ids.length} 件だけを一覧に出す`}
+                >{a.text}</button>
               ) : (
                 <span>{a.text}</span>
               )}
@@ -758,13 +876,17 @@ type RowProps = {
   show: ColShow;
   inline: boolean;
   today: string;
+  current: boolean; // いま編集パネルで開いている人
   onOpen: () => void;
-  onSave: (next: InquiryRecord) => Promise<boolean>;
+  onSave: (next: InquiryRecord, base: InquiryRecord) => Promise<boolean>;
 };
 
-function BoardRow({ r, show, inline, today, onOpen, onSave }: RowProps) {
+function BoardRow({ r, show, inline, today, current, onOpen, onSave }: RowProps) {
   const [draft, setDraft] = useState<InquiryRecord>(r);
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  // 保存に失敗したときに戻す先。保存の応答（衝突なら他の人が直した最新の行）で r が先に変わることがあるので、いまの r を見る
+  const latest = useRef(r);
+  latest.current = r;
 
   // サーバの値が変わったら（自分の保存・更新ボタン）下書きを揃える
   useEffect(() => { setDraft(r); }, [r]);
@@ -779,9 +901,9 @@ function BoardRow({ r, show, inline, today, onOpen, onSave }: RowProps) {
     setDraft(next);
     if (RECORD_FIELDS.every((f) => next[f.key] === r[f.key])) return;
     setState('saving');
-    const ok = await onSave(next);
+    const ok = await onSave(next, r);
     setState(ok ? 'saved' : 'error');
-    if (!ok) setDraft(r);
+    if (!ok) setDraft(latest.current);
   }
 
   const st = statusOf(r.result);
@@ -808,17 +930,44 @@ function BoardRow({ r, show, inline, today, onOpen, onSave }: RowProps) {
     </span>
   );
 
-  const rowClass = `ib-row st-${st} ${overdue ? 'overdue' : ''} ${untouched ? 'untouched' : ''}`;
+  const rowClass = `ib-row st-${st} ${overdue ? 'overdue' : ''} ${untouched ? 'untouched' : ''} ${current ? 'current' : ''}`;
 
   if (!inline) {
+    // スマホのカード：氏名・結果・経過日数・電話・備考の1行目だけ（PC では出さない。ほかのセルはスマホでは隠す）
+    const days = isFollowing(r.result) ? daysSince(r.date, today) : null;
+    const age = overdue ? '期限超過' : untouched ? '未着手'
+      : days != null ? (days <= 0 ? '今日の問合せ' : `${days}日経過`) : r.date ? `問合せ ${shortDate(r.date)}` : '';
+    const tel = phoneDigits(r.phone);
+    const card = (
+      <td className="ib-card">
+        <div className="ib-card-top">
+          <b>{r.studentName || (r.guardianName ? `（保護者）${r.guardianName}` : '（未記入）')}</b>
+          <span className={`ib-badge st-${st}`}>{r.result || STATUS_LABEL.open}</span>
+        </div>
+        <div className="ib-card-meta">
+          <span>{show.campus ? `${r.campus} ` : ''}#{r.no || '—'}</span>
+          {r.grade && <span>{r.grade}</span>}
+          {r.school && <span>{r.school}</span>}
+          {age && <span className={overdue ? 'ib-over' : untouched ? 'ib-untouched' : ''}>{age}</span>}
+          {r.contacted && <span>連絡：{r.contacted}</span>}
+        </div>
+        {r.phone && (
+          <div className="ib-card-tel" onClick={stop}>
+            {tel ? <a href={`tel:${tel}`} className="ib-call">電話する <span>{r.phone}</span></a> : <span>{r.phone}</span>}
+            {r.guardianName && <small>{r.guardianName}</small>}
+          </div>
+        )}
+        {r.note && <div className="ib-card-note">{r.note.split('\n')[0]}</div>}
+      </td>
+    );
     return (
-      <tr className={rowClass} onClick={onOpen} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}>
-        {show.campus && <td data-label="校舎">{r.campus}</td>}
-        {show.no && <td data-label="No." className="ib-no">{r.no || '—'}</td>}
-        {show.dm && <td data-label="DM" className="ib-c">{dm}</td>}
-        {show.date && <td data-label="日付" className="ib-date">{shortDate(r.date)}</td>}
+      <tr className={`${rowClass} has-card`} data-id={r.id} onClick={onOpen} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') onOpen(); }}>
+        {show.campus && <td data-label="校舎" className={frz('campus')}>{r.campus}</td>}
+        {show.no && <td data-label="No." className={`ib-no ${frz('no')}`}>{r.no || '—'}</td>}
+        {show.dm && <td data-label="DM" className={`ib-c ${frz('dm')}`}>{dm}</td>}
+        {show.date && <td data-label="日付" className={`ib-date ${frz('date')}`}>{shortDate(r.date)}</td>}
         {show.studentName && (
-          <td data-label="生徒氏名" className="ib-name">
+          <td data-label="生徒氏名" className={`ib-name ${frz('studentName')}`}>
             <b>{r.studentName || (r.guardianName ? `（保護者）${r.guardianName}` : '（未記入）')}</b>
             {r.kana && <small>{r.kana}</small>}
           </td>
@@ -840,6 +989,7 @@ function BoardRow({ r, show, inline, today, onOpen, onSave }: RowProps) {
         {show.result && <td data-label="結果"><span className={`ib-badge st-${st}`}>{r.result || STATUS_LABEL.open}</span></td>}
         {show.enrollDate && <td data-label="入塾日" className="ib-c">{shortDate(r.enrollDate)}</td>}
         {show.note && <td data-label="備考" className="ib-note-cell">{r.note}</td>}
+        {card}
       </tr>
     );
   }
@@ -855,19 +1005,19 @@ function BoardRow({ r, show, inline, today, onOpen, onSave }: RowProps) {
   );
 
   return (
-    <tr className={rowClass}>
-      <td data-label="" className="ib-act">
+    <tr className={rowClass} data-id={r.id}>
+      <td data-label="" className={`ib-act ${frz('act')}`}>
         <button type="button" className="ib-ghost sm" onClick={onOpen}>詳細</button>
         {state === 'saving' && <small>保存中…</small>}
         {state === 'saved' && <small className="ok">保存しました</small>}
         {state === 'error' && <small className="err">保存できませんでした</small>}
       </td>
-      {show.campus && <td data-label="校舎">{r.campus}</td>}
-      {show.no && <td data-label="No." className="ib-no">{r.no || '—'}</td>}
-      {show.dm && <td data-label="DM" className="ib-c">{dm}</td>}
-      {show.date && <td data-label="日付" className="ib-date">{date('date', '日付')}</td>}
+      {show.campus && <td data-label="校舎" className={frz('campus')}>{r.campus}</td>}
+      {show.no && <td data-label="No." className={`ib-no ${frz('no')}`}>{r.no || '—'}</td>}
+      {show.dm && <td data-label="DM" className={`ib-c ${frz('dm')}`}>{dm}</td>}
+      {show.date && <td data-label="日付" className={`ib-date ${frz('date')}`}>{date('date', '日付')}</td>}
       {show.studentName && (
-        <td data-label="生徒氏名" className="ib-name">
+        <td data-label="生徒氏名" className={`ib-name ${frz('studentName')}`}>
           <InlineText label="生徒氏名" value={draft.studentName} onCommit={(v) => commit({ studentName: v })} />
           {r.kana && <small>{r.kana}</small>}
         </td>
@@ -970,7 +1120,7 @@ function StatsPanel({ stats, count, filtered }: { stats: ReturnType<typeof stats
           <thead>
             <tr>
               <th>学年</th><th>問合</th><th>面談</th><th>問面率</th><th>体験</th><th>問体率</th>
-              <th>入塾</th><th>問入率</th><th>申込</th><th>見送り</th><th>追客中</th>
+              <th>入塾</th><th>問入率</th><th>申込</th><th>検討中</th><th>見送り</th><th>追客中</th>
             </tr>
           </thead>
           <tbody>
@@ -985,6 +1135,7 @@ function StatsPanel({ stats, count, filtered }: { stats: ReturnType<typeof stats
                 <td>{s.joined}</td>
                 <td>{pct(s.joined, s.total)}</td>
                 <td>{s.applied}</td>
+                <td>{s.considering}</td>
                 <td>{s.declined}</td>
                 <td>{s.open}</td>
               </tr>
@@ -992,52 +1143,137 @@ function StatsPanel({ stats, count, filtered }: { stats: ReturnType<typeof stats
           </tbody>
         </table>
       </div>
-      <p className="ib-hint">面談＝入塾提案面談日あり／体験＝体験が〇／入塾＝結果が入塾／申込＝講習会・模試申込／追客中＝結果が未記入。</p>
+      <p className="ib-hint">面談＝入塾提案面談日あり／体験＝体験が〇／入塾＝結果が入塾／申込＝講習会・模試申込／検討中＝結果が検討中／追客中＝結果が未記入。</p>
     </div>
   );
 }
 
-// ---- 登録・編集フォーム ---------------------------------------------------------
+// ---- 登録・編集パネル ---------------------------------------------------------
+//
+// PC（幅 900px 超）では画面の右に開き、左の一覧はそのまま見て押せる（押すとその人に切り替わる）。スマホは画面いっぱい。
+// 編集は「電話をかけて状況を更新する」が中心なので、対応の記録 → 追客の状況 → 備考 → 基本 → その他 → 重複の統合 の順。
+// 新規は電話を受けながら埋めるので、校舎・日付・氏名・電話・学年だけを先に出し、残りは［詳しく入力する］で開く（スマホ）。
+// ［前へ］［次へ］は、一覧から開いたときの並び（絞り込み・並び替えの結果）を順番として使う。保存で一覧から外れる人がいても順番は崩れない。
+
+type Nav = { pos: number; total: number; prevId: string | null; nextId: string | null };
 
 type FormProps = {
   record: InquiryRecord | null;
   defaultCampus: string;
   today: string;
   user: string;
+  nav: Nav | null;
   onClose: () => void;
-  onSaved: (item: InquiryRecord) => void;
+  onSaved: (item: InquiryRecord, thenId?: string | null) => void; // thenId：［保存して次へ］で次に開く人
+  onGoto: (id: string) => void;                                    // 前へ・次へ・重複のお知らせから別の人を開く（未保存の確認は済み）
+  onDirty: (dirty: boolean) => void;                               // 一覧の行を押して切り替えるときの確認に使う
   onDeleted: (id: string) => void;
-  candidates: InquiryRecord[];                                   // 統合先の候補（台帳の全件）
-  onMerged: (item: InquiryRecord, droppedId: string) => void;    // 統合が済んだ（item=残った行、droppedId=消えた行）
+  onSynced: (item: InquiryRecord) => void;                         // 保存できなかったが最新の行が分かった（一覧だけ直す）
+  candidates: InquiryRecord[];                                     // 統合先・重複のお知らせの候補（台帳の全件）
+  onMerged: (item: InquiryRecord, droppedId: string) => void;      // 統合が済んだ（item=残った行、droppedId=消えた行）
 };
 
-function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDeleted, candidates, onMerged }: FormProps) {
-  const [v, setV] = useState<InquiryInput>(() => (record ? { ...record } : { ...emptyInput(defaultCampus), date: today }));
+const LEAVE_CONFIRM = '入力した内容はまだ保存されていません。保存せずに移ってよいですか？';
+const CLOSE_CONFIRM = '入力した内容はまだ保存されていません。閉じると消えます。閉じてよいですか？';
+
+/** スマホ幅か（パネルを画面いっぱいに出す幅。CSS の 900px と合わせる）。 */
+function isNarrow(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches;
+}
+
+/** 対応の記録に付ける「10/20 14:05」（日本時間）。 */
+function nowStamp(): string {
+  const parts = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(new Date());
+  const g = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  return `${g('month')}/${g('day')} ${g('hour')}:${g('minute')}`;
+}
+
+function RecordForm({ record, defaultCampus, today, user, nav, onClose, onSaved, onGoto, onDirty, onDeleted, onSynced, candidates, onMerged }: FormProps) {
+  // 開いた時点の値。編集中かどうか（閉じる・移る前に確かめる）の比べ先
+  const [start] = useState<InquiryInput>(() => (record ? { ...record } : { ...emptyInput(defaultCampus), date: today }));
+  const [v, setV] = useState<InquiryInput>(start);
+  // 編集を始めた時点の行。保存のときに一緒に送り、変えた項目だけを書いてもらう（衝突したら最新の行に差し替える）
+  const [base, setBase] = useState<InquiryRecord | null>(record);
+  const [conflict, setConflict] = useState<{ item: InquiryRecord; keys: (keyof InquiryRecord)[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  // 新規登録の［詳しく入力する］。スマホは最小の項目だけで始め、PC は最初から全部出す
+  const [more, setMore] = useState(() => !!record || !isNarrow());
+  const [memo, setMemo] = useState('');
+  const [logged, setLogged] = useState<string[]>([]); // このパネルで記録した行（保存で確定する）
+  const [trialAttn, setTrialAttn] = useState(false);
   const firstRef = useRef<HTMLInputElement>(null);
+  const conflictRef = useRef<HTMLDivElement>(null);
+  const trialRef = useRef<HTMLDivElement>(null);
+  const mergeRef = useRef<HTMLDivElement>(null);
 
-  useModalDismiss(onClose);
-  // 新規登録だけ氏名にフォーカスする（編集で当てるとスマホで最上段の「重複の統合」が隠れ、キーボードも出てしまう）
+  const dirty = !sameDraft(v, base ?? start);
+  useEffect(() => { onDirty(dirty); }, [dirty, onDirty]);
+  useEffect(() => () => onDirty(false), [onDirty]);
+
+  // ×・閉じる・Esc のどれで閉じても、保存していない入力があれば確かめる
+  const requestClose = useCallback(() => {
+    if (dirty && !window.confirm(CLOSE_CONFIRM)) return;
+    onClose();
+  }, [dirty, onClose]);
+  const closeRef = useRef(requestClose);
+  closeRef.current = requestClose;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRef.current(); };
+    window.addEventListener('keydown', onKey);
+    // スマホは画面いっぱいに重ねるので、後ろの一覧が動かないようにする（PC は一覧を見ながら使うので止めない）
+    const narrow = isNarrow();
+    const prev = document.body.style.overflow;
+    if (narrow) document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (narrow) document.body.style.overflow = prev;
+    };
+  }, []);
+  // 入力中にページを閉じる・再読み込みするときも、ブラウザの確認を出す
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+  useEffect(() => { if (conflict) conflictRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [conflict]);
+  // 新規登録だけ氏名にフォーカスする（編集で当てるとスマホでキーボードが出て、対応の記録が隠れる）
   useEffect(() => { if (!record) firstRef.current?.focus(); }, [record]);
 
   function set<K extends keyof InquiryInput>(k: K, val: InquiryInput[K]) {
     setV((p) => ({ ...p, [k]: val }));
   }
 
-  async function save() {
+  // 前へ・次へ・重複のお知らせから別の人へ。保存していない入力があれば確かめる
+  function go(id: string | null) {
+    if (!id || busy) return;
+    if (dirty && !window.confirm(LEAVE_CONFIRM)) return;
+    onGoto(id);
+  }
+
+  // over：衝突のあと［自分の入力で上書きする］を押したときの値（state の反映を待たずに送る）。then：保存のあとに開く人
+  async function save(opts: { v?: InquiryInput; base?: InquiryRecord | null; then?: string | null } = {}) {
     if (busy) return;
+    const val = opts.v ?? v;
+    const b = opts.base ?? base;
     setBusy(true);
     setErrors([]);
+    setConflict(null);
     try {
       const res = await fetch('/api/inquiry-board', {
         method: record ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(record ? { ...v, id: record.id } : v),
+        body: JSON.stringify(record ? { ...val, id: record.id, base: b } : val),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok && j.item) {
-        onSaved(j.item as InquiryRecord);
+        onSaved(j.item as InquiryRecord, opts.then);
+      } else if (j?.reason === 'conflict' && j.item) {
+        onSynced(j.item as InquiryRecord);
+        setConflict({ item: j.item as InquiryRecord, keys: j.conflicts ?? [] });
       } else if (Array.isArray(j?.errors) && j.errors.length) {
         setErrors(j.errors);
       } else {
@@ -1048,6 +1284,13 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
     } finally {
       setBusy(false);
     }
+  }
+
+  // ［保存して次へ］。変えていなければ保存せずに次の人へ
+  function saveAndNext() {
+    if (!nav?.nextId || busy) return;
+    if (!dirty) { onGoto(nav.nextId); return; }
+    void save({ then: nav.nextId });
   }
 
   async function remove() {
@@ -1071,158 +1314,325 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void save(); }
   }
 
+  // 衝突のあと：どちらの場合も、自分が触っていない項目は他の人が直した最新の値に載せ替える
+  function keepMine() {
+    if (!conflict || !base) return;
+    const nv = rebaseDraft(v, base, conflict.item);
+    setV(nv);
+    setBase(conflict.item);
+    void save({ v: nv, base: conflict.item });
+  }
+  function takeTheirs() {
+    if (!conflict || !base) return;
+    const nv = rebaseDraft(v, base, conflict.item) as unknown as Record<string, unknown>;
+    for (const k of conflict.keys) nv[k] = conflict.item[k];
+    setV(nv as unknown as InquiryInput);
+    setBase(conflict.item);
+    setConflict(null);
+  }
+  const otherName = conflict?.item.updatedBy ? `${conflict.item.updatedBy}さん` : '他の人';
+
+  // 対応を記録：備考の先頭に「[10/20 14:05 山田] 不通：メモ」を足し、連絡欄を変える（保存で確定）
+  function log(kind: LogKind) {
+    if (kind === 'memo' && !memo.trim()) return;
+    const r = applyLog(v, kind, memo, `${nowStamp()} ${user}`);
+    setV((p) => ({ ...p, ...r }));
+    setLogged((l) => [r.note.split('\n')[0], ...l]);
+    setMemo('');
+    if (kind === 'trial' && !parseIso(v.trialDate)) {
+      setTrialAttn(true);
+      trialRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }
+
   const needsEnrollDate = statusOf(v.result) === 'joined' && !v.enrollDate;
+  const { phone, studentName } = v;
+  const dups = useMemo(() => (record ? [] : findDuplicates(candidates, { phone, studentName })), [record, candidates, phone, studentName]);
+  const sameNameCount = useMemo(() => {
+    const key = record ? nameKeyOf(record.studentName) : '';
+    return key ? candidates.filter((r) => r.id !== record!.id && nameKeyOf(r.studentName) === key).length : 0;
+  }, [candidates, record]);
+
+  // ---- 項目（新規と編集で並びを変えるので、部品として先に作る） ----
+  const fCampus = (
+    <label className={v.campus ? '' : 'attention'}>校舎 <span className="req">必須</span>
+      <select value={v.campus} onChange={(e) => set('campus', e.target.value)}>
+        {!v.campus && <option value="">校舎を選ぶ</option>}
+        {withCurrent(BOARD_CAMPUSES, v.campus).map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+    </label>
+  );
+  const fDate = (
+    <Field label={<>問い合わせ日 <span className="req">必須</span></>}>
+      <DateInput value={v.date} onChange={(x) => set('date', x)} today={today} quick={['today']} label="問い合わせ日" />
+    </Field>
+  );
+  const fName = (
+    <label className="full">生徒氏名 <span className="req">必須</span>
+      <input ref={firstRef} value={v.studentName} onChange={(e) => set('studentName', e.target.value)} placeholder="姓 名" />
+    </label>
+  );
+  const fKana = (
+    <label className="full">ふりがな
+      <input value={v.kana} onChange={(e) => set('kana', e.target.value)} />
+    </label>
+  );
+  const fGrade = (
+    <label>学年
+      <select value={v.grade} onChange={(e) => set('grade', e.target.value)}>
+        <option value="">—</option>
+        {withCurrent(GRADES, v.grade).map((g) => <option key={g} value={g}>{g}</option>)}
+      </select>
+    </label>
+  );
+  const fSchool = (
+    <label className="full">学校名
+      <input value={v.school} onChange={(e) => set('school', e.target.value)} placeholder="日野中" />
+    </label>
+  );
+  const fPhone = (
+    <label className="full">電話番号
+      <input value={v.phone} onChange={(e) => set('phone', e.target.value)} onBlur={() => set('phone', normalizePhone(v.phone))} inputMode="tel" placeholder="090-0000-0000" />
+    </label>
+  );
+  const fGuardian = (
+    <label className="full">保護者名
+      <input value={v.guardianName} onChange={(e) => set('guardianName', e.target.value)} />
+    </label>
+  );
+
+  const secLog = record && (
+    <section className="ib-log">
+      <h3>対応を記録</h3>
+      <input
+        className="ib-log-memo"
+        value={memo}
+        onChange={(e) => setMemo(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); log('memo'); } }}
+        placeholder="メモ（任意）例：夕方かけ直し"
+        aria-label="対応のメモ"
+      />
+      <div className="ib-log-btns">
+        <button type="button" onClick={() => log('ng')}>不通</button>
+        <button type="button" onClick={() => log('ok')}>話せた</button>
+        <button type="button" onClick={() => log('trial')}>体験予約</button>
+        <button type="button" onClick={() => log('memo')} disabled={!memo.trim()}>メモだけ残す</button>
+      </div>
+      {logged.length > 0 && (
+        <div className="ib-log-done">
+          <ul>{logged.map((l, i) => <li key={i}>{l}</li>)}</ul>
+          <small>備考の先頭に入れました。［保存］で確定します。</small>
+        </div>
+      )}
+    </section>
+  );
+
+  const secFollow = (
+    <section>
+      <h3>追客の状況</h3>
+      <div className="ib-grid">
+        <Field label="連絡" className="full">
+          <Choice label="連絡" value={v.contacted} options={CONTACTS} onChange={(x) => set('contacted', x)} />
+        </Field>
+        <Field label={<>結果 <small>（決まるまでは追客中）</small></>} className="full">
+          <Choice label="結果" value={v.result} options={RESULTS} blank="追客中" onChange={(x) => set('result', x)} />
+        </Field>
+        <Field label="体験日" className={`full ${trialAttn && !v.trialDate ? 'attention' : ''}`} ref={trialRef}>
+          <DateInput value={v.trialDate} onChange={(x) => set('trialDate', x)} today={today} quick={['today', 'tomorrow', 'week']} label="体験日" />
+          {trialAttn && !v.trialDate && <small className="ib-attn">体験予約の日を入れてください。</small>}
+        </Field>
+        <Field label="入塾提案面談日" className="full">
+          <DateInput value={v.meetingDate} onChange={(x) => set('meetingDate', x)} today={today} quick={['today', 'tomorrow', 'week']} label="入塾提案面談日" />
+        </Field>
+        <Field label={<>体験 <small>（受けたら〇）</small></>}>
+          <Choice label="体験" value={v.trial} options={MARKS} onChange={(x) => set('trial', x)} />
+        </Field>
+        <Field label="本人OK">
+          <Choice label="本人OK" value={v.agreed} options={MARKS} onChange={(x) => set('agreed', x)} />
+        </Field>
+        <Field label="クローズ予定日" className="full">
+          <DateInput value={v.closeDate} onChange={(x) => set('closeDate', x)} today={today} quick={['today', 'tomorrow', 'week']} label="クローズ予定日" />
+        </Field>
+        <Field label="入塾日" className={`full ${needsEnrollDate ? 'attention' : ''}`}>
+          <DateInput value={v.enrollDate} onChange={(x) => set('enrollDate', x)} today={today} quick={['today']} label="入塾日" />
+          {needsEnrollDate && <small className="ib-attn">結果が入塾のときは入塾日を入れてください（「今月入会」の集計に使います）。</small>}
+        </Field>
+        <Field label="受講期" className="full">
+          <Choice label="受講期" value={v.term} options={TERMS} onChange={(x) => set('term', x)} />
+        </Field>
+        <label>媒体
+          <select value={v.source} onChange={(e) => set('source', e.target.value)}>
+            <option value="">—</option>
+            {withCurrent(SOURCES, v.source).map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+        <label>紹介者 <small>（紹介のとき）</small>
+          <input value={v.referrer} onChange={(e) => set('referrer', e.target.value)} placeholder="紹介してくれた生徒・保護者" />
+        </label>
+      </div>
+    </section>
+  );
+
+  const secNote = (
+    <section>
+      <h3>備考</h3>
+      <textarea
+        value={v.note}
+        onChange={(e) => set('note', e.target.value)}
+        placeholder="架電日時・検討中の理由・見送り理由・その他の補足（新しいものを上に書くと追いやすい）"
+      />
+    </section>
+  );
+
+  const secOther = (
+    <section>
+      <h3>その他</h3>
+      <div className="ib-grid">
+        <Field label={<>DM <small>（〇＝発送する）</small></>}>
+          <Choice label="DM" value={v.dm} options={MARKS} onChange={(x) => set('dm', x)} />
+        </Field>
+        <label>No.
+          <input
+            type="number"
+            min={0}
+            value={v.no ?? ''}
+            onChange={(e) => set('no', e.target.value === '' ? undefined : Number(e.target.value))}
+            placeholder="空欄なら自動採番"
+          />
+        </label>
+        <label className="full">メールアドレス
+          <input value={v.email} onChange={(e) => set('email', e.target.value)} inputMode="email" />
+        </label>
+        <label>郵便番号
+          <input value={v.postal} onChange={(e) => set('postal', e.target.value)} inputMode="numeric" placeholder="857-0000" />
+        </label>
+        <label className="wide">住所
+          <input value={v.address} onChange={(e) => set('address', e.target.value)} />
+        </label>
+      </div>
+    </section>
+  );
+
+  const dupBox = dups.length > 0 && (
+    <div className="ib-dups" role="status">
+      <b>すでに登録があるかもしれません</b>（登録する前に確かめてください。同じ人なら、その行を開いて追記します）
+      <ul>
+        {dups.map(({ record: r, reasons }) => (
+          <li key={r.id}>
+            <span>
+              {r.campus} #{r.no} {r.studentName || r.guardianName || '（氏名なし）'}
+              {r.grade && `・${r.grade}`}{r.date && `・${shortDate(r.date)}`}・{r.result || STATUS_LABEL.open}
+              <small>（{reasons.join('・')}が同じ）</small>
+            </span>
+            <button type="button" className="ib-link" onClick={() => go(r.id)}>この行を開く</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
+  const title = record
+    ? (record.studentName || (record.guardianName ? `（保護者）${record.guardianName}` : '（氏名なし）'))
+    : '問い合わせの新規登録';
 
   return (
-    <div className="dm-modal-bg" onClick={onClose}>
-      <div className="dm-modal ib-modal" role="dialog" aria-modal="true" aria-label={record ? '問い合わせの編集' : '問い合わせの新規登録'} onClick={(e) => e.stopPropagation()} onKeyDown={onKey}>
-        <div className="dm-modal-head">
-          <div>
+    <aside className="ib-panel" aria-label={record ? `${title}の編集` : title}>
+      <div className="dm-modal ib-modal" onKeyDown={onKey}>
+        <div className="dm-modal-head ib-panel-head">
+          <div className="ib-panel-title">
             <div className="dm-modal-sub">
-              {record ? `${record.campus} #${record.no}　登録 ${record.createdBy || '—'} ${fmtTs(record.createdAt)}　更新 ${record.updatedBy || '—'} ${fmtTs(record.updatedAt)}` : `登録者：${user}`}
+              {record ? `${record.campus} #${record.no}　更新 ${record.updatedBy || '—'} ${fmtTs(record.updatedAt)}` : `登録者：${user}`}
             </div>
-            <h2>{record ? '問い合わせの編集' : '問い合わせの新規登録'}</h2>
+            <h2>{title}{record?.grade && <small>{record.grade}</small>}</h2>
+            {record?.phone && <div className="ib-panel-tel"><PhoneCell phone={record.phone} guardian={record.guardianName} /></div>}
           </div>
-          <button className="dm-modal-close" onClick={onClose} aria-label="閉じる">×</button>
+          <div className="ib-panel-nav">
+            {nav && (
+              <>
+                <button type="button" className="ib-nav-btn" onClick={() => go(nav.prevId)} disabled={!nav.prevId || busy} aria-label="前の人">‹<span className="ib-nav-word"> 前へ</span></button>
+                <span className="ib-nav-pos" title="一覧から開いたときの並びの何人目か">{nav.pos} / {nav.total}</span>
+                <button type="button" className="ib-nav-btn" onClick={() => go(nav.nextId)} disabled={!nav.nextId || busy} aria-label="次の人"><span className="ib-nav-word">次へ </span>›</button>
+              </>
+            )}
+            <button className="dm-modal-close" onClick={requestClose} aria-label="閉じる">×</button>
+          </div>
         </div>
 
         <div className="dm-modal-body ib-form">
-          {/* 並びは「必須 → 架電に要る連絡先 → 追客の状況 → 備考 → その他」。
-              電話を受けながら上から順に埋め、追客の更新は2つ目の区画だけで済むようにしてある。 */}
-          {record && (
-            <MergeSection
-              record={record}
-              draft={v}
-              candidates={candidates}
-              busy={busy}
-              setBusy={setBusy}
-              setErrors={setErrors}
-              onMerged={onMerged}
-            />
+          {record ? (
+            <>
+              {sameNameCount > 0 && (
+                <p className="ib-merge-note">
+                  同じ氏名の行が {sameNameCount} 件あります。
+                  <button type="button" className="ib-link" onClick={() => mergeRef.current?.scrollIntoView({ behavior: 'smooth' })}>重複の統合を見る</button>
+                </p>
+              )}
+              {secLog}
+              {secFollow}
+              {secNote}
+              <section>
+                <h3>基本</h3>
+                <div className="ib-grid">{fCampus}{fDate}{fName}{fKana}{fGrade}{fSchool}{fPhone}{fGuardian}</div>
+              </section>
+              {secOther}
+              <div ref={mergeRef}>
+                <MergeSection
+                  record={record}
+                  dirty={dirty}
+                  candidates={candidates}
+                  busy={busy}
+                  setBusy={setBusy}
+                  setErrors={setErrors}
+                  onMerged={onMerged}
+                />
+              </div>
+              <div className="ib-danger-zone">
+                <button type="button" className="ib-delete" onClick={remove} disabled={busy}>この問い合わせを削除</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <section>
+                <h3>基本（必須）</h3>
+                <div className="ib-grid">
+                  {fCampus}{fDate}{fName}{fPhone}{fGrade}
+                  {more && <>{fKana}{fSchool}{fGuardian}</>}
+                </div>
+                {dupBox}
+              </section>
+              {more ? (
+                <>
+                  {secFollow}
+                  {secNote}
+                  {secOther}
+                </>
+              ) : (
+                <button type="button" className="ib-more" onClick={() => setMore(true)}>
+                  詳しく入力する（ふりがな・学校・保護者・追客の状況・備考など）
+                </button>
+              )}
+            </>
           )}
 
-          <section>
-            <h3>基本（必須）</h3>
-            <div className="ib-grid">
-              <label>校舎 <span className="req">必須</span>
-                <select value={v.campus} onChange={(e) => set('campus', e.target.value)}>
-                  {withCurrent(BOARD_CAMPUSES, v.campus).map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </label>
-              <label>問い合わせ日 <span className="req">必須</span>
-                <DateInput value={v.date} onChange={(x) => set('date', x)} />
-              </label>
-              <label className="full">生徒氏名 <span className="req">必須</span>
-                <input ref={firstRef} value={v.studentName} onChange={(e) => set('studentName', e.target.value)} placeholder="姓 名" />
-              </label>
-              <label className="full">ふりがな
-                <input value={v.kana} onChange={(e) => set('kana', e.target.value)} />
-              </label>
-              <label>学年
-                <select value={v.grade} onChange={(e) => set('grade', e.target.value)}>
-                  <option value="">—</option>
-                  {withCurrent(GRADES, v.grade).map((g) => <option key={g} value={g}>{g}</option>)}
-                </select>
-              </label>
-              <label className="full">学校名
-                <input value={v.school} onChange={(e) => set('school', e.target.value)} placeholder="日野中" />
-              </label>
-              <label className="full">電話番号
-                <input value={v.phone} onChange={(e) => set('phone', e.target.value)} inputMode="tel" placeholder="090-0000-0000" />
-              </label>
-              <label className="full">保護者名
-                <input value={v.guardianName} onChange={(e) => set('guardianName', e.target.value)} />
-              </label>
+          {conflict && (
+            <div className="ib-conflict" role="alert" ref={conflictRef}>
+              <p>
+                <b>保存できませんでした。</b>この画面を開いたあとに、{otherName}が {fmtTs(conflict.item.updatedAt)} に同じ項目を変更しています。
+                どちらの値にするか選んでください（ほかの項目の変更はそのまま残ります）。
+              </p>
+              <ul>
+                {conflict.keys.map((k) => (
+                  <li key={k}>
+                    {labelOf(k)}：{otherName}「<b>{String(conflict.item[k] ?? '') || '空欄'}</b>」／あなた「<b>{String(v[k as keyof InquiryInput] ?? '') || '空欄'}</b>」
+                  </li>
+                ))}
+              </ul>
+              <div className="ib-conflict-actions">
+                <button type="button" className="dm-modal-done" onClick={keepMine} disabled={busy}>自分の入力で上書きして保存</button>
+                <button type="button" className="ib-cancel" onClick={takeTheirs} disabled={busy}>{otherName}の値に合わせる</button>
+              </div>
             </div>
-          </section>
-
-          <section>
-            <h3>追客の状況</h3>
-            <div className="ib-grid">
-              <label>連絡
-                <select value={v.contacted} onChange={(e) => set('contacted', e.target.value)}>
-                  <option value="">—</option>
-                  {withCurrent(CONTACTS, v.contacted).map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </label>
-              <label>媒体
-                <select value={v.source} onChange={(e) => set('source', e.target.value)}>
-                  <option value="">—</option>
-                  {withCurrent(SOURCES, v.source).map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </label>
-              <label className="full">紹介者 <small>（紹介のとき）</small>
-                <input value={v.referrer} onChange={(e) => set('referrer', e.target.value)} placeholder="紹介してくれた生徒・保護者" />
-              </label>
-              <label>受講期
-                <select value={v.term} onChange={(e) => set('term', e.target.value)}>
-                  <option value="">—</option>
-                  {withCurrent(TERMS, v.term).map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </label>
-              <label>クローズ予定日
-                <DateInput value={v.closeDate} onChange={(x) => set('closeDate', x)} />
-              </label>
-              <label>体験日
-                <DateInput value={v.trialDate} onChange={(x) => set('trialDate', x)} />
-              </label>
-              <label>体験
-                <MarkSelect value={v.trial} onChange={(x) => set('trial', x)} />
-              </label>
-              <label>入塾提案面談日
-                <DateInput value={v.meetingDate} onChange={(x) => set('meetingDate', x)} />
-              </label>
-              <label>本人OK
-                <MarkSelect value={v.agreed} onChange={(x) => set('agreed', x)} />
-              </label>
-              <label className="full">結果 <small>（空欄＝追客中）</small>
-                <select value={v.result} onChange={(e) => set('result', e.target.value)}>
-                  <option value="">追客中（未決）</option>
-                  {withCurrent(RESULTS, v.result).map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </label>
-              <label className={`full ${needsEnrollDate ? 'attention' : ''}`}>入塾日
-                <DateInput value={v.enrollDate} onChange={(x) => set('enrollDate', x)} />
-                {needsEnrollDate && <small className="ib-attn">結果が入塾のときは入塾日を入れてください（「今月入会」の集計に使います）。</small>}
-              </label>
-            </div>
-          </section>
-
-          <section>
-            <h3>備考</h3>
-            <textarea
-              value={v.note}
-              onChange={(e) => set('note', e.target.value)}
-              placeholder="架電日時・検討中の理由・見送り理由・その他の補足（新しいものを上に書くと追いやすい）"
-            />
-          </section>
-
-          <section>
-            <h3>その他</h3>
-            <div className="ib-grid">
-              <label>DM
-                <MarkSelect value={v.dm} onChange={(x) => set('dm', x)} />
-              </label>
-              <label>No.
-                <input
-                  type="number"
-                  min={0}
-                  value={v.no ?? ''}
-                  onChange={(e) => set('no', e.target.value === '' ? undefined : Number(e.target.value))}
-                  placeholder="空欄なら自動採番"
-                />
-              </label>
-              <label className="full">メールアドレス
-                <input value={v.email} onChange={(e) => set('email', e.target.value)} inputMode="email" />
-              </label>
-              <label>郵便番号
-                <input value={v.postal} onChange={(e) => set('postal', e.target.value)} inputMode="numeric" placeholder="857-0000" />
-              </label>
-              <label className="wide">住所
-                <input value={v.address} onChange={(e) => set('address', e.target.value)} />
-              </label>
-            </div>
-          </section>
+          )}
 
           {errors.length > 0 && (
             <ul className="ib-errors">
@@ -1232,23 +1642,60 @@ function RecordForm({ record, defaultCampus, today, user, onClose, onSaved, onDe
         </div>
 
         <div className="dm-modal-foot ib-foot">
-          {record && (
-            <button className="ib-delete" onClick={remove} disabled={busy}>削除</button>
-          )}
           <span className="ib-foot-hint">⌘/Ctrl + Enter で保存</span>
-          <button className="ib-cancel" onClick={onClose} disabled={busy}>キャンセル</button>
-          <button className="dm-modal-done" onClick={save} disabled={busy}>{busy ? '保存中…' : '保存'}</button>
+          <button className="ib-cancel" onClick={requestClose} disabled={busy}>閉じる</button>
+          {record && nav?.nextId ? (
+            <>
+              <button className="ib-secondary" onClick={() => void save()} disabled={busy}>{busy ? '保存中…' : '保存'}</button>
+              <button className="dm-modal-done" onClick={saveAndNext} disabled={busy}>{dirty ? '保存して次へ ›' : '次へ ›'}</button>
+            </>
+          ) : (
+            <button className="dm-modal-done" onClick={() => void save()} disabled={busy}>{busy ? '保存中…' : record ? '保存' : '登録'}</button>
+          )}
         </div>
       </div>
+    </aside>
+  );
+}
+
+/** パネルの1項目（ボタンで選ぶ項目・日付など、label で包めないもの）。見た目は label の項目と同じ。 */
+const Field = forwardRef<HTMLDivElement, { label: ReactNode; className?: string; children: ReactNode }>(
+  function Field({ label, className, children }, ref) {
+    return (
+      <div className={`ib-field ${className ?? ''}`} ref={ref}>
+        <span className="ib-field-label">{label}</span>
+        {children}
+      </div>
+    );
+  },
+);
+
+/**
+ * 短い選択肢をボタンで選ぶ（プルダウンより押す回数が少ない）。
+ * blank があれば「未選択」をその名前のボタンで先頭に置く（結果の「追客中」）。無ければ選んだボタンをもう一度押すと外れる。
+ * 選択肢に無い値（旧データの移行値など）もボタンとして出す（黙って消さない）。
+ */
+function Choice({ label, value, options, onChange, blank }: {
+  label: string; value: string; options: readonly string[]; onChange: (v: string) => void; blank?: string;
+}) {
+  return (
+    <div className="ib-choice" role="group" aria-label={label}>
+      {blank != null && (
+        <button type="button" className={!value ? 'on' : ''} aria-pressed={!value} onClick={() => onChange('')}>{blank}</button>
+      )}
+      {withCurrent(options, value).map((o) => (
+        <button
+          key={o}
+          type="button"
+          className={value === o ? 'on' : ''}
+          aria-pressed={value === o}
+          onClick={() => onChange(blank == null && value === o ? '' : o)}
+        >{o}</button>
+      ))}
     </div>
   );
 }
 
-/**
- * 日付入力。通常はカレンダー入力。
- * 旧シートから移した「5/21.6/29」のような複数日の値は date 入力に出せないので、
- * そのときだけ文字入力に切り替える（値を黙って消さないため）。
- */
 // ---- 重複の統合 ------------------------------------------------------------------
 //
 // 同じ生徒が 2 行に分かれてしまったとき（HP フォームの別人判定・手入力の重複など）に、
@@ -1259,17 +1706,20 @@ function nameKeyOf(sname: string): string {
   return (sname || '').replace(/[\s　]/g, '');
 }
 
-function sameDraft(a: InquiryInput, b: InquiryRecord): boolean {
+/** 編集中の値が比べ先（開いた時点の値・編集を始めた時点の行）と同じか。ID・作成/更新の記録は見ない。 */
+function sameDraft(a: InquiryInput, b: InquiryInput | InquiryRecord): boolean {
   for (const f of RECORD_FIELDS) {
-    if (f.key === 'id' || f.key === 'no' || f.key === 'createdAt' || f.key === 'createdBy' || f.key === 'updatedAt' || f.key === 'updatedBy') continue;
-    if (String((a as unknown as Record<string, unknown>)[f.key] ?? '') !== String(b[f.key] ?? '')) return false;
+    if (f.key === 'id' || f.key === 'createdAt' || f.key === 'createdBy' || f.key === 'updatedAt' || f.key === 'updatedBy') continue;
+    const x = (a as unknown as Record<string, unknown>)[f.key];
+    const y = (b as unknown as Record<string, unknown>)[f.key];
+    if (String(x ?? '') !== String(y ?? '')) return false;
   }
   return true;
 }
 
-function MergeSection({ record, draft, candidates, busy, setBusy, setErrors, onMerged }: {
+function MergeSection({ record, dirty, candidates, busy, setBusy, setErrors, onMerged }: {
   record: InquiryRecord;
-  draft: InquiryInput;
+  dirty: boolean;
   candidates: InquiryRecord[];
   busy: boolean;
   setBusy: (b: boolean) => void;
@@ -1305,7 +1755,6 @@ function MergeSection({ record, draft, candidates, busy, setBusy, setErrors, onM
   const keep = other ? ((otherIsOlder !== swap) ? other : record) : null;
   const drop = other ? (keep === other ? record : other) : null;
   const preview = keep && drop ? mergePreview(keep, drop) : null;
-  const dirty = !sameDraft(draft, record);
 
   const label = (r: InquiryRecord) =>
     `${r.campus} #${r.no} ${r.studentName || r.guardianName || '（氏名なし）'}${r.grade ? `・${r.grade}` : ''}${r.phone ? `・${r.phone}` : ''}${r.date ? `・${shortDate(r.date)}` : ''}`;
@@ -1414,24 +1863,39 @@ function isOlder(a: InquiryRecord, b: InquiryRecord): boolean {
   return true;
 }
 
-function DateInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+/**
+ * 日付入力。カレンダーのほか「今日」「明日」「1週間後」のボタンでも入れられる。
+ * 旧シートから移した「5/21.6/29」のような複数日の値は date 入力に出せないので、
+ * そのときだけ文字入力に切り替える（値を黙って消さないため）。
+ */
+type Quick = 'today' | 'tomorrow' | 'week';
+const QUICK: Record<Quick, { label: string; days: number }> = {
+  today: { label: '今日', days: 0 }, tomorrow: { label: '明日', days: 1 }, week: { label: '1週間後', days: 7 },
+};
+
+function DateInput({ value, onChange, today, quick = [], label }: {
+  value: string; onChange: (v: string) => void; today?: string; quick?: Quick[]; label?: string;
+}) {
   const isText = !!value && !parseIso(value);
   if (isText) {
     return (
       <span className="ib-date-text">
-        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="5/21" />
+        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="5/21" aria-label={label} />
         <button type="button" className="ib-link" onClick={() => onChange('')}>消す</button>
       </span>
     );
   }
-  return <input type="date" value={value} onChange={(e) => onChange(e.target.value)} />;
-}
-
-function MarkSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="">—</option>
-      {withCurrent(MARKS, value).map((m) => <option key={m} value={m}>{m}</option>)}
-    </select>
+    <span className="ib-datein">
+      <input type="date" value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} />
+      {today && quick.map((q) => {
+        const d = addDays(today, QUICK[q].days);
+        return (
+          <button key={q} type="button" className={`ib-quick ${value === d ? 'on' : ''}`} onClick={() => onChange(d)}>
+            {QUICK[q].label}
+          </button>
+        );
+      })}
+    </span>
   );
 }

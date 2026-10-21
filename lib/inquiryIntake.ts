@@ -8,7 +8,7 @@
 // 同じ人からの再送信の扱い（新規にせず備考へ追記）を持つ。フォームの項目名を変えたら FIELD_ALIASES を直す。
 
 import {
-  BOARD_CAMPUSES, UNASSIGNED_CAMPUS, emptyInput, normalizeGrade,
+  BOARD_CAMPUSES, UNASSIGNED_CAMPUS, emptyInput, normalizeGrade, normalizePhone,
   type InquiryInput, type InquiryRecord,
 } from './inquiryRecords';
 
@@ -153,21 +153,7 @@ function digits(s: string): string {
   return (s || '').replace(/[^0-9]/g, '');
 }
 
-/**
- * フォームから来た電話番号を整える。
- * - 全角数字・全角ハイフンを半角に
- * - 先頭の 0 が落ちているもの（9〜10桁で 0 始まりでない）は 0 を補う。
- *   日本の電話番号は必ず 0 始まりなので、途中で数値扱いされて 0 が落ちたケースの復元。
- */
-export function normalizePhone(raw: string): string {
-  let s = (raw || '').trim()
-    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
-    .replace(/[－ー‐―]/g, '-')
-    .replace(/[\s　]+/g, '');
-  const d = digits(s);
-  if (/^[0-9-]+$/.test(s) && (d.length === 9 || d.length === 10) && !d.startsWith('0')) s = '0' + s;
-  return s;
-}
+// 電話番号の整え方（全角→半角・落ちた先頭の 0 を補う）は画面の入力と同じ。lib/inquiryRecords.ts の normalizePhone。
 
 function nameKey(s: string): string {
   return (s || '').replace(/[\s　]/g, '');
