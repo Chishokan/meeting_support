@@ -48,6 +48,9 @@ export const QUESTIONS: Question[] = [
   },
 ];
 
+// 質問ごとに最初から並べておく行の数（書いた数が少ないうちは、空の行を足してこの数にそろえる）。
+export const MIN_ROWS = 5;
+
 // 1つの質問に書ける数と、1行の長さの上限（スプレッドシートの1セルに収めるため）。
 export const MAX_ITEMS = 100;
 export const MAX_ITEM_LENGTH = 300;
