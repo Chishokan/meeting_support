@@ -2121,3 +2121,115 @@ button.app-nav-item { background: none; border: 0; font-family: inherit; cursor:
 .mp-staff-state.s-今日 { color: #fff; background: var(--navy); }
 .mp-staff-state.s-報告済み { color: #1e7a46; background: #e3f4ea; }
 .mp-staff-state.s-中止 { color: #999; background: #f2f2f2; }
+
+/* ───────── 全体研修会アンケート（/kenshu）───────── */
+/* 質問ごとの色：1 仕事＝青、2 人生・プライベート＝緑。--qc（文字・線）と --qt（淡い地）で渡す */
+.ks { max-width: 760px; margin: 0 auto; padding: 20px 20px 40px; display: grid; gap: 18px; }
+.ks-edit { padding-bottom: 150px; }
+.ks-q-work { --qc: #1d5fa8; --qt: #e7f0fb; }
+.ks-q-life { --qc: #2d7a4a; --qt: #e5f3ea; }
+.ks-loading { color: #8a94a0; font-size: 14px; }
+.ks-eyebrow { font-size: 12.5px; font-weight: 700; color: var(--navy); letter-spacing: .02em; }
+.ks-intro { display: grid; gap: 8px; }
+.ks-intro h1 { font-size: 20px; line-height: 1.5; margin: 0; }
+.ks-intro p { margin: 0; color: #5d6975; font-size: 14px; line-height: 1.7; }
+.ks-intro-meta { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; color: #5d6975; }
+.ks-intro-meta b { color: #1a1a1a; }
+.ks-intro .ks-status { color: #1e6b45; background: #e5f3ea; border-radius: 8px; padding: 8px 12px; font-size: 13.5px; }
+.ks-intro .ks-notice { color: #8a4b0f; background: #fdf0e1; border-radius: 8px; padding: 8px 12px; font-size: 13.5px; }
+.ks-link {
+  margin-left: 10px; background: none; border: 0; padding: 0; font: inherit; font-weight: 700;
+  color: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+
+.ks-q {
+  background: #fff; border: 1px solid var(--line); border-top: 4px solid var(--qc); border-radius: 14px;
+  padding: 18px 20px 16px; display: grid; gap: 12px;
+}
+.ks-q-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px 10px; }
+.ks-q-no {
+  width: 30px; height: 30px; border-radius: 999px; background: var(--qc); color: #fff;
+  display: grid; place-items: center; font-weight: 800; font-size: 15px;
+}
+.ks-q-tag { font-size: 13px; font-weight: 800; color: var(--qc); letter-spacing: .04em; }
+.ks-q-count {
+  min-width: 54px; text-align: center; border-radius: 999px; padding: 3px 10px;
+  background: var(--qt); color: var(--qc); font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums;
+}
+.ks-q-title { grid-column: 1 / -1; margin: 0; font-size: 16.5px; line-height: 1.6; text-wrap: balance; }
+.ks-q-sub { margin: 0; font-size: 13px; color: #5d6975; }
+
+.ks-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ks-item { display: grid; grid-template-columns: 28px minmax(0, 1fr) 34px; gap: 6px; align-items: start; }
+.ks-item-no { font-size: 13px; font-weight: 700; color: var(--qc); text-align: right; padding-top: 10px; font-variant-numeric: tabular-nums; }
+.ks-item.blank .ks-item-no { color: #a0a8b2; font-weight: 400; }
+.ks-item textarea {
+  display: block; width: 100%; min-height: 42px; resize: none; overflow: hidden;
+  border: 1px solid #c9d2dc; border-radius: 8px; background: #fff; padding: 8px 11px;
+  font: inherit; font-size: 16px; line-height: 1.55; color: #1a1a1a;
+}
+.ks-item textarea::placeholder { color: #9aa4ae; }
+.ks-item textarea:focus { border-color: var(--qc); outline: none; box-shadow: 0 0 0 3px var(--qt); }
+.ks-item.blank textarea { border-style: dashed; background: #f7f9fb; }
+.ks-item.blank textarea:focus { border-style: solid; background: #fff; }
+.ks-item-del {
+  width: 34px; height: 42px; border: 0; background: none; color: #9aa4ae; font-size: 18px;
+  border-radius: 8px; cursor: pointer;
+}
+.ks-item-del:hover { color: #b23a2e; background: #f7f9fb; }
+.ks-q-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.ks-cheer { margin: 0; flex: 1; min-width: 12em; font-size: 13px; font-weight: 700; color: var(--qc); }
+.ks-keys { font-size: 12px; color: #8a94a0; }
+.ks-keys kbd {
+  font-family: inherit; font-size: 11px; color: #5d6975; background: #fff;
+  border: 1px solid #c9d2dc; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px;
+}
+.ks-hints { border-top: 1px dashed var(--line); padding-top: 8px; }
+.ks-hints summary { cursor: pointer; font-size: 13px; font-weight: 700; color: #5d6975; }
+.ks-hints ul { margin: 8px 0 2px; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.ks-hints li { font-size: 13px; background: #f7f9fb; border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; }
+
+.ks-btn {
+  border: 1px solid transparent; border-radius: 8px; padding: 10px 18px; font: inherit;
+  font-weight: 700; font-size: 14.5px; line-height: 1.3; white-space: nowrap; cursor: pointer;
+}
+.ks-btn.ks-primary { color: #fff; background: var(--navy); }
+.ks-btn.ks-primary:disabled { opacity: .4; cursor: default; }
+.ks-btn.ks-ghost { color: var(--navy); background: #fff; border-color: #c9d2dc; }
+
+/* 下の帯（件数と提出ボタン） */
+.ks-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; background: #fff; border-top: 1px solid var(--line);
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.ks-bar-in { max-width: 760px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.ks-tally { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 13px; color: #5d6975; font-variant-numeric: tabular-nums; }
+.ks-tally b { font-size: 16px; }
+.ks-tally .w b { color: #1d5fa8; }
+.ks-tally .l b { color: #2d7a4a; }
+.ks-tally-msg { flex-basis: 100%; font-size: 12px; }
+.ks-error { flex-basis: 100%; margin: 0; font-size: 13px; color: #b23a2e; }
+
+/* 提出後のリスト */
+.ks-done-msg { display: grid; gap: 6px; }
+.ks-done-msg h1 { font-size: 20px; line-height: 1.5; margin: 0; }
+.ks-done-msg p { margin: 0; color: #5d6975; font-size: 14px; }
+.ks-list { background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: 0 6px 18px rgba(20, 40, 60, .07); }
+.ks-list-head { background: var(--navy); color: #fff; padding: 18px 22px; display: grid; gap: 4px; }
+.ks-list-head h2 { margin: 0; font-size: 20px; font-weight: 800; }
+.ks-list-period { font-size: 12px; letter-spacing: .08em; opacity: .85; font-variant-numeric: tabular-nums; }
+.ks-list-total { font-size: 13px; opacity: .92; }
+.ks-list-total b { font-size: 22px; margin: 0 2px; font-variant-numeric: tabular-nums; }
+.ks-list-cols { padding: 18px 22px 22px; display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.ks-list-col h3 { margin: 0 0 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; color: var(--qc); }
+.ks-list-col h3 span { font-size: 12px; font-weight: 700; color: #5d6975; }
+.ks-list-col ol { margin: 0; padding-left: 1.6em; display: grid; gap: 6px; }
+.ks-list-col li { font-size: 14.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.ks-list-col li::marker { color: var(--qc); font-weight: 700; }
+.ks-done-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .ks { padding: 16px 14px 32px; }
+  .ks-edit { padding-bottom: 150px; }
+  .ks-q { padding: 16px 14px 14px; }
+  .ks-list-head, .ks-list-cols { padding-left: 16px; padding-right: 16px; }
+}

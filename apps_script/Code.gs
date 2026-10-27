@@ -27,6 +27,8 @@
  *   - action:'listInquiryRecords' / 'saveInquiryRecord' / 'deleteInquiryRecord'
  *                               … 問合せ管理 Web アプリ（/inquiry-board）の台帳 → スプレッドシート「問合せ台帳」（INQUIRY_DB_ID）に1件1行
  *     ※ 旧スプレッドシートの行を台帳へ移すときは、GAS エディタで importLegacyInquiryBoard() を一度実行する（何度実行しても二重登録しない）。
+ *   - action:'getKenshuAnswer' / 'saveKenshuAnswer'
+ *                               … 全体研修会アンケート（/kenshu）→ 「研修会アンケート」シートに1人1行（研修会×部門×氏名）。送り直すと上書き
  *   - action:'listGoals'        … 目標管理用 → 中等部会議議事録（GOALS_BOOK_ID）の「秋～冬行動計画」タブから月×校舎×指標の目標／実績を返す
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
  *
@@ -178,6 +180,14 @@ function doPost(e) {
         [data.ts || nowIso_(), data.campus || '', data.user || '', data.content || '']
       );
       return json_({ ok: true });
+    }
+
+    if (action === 'getKenshuAnswer') {
+      return json_(getKenshuAnswer_(data));
+    }
+
+    if (action === 'saveKenshuAnswer') {
+      return json_(saveKenshuAnswer_(data));
     }
 
     if (action === 'saveSuccess') {
@@ -827,6 +837,100 @@ function linkDeptPreshare_(preshareId, minutesId) {
   var row = findRowById_(sh, colOf_(DEPT_PRESHARE_HEADERS, '事前共有ID'), preshareId);
   if (!row) return;
   sh.getRange(row, colOf_(DEPT_PRESHARE_HEADERS, '議事録ID')).setNumberFormat('@').setValue(String(minutesId));
+}
+
+// 全体研修会アンケート（/kenshu）。1人1行（研修会×部門×氏名）で持ち、送り直すと同じ行を上書きする。
+// 「仕事」「人生・プライベート」は1行に1つを改行でつないで1セルに入れる（セルを折り返せばそのまま読める）。
+// 「研修会」は lib/kenshu/survey.ts の SURVEY.id。次の研修会では別の id になり、別の行として残る。
+// ★列は見出し名で引く（colOf_）。
+var KENSHU_SHEET = '研修会アンケート';
+var KENSHU_HEADERS = ['研修会', '部門', '氏名', '仕事の件数', '仕事', '人生・プライベートの件数', '人生・プライベート', '提出日時', '更新日時'];
+
+function kenshuCell_(r, name) {
+  return cellStr_(r[colOf_(KENSHU_HEADERS, name) - 1]);
+}
+
+function kenshuLines_(v) {
+  return String(v == null ? '' : v).split('\n')
+    .map(function (s) { return s.trim(); })
+    .filter(function (s) { return s; });
+}
+
+function kenshuItem_(r) {
+  return {
+    work: kenshuLines_(kenshuCell_(r, '仕事')),
+    life: kenshuLines_(kenshuCell_(r, '人生・プライベート')),
+    submittedAt: kenshuCell_(r, '提出日時'),
+    updatedAt: kenshuCell_(r, '更新日時')
+  };
+}
+
+// 研修会×部門×氏名が一致する行番号（無ければ 0）
+function findKenshuRow_(sh, data) {
+  if (sh.getLastRow() < 2) return 0;
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, KENSHU_HEADERS.length).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var r = values[i];
+    if (kenshuCell_(r, '研修会') === String(data.survey || '') &&
+        kenshuCell_(r, '部門') === String(data.campus || '') &&
+        kenshuCell_(r, '氏名') === String(data.user || '')) return i + 2;
+  }
+  return 0;
+}
+
+// 本人の回答（まだ出していなければ item: null）
+function getKenshuAnswer_(data) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(KENSHU_SHEET);
+  if (!sh) return { ok: true, item: null };
+  var row = findKenshuRow_(sh, data);
+  if (!row) return { ok: true, item: null };
+  return { ok: true, item: kenshuItem_(sh.getRange(row, 1, 1, KENSHU_HEADERS.length).getValues()[0]) };
+}
+
+// 回答の保存。2回目以降は同じ行を上書きし、最初の「提出日時」は残して「更新日時」を入れる。
+function saveKenshuAnswer_(data) {
+  var H = KENSHU_HEADERS;
+  var clean = function (list) {
+    return (list || [])
+      .map(function (s) { return String(s == null ? '' : s).replace(/[\r\n]+/g, ' ').trim(); })
+      .filter(function (s) { return s; });
+  };
+  var work = clean(data.work);
+  var life = clean(data.life);
+  if (!data.survey || !data.campus || !data.user) return { ok: false, reason: 'bad_request' };
+  if (!work.length || !life.length) return { ok: false, reason: 'empty' };
+
+  // 同じ人が続けて押したときに2行できないよう、探してから書くまでを1人ずつにする
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = sheetWithHeaders_(KENSHU_SHEET, H);
+    var row = findKenshuRow_(sh, data);
+    var cur = row ? sh.getRange(row, 1, 1, H.length).getValues()[0] : null;
+    var ts = nowJp_('');
+    var rec = {
+      '研修会': String(data.survey),
+      '部門': String(data.campus),
+      '氏名': String(data.user),
+      '仕事の件数': work.length,
+      '仕事': work.join('\n'),
+      '人生・プライベートの件数': life.length,
+      '人生・プライベート': life.join('\n'),
+      '提出日時': cur ? kenshuCell_(cur, '提出日時') : ts,
+      '更新日時': cur ? ts : ''
+    };
+    var values = H.map(function (h) { return rec[h]; });
+    var target = row || sh.getLastRow() + 1;
+    // 「- 」「=」で始まる行が数式に、日時が日付型に化けないよう、先に文字列書式を付けてから書く。件数だけは数値
+    sh.getRange(target, 1, 1, H.length).setNumberFormat('@');
+    sh.getRange(target, colOf_(H, '仕事の件数')).setNumberFormat('0');
+    sh.getRange(target, colOf_(H, '人生・プライベートの件数')).setNumberFormat('0');
+    sh.getRange(target, 1, 1, H.length).setValues([values]);
+    return { ok: true, item: kenshuItem_(values) };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // 中間報告の「定例項目」を管理するシート（無ければ作成）。

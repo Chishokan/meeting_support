@@ -45,6 +45,13 @@ export const PORTAL_APPS: PortalApp[] = [
     status: 'ready',
   },
   {
+    id: 'kenshu',
+    name: '全体研修会アンケート',
+    desc: '10/31（土）全体研修会の事前アンケート。この1年で、仕事と人生・プライベートで達成したいこと・やってみたいことを書き出す',
+    href: '/kenshu',
+    status: 'ready',
+  },
+  {
     id: 'inquiry-board',
     name: '問合せ管理',
     desc: '問い合わせを校舎ごとに登録し、体験・面談・入塾まで追いかける台帳。台帳の内容をAIに聞くこともできる',
