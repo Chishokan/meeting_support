@@ -8,7 +8,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import {
-  cheer, MAX_ITEM_LENGTH, MAX_ITEMS, QUESTIONS, splitLines, SURVEY, type Question, type QuestionKey,
+  cheer, MAX_ITEM_LENGTH, MAX_ITEMS, MIN_ROWS, QUESTIONS, splitLines, SURVEY, type Question, type QuestionKey,
 } from '@/lib/kenshu/survey';
 
 type Item = { id: string; text: string };
@@ -23,14 +23,16 @@ let seq = 0;
 const blank = (): Item => ({ id: `k${++seq}`, text: '' });
 const textsOf = (list: Item[]) => list.map((it) => it.text.trim()).filter(Boolean);
 
-// いつも末尾に空の行を1つ置く（書き足しやすくするため）。上限まで書いたら足さない。
+// いつも末尾に空の行を1つ置き（書き足しやすくするため）、少ないうちは MIN_ROWS 行までそろえる。
+// 上限まで書いたら足さない。
 function normalize(list: Item[]): Item[] {
   const out = list.length ? [...list] : [blank()];
   if (out[out.length - 1].text.trim() && out.length < MAX_ITEMS) out.push(blank());
+  while (out.length < MIN_ROWS) out.push(blank());
   return out;
 }
 const fromTexts = (texts: string[]): Item[] => normalize(texts.map((text) => ({ id: `k${++seq}`, text })));
-const emptyLists = (): Lists => ({ work: [blank(), blank(), blank()], life: [blank(), blank(), blank()] });
+const emptyLists = (): Lists => ({ work: normalize([]), life: normalize([]) });
 
 // ---- 書きかけ（この端末だけ） ------------------------------------------------
 type Draft = { work: string[]; life: string[] };
