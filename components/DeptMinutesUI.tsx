@@ -1595,8 +1595,18 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         <PreshareDetail
           row={openPreshare.row}
           when={openPreshare.when}
+          me={name}
           onClose={() => setOpenPreshare(null)}
           onStart={openPreshare.row.id === shareId ? undefined : () => loadPreshare(openPreshare.row)}
+          onSaved={(next) => {
+            setPreshares((rows) => rows.map((r) => (r.id === next.id ? next : r)));
+            setOpenPreshare((o) => (o ? { ...o, row: next } : o));
+            // いま手順1に読み込んでいる会議を直したときは、画面の議題も合わせる。
+            if (next.id === shareId) {
+              setMeta((m) => ({ ...m, agenda: next.agenda }));
+              setShareSnap(metaKey({ ...meta, agenda: next.agenda }));
+            }
+          }}
         />
       )}
     </div>

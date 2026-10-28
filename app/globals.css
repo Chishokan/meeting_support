@@ -1076,6 +1076,18 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .dm-share.done { background: #f1f8f4; border-color: #cfe6d9; }
 /* 保存済みの議事録を開いているとき（事前共有は出せないが、次の操作は案内する）。 */
 .dm-share.past { background: #f7f8fa; border-color: #dfe3e8; }
+
+/* 事前共有の詳細で議題を直すとき */
+.pre-edit-link {
+  margin-left: 10px; font-size: 12px; font-weight: 400; color: var(--navy);
+  background: #fff; border: 1px solid #cdd8e3; border-radius: 7px; padding: 4px 10px; cursor: pointer;
+}
+.pre-edit-link:hover { background: #f2f5f9; }
+.pre-agenda-edit {
+  width: 100%; min-height: 240px; resize: vertical; padding: 10px 12px;
+  font-size: 14px; line-height: 1.8; font-family: inherit;
+  border: 1px solid #cdd3da; border-radius: 8px;
+}
 .dm-share-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .dm-share-btn {
   flex: 0 0 auto; padding: 10px 20px; font-size: 14px; font-weight: 700; color: #fff;
