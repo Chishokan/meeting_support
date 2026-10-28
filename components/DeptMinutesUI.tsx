@@ -3,7 +3,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SEGMENT_SECONDS, fmtDuration, splitAudioFile } from '@/lib/audioChunk';
 import { templateOutline } from '@/lib/deptMinutesTemplate';
-import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
+import { extractDecisions, extractMinutes, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
+import MinutesDetail from '@/components/MinutesDetail';
+import PreshareDetail from '@/components/PreshareDetail';
+import PreshareList from '@/components/PreshareList';
+import {
+  DRAFT_KEY as STORE_KEY,
+  draftForNext,
+  draftFromPreshare,
+  draftFromRow,
+  type MinutesDraft,
+} from '@/lib/deptMinutesDraft';
+import {
+  localDay,
+  metaKey,
+  missingForPreshare,
+  upcomingPreshares,
+  type PreshareMeta,
+  type PreshareRow,
+} from '@/lib/deptMinutesPreshare';
 import type { DecisionRow, MinutesRow } from '@/app/api/dept-minutes/list/route';
 
 // 録音は1区間ずつ独立したファイルにして、会議中から順に文字起こししていく。
@@ -15,7 +33,6 @@ const REC_SEGMENT_SECONDS = SEGMENT_SECONDS;
 
 const REC_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
 
-const STORE_KEY = 'chishokan_dept_minutes_v1';
 
 type Meta = { title: string; date: string; place: string; attendees: string; agenda: string };
 type Source = 'record' | 'file' | 'paste';
@@ -24,15 +41,86 @@ type Source = 'record' | 'file' | 'paste';
 //   decoding  … ブラウザで音声を読み込み、送れる形（WAV）に変換している
 //   uploading … その区間をサーバへ送っている（1区間 約2.9MB）
 //   analyzing … サーバ側で Gemini が音声を文字にしている
-type Phase = 'idle' | 'decoding' | 'uploading' | 'analyzing';
+//   spacing   … 無料枠の上限を超えないよう、次を送るまで間隔をあけている（正常）
+//   waiting   … 送りすぎで断られたので、少し待ってから同じ区間を送り直す
+type Phase = 'idle' | 'decoding' | 'uploading' | 'analyzing' | 'spacing' | 'waiting';
 
 const PHASE_LABEL: Record<Exclude<Phase, 'idle'>, string> = {
   decoding: '音声を読み込んでいます',
   uploading: 'アップロード中',
   analyzing: '解析中（AIが文字に起こしています）',
+  spacing: '無料枠の上限に合わせて間隔をあけています',
+  waiting: '混み合っているため待っています',
 };
 
+// 送信が断られたときに待つ秒数（Gemini が待ち時間を指定してきたらそちらを使う）。
+// 無料枠は短い時間に続けて送ると断られるので、あきらめずに待って送り直す。
+const RETRY_WAITS = [15, 30, 60, 90];
+
+// 1分あたりの送信上限が分からないときの既定値（gemini-3.6-flash の無料枠と同じ）。
+const DEFAULT_RPM = 5;
+
+// 1分あたり rpm 回までに収まる、送信と送信の間隔（ミリ秒）。
+// 1秒ぶん余裕を足す（Google 側と時計がずれていても超えないようにするため）。
+function gapFromRpm(rpm: number): number {
+  const n = rpm > 0 ? rpm : DEFAULT_RPM;
+  return Math.ceil(60000 / n) + 1000;
+}
+
+// 待てば通る見込みのある失敗か。
+function isRetryable(reason: string): boolean {
+  return reason === 'rate_limited' || reason === 'upstream_busy' || reason === 'network_error';
+}
+
+// これが出たら残りの区間を送っても同じ結果にしかならない（＝すぐ止める）。
+function isFatal(reason: string): boolean {
+  return (
+    reason === 'not_configured'
+    || reason === 'unsupported_type'
+    || reason === 'invalid_key'
+    || reason === 'quota_exceeded'
+  );
+}
+
 const EMPTY_META: Meta = { title: '', date: '', place: '', attendees: '', agenda: '' };
+
+// 1区間を送った結果。失敗は例外にせず、理由を持ったまま呼び出し側へ返す。
+type SegResult =
+  | { ok: true; text: string }
+  | { ok: false; reason: string; detail?: string; retryAfterSec?: number };
+
+// 何区間が文字にできて、何区間が落ちたか。終わったときの案内はこれだけを見て決める。
+type RunTally = {
+  total: number; // 区間の総数
+  done: number; // 送り終えた区間数（打ち切ったときは総数より少ない）
+  ok: number;
+  failed: number;
+  reason: string;
+  detail: string;
+};
+
+// 文字起こしが一通り終わったときの案内文。
+// 「終わりました」とだけ出して中身が空、という状態を作らないための分岐。
+function runSummary(t: RunTally): { note: string; warn: string; err: string } {
+  if (t.ok === 0) {
+    const why = transcribeError(t.reason || 'failed');
+    const tail = t.detail ? `（${t.detail}）` : '';
+    // 途中で打ち切ったときは「全部試した」と誤解させない書き方にする。
+    const head = t.done < t.total
+      ? `文字起こしできませんでした。${t.total}区間のうち${t.done}区間を試した時点で中止しました。`
+      : `文字起こしできませんでした（${t.total}区間すべて）。`;
+    return { note: '', err: `${head}${why}${tail}`, warn: '' };
+  }
+  if (t.failed > 0) {
+    return {
+      note: `文字起こしが終わりました（${t.total}区間中${t.ok}区間）。「議事録を作成」を押してください。`,
+      warn: `${t.failed}区間は文字にできませんでした（${transcribeError(t.reason)}）。`
+        + 'その部分は議事録に入りません。足りないところは「議事録メモ」に書き足してください。',
+      err: '',
+    };
+  }
+  return { note: '文字起こしが終わりました。「議事録を作成」を押してください。', warn: '', err: '' };
+}
 
 function pickMime(): string {
   if (typeof MediaRecorder === 'undefined') return '';
@@ -44,11 +132,52 @@ function pickMime(): string {
   return '';
 }
 
+// 接続テストが返す、APIキー1本ぶんの状態。
+type KeyState = { no: number; ok: boolean; reason?: string; detail?: string };
+
+// キー一覧に並べる短いラベル（「キー2：1日の枠を使い切り」の後ろ側）。
+function keyStateLabel(k: KeyState): string {
+  if (k.ok) return '使えます';
+  switch (k.reason) {
+    case 'quota_exceeded':
+      return '1日の枠を使い切り';
+    case 'rate_limited':
+      return '一時的に制限中';
+    case 'invalid_key':
+      return 'キーが無効';
+    case 'model_not_found':
+      return 'モデル名が違う';
+    case 'upstream_busy':
+      return 'Gemini側が不調';
+    case 'timeout':
+      return '応答なし';
+    default:
+      return '使えません';
+  }
+}
+
 // 文字起こしAPIが返す失敗理由を、そのまま画面に出せる日本語にする。
+// 「何が起きたか」と「次にどうすればよいか」が分かる文にすること
+//（原因が分からないまま全区間が失敗すると、画面上は空っぽになるだけで理由が追えない）。
 function transcribeError(reason: string): string {
   switch (reason) {
     case 'not_configured':
       return '音声の自動文字起こしが未設定です。管理者に GEMINI_API_KEY の設定を依頼してください。';
+    case 'invalid_key':
+      return 'APIキーが無効か、権限がありません。管理者に GEMINI_API_KEY の確認を依頼してください。';
+    case 'quota_exceeded':
+      return '登録されているAPIキーがすべて、Gemini の1日あたりの利用枠を使い切りました。'
+        + '日付が変わると戻ります。'
+        + '急ぐ場合は、他のアプリで文字起こしして「文字起こしを貼り付け」から入れてください。';
+    case 'model_not_found':
+      return 'モデル名が違います。管理者に環境変数 GEMINI_MODEL の確認を依頼してください。';
+    case 'rate_limited':
+      return '短い時間に送りすぎて断られました（無料枠の制限）。時間をおいてお試しください。';
+    case 'upstream_busy':
+      return 'Gemini 側が混み合っています（使えるモデルを順に試しましたが、どれも空いていませんでした）。'
+        + '時間をおいてお試しください。';
+    case 'too_large':
+      return '音声の区間が大きすぎて送れませんでした。管理者にご連絡ください。';
     case 'unsupported_type':
       return 'この音声形式には対応していません。mp3 / m4a / wav などでお試しください。';
     case 'blocked':
@@ -56,7 +185,7 @@ function transcribeError(reason: string): string {
     case 'timeout':
       return '文字起こしに時間がかかりすぎました。時間をおいてもう一度お試しください。';
     default:
-      return '文字起こしに失敗しました。時間をおいてお試しください。';
+      return '原因を特定できませんでした。時間をおいてもう一度お試しください。';
   }
 }
 
@@ -74,10 +203,17 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [meta, setMeta] = useState<Meta>({ ...EMPTY_META, date: todayLocal() });
   const [source, setSource] = useState<Source>('record');
   const [transcript, setTranscript] = useState('');
+  // 会議中に人が取ったメモ（任意）。音声と一緒にAIへ渡す。
+  const [memo, setMemo] = useState('');
   const [draft, setDraft] = useState('');
   const [instruction, setInstruction] = useState('');
 
   const [configured, setConfigured] = useState<boolean | null>(null);
+  // キー1本あたり1分間に送ってよい回数（サーバの設定から受け取る）。無料枠は 5。
+  const [rpm, setRpm] = useState(DEFAULT_RPM);
+  // 設定されているAPIキーの本数。別プロジェクトのキーは上限が別なので、
+  // 本数ぶんだけ速く送れる（2本なら1分あたり10回）。
+  const [keyCount, setKeyCount] = useState(1);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [queued, setQueued] = useState(0); // 文字起こし待ちの区間数
@@ -85,9 +221,19 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   // いま何をしているか（無反応に見えないよう画面に出す）。
   const [phase, setPhase] = useState<Phase>('idle');
   const [uploadPct, setUploadPct] = useState(0);
+  // 送り直しの待ち時間（残り秒）。止まっているように見えないよう画面に出す。
+  const [waitLeft, setWaitLeft] = useState(0);
+  // 処理中の取りこぼし件数。1件ごとに赤字を出すと「うまくいっているのに警告が出る」ので、
+  // 途中は件数だけ控えめに見せ、終わったときにまとめて1行で伝える。
+  const [failedSegs, setFailedSegs] = useState(0);
+  // 直前の取り込み結果。手順2の行にも結果を出すために持つ
+  //（赤い案内は手順3の下に出るので、長い音声だと気づかないまま終わってしまう）。
+  const [lastRun, setLastRun] = useState<RunTally | null>(null);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState('');
+  // 「一部だけ落ちた」ときの注意。失敗（赤）ではないので色を分ける。
+  const [warn, setWarn] = useState('');
   const [err, setErr] = useState('');
 
   const [checking, setChecking] = useState(false);
@@ -98,10 +244,25 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [meetings, setMeetings] = useState<MinutesRow[]>([]);
   const [panelTab, setPanelTab] = useState<'meetings' | 'decisions'>('meetings');
   const [openMeeting, setOpenMeeting] = useState<MinutesRow | null>(null);
+  // 保存済みの議事録を［修正］で開いているときだけ入る。
+  // これを付けて保存すると新しい行を作らず、元の議事録を上書きする。
+  const [editingId, setEditingId] = useState('');
   const [decFilter, setDecFilter] = useState('');
   const [showTemplate, setShowTemplate] = useState(false);
   // 文字起こしは普段は隠しておく（必要なときだけ開く）。
   const [showTranscript, setShowTranscript] = useState(false);
+
+  // ---- 事前共有（会議の前に手順1の内容を全部門へ出しておく） ----
+  // 事前共有した会議の ID。議事録の保存時に添えて、事前共有と議事録を結び付ける。
+  const [shareId, setShareId] = useState('');
+  // 事前共有したときの手順1の内容。共有後に直したかどうか（更新が要るか）を見分ける。
+  const [shareSnap, setShareSnap] = useState('');
+  const [sharing, setSharing] = useState(false);
+  // 事前共有の結果は手順1の中に出す（ふだんの案内は手順3の下に出るので、押した場所から見えない）。
+  const [shareMsg, setShareMsg] = useState('');
+  const [shareErr, setShareErr] = useState('');
+  const [preshares, setPreshares] = useState<PreshareRow[]>([]);
+  const [openPreshare, setOpenPreshare] = useState<{ row: PreshareRow; when: string } | null>(null);
 
   const streamRef = useRef<MediaStream | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
@@ -110,8 +271,19 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const recordingRef = useRef(false);
   const queueRef = useRef<Blob[]>([]);
   const workingRef = useRef(false);
+  // 録音は区切りごとに何度も pump() を通るので、成否の数はここにためる。
+  const tallyRef = useRef<RunTally>({ total: 0, done: 0, ok: 0, failed: 0, reason: '', detail: '' });
+  // キーごとに「最後に送り始めた時刻」を持つ。
+  // 無料枠の上限は Google のプロジェクト単位なので、別アカウントのキーは別枠。
+  // キー1本ずつこの間隔を守れば、全体では本数ぶんだけ速く送れる。
+  const lastSendAt = useRef<number[]>([0]);
+  const gapRef = useRef(gapFromRpm(DEFAULT_RPM));
+  const keyCountRef = useRef(1);
   const mimeRef = useRef('');
-  const loaded = useRef(false);
+  // 下書きを読み終えたか。ref ではなく state にしているのは、
+  // 読み込み直後の保存が「まだ反映されていない空の値」を書いてしまうのを防ぐため
+  //（ref だと読み込みと同じ描画で保存側が動き、保存済みの下書きを消してしまう）。
+  const [hydrated, setHydrated] = useState(false);
 
   // ---- 下書きの保持（会議の録音は取り直せないので、リロードでも消さない） ----
   useEffect(() => {
@@ -121,18 +293,27 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         const j = JSON.parse(raw);
         if (j?.meta) setMeta({ ...EMPTY_META, ...j.meta });
         if (typeof j?.transcript === 'string') setTranscript(j.transcript);
+        if (typeof j?.memo === 'string') setMemo(j.memo);
+        if (typeof j?.editingId === 'string') setEditingId(j.editingId);
         if (typeof j?.draft === 'string') setDraft(j.draft);
+        if (typeof j?.preshareId === 'string') setShareId(j.preshareId);
+        if (typeof j?.preshareSnap === 'string') setShareSnap(j.preshareSnap);
+        // ダッシュボードから移ってきたときの案内（一度だけ出す。保存し直すときには書かないので消える）
+        if (typeof j?.notice === 'string' && j.notice) setShareMsg(j.notice);
       }
     } catch {}
-    loaded.current = true;
+    setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (!loaded.current) return;
+    if (!hydrated) return;
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ meta, transcript, draft }));
+      localStorage.setItem(
+        STORE_KEY,
+        JSON.stringify({ meta, transcript, memo, draft, editingId, preshareId: shareId, preshareSnap: shareSnap }),
+      );
     } catch {}
-  }, [meta, transcript, draft]);
+  }, [hydrated, meta, transcript, memo, draft, editingId, shareId, shareSnap]);
 
   // ---- 文字起こしが使える設定か ----
   useEffect(() => {
@@ -141,7 +322,11 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       try {
         const res = await fetch('/api/dept-minutes/transcribe');
         const j = await res.json().catch(() => ({}));
-        if (alive) setConfigured(Boolean(j?.configured));
+        if (alive) {
+          setConfigured(Boolean(j?.configured));
+          if (Number(j?.rpm) > 0) setRpm(Number(j.rpm));
+          if (Number(j?.keys) > 0) setKeyCount(Number(j.keys));
+        }
       } catch {
         if (alive) setConfigured(false);
       }
@@ -150,6 +335,14 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    gapRef.current = gapFromRpm(rpm);
+    keyCountRef.current = Math.max(1, keyCount);
+    // 本数が変わったら、足りない分の「最後に送った時刻」を用意する。
+    const t = lastSendAt.current;
+    while (t.length < keyCountRef.current) t.push(0);
+  }, [rpm, keyCount]);
 
   // 音声を送る前に、キーとモデル名が正しいかを確かめる。
   async function checkSetup() {
@@ -161,17 +354,39 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       const res = await fetch('/api/dept-minutes/transcribe?check=1');
       const j = await res.json().catch(() => ({}));
       setConfigured(Boolean(j?.configured));
-      if (j?.ok && j?.modelOk) {
-        setCheckOk(true);
-        setCheckMsg(`接続できました。モデル「${j.model}」で文字起こしします。`);
-      } else if (j?.ok) {
+      if (j?.ok && !j?.modelOk) {
         const s = Array.isArray(j.suggestions) ? j.suggestions.slice(0, 4).join(' / ') : '';
+        setCheckOk(false);
         setCheckMsg(
           `キーは有効ですが、モデル「${j.model}」が使えません。`
           + `環境変数 GEMINI_MODEL を次のいずれかに変えてください：${s || '（候補を取得できませんでした）'}`,
         );
+      } else if (j?.ok) {
+        // キーは1本とは限らない。何本目がどういう状態かをそのまま並べて出す。
+        const rows: KeyState[] = Array.isArray(j.keys) ? j.keys : [];
+        const usable = Number(j.usable || 0);
+        const detail = rows.map((k) => `キー${k.no}：${keyStateLabel(k)}`).join('／');
+        setCheckOk(usable > 0);
+        if (usable > 0) {
+          setCheckMsg(
+            `接続できました。モデル「${j.model}」で文字起こしします。`
+            + (rows.length > 1 ? `APIキー${rows.length}本中${usable}本が使えます（${detail}）。` : ''),
+          );
+        } else {
+          // 理由がキーごとに違うときに1本目の理由で代表させると嘘になるので、
+          // そろっているときだけ詳しい案内を出す。
+          const reasons = Array.from(new Set(rows.map((k) => String(k.reason || 'failed'))));
+          setCheckMsg(
+            `いま文字起こしは通りません（${detail || '理由を特定できませんでした'}）。`
+            + (reasons.length === 1
+              ? transcribeError(reasons[0])
+              : 'キーごとに状態が違います。使えるキーを足すか、時間をおいてお試しください。'),
+          );
+        }
       } else if (j?.reason === 'not_configured') {
         setCheckMsg('GEMINI_API_KEY が設定されていません。');
+      } else if (j?.reason === 'model_not_found') {
+        setCheckMsg('モデル名が違います。環境変数 GEMINI_MODEL をご確認ください。');
       } else if (j?.reason === 'invalid_key') {
         setCheckMsg('APIキーが無効か、権限がありません。Google AI Studio のキーをご確認ください。');
       } else if (j?.reason === 'timeout') {
@@ -183,20 +398,26 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       setCheckMsg('確認に失敗しました。通信状況をご確認ください。');
     } finally {
       setChecking(false);
+      // 接続テストはキーを1本ずつ全部試すので、どのキーも1回ぶん使っている。
+      // 押した直後に音声を送ると上限に当たるので、ここから間隔を数え直す。
+      lastSendAt.current = lastSendAt.current.map(() => Date.now());
     }
   }
 
-  // 保存済みの議事録（会議ごと）と決定事項（1件ずつ）をまとめて読み込む。
+  // 保存済みの議事録（会議ごと）・決定事項（1件ずつ）・事前共有をまとめて読み込む。
   const loadSaved = useCallback(async () => {
     try {
-      const [decRes, minRes] = await Promise.all([
+      const [decRes, minRes, preRes] = await Promise.all([
         fetch('/api/dept-minutes/list'),
         fetch('/api/dept-minutes/list?scope=minutes'),
+        fetch('/api/dept-minutes/preshare').catch(() => null),
       ]);
       const jd = await decRes.json().catch(() => ({}));
       if (jd?.ok && Array.isArray(jd.items)) setDecisions(jd.items as DecisionRow[]);
       const jm = await minRes.json().catch(() => ({}));
       if (jm?.ok && Array.isArray(jm.items)) setMeetings(jm.items as MinutesRow[]);
+      const jp = preRes ? await preRes.json().catch(() => ({})) : {};
+      if (jp?.ok && Array.isArray(jp.items)) setPreshares(jp.items as PreshareRow[]);
     } catch {}
   }, []);
 
@@ -204,24 +425,16 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     void loadSaved();
   }, [loadSaved]);
 
-  // 詳細を開いている間は Esc で閉じられるようにする。
-  useEffect(() => {
-    if (!openMeeting) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpenMeeting(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [openMeeting]);
-
   // ---- 文字起こし（1区間ずつ順番に送る） ----
   // 1区間は約2.9MB あり、回線によっては送信だけで時間がかかる。
   // 「アップロード中」と「解析中」を画面で区別するため、fetch ではなく
   // XMLHttpRequest を使って送信の進み具合（upload.onprogress）を拾う。
-  const sendSegment = useCallback((blob: Blob, filename: string): Promise<string> => {
-    return new Promise<string>((resolve, reject) => {
+  const sendSegment = useCallback((blob: Blob, filename: string, keyNo = 1): Promise<SegResult> => {
+    return new Promise<SegResult>((resolve) => {
       const form = new FormData();
       form.append('audio', blob, filename);
+      // 何本目のキーで送るかは画面が決める（キーを均等に使うため）。
+      form.append('keyNo', String(keyNo));
 
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/dept-minutes/transcribe');
@@ -242,23 +455,79 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         setPhase('analyzing');
       };
       xhr.onload = () => {
-        let j: { ok?: boolean; text?: unknown; reason?: unknown } = {};
+        let j: { ok?: boolean; text?: unknown; reason?: unknown; detail?: unknown; retryAfterSec?: unknown } = {};
         try {
           j = JSON.parse(xhr.responseText);
         } catch {}
-        if (j?.ok) resolve(String(j.text ?? ''));
-        // 失敗理由をそのまま投げ、呼び出し側で日本語にして表示する。
-        else reject(new Error(String(j?.reason ?? 'failed')));
+        if (j?.ok) {
+          resolve({ ok: true, text: String(j.text ?? '') });
+          return;
+        }
+        // 失敗は例外にせず結果として返す。1区間の失敗で全体を止めないため。
+        resolve({
+          ok: false,
+          reason: String(j?.reason ?? 'failed'),
+          detail: typeof j?.detail === 'string' ? j.detail : '',
+          retryAfterSec: typeof j?.retryAfterSec === 'number' ? j.retryAfterSec : 0,
+        });
       };
-      xhr.onerror = () => reject(new Error('network_error'));
-      xhr.onabort = () => reject(new Error('aborted'));
+      xhr.onerror = () => resolve({ ok: false, reason: 'network_error' });
+      xhr.onabort = () => resolve({ ok: false, reason: 'aborted' });
       xhr.send(form);
     });
   }, []);
 
+  // 断られた区間は、少し待ってから同じものを送り直す。
+  // 無料枠は短い時間に続けて送ると断られるため、ここで粘らないと
+  // 1区間の失敗がそのまま全区間の失敗に広がってしまう。
+  // 前回の送信から gapRef.current だけ経つまで待つ。
+  // 断られてから待つのではなく、はじめから超えない速さで送るための待ち時間なので、
+  // 画面には「混み合っている」ではなく「間隔をあけています」と出す。
+  // いちばん早く空くキーを選び、そのキーの間隔が明けるまで待つ。
+  // 返り値は使うキーの番号（1始まり）。これをサーバへ渡して、キーを均等に使う。
+  const holdForRate = useCallback(async (): Promise<number> => {
+    for (;;) {
+      const t = lastSendAt.current;
+      let best = 0;
+      for (let i = 1; i < keyCountRef.current; i++) {
+        if ((t[i] ?? 0) < (t[best] ?? 0)) best = i;
+      }
+      const left = Math.ceil(((t[best] ?? 0) + gapRef.current - Date.now()) / 1000);
+      if (left <= 0) {
+        t[best] = Date.now();
+        return best + 1;
+      }
+      setPhase('spacing');
+      setWaitLeft(left);
+      await new Promise((done) => setTimeout(done, 1000));
+    }
+  }, []);
+
+  const sendWithRetry = useCallback(
+    async (blob: Blob, filename: string): Promise<SegResult> => {
+      for (let attempt = 0; ; attempt++) {
+        const keyNo = await holdForRate();
+        setWaitLeft(0);
+        const r = await sendSegment(blob, filename, keyNo);
+        if (r.ok || !isRetryable(r.reason) || attempt >= RETRY_WAITS.length) return r;
+        // Gemini が「この秒数だけ待て」と言ってきたらそれに従う（長すぎる指定は切り詰める）。
+        const wait = r.retryAfterSec && r.retryAfterSec > 0 ? Math.min(r.retryAfterSec, 90) : RETRY_WAITS[attempt];
+        setPhase('waiting');
+        for (let left = wait; left > 0; left--) {
+          setWaitLeft(left);
+          await new Promise((done) => setTimeout(done, 1000));
+        }
+        setWaitLeft(0);
+      }
+    },
+    [sendSegment, holdForRate],
+  );
+
   const pump = useCallback(async () => {
     if (workingRef.current) return;
     workingRef.current = true;
+    // 録音中はこの関数が何度も呼ばれるので、結果は ref にためて最後にまとめて伝える。
+    const tally = tallyRef.current;
     try {
       while (queueRef.current.length > 0) {
         const blob = queueRef.current[0];
@@ -267,22 +536,44 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           setPhase('decoding');
           const { segments } = await splitAudioFile(blob);
           for (let i = 0; i < segments.length; i++) {
-            const text = await sendSegment(segments[i], `rec${i + 1}.wav`);
-            if (text) setTranscript((prev) => (prev ? `${prev}\n${text}` : text));
+            const r = await sendWithRetry(segments[i], `rec${i + 1}.wav`);
+            tally.total += 1;
+            if (r.ok) {
+              tally.ok += 1;
+              if (r.text) setTranscript((prev) => (prev ? `${prev}\n${r.text}` : r.text));
+            } else {
+              tally.failed += 1;
+              tally.reason = r.reason;
+              tally.detail = r.detail || '';
+              setFailedSegs(tally.failed);
+            }
           }
-        } catch (e) {
-          setErr(transcribeError((e as Error).message));
+        } catch {
+          // WAV への変換そのものに失敗した区間（壊れた録音など）。
+          tally.total += 1;
+          tally.failed += 1;
+          tally.reason = tally.reason || 'decode_failed';
+          setFailedSegs(tally.failed);
         }
         queueRef.current.shift();
         setQueued(queueRef.current.length);
       }
+      // 区切りごとに赤字を出すと会議中ずっと警告が出てしまうので、
+      // 待ち行列が空になった時点で一度だけまとめて伝える。
+      if (tally.failed > 0) {
+        const sum = runSummary({ ...tally, done: tally.total });
+        setWarn(sum.warn);
+        setErr(sum.err);
+      }
+      if (tally.total > 0) setLastRun({ ...tally, done: tally.total });
     } finally {
       workingRef.current = false;
       // 待ち行列が空になったら進捗表示を畳む。
       setPhase('idle');
       setUploadPct(0);
+      setWaitLeft(0);
     }
-  }, [sendSegment]);
+  }, [sendWithRetry]);
 
   const enqueue = useCallback(
     (blob: Blob) => {
@@ -350,7 +641,11 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
 
   async function startRecording() {
     setErr('');
+    setWarn('');
     setNote('');
+    setFailedSegs(0);
+    setLastRun(null);
+    tallyRef.current = { total: 0, done: 0, ok: 0, failed: 0, reason: '', detail: '' };
     if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setErr('このブラウザは録音に対応していません。録音アプリで録った音声ファイルを添付してください。');
       return;
@@ -380,35 +675,64 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     e.target.value = '';
     if (!file) return;
     setErr('');
+    setWarn('');
     setNote('');
+    setFailedSegs(0);
+    setLastRun(null);
     try {
       // 1時間の音声だと読み込み（WAVへの変換）だけで数十秒かかる。無反応に見えないよう状態を出す。
       setPhase('decoding');
       const { segments, durationSec } = await splitAudioFile(file);
-      setNote(`${fmtDuration(durationSec)}の音声を${segments.length}区間に分けて文字起こしします。`);
+      // 無料枠は1分あたりの回数で止まるので、区間数が多いほど待ち時間で決まる。
+      // 「終わらない」と思われないよう、最初に目安を出しておく。
+      const perMin = rpm * Math.max(1, keyCount);
+      const estMin = Math.max(1, Math.ceil((segments.length * gapRef.current) / (60000 * Math.max(1, keyCount))));
+      setNote(
+        `${fmtDuration(durationSec)}の音声を${segments.length}区間に分けて文字起こしします。`
+        + `無料枠は1分あたり${perMin}回まで`
+        + (keyCount > 1 ? `（1分${rpm}回 × APIキー${keyCount}本）` : '')
+        + `のため、間隔をあけて送ります（目安 約${estMin}分）。`
+        + 'この画面を開いたままお待ちください。',
+      );
       setFileProgress({ done: 0, total: segments.length });
+
+      // 1区間ごとに赤字を出すと、ほとんど成功していても警告だらけに見える。
+      // 数だけ数えておいて、終わったときに一度だけまとめて伝える。
+      const tally: RunTally = { total: segments.length, done: 0, ok: 0, failed: 0, reason: '', detail: '' };
       for (let i = 0; i < segments.length; i++) {
-        try {
-          const text = await sendSegment(segments[i], `part${i + 1}.wav`);
-          if (text) setTranscript((prev) => (prev ? `${prev}\n${text}` : text));
-        } catch (ex) {
-          const reason = (ex as Error).message;
-          // 設定そのものが無い場合は続けても全区間失敗するので、そこで止める。
-          if (reason === 'not_configured' || reason === 'unsupported_type') {
-            setErr(transcribeError(reason));
+        const r = await sendWithRetry(segments[i], `part${i + 1}.wav`);
+        tally.done = i + 1;
+        if (r.ok) {
+          tally.ok += 1;
+          if (r.text) setTranscript((prev) => (prev ? `${prev}\n${r.text}` : r.text));
+        } else {
+          tally.failed += 1;
+          tally.reason = r.reason;
+          tally.detail = r.detail || '';
+          setFailedSegs(tally.failed);
+          // 残りを送っても同じ理由で落ちるだけの失敗は、ここで打ち切る
+          //（枠切れのまま40区間送り続けても時間を使うだけなので）。
+          if (isFatal(r.reason)) {
+            setFileProgress({ done: tally.done, total: segments.length });
             break;
           }
-          setErr(`区間 ${i + 1} でつまずきました（${transcribeError(reason)}）続きを処理します。`);
         }
         setFileProgress({ done: i + 1, total: segments.length });
       }
-      setNote('文字起こしが終わりました。「議事録を作成」を押してください。');
+
+      // 「終わりました」と出すのは、実際に文字が取れたときだけ。
+      const sum = runSummary(tally);
+      setNote(sum.note);
+      setWarn(sum.warn);
+      setErr(sum.err);
+      setLastRun(tally);
     } catch {
       setErr('この音声ファイルを読み込めませんでした。mp3 / m4a / wav などでお試しください。');
       setNote('');
     } finally {
       setPhase('idle');
       setUploadPct(0);
+      setWaitLeft(0);
       setFileProgress({ done: 0, total: 0 });
     }
   }
@@ -417,12 +741,21 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   async function generate(mode: 'draft' | 'revise') {
     if (generating) return;
     const text = transcript.trim();
-    if (!text) {
-      setErr('先に会議の文字起こしを用意してください。');
+    const memoText = memo.trim();
+    if (mode === 'revise') {
+      if (!instruction.trim()) return;
+      // 保存済みの議事録を［修正］で開いたときは文字起こしが無い。議事録本文が材料になる。
+      if (!draft.trim()) {
+        setErr('先に議事録を作成してください。');
+        return;
+      }
+    } else if (!text && !memoText) {
+      // 録音が無くメモだけの会議もあるので、どちらか一方あれば作れる。
+      setErr('先に会議の音声か議事録メモを用意してください。');
       return;
     }
-    if (mode === 'revise' && !instruction.trim()) return;
     setErr('');
+    setWarn('');
     setNote('');
     setGenerating(true);
     setDraft('');
@@ -430,7 +763,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       const res = await fetch('/api/dept-minutes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, meta, transcript: text, draft, instruction }),
+        body: JSON.stringify({ mode, meta, transcript: text, memo: memoText, draft, instruction }),
       });
       if (!res.ok || !res.body) throw new Error('failed');
       const reader = res.body.getReader();
@@ -450,6 +783,109 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     }
   }
 
+  // ---- 事前共有 ----
+  // 手順1の内容（会議名・日時・場所・出席者・議題／レジュメ）を、会議の前に全部門へ出す。
+  // 2回目からは同じ事前共有を上書きする（同じ会議が何件も並ばないように）。
+  async function preshare() {
+    if (sharing) return;
+    const missing = missingForPreshare(meta);
+    if (missing.length > 0) {
+      setShareMsg('');
+      setShareErr(`${missing.join('・')}を入れてから事前共有してください。`);
+      return;
+    }
+    setSharing(true);
+    setShareMsg('');
+    setShareErr('');
+    try {
+      const res = await fetch('/api/dept-minutes/preshare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: shareId, meta }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        setShareId(String(j.id));
+        setShareSnap(metaKey(meta));
+        // どこに載ったかはボタンの横の文で伝えているので、ここは結果だけを短く出す。
+        setShareMsg(j.updated ? '事前共有を更新しました。' : '事前共有しました。');
+        void loadSaved();
+      } else if (j?.reason === 'not_configured') {
+        setShareErr('スプレッドシート連携が未設定のため、事前共有できません。管理者にご連絡ください。');
+      } else if (j?.reason === 'gas_outdated') {
+        setShareErr('Apps Script が古いため事前共有できません。管理者に Apps Script の更新（再デプロイ）を依頼してください。');
+      } else {
+        setShareErr('事前共有に失敗しました。時間をおいてお試しください。');
+      }
+    } catch {
+      setShareErr('事前共有に失敗しました。通信状況をご確認ください。');
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  // 下書き（会議情報・議題）を手順1に読み込み、録音・議事録は空から始める。
+  // 事前共有からの読み込みと、議事録からの次回づくりで共通に使う。
+  function applyDraft(d: MinutesDraft, msg: string) {
+    queueRef.current = [];
+    setQueued(0);
+    setFailedSegs(0);
+    setLastRun(null);
+    setMeta({ ...EMPTY_META, ...d.meta });
+    setTranscript(d.transcript);
+    setMemo(d.memo);
+    setDraft(d.draft);
+    setEditingId(d.editingId);
+    setInstruction('');
+    setShareId(d.preshareId ?? '');
+    setShareSnap(d.preshareSnap ?? '');
+    setOpenPreshare(null);
+    setOpenMeeting(null);
+    setNote('');
+    setWarn('');
+    setErr('');
+    setShareErr('');
+    setShareMsg(msg);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // 録音・文字起こし・作成・保存の途中で読み込むと、取り込み中の文字起こしが別の会議に混ざる。
+  function busyForLoad(): boolean {
+    if (recording || busyTranscribe || generating || saving) {
+      alert('録音・文字起こし・議事録の作成・保存が終わってから読み込んでください。');
+      return true;
+    }
+    return false;
+  }
+
+  // 事前共有された会議を、手順1に読み込んで議事録づくりを始める。
+  // 事前共有した端末と、会議で録音する端末が違うときに使う（入力し直さずに済み、議事録も結び付く）。
+  function loadPreshare(row: PreshareRow) {
+    if (busyForLoad()) return;
+    if (hasInput && !confirm('入力中の会議情報・文字起こし・議事録を消して、この事前共有の会議を読み込みますか？')) return;
+    applyDraft(
+      draftFromPreshare(row),
+      '事前共有の会議を読み込みました。手順2で音声を取り込んでください。議事録を保存すると、この事前共有に結び付きます。',
+    );
+  }
+
+  // 部門会議のループ：保存した議事録から次回の会議の下書きを作り、手順1に読み込む。
+  // 前回の決定事項・継続審議・ToDo などを議題に引き継ぐので、あとは今回の議題を足して事前共有するだけになる。
+  function startNext(prev: PreshareMeta & { minutes: string }) {
+    if (busyForLoad()) return;
+    if (
+      hasInput
+      && !confirm(
+        '次回の会議の下書きを作ります。いま開いている会議の入力（文字起こし・議事録の画面）は閉じます。\n'
+        + '保存済みの議事録はそのまま残ります（直しを保存していない場合は、先に保存してください）。',
+      )
+    ) return;
+    applyDraft(
+      draftForNext(prev),
+      '前回の議事録から、次回の会議情報と議題の下書きを作りました。開催日時と「今回の議題」を書き足して、［事前共有で報告する］を押してください。',
+    );
+  }
+
   // ---- 保存 ----
   async function save() {
     if (saving || !draft.trim()) return;
@@ -460,11 +896,17 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       const res = await fetch('/api/dept-minutes/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meta, content: draft }),
+        body: JSON.stringify({ meta, content: draft, id: editingId, preshareId: shareId }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) {
-        setNote(`保存しました（決定事項 ${j.decisions ?? 0} 件を全社共有に登録）。`);
+        setNote(
+          j.updated
+            ? `保存しました（${name} が修正／決定事項 ${j.decisions ?? 0} 件を入れ替え）。`
+            : `保存しました（決定事項 ${j.decisions ?? 0} 件を全社共有に登録）。`,
+        );
+        // 続けて直せるよう、保存後も同じ議事録を編集中のままにする。
+        if (j.id) setEditingId(String(j.id));
         void loadSaved();
       } else if (j?.reason === 'not_configured') {
         setNote('スプレッドシート連携が未設定のため、この端末にのみ保存しました。');
@@ -480,16 +922,54 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     }
   }
 
+  // 保存済みの議事録を［修正］で編集画面へ読み込む。
+  // 上書き保存できるよう editingId を持ったままにする。
+  function startEdit(row: MinutesRow) {
+    if (draft.trim() && !confirm('編集中の議事録を破棄して、保存済みの議事録を読み込みますか？')) return;
+    const d = draftFromRow(row);
+    setMeta({ ...EMPTY_META, ...d.meta });
+    setTranscript(d.transcript);
+    setMemo(d.memo);
+    setDraft(d.draft);
+    setEditingId(d.editingId);
+    // 保存済みの議事録を直すときは、事前共有とは切り離す（もう会議は終わっている）。
+    setShareId(d.preshareId ?? '');
+    setShareSnap(d.preshareSnap ?? '');
+    setShareMsg('');
+    setShareErr('');
+    setOpenMeeting(null);
+    setErr('');
+    setWarn('');
+    setNote(
+      d.editingId
+        ? '保存済みの議事録を読み込みました。直して「確認しました・保存する」を押すと上書きされます。'
+        : '保存済みの議事録を読み込みました。※この議事録には識別子が無いため、保存すると新しい記録として追加されます。',
+    );
+    // 議事録の欄（手順3）まで送る。
+    setTimeout(() => document.querySelector('.dm-draft')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
+  }
+
   function reset() {
-    if (!confirm('入力中の会議情報・文字起こし・議事録をすべて消して、新しい会議を始めますか？')) return;
+    // 何も入っていないときに「すべて消しますか？」と聞くのは分かりにくいので、
+    // 残っているものがあるときだけ確認する。
+    if (hasInput && !confirm('入力中の会議情報・文字起こし・議事録をすべて消して、新しい会議を始めますか？')) return;
     stopRecording();
     queueRef.current = [];
     setQueued(0);
+    setFailedSegs(0);
+    setLastRun(null);
     setMeta({ ...EMPTY_META, date: todayLocal() });
     setTranscript('');
+    setMemo('');
     setDraft('');
+    setEditingId('');
     setInstruction('');
+    setShareId('');
+    setShareSnap('');
+    setShareMsg('');
+    setShareErr('');
     setNote('');
+    setWarn('');
     setErr('');
   }
 
@@ -499,6 +979,23 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   // 音声の読み込み中は区間数がまだ決まっていないので、phase も見て「処理中」と判断する
   //（ここを落とすと、1時間の音声の読み込み中だけ画面が無反応に見える）。
   const busyTranscribe = phase !== 'idle' || queued > 0 || fileProgress.total > 0;
+  // 前の会議の入力が残っているか（開催日は今日が最初から入っているので数えない）。
+  const hasInput = Boolean(
+    meta.title.trim() || meta.place.trim() || meta.attendees.trim() || meta.agenda.trim()
+    || transcript.trim() || memo.trim() || draft.trim(),
+  );
+  // 録音・メモ・議事録が残っているか（別の会議に混ざると困るもの）。
+  // 会議情報だけのとき（事前共有や次回の下書きを読み込んだ直後など）は「入力中の会議」として扱い、警告にはしない。
+  const hasWork = Boolean(transcript.trim() || memo.trim() || draft.trim());
+  // 事前共有のあとで手順1を直したか（直したら「更新する」を押してもらう）。
+  const shareDirty = Boolean(shareId) && metaKey(meta) !== shareSnap;
+  // 事前共有は「会議の前」のものなので、議事録の中身がまだ無いときに出す。
+  // ★以前は editingId（上書き保存のための議事録ID）で判断していたが、これは議事録を
+  //   保存したあとも残り、端末にも保存される。そのため事前共有をしていない会議を一度
+  //   保存すると、次に画面を開いたときもボタンが出ないままになっていた。
+  //   会議が終わったかどうかは議事録の中身で判断する（事前共有済みなら状態を出したいので常に出す）。
+  const showShare = Boolean(shareId) || !draft.trim();
+  const upcoming = upcomingPreshares(preshares, localDay());
   const shownDecisions = decisions.filter((d) => (decFilter ? d.campus === decFilter : true));
   const shownMeetings = meetings.filter((m) => (decFilter ? m.campus === decFilter : true));
   // 絞り込みの選択肢は、議事録と決定事項の両方に出てくる部門から作る。
@@ -509,21 +1006,51 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   return (
     <div className="dm">
       <div className="page-head">
-        <h1>部門会議議事録</h1>
+        <h1>部門会議</h1>
         <p>
-          {campus}／{name} さん。会議を録音して文字起こしし、議事録テンプレートに沿って整えます。
-          内容を確認して保存すると、決定事項が全部門で見られるようになります。
+          {campus}／{name} さん。会議の前に議題を事前共有し、会議を録音して議事録にまとめ、
+          その議事録から次回の事前共有をつくります。保存した決定事項は全部門で見られます。
         </p>
-        <button className="reset-chat" onClick={reset} disabled={generating || saving || recording}>
-          新しい会議
-        </button>
+        {/* 部門会議のループ。押すとその手順へ移る。 */}
+        <ol className="dm-loop" aria-label="部門会議の流れ">
+          <li><a href="#dm-step-1">1 事前共有</a></li>
+          <li><a href="#dm-step-2">2 録音・取り込み</a></li>
+          <li><a href="#dm-step-3">3 議事録の確認・保存</a></li>
+          <li><a href="#dm-step-4">4 次回の事前共有へ</a></li>
+        </ol>
       </div>
 
       <div className="dm-body">
         <div className="dm-main">
+          {/* 会議ごとに必ずここから始めてもらう。
+              右上に置いていたときは気づかれず、前の会議の入力が残ったまま
+              次の会議を書き足してしまうことがあったため、手順1のすぐ上に出している。 */}
+          <div className={`dm-start ${hasWork ? 'left' : ''}`}>
+            <div className="dm-start-text">
+              <strong>
+                {hasWork
+                  ? '前の会議の内容が残っています'
+                  : hasInput
+                    ? `入力中の会議：${meta.title.trim() || '（会議名未入力）'}`
+                    : 'まずはここから'}
+              </strong>
+              <span>
+                {hasWork
+                  ? '別の会議を始めるときは、先に「新しい会議を始める」を押してください。'
+                    + '会議情報・文字起こし・議事録をすべて消して、まっさらな状態にします。'
+                  : hasInput
+                    ? 'この会議の続きは、下の手順から進めてください。別の会議を始めるときは「新しい会議を始める」を押してください。'
+                    : '新しい会議の状態です。このまま下の「1 会議の情報・事前共有」から入力してください。'}
+              </span>
+            </div>
+            <button className="dm-start-btn" onClick={reset} disabled={generating || saving || recording}>
+              新しい会議を始める
+            </button>
+          </div>
+
           {/* ---------- 1. 会議情報 ---------- */}
-          <section className="dm-step">
-            <h2><span className="dm-num">1</span>会議の情報</h2>
+          <section className="dm-step" id="dm-step-1">
+            <h2><span className="dm-num">1</span>会議の情報・事前共有</h2>
             <div className="dm-fields">
               <label>
                 <span>会議名</span>
@@ -542,21 +1069,76 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                 <input value={meta.attendees} onChange={set('attendees')} placeholder="例：直江、安東、池田、山中" />
               </label>
               <label className="wide">
-                <span>予定していた議題（1行1件・任意）</span>
+                <span>予定していた議題、または会議のレジュメ（任意）</span>
                 <textarea
+                  className="dm-agenda"
                   value={meta.agenda}
                   onChange={set('agenda')}
-                  placeholder={'例：\n9月の生徒数と対策\n中間テスト対策の役割分担\n面談週間の日程'}
+                  placeholder={
+                    '1行1件の箇条書きでも、レジュメをそのまま貼り付けても構いません。\n\n'
+                    + '例1（箇条書き）\n9月の生徒数と対策\n中間テスト対策の役割分担\n\n'
+                    + '例2（レジュメを貼り付け）\n1. 9月度 実績報告\n   (1) 生徒数・前年比\n   (2) 体験申込の状況\n2. 中間テスト対策について\n   ・担当の割り振り'
+                  }
                 />
               </label>
             </div>
             <p className="dm-hint">
-              予定議題を入れておくと、「予定どおり進んだか」「話し合えなかった議題はどれか」まで議事録に出ます。
+              入れておくと、「予定どおり進んだか」「話し合えなかった議題はどれか」まで議事録に出ます。
+              レジュメを貼った場合は、その見出しをそのまま議題名に使います。
+              なお、レジュメに書いてあるだけで会議で触れられなかった内容が、
+              決まったことのように議事録に載ることはありません。
             </p>
+
+            {/* 会議の前に手順1の内容を全部門へ出しておく。出席者はダッシュボードで
+                議題・レジュメを見ながら会議を進められる。 */}
+            {/* 出せないときに黙って消すと「ボタンが無くなった」と分からなくなるので、
+                理由と次にどうすればよいかを必ず出す。 */}
+            {!showShare && (
+              <div className="dm-share past">
+                <div className="dm-share-row">
+                  <button className="dm-share-btn" onClick={reset} disabled={generating || saving || recording}>
+                    新しい会議を始める
+                  </button>
+                  <span className="dm-share-text">
+                    いまは保存済みの議事録を開いています。会議はもう終わっているため、事前共有は出していません。
+                    次の会議の事前共有をするときは、左のボタンで新しい会議を始めてください。
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {showShare && (
+              <div className={`dm-share ${shareId && !shareDirty ? 'done' : ''}`}>
+                <div className="dm-share-row">
+                  <button
+                    className="dm-share-btn"
+                    onClick={() => void preshare()}
+                    disabled={sharing || (Boolean(shareId) && !shareDirty)}
+                  >
+                    {sharing
+                      ? '送信中…'
+                      : !shareId
+                        ? '事前共有で報告する'
+                        : shareDirty
+                          ? '事前共有を更新する'
+                          : '✓ 事前共有済み'}
+                  </button>
+                  <span className="dm-share-text">
+                    {!shareId
+                      ? '会議の前に押すと、会議名・日時・場所・出席者・議題（レジュメ）がダッシュボードに載り、全部門が見ながら会議を進められます。'
+                      : shareDirty
+                        ? '事前共有のあとで会議の情報を直しました。［事前共有を更新する］を押すと、ダッシュボードにも反映されます。'
+                        : 'ダッシュボードの「部門会議の事前共有」に載っています。議事録を保存すると、そこから外れて「直近の議事録」に移ります。'}
+                  </span>
+                </div>
+                {shareMsg && <p className="dm-note ok">{shareMsg}</p>}
+                {shareErr && <p className="dm-note err">{shareErr}</p>}
+              </div>
+            )}
           </section>
 
           {/* ---------- 2. 音声 → 文字起こし ---------- */}
-          <section className="dm-step">
+          <section className="dm-step" id="dm-step-2">
             <h2><span className="dm-num">2</span>会議の音声を取り込む</h2>
 
             {configured === false && (
@@ -663,6 +1245,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                       <span className="dm-work-phase">
                         {phase === 'idle' ? '処理中' : PHASE_LABEL[phase]}
                         {phase === 'uploading' && ` ${uploadPct}%`}
+                        {phase === 'spacing' && waitLeft > 0 && `（あと${waitLeft}秒）`}
+                        {phase === 'waiting' && waitLeft > 0 && `（あと${waitLeft}秒で送り直します）`}
                       </span>
                       {/* 読み込みが終わるまで区間数は決まらないので、決まってから出す */}
                       {fileProgress.total > 0 ? (
@@ -688,14 +1272,23 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                         ? `ここまでに ${transcript.length.toLocaleString()} 字を文字にしました。`
                         : '最初の区間の結果が出るまで少しお待ちください。'}
                       {phase === 'analyzing' && ' 画面を閉じずにお待ちください。'}
+                      {phase === 'spacing'
+                        && ` 無料枠は1分あたり${rpm * Math.max(1, keyCount)}回まで`
+                        + (keyCount > 1 ? `（1分${rpm}回 × APIキー${keyCount}本）` : '')
+                        + 'のため、間隔をあけて送っています（異常ではありません）。'}
+                      {/* 途中の取りこぼしは件数だけ控えめに出す。詳しい案内は終わってから1行で出す */}
+                      {failedSegs > 0 && ` 取りこぼし ${failedSegs} 区間（このまま続けます）。`}
                     </p>
                   </div>
                 ) : (
-                  <div className="dm-tstatus">
+                  <div className={`dm-tstatus ${lastRun && lastRun.ok === 0 ? 'bad' : ''}`}>
                     <span>
                       {transcript.trim()
                         ? `文字起こし完了（${transcript.length.toLocaleString()}字）`
-                        : '音声を取り込むと、ここで文字起こしが進みます'}
+                          + (lastRun && lastRun.failed > 0 ? `／${lastRun.failed}区間は取りこぼし` : '')
+                        : lastRun && lastRun.ok === 0
+                          ? '文字起こしできませんでした（下の赤い案内をご確認ください）'
+                          : '音声を取り込むと、ここで文字起こしが進みます'}
                     </span>
                     {transcript.trim() && (
                       <button className="dm-tlink" onClick={() => setShowTranscript((v) => !v)}>
@@ -716,11 +1309,29 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
               </>
             )}
 
+            {/* 会議中に手で取ったメモ。録音と一緒に渡すと、聞き取れなかった数字や
+                固有名詞をメモ側から補える。録音が無い会議はメモだけでも作れる。 */}
+            <label className="dm-memo">
+              <span>
+                議事録メモ（任意）
+                {memo.trim() && <em>　{memo.length.toLocaleString()}字</em>}
+              </span>
+              <textarea
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                placeholder={'会議中に取ったメモがあれば貼り付けてください。箇条書き・断片のままで構いません。\n例：\n・サイトク 9/12開始で決定（池田）\n・バス18:50発に変更 → 総務へ依頼\n・冬期料金は次回持ち越し'}
+              />
+              <small>
+                メモは文字起こしより正確なものとして扱います。数字・固有名詞・担当者名が
+                録音と食い違うときはメモのほうを採用します。
+              </small>
+            </label>
+
             <div className="dm-actions">
               <button
                 className="dm-primary"
                 onClick={() => void generate('draft')}
-                disabled={generating || !transcript.trim() || recording}
+                disabled={generating || (!transcript.trim() && !memo.trim()) || recording}
               >
                 {generating ? '作成中…' : '議事録を作成'}
               </button>
@@ -729,7 +1340,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           </section>
 
           {/* ---------- 3. 確認・保存 ---------- */}
-          <section className="dm-step">
+          <section className="dm-step" id="dm-step-3">
             <h2><span className="dm-num">3</span>内容を確認して保存</h2>
             {!draft && !generating ? (
               <p className="dm-hint">議事録を作成すると、ここに表示されます。そのまま手で直せます。</p>
@@ -755,10 +1366,25 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                     onChange={(e) => setInstruction(e.target.value)}
                     placeholder="AIに直してほしいこと（例：決定事項3の担当を池田に）"
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && instruction.trim()) void generate('revise');
+                      // 日本語入力の変換確定でも Enter が来るため、単独の Enter では送らない。
+                      // 他の画面と同じく ⌘/Ctrl + Enter で送信する。
+                      // isComposing は変換中かどうか（変換中の確定キーを弾く）。
+                      if (
+                        e.key === 'Enter'
+                        && (e.metaKey || e.ctrlKey)
+                        && !e.nativeEvent.isComposing
+                        && instruction.trim()
+                      ) {
+                        e.preventDefault();
+                        void generate('revise');
+                      }
                     }}
                   />
-                  <button onClick={() => void generate('revise')} disabled={generating || !instruction.trim()}>
+                  <button
+                    onClick={() => void generate('revise')}
+                    disabled={generating || !instruction.trim()}
+                    title="⌘・Ctrl + Enter でも送信できます"
+                  >
                     修正を依頼
                   </button>
                 </div>
@@ -781,12 +1407,60 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
               </>
             )}
             {note && <p className="dm-note ok">{note}</p>}
+            {warn && <p className="dm-note warn">{warn}</p>}
             {err && <p className="dm-note err">{err}</p>}
+          </section>
+
+          {/* ---------- 4. 次回の会議へ（部門会議のループ） ---------- */}
+          <section className="dm-step" id="dm-step-4">
+            <h2><span className="dm-num">4</span>次回の事前共有へ</h2>
+            {editingId && draft.trim() ? (
+              <>
+                <p className="dm-hint">
+                  この議事録から、次回の会議の下書きを作ります。会議名・場所・出席者はそのまま、
+                  開催日時は「■ 次回会議」に日付があれば入ります。議題には、前回話し合えなかった議題・
+                  決定事項の進捗確認・継続審議・ToDo・持ち越しを引き継ぎます。
+                </p>
+                <div className="dm-actions">
+                  <button
+                    className="dm-primary"
+                    onClick={() => startNext({ ...meta, minutes: extractMinutes(draft) })}
+                    disabled={generating || saving || recording}
+                  >
+                    次回の事前共有をつくる
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="dm-hint">
+                議事録を保存すると、その内容から次回の会議の下書き（前回の決定事項・継続審議・ToDo などを
+                引き継いだ議題）を作れます。前に保存した議事録からは、右の「保存済みの議事録」の［詳細］→
+                ［次回の事前共有をつくる］で作れます。
+              </p>
+            )}
           </section>
         </div>
 
         {/* ---------- 右：保存済みの議事録・決定事項 ---------- */}
         <aside className="dm-side">
+          {/* 事前共有された会議（全部門）。別の端末で事前共有した会議も、ここから読み込んで議事録を作れる。 */}
+          <div className="dm-panel">
+            <div className="dm-panel-head">
+              <h2>これからの部門会議{upcoming.length > 0 && `（${upcoming.length}）`}</h2>
+            </div>
+            {upcoming.length === 0 ? (
+              <p className="dm-empty">
+                事前共有された会議はありません。手順1を入力して［事前共有で報告する］を押すと、こことダッシュボードに載ります。
+              </p>
+            ) : (
+              <PreshareList
+                views={upcoming}
+                agendaLines={2}
+                onOpen={(row, when) => setOpenPreshare({ row, when })}
+              />
+            )}
+          </div>
+
           <div className="dm-panel">
             <div className="dm-panel-head">
               <h2>保存済みの議事録</h2>
@@ -907,57 +1581,33 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         </aside>
       </div>
 
-      {/* ---------- 議事録の詳細（カードの［詳細］で開く） ---------- */}
+      {/* 議事録の詳細（ポップアップ）。ダッシュボードと同じ部品を使う。 */}
       {openMeeting && (
-        <div className="dm-modal-bg" onClick={() => setOpenMeeting(null)}>
-          <div
-            className="dm-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="議事録の詳細"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="dm-modal-head">
-              <div>
-                <div className="dm-modal-sub">
-                  {fmtDate(openMeeting.date || openMeeting.ts)}　{openMeeting.campus}
-                  {openMeeting.user && `　記録：${openMeeting.user}`}
-                </div>
-                <h2>{openMeeting.title || '（会議名なし）'}</h2>
-                {openMeeting.attendees && (
-                  <div className="dm-modal-sub">出席者：{openMeeting.attendees}</div>
-                )}
-              </div>
-              <button className="dm-modal-close" onClick={() => setOpenMeeting(null)} aria-label="閉じる">×</button>
-            </div>
-
-            <div className="dm-modal-body">
-              <pre className="dm-modal-text">{openMeeting.minutes || '（本文がありません）'}</pre>
-              {openMeeting.quality && (
-                <div className="dm-modal-quality">
-                  <h3>会議の質チェック</h3>
-                  <pre className="dm-modal-text">{openMeeting.quality}</pre>
-                </div>
-              )}
-            </div>
-
-            <div className="dm-modal-foot">
-              <button
-                className="dm-copy"
-                onClick={() =>
-                  navigator.clipboard?.writeText(
-                    openMeeting.quality
-                      ? `${openMeeting.minutes}\n\n【会議の質チェック】\n${openMeeting.quality}`
-                      : openMeeting.minutes,
-                  )
-                }
-              >
-                コピー
-              </button>
-              <button className="dm-modal-done" onClick={() => setOpenMeeting(null)}>閉じる</button>
-            </div>
-          </div>
-        </div>
+        <MinutesDetail
+          row={openMeeting}
+          onClose={() => setOpenMeeting(null)}
+          onEdit={() => startEdit(openMeeting)}
+          onNext={() => startNext(openMeeting)}
+        />
+      )}
+      {/* 事前共有の詳細。いま入力中の会議なら、読み込み直す必要が無いので［この会議の議事録をつくる］を出さない。 */}
+      {openPreshare && (
+        <PreshareDetail
+          row={openPreshare.row}
+          when={openPreshare.when}
+          me={name}
+          onClose={() => setOpenPreshare(null)}
+          onStart={openPreshare.row.id === shareId ? undefined : () => loadPreshare(openPreshare.row)}
+          onSaved={(next) => {
+            setPreshares((rows) => rows.map((r) => (r.id === next.id ? next : r)));
+            setOpenPreshare((o) => (o ? { ...o, row: next } : o));
+            // いま手順1に読み込んでいる会議を直したときは、画面の議題も合わせる。
+            if (next.id === shareId) {
+              setMeta((m) => ({ ...m, agenda: next.agenda }));
+              setShareSnap(metaKey({ ...meta, agenda: next.agenda }));
+            }
+          }}
+        />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -20,6 +20,7 @@ export type DecisionRow = {
 };
 
 export type MinutesRow = {
+  id: string; // 議事録の識別子。これを添えて保存し直すと元の行を上書きする
   ts: string;
   campus: string;
   user: string;
@@ -30,6 +31,8 @@ export type MinutesRow = {
   agenda: string; // 入力時に登録した「予定していた議題」
   minutes: string;
   quality: string;
+  editedAt: string; // 直して保存し直したときだけ入る
+  editedBy: string; // 直した人（最初の入力者は user のまま残す）
 };
 
 type GasRow = Record<string, unknown>;
@@ -58,9 +61,10 @@ export async function GET(req: Request) {
       const rows: GasRow[] = Array.isArray(j.items) ? j.items : [];
       if (scope === 'minutes') {
         const items: MinutesRow[] = rows.map((r) => ({
-          ts: s(r.ts), campus: s(r.campus), user: s(r.user), title: s(r.title),
+          id: s(r.id), ts: s(r.ts), campus: s(r.campus), user: s(r.user), title: s(r.title),
           date: s(r.date), place: s(r.place), attendees: s(r.attendees), agenda: s(r.agenda),
           minutes: s(r.minutes), quality: s(r.quality),
+          editedAt: s(r.editedAt), editedBy: s(r.editedBy),
         }));
         return Response.json({ ok: true, items });
       }

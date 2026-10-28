@@ -1,4 +1,4 @@
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;

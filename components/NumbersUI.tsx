@@ -1,22 +1,151 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   DEPARTMENTS,
+  EVENT_GUIDES,
+  NUMBER_FORMS,
   campusesFor,
-  displayRows,
-  NUMBER_FIELDS,
+  fieldsFor,
+  unitLabel,
   cellKey,
+  defaultPeriod,
+  displayRows,
+  periodOptions,
+  sumBreakdown,
+  type NumberCol,
   type NumberEntry,
+  type NumberField,
   type NumberValues,
-} from '@/lib/summerNumbers';
+  type ReportKind,
+} from '@/lib/numberReports';
+import { useModalDismiss } from '@/lib/useModalDismiss';
+
+const KINDS: ReportKind[] = ['monthly', 'season'];
+const KIND_STORE = 'chishokan_numbers_kind';
+
+// 会議AIでこの数値を読むモード名（登録完了の案内に使う）。
+const CHAT_MODE_LABEL: Record<ReportKind, string> = {
+  monthly: '月次報告',
+  season: '講習の結果報告',
+};
 
 function fmtDate(s: string) {
   const m = s.match(/(\d{1,4})[/-](\d{1,2})[/-](\d{1,2})/);
   return m ? `${Number(m[2])}/${Number(m[3])}` : s;
 }
 
+function reasonText(reason: string | undefined): string {
+  if (reason === 'not_configured') return 'スプレッドシート連携（Apps Script）が未設定です。';
+  if (reason === 'apps_script_outdated') {
+    return 'Apps Script が古い版のままです。apps_script/Code.gs を貼り直して「新しいデプロイ」をしてください。';
+  }
+  return `理由：${reason ?? '不明'}`;
+}
+
+// 内訳の列（元の画面の列と、その学年別の内訳を持つ隠し項目）。
+type BreakdownCol = { col: NumberCol; bf: NumberField };
+
+// 学年別の人数を入れるポップアップ。1つの項目（生徒数・入会）の内訳列（例：月末と昨年同月）を並べて入れる。
+// 「決定」で各列の合計を元の画面の欄に入れる。
+function BreakdownModal({
+  title,
+  cols,
+  values,
+  onSave,
+  onClose,
+}: {
+  title: string;
+  cols: BreakdownCol[];
+  values: NumberValues;
+  onSave: (next: NumberValues) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState<NumberValues>(() => {
+    const d: NumberValues = {};
+    for (const { bf } of cols) for (const c of bf.cols) d[cellKey(bf, c)] = values[cellKey(bf, c)] ?? '';
+    return d;
+  });
+  const close = useCallback(() => onClose(), [onClose]);
+  useModalDismiss(close);
+  const grades = cols[0]?.bf.cols ?? [];
+
+  return (
+    <div className="dm-modal-bg" onClick={close}>
+      <div
+        className="dm-modal num-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="dm-modal-head">
+          <div>
+            <div className="dm-modal-sub">学年ごとの人数を入れてください（いない学年は空欄で構いません）</div>
+            <h2>{title}</h2>
+          </div>
+          <button className="dm-modal-close" onClick={close} aria-label="閉じる">×</button>
+        </div>
+        <div className="dm-modal-body">
+          <table className="num-grade-table">
+            <thead>
+              <tr>
+                <th scope="col">学年</th>
+                {cols.map(({ col }) => (
+                  <th key={col.key} scope="col">{col.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {grades.map((g) => (
+                <tr key={g.key}>
+                  <th scope="row">{g.label}</th>
+                  {cols.map(({ col, bf }) => {
+                    const c = bf.cols.find((x) => x.key === g.key)!;
+                    const key = cellKey(bf, c);
+                    return (
+                      <td key={col.key}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          aria-label={`${g.label} ${col.label}`}
+                          value={draft[key] ?? ''}
+                          onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+                          placeholder="○"
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th scope="row">合計</th>
+                {cols.map(({ col, bf }) => {
+                  const total = sumBreakdown(bf, draft);
+                  return (
+                    <td key={col.key}>
+                      <b>{total || '—'}</b>{total ? ' 名' : ''}
+                    </td>
+                  );
+                })}
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div className="dm-modal-foot">
+          <button className="dm-modal-edit" onClick={close}>キャンセル</button>
+          <button className="dm-modal-done" onClick={() => onSave(draft)}>決定</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function NumbersUI({ name, campus }: { name: string; campus: string }) {
+  const [kind, setKind] = useState<ReportKind>('monthly');
+  const [period, setPeriod] = useState(() => defaultPeriod('monthly'));
   const [dept, setDept] = useState(DEPARTMENTS.includes(campus) ? campus : DEPARTMENTS[0] ?? '');
   const [site, setSite] = useState('');
   const [values, setValues] = useState<NumberValues>({});
@@ -24,21 +153,51 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [note, setNote] = useState('');
+  // 内訳ポップアップを開いている列（開いていなければ null）。
+  const [breakdownOf, setBreakdownOf] = useState<NumberField | null>(null);
 
-  async function load() {
+  const form = NUMBER_FORMS[kind];
+  const shown = entries.filter((e) => e.period === period);
+
+  async function load(k: ReportKind) {
+    setNote('');
     try {
-      const res = await fetch('/api/numbers');
+      const res = await fetch(`/api/numbers?kind=${k}`);
       const j = await res.json().catch(() => ({}));
       if (j?.ok && Array.isArray(j.items)) setEntries(j.items as NumberEntry[]);
-      else if (j?.reason === 'not_configured') setNote('スプレッドシート連携（Apps Script）が未設定です。');
+      else {
+        setEntries([]);
+        setNote(reasonText(j?.reason));
+      }
     } catch {
+      setEntries([]);
       setNote('登録済みの数値を取得できませんでした。');
     }
   }
 
+  // 前回開いていた種類（月次／講習期）で開く。
   useEffect(() => {
-    void load();
+    let k: ReportKind = 'monthly';
+    try {
+      if (localStorage.getItem(KIND_STORE) === 'season') k = 'season';
+    } catch {}
+    setKind(k);
+    setPeriod(defaultPeriod(k));
+    void load(k);
   }, []);
+
+  function switchKind(next: ReportKind) {
+    if (busy || next === kind) return;
+    setKind(next);
+    setPeriod(defaultPeriod(next));
+    setValues({});
+    setStatus('');
+    setEntries([]);
+    try {
+      localStorage.setItem(KIND_STORE, next);
+    } catch {}
+    void load(next);
+  }
 
   // 部門を変えたら、その部門に無い校舎の選択は外す（自由入力の部門はそのまま残す）。
   function changeDept(next: string) {
@@ -51,8 +210,35 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
     setValues((prev) => ({ ...prev, [key]: v }));
   }
 
+  // 項目のうち、学年別の内訳を持つ列（生徒数なら月末と昨年同月）。
+  function breakdownColsOf(f: NumberField): BreakdownCol[] {
+    return f.cols
+      .map((c) => ({ col: c, bf: c.breakdown ? form.fields.find((x) => x.key === c.breakdown) : undefined }))
+      .filter((x): x is BreakdownCol => !!x.bf);
+  }
+
+  // 内訳を決定：内訳の各値を保存し、合計を元の列へ入れる。
+  function saveBreakdown(f: NumberField, cols: BreakdownCol[], draft: NumberValues) {
+    setValues((prev) => {
+      const next = { ...prev, ...draft };
+      for (const { col, bf } of cols) next[cellKey(f, col)] = sumBreakdown(bf, draft);
+      return next;
+    });
+    setBreakdownOf(null);
+  }
+
+
+  // 部門ごとの必須数値のひな形を入れる（すでに書いてあれば末尾に足す）。
+  function insertTemplate(key: string, template: string) {
+    setValues((prev) => {
+      const cur = (prev[key] ?? '').trim();
+      return { ...prev, [key]: cur ? `${cur}\n${template}` : template };
+    });
+  }
+
   // 登録済みの内容を読み込んで、修正のたたき台にする。
   function edit(e: NumberEntry) {
+    setPeriod(e.period);
     setDept(e.dept);
     setSite(e.campus);
     setValues(e.values);
@@ -60,10 +246,20 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  // 部門を切り替える前に入れた値（その部門に無い項目）は送らない。
+  function valuesForDept(): NumberValues {
+    const out: NumberValues = {};
+    for (const f of fieldsFor(form, dept)) for (const c of f.cols) {
+      const k = cellKey(f, c);
+      if (values[k]) out[k] = values[k];
+    }
+    return out;
+  }
+
   async function submit() {
     const target = site.trim();
     if (!target) {
-      setStatus('校舎を選んでください。');
+      setStatus(`${unitLabel(dept)}を選んでください。`);
       return;
     }
     setBusy(true);
@@ -72,16 +268,16 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
       const res = await fetch('/api/numbers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dept, campus: target, values }),
+        body: JSON.stringify({ kind, period, dept, campus: target, values: valuesForDept() }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) {
-        setStatus(`${dept}／${target} の数値を登録しました。会議AIの「夏の結果報告」から使えます。`);
-        void load();
-      } else if (j?.reason === 'not_configured') {
-        setStatus('未設定です。スプレッドシート連携（Apps Script）を設定してください。');
+        setStatus(
+          `${period}／${dept}／${target} の数値を登録しました。会議AIの「${CHAT_MODE_LABEL[kind]}」から使えます。`,
+        );
+        void load(kind);
       } else {
-        setStatus(`登録に失敗しました（理由：${j?.reason ?? '不明'}）。`);
+        setStatus(`登録に失敗しました。${reasonText(j?.reason)}`);
       }
     } catch {
       setStatus('通信エラーが発生しました。');
@@ -90,19 +286,46 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
     }
   }
 
+  const options = periodOptions(kind);
+  if (!options.includes(period)) options.unshift(period);
+
   return (
     <div className="numbers">
       <div className="page-head">
         <h1>数値報告</h1>
         <p>
-          {campus}／{name} さん。夏の数値を校舎ごとに登録します。ここで登録した数値を、
-          会議AIの「夏の結果報告」がそのまま使います（会議AIでは数値を聞かれません）。
+          {campus}／{name} さん。数値を校舎（管理部門はグループ）ごとに登録します。通常期は毎月の「月次」、講習会（春期・夏期・冬期）の
+          あとは「講習期」を選んでください。ここで登録した数値を、会議AIの「月次報告」「講習の結果報告」が
+          そのまま使います（会議AIでは数値を聞かれません）。
         </p>
+        <div className="mode-switch" role="tablist" aria-label="報告の種類">
+          {KINDS.map((k) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={k === kind}
+              className={`mode-btn ${k === kind ? 'active' : ''}`}
+              onClick={() => switchKind(k)}
+              disabled={busy}
+            >
+              {NUMBER_FORMS[k].label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="numbers-body">
         <div className="numbers-form">
           <div className="num-selects">
+            <label>
+              <span>{form.periodLabel}</span>
+              <select value={period} onChange={(e) => setPeriod(e.target.value)}>
+                {options.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </label>
             <label>
               <span>部門</span>
               <select value={dept} onChange={(e) => changeDept(e.target.value)}>
@@ -112,7 +335,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
               </select>
             </label>
             <label>
-              <span>校舎</span>
+              <span>{unitLabel(dept)}</span>
               {campusesFor(dept).length > 0 ? (
                 <select value={site} onChange={(e) => setSite(e.target.value)}>
                   <option value="">選択してください</option>
@@ -125,35 +348,72 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
                   type="text"
                   value={site}
                   onChange={(e) => setSite(e.target.value)}
-                  placeholder="校舎名を入力"
+                  placeholder={`${unitLabel(dept)}名を入力`}
                 />
               )}
             </label>
           </div>
 
           <ol className="num-fields">
-            {NUMBER_FIELDS.map((f) => (
-              <li key={f.key}>
-                <div className="num-label">
-                  {f.label}
-                  {f.note && <small>{f.note}</small>}
-                </div>
-                <div className="num-cols">
-                  {f.cols.map((c) => (
-                    <label key={c.key} className={f.cols.length === 1 ? 'wide' : ''}>
-                      <span>{c.label}</span>
-                      <input
-                        type="text"
-                        inputMode={c.placeholder === '○名' ? 'numeric' : 'text'}
-                        value={values[cellKey(f, c)] ?? ''}
-                        onChange={(e) => set(cellKey(f, c), e.target.value)}
-                        placeholder={c.placeholder}
-                      />
-                    </label>
-                  ))}
-                </div>
-              </li>
-            ))}
+            {fieldsFor(form, dept).filter((f) => !f.hidden).map((f) => {
+              // 部門ごとに必ず入れてもらう数値の案内（月次の「イベント等」欄）。
+              const guide = kind === 'monthly' && f.key === 'events' ? EVENT_GUIDES[dept] : undefined;
+              return (
+                <li key={f.key}>
+                  <div className="num-label">
+                    {f.label}
+                    {f.note && <small>{f.note}</small>}
+                  </div>
+                  {guide && (
+                    <div className="num-guide">
+                      <p>
+                        <b>{dept}は、次の数値を必ずこの欄に入力してください：</b>
+                        {guide.items}
+                      </p>
+                      <button type="button" onClick={() => insertTemplate(cellKey(f, f.cols[0]), guide.template)}>
+                        ひな形を入れる
+                      </button>
+                    </div>
+                  )}
+                  <div className="num-cols">
+                    {f.cols.map((c) => {
+                      const key = cellKey(f, c);
+                      const bf = c.breakdown ? form.fields.find((x) => x.key === c.breakdown) : undefined;
+                      return (
+                        <label key={c.key} className={f.cols.length === 1 ? 'wide' : ''}>
+                          <span>{c.label}{bf ? '（学年別に入力）' : ''}</span>
+                          {bf ? (
+                            <button
+                              type="button"
+                              className="num-breakdown-btn"
+                              onClick={() => setBreakdownOf(f)}
+                            >
+                              {values[key] ? `${values[key]} 名` : '学年別に入力'}
+                              <small>{values[key] ? '内訳を見る・直す' : ''}</small>
+                            </button>
+                          ) : f.cols.length === 1 && c.placeholder !== '○名' ? (
+                            <textarea
+                              rows={c.rows ?? (guide ? 3 : 2)}
+                              value={values[key] ?? ''}
+                              onChange={(e) => set(key, e.target.value)}
+                              placeholder={guide ? guide.template : c.placeholder}
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              inputMode={c.placeholder === '○名' ? 'numeric' : 'text'}
+                              value={values[key] ?? ''}
+                              onChange={(e) => set(key, e.target.value)}
+                              placeholder={c.placeholder}
+                            />
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </li>
+              );
+            })}
           </ol>
 
           <div className="num-actions">
@@ -162,26 +422,29 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
           </div>
           <p className="num-hint">
             ※ 分からない項目は空欄のままで構いません（会議AIでは「未集計」と表示されます）。
-            同じ校舎で送り直すと、最新の内容が使われます。
+            同じ{form.periodLabel}・同じ{unitLabel(dept)}で送り直すと、最新の内容が使われます。
           </p>
         </div>
 
         <div className="num-list">
-          <h2>登録済みの数値（{campus}）</h2>
-          <p className="num-list-note">部門のメンバーが登録した内容です。会議AIはこの数値を使います。</p>
+          <h2>登録済みの数値（{campus}／{period}）</h2>
+          <p className="num-list-note">
+            部門のメンバーが登録した内容です。会議AIはこの数値を使います。
+            ほかの{form.periodLabel}は、左の「{form.periodLabel}」を切り替えると表示されます。
+          </p>
           {note && <p className="num-empty">{note}</p>}
-          {entries.length === 0 ? (
+          {shown.length === 0 ? (
             <p className="num-empty">まだ登録がありません。</p>
           ) : (
             <ul>
-              {entries.map((e, i) => (
+              {shown.map((e, i) => (
                 <li key={i}>
                   <div className="num-list-head">
                     <b>{e.campus}</b>
                     <span className="num-meta">{e.user}／{fmtDate(e.ts)}</span>
                   </div>
                   <dl className="num-view">
-                    {displayRows(e.values).map((r, j) => (
+                    {displayRows(form, e.values, e.dept).map((r, j) => (
                       <div key={j} className={r.value === '—' ? 'empty' : ''}>
                         <dt>{r.label}</dt>
                         <dd>{r.value}</dd>
@@ -195,6 +458,20 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
           )}
         </div>
       </div>
+
+      {breakdownOf && (() => {
+        const cols = breakdownColsOf(breakdownOf);
+        if (cols.length === 0) return null;
+        return (
+          <BreakdownModal
+            title={`${breakdownOf.label}の学年別`}
+            cols={cols}
+            values={values}
+            onSave={(draft) => saveBreakdown(breakdownOf, cols, draft)}
+            onClose={() => setBreakdownOf(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

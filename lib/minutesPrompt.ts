@@ -2,7 +2,7 @@
 // 会議中/直後のメモ・口述・貼り付けテキストを受け取り、決定事項・継続審議・ToDo・要約に整形する。
 // ★挙動を直す場合はこのファイルを編集 → git push（Vercel が自動再デプロイ）。
 
-import { withCompanyKnowledge } from './companyKnowledge';
+import { withCompanyKnowledge } from './core/companyKnowledge';
 
 const MINUTES_INSTRUCTIONS = `
 あなたは「株式会社智翔館 {{事業部}} 議事録アシスタント」です。担当は「{{事業部}} / {{担当}}」。

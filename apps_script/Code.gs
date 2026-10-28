@@ -4,20 +4,31 @@
  * アプリ（Vercel）から送られる以下を Google へ転記する。
  *   - action:'log'          … 会議AI / 議事録の会話ログ → スプレッドシート「会話ログ」
  *   - action:'saveMinutes'  … 議事録スレッドの保存       → スプレッドシート「議事録」
+ *   - action:'saveShareItems'  … 「報告」転記時の協議・決裁・報告 → 「事前共有事項」シートに1件1行
+ *   - action:'listShareItems'  … ダッシュボードの事前共有事項カード用の一覧
  *   - action:'saveDeptMinutes' … 「部門会議議事録」の保存 → 「部門会議議事録」シートに1会議1行＋
  *                                                          「部門決定事項」シートに1決定1行
  *   - action:'listDeptMinutes' … 部門会議議事録の一覧
  *   - action:'listDeptDecisions' … 部門横断の決定事項一覧（決め事の見える化）
+ *   - action:'saveDeptPreshare' … 部門会議の事前共有（会議情報と議題・レジュメ） → 「部門会議事前共有」シートに1会議1行
+ *   - action:'listDeptPreshare' … ダッシュボードの「部門会議の事前共有」用の一覧
  *   - action:'appendReport' … 「報告」からの事前報告      → Google ドキュメント（REPORT_DOC_ID）に新セクション追記
  *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントの【中間報告タブ】に追記＋「中間報告状況」シートに記録
  *   - action:'listProgress' … ダッシュボード用の直近報告者  → 「中間報告状況」シートを新しい順に返す
  *   - action:'getProgressItems'/'saveProgressItems' … 中間報告の定例項目の取得・保存 → 「中間報告項目」シート（1行1項目）
- *   - action:'saveNumbers'  … 「数値報告」メニューの入力       → 「夏期数値」シートに1行で記録（校舎ごと・送り直すと追記）
- *   - action:'listNumbers'  … 会議AI・数値報告画面での参照     → 「夏期数値」シートを新しい順に返す
+ *   - action:'saveNumberReport'  … 「数値報告」メニューの入力 → 月次は「月次数値」、講習期（春期・夏期・冬期）は「講習数値」シートに1行で記録
+ *                                   （対象期間×校舎ごと・送り直すと追記。会議AI側は最新の1件を使う）
+ *   - action:'listNumberReports' … 会議AI・数値報告画面での参照 → 指定シート（月次数値／講習数値）を新しい順に返す
+ *     ※ 旧「夏期数値」シート（2026年夏まで）はそのまま残してある。読み書きはしない。
  *   - action:'saveReview'   … 「全体会議振り返り」の入力      → 「全体会議振り返り」シートに1行で記録
- *   - action:'saveSuccess'  … 夏期結果報告の成功事例        → 「成功事例」シートに1件1行で記録（「報告」転記時に自動）
+ *   - action:'saveSuccess'  … 月次・講習結果報告の成功事例       → 「成功事例」シートに1件1行で記録（「報告」転記時に自動）
  *   - action:'listSuccess'  … ダッシュボード用の成功事例一覧  → 「成功事例」シートを新しい順に返す
- *   - action:'listInquiryBoard' … 問い合わせQA用の小中等部問合せ管理 → 別スプレッドシート（INQUIRY_BOARD_ID）を校舎シートごとに読み、個人情報を落として返す
+ *   - action:'listInquiryBoard' … 問い合わせQA用の小中等部問合せ管理 → 「問合せ台帳」（下記）を優先し、無ければ旧スプレッドシート（INQUIRY_BOARD_ID）を校舎シートごとに読む。いずれも個人情報を落として返す
+ *   - action:'listInquiryRecords' / 'saveInquiryRecord' / 'deleteInquiryRecord'
+ *                               … 問合せ管理 Web アプリ（/inquiry-board）の台帳 → スプレッドシート「問合せ台帳」（INQUIRY_DB_ID）に1件1行
+ *     ※ 旧スプレッドシートの行を台帳へ移すときは、GAS エディタで importLegacyInquiryBoard() を一度実行する（何度実行しても二重登録しない）。
+ *   - action:'getKenshuAnswer' / 'saveKenshuAnswer'
+ *                               … 全体研修会アンケート（/kenshu）→ 「研修会アンケート」シートに1人1行（研修会×部門×氏名）。送り直すと上書き
  *   - action:'listGoals'        … 目標管理用 → 中等部会議議事録（GOALS_BOOK_ID）の「秋～冬行動計画」タブから月×校舎×指標の目標／実績を返す
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
  *
@@ -50,6 +61,25 @@ var DEFAULT_TAB_HINT = '7月会議内容テスト';
 // ※このシートは生徒・保護者の個人情報を含むため、下の listInquiryBoard_ が
 //   氏名をマスクし、電話・住所・保護者名・メールを落としてから返す（アプリ側には渡らない）。
 var INQUIRY_BOARD_ID = '';
+
+// 問合せ管理 Web アプリ（/inquiry-board）の台帳スプレッドシートID。
+// 生徒・保護者の個人情報を1件1行で持つので、会話ログの転記先とは別ファイルにすることを勧める
+//（別ファイルにすると、閲覧できる人をそのファイルの共有設定だけで絞れる）。
+// 空ならこのスクリプトがバインドされたシート（SPREADSHEET_ID と同じ扱い）に「問合せ台帳」タブを作る。
+var INQUIRY_DB_ID = '';
+var INQUIRY_DB_SHEET = '問合せ台帳';
+// 台帳の列（この順で1行）。★lib/inquiryRecords.ts の RECORD_FIELDS と同じ順に保つこと。
+// 末尾の「削除」は Web アプリからは見えない列で、削除した行に 1 を立てる（行そのものは消さない）。
+var INQUIRY_DB_HEADERS = [
+  'ID', '校舎', 'No.', '日付', '生徒氏名', 'ふりがな', '学校名', '学年', '電話番号', '媒体', '紹介者', '受講期',
+  '連絡', '体験日', '体験', '入塾提案面談日', '本人OK', 'クローズ予定日', '結果', '入塾日', '備考',
+  '保護者名', '郵便番号', '住所', 'メールアドレス', 'DM', '受付ID', '作成日時', '作成者', '更新日時', '更新者', '削除',
+];
+// 「今日の注意点」の AI の一言を日付×対象で残すタブ（台帳と同じスプレッドシートに作る）。
+// 1日1回まとめて生成し、その日は書き換えない。個人情報は入らない（氏名は「田○」にマスク済み）。
+var AI_NOTES_SHEET = 'AI注意点';
+var AI_NOTES_HEADERS = ['日付', '対象', '本文', '生成日時'];
+var AI_NOTES_KEEP_DAYS = 90;
 
 // 「目標管理」が読む中等部会議議事録スプレッドシートID。
 // 目標・実績は下の GOALS_SHEET_NAME のタブにある。空なら目標対比は表示されない。
@@ -135,12 +165,12 @@ function doPost(e) {
       return json_(updateInquiry_(data));
     }
 
-    if (action === 'saveNumbers') {
-      return json_(saveNumbers_(data));
+    if (action === 'saveNumberReport') {
+      return json_(saveNumberReport_(data));
     }
 
-    if (action === 'listNumbers') {
-      return json_(listNumbers_(data));
+    if (action === 'listNumberReports') {
+      return json_(listNumberReports_(data));
     }
 
     if (action === 'saveReview') {
@@ -150,6 +180,14 @@ function doPost(e) {
         [data.ts || nowIso_(), data.campus || '', data.user || '', data.content || '']
       );
       return json_({ ok: true });
+    }
+
+    if (action === 'getKenshuAnswer') {
+      return json_(getKenshuAnswer_(data));
+    }
+
+    if (action === 'saveKenshuAnswer') {
+      return json_(saveKenshuAnswer_(data));
     }
 
     if (action === 'saveSuccess') {
@@ -164,8 +202,36 @@ function doPost(e) {
       return json_(listInquiryBoard_(data));
     }
 
+    if (action === 'listInquiryRecords') {
+      return json_(listInquiryRecords_(data));
+    }
+
+    if (action === 'saveInquiryRecord') {
+      return json_(saveInquiryRecord_(data));
+    }
+
+    if (action === 'deleteInquiryRecord') {
+      return json_(deleteInquiryRecord_(data));
+    }
+
+    if (action === 'getDailyAiNotes') {
+      return json_(getDailyAiNotes_(data));
+    }
+
+    if (action === 'saveDailyAiNotes') {
+      return json_(saveDailyAiNotes_(data));
+    }
+
     if (action === 'listGoals') {
       return json_(listGoals_(data));
+    }
+
+    if (action === 'saveShareItems') {
+      return json_(saveShareItems_(data));
+    }
+
+    if (action === 'listShareItems') {
+      return json_(listShareItems_(data));
     }
 
     if (action === 'saveDeptMinutes') {
@@ -178,6 +244,14 @@ function doPost(e) {
 
     if (action === 'listDeptDecisions') {
       return json_(listDeptDecisions_(data));
+    }
+
+    if (action === 'saveDeptPreshare') {
+      return json_(saveDeptPreshare_(data));
+    }
+
+    if (action === 'listDeptPreshare') {
+      return json_(listDeptPreshare_(data));
     }
 
     if (action === 'saveMinutes') {
@@ -404,15 +478,22 @@ function listProgress_(data) {
   return { ok: true, items: items };
 }
 
-// 「数値報告」メニューの入力を「夏期数値」シートへ1行で記録する。
-// 見出し（headers）と値（row）は Next 側（lib/summerNumbers.ts）が組み立てて送る。
+// 数値報告の保存先。Next 側（lib/numberReports.ts の NUMBER_FORMS）の sheet と揃える。
+// 任意のシートへ書き込まれないよう、ここに無い名前は受け付けない。
+var NUMBER_SHEETS = ['月次数値', '講習数値'];
+
+// 「数値報告」メニューの入力を指定シートへ1行で記録する。
+// 見出し（headers）と値（row＝日時・対象・部門・校舎・入力者・各項目）は Next 側が組み立てて送る。
 // 既存シートの見出しが古い場合は、不足分の見出しだけを補う。
-function saveNumbers_(data) {
+// 「100%」「2026年9月分」などが数値・日付に化けないよう、行は書式なしテキストで書き込む。
+function saveNumberReport_(data) {
+  var name = String(data.sheet || '');
+  if (NUMBER_SHEETS.indexOf(name) < 0) return { ok: false, reason: 'bad_sheet' };
   var headers = data.headers || [];
   var row = data.row || [];
-  if (!headers.length) return { ok: false, reason: 'no_headers' };
+  if (!headers.length || !row.length) return { ok: false, reason: 'no_headers' };
   var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName('夏期数値') || ss.insertSheet('夏期数値');
+  var sh = ss.getSheetByName(name) || ss.insertSheet(name);
   if (sh.getLastRow() === 0) {
     sh.appendRow(headers);
   } else {
@@ -421,15 +502,21 @@ function saveNumbers_(data) {
       if (!cur[c]) sh.getRange(1, c + 1).setValue(headers[c]);
     }
   }
-  sh.appendRow([data.ts || nowIso_(), data.dept || '', data.campus || '', data.user || ''].concat(row));
-  return { ok: true };
+  var values = row.map(function (v) { return String(v == null ? '' : v); });
+  values[0] = values[0] ? nowJp_(values[0]) : nowJp_();
+  var range = sh.getRange(sh.getLastRow() + 1, 1, 1, values.length);
+  range.setNumberFormat('@');
+  range.setValues([values]);
+  return { ok: true, sheet: name };
 }
 
-// 「夏期数値」シートを新しい順（最大200件）に、見出しをキーにした連想配列で返す。
-function listNumbers_(data) {
+// 指定シートを新しい順（最大300件）に、見出しをキーにした連想配列で返す。
+function listNumberReports_(data) {
+  var name = String(data.sheet || '');
+  if (NUMBER_SHEETS.indexOf(name) < 0) return { ok: false, reason: 'bad_sheet' };
   var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName('夏期数値');
-  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  var sh = ss.getSheetByName(name);
+  if (!sh || sh.getLastRow() < 2) return { ok: true, sheet: name, items: [] };
   var values = sh.getDataRange().getValues();
   var headers = values[0];
   var items = [];
@@ -438,18 +525,18 @@ function listNumbers_(data) {
     for (var c = 0; c < headers.length; c++) {
       var key = String(headers[c]);
       if (!key) continue;
-      obj[key] = c === 0 ? cellStr_(values[i][c]) : String(values[i][c] == null ? '' : values[i][c]);
+      obj[key] = cellStr_(values[i][c]);
     }
     items.push(obj);
   }
   items.reverse();
-  if (items.length > 200) items = items.slice(0, 200);
-  return { ok: true, items: items };
+  if (items.length > 300) items = items.slice(0, 300);
+  return { ok: true, sheet: name, items: items };
 }
 
 var SUCCESS_HEADERS = ['日時', '事業部', '担当', '件名', '取り組み', '結果', '他でも使えるポイント'];
 
-// 夏期結果報告の成功事例を「成功事例」シートへ1件1行で記録する。
+// 月次報告・講習結果報告の成功事例を「成功事例」シートへ1件1行で記録する。
 // data.cases = [{ title, action, result, point }, ...]（Next 側で報告文から抽出済み）。
 function saveSuccess_(data) {
   var cases = data.cases;
@@ -488,38 +575,148 @@ function listSuccess_(data) {
   return { ok: true, items: items };
 }
 
-var DEPT_MINUTES_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '場所', '出席者', '予定議題', '議事録', '会議の質チェック'];
-var DEPT_DECISION_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '件名', '内容', '理由・背景', '担当', '期限', '関係部門'];
+var SHARE_HEADERS = ['日時', '部門', '担当', '種別', '件名', '経緯', '論点', '報告者の意見'];
+
+// 「報告」から転記された事前報告の中の「協議・決裁・報告」を1件1行で記録する。
+// data.items = [{ kind, title, background, point, opinion }, ...]（Next 側で抽出済み）。
+// ダッシュボードの「直近の事前共有事項」カードのもとになる。
+function saveShareItems_(data) {
+  var items = data.items;
+  if (!items || !items.length) return { ok: true, count: 0 };
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('事前共有事項') || ss.insertSheet('事前共有事項');
+  if (sh.getLastRow() === 0) sh.appendRow(SHARE_HEADERS);
+  var ts = data.ts || nowIso_();
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i] || {};
+    sh.appendRow([
+      ts, data.campus || '', data.user || '', it.kind || '',
+      it.title || '', it.background || '', it.point || '', it.opinion || ''
+    ]);
+  }
+  return { ok: true, count: items.length };
+}
+
+// 事前共有事項（新しい順・最大150件）を返す。ダッシュボードのカードで使う。
+function listShareItems_(data) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('事前共有事項');
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  var values = sh.getDataRange().getValues();
+  var items = [];
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    items.push({
+      ts: cellStr_(r[0]), campus: String(r[1] == null ? '' : r[1]), user: String(r[2] == null ? '' : r[2]),
+      kind: String(r[3] == null ? '' : r[3]), title: String(r[4] == null ? '' : r[4]),
+      background: String(r[5] == null ? '' : r[5]), point: String(r[6] == null ? '' : r[6]),
+      opinion: String(r[7] == null ? '' : r[7])
+    });
+  }
+  items.reverse();
+  if (items.length > 150) items = items.slice(0, 150);
+  return { ok: true, items: items };
+}
+
+// ★末尾に「議事録ID」を足してある。既存シートには下の ensure で自動で見出しが足される。
+//   このIDがあることで、あとから同じ議事録を直して保存し直せる（新しい行が増えない）。
+var DEPT_MINUTES_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '場所', '出席者', '予定議題', '議事録', '会議の質チェック', '議事録ID', '修正日時', '修正者'];
+var DEPT_DECISION_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '件名', '内容', '理由・背景', '担当', '期限', '関係部門', '議事録ID'];
+
+// シートを用意し、見出しの不足分（あとから足した「議事録ID」など）を補う。
+function sheetWithHeaders_(name, headers) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(headers);
+    return sh;
+  }
+  var cur = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+  for (var c = 0; c < headers.length; c++) {
+    if (!cur[c]) sh.getRange(1, c + 1).setValue(headers[c]);
+  }
+  return sh;
+}
+
+// 見出し名から列番号（1始まり）を返す。列を足しても位置を数え直さずに済むようにするため。
+// ★「議事録ID」の位置を固定値で持つと、列を追加したときに上書きが効かなくなる。
+function colOf_(headers, name) {
+  return headers.indexOf(name) + 1;
+}
+
+// 指定列の値が id と一致する行番号を返す（見つからなければ 0）。
+function findRowById_(sh, col, id) {
+  if (!id || sh.getLastRow() < 2) return 0;
+  var values = sh.getRange(2, col, sh.getLastRow() - 1, 1).getValues();
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0]) === String(id)) return i + 2;
+  }
+  return 0;
+}
 
 // 「部門会議議事録」メニューの保存。
 //  ・「部門会議議事録」シートに1会議1行（議事録本文と会議の質チェックを丸ごと保存）
 //  ・「部門決定事項」シートに1決定1行（部門をまたいで決め事を一覧するためのもと）
 // 決定事項の切り出しは Next 側（lib/deptMinutesParse.ts）で済ませて data.decisions に入れて送られてくる。
+//
+// data.id があれば、その議事録を「直して保存し直した」とみなして元の行を上書きする。
+// そのとき、ぶら下がっていた決定事項の行も入れ替える（古い決定が残らないようにするため）。
 function saveDeptMinutes_(data) {
   var ts = data.ts || nowIso_();
-  appendRow_(
-    '部門会議議事録',
-    DEPT_MINUTES_HEADERS,
-    [
-      ts, data.campus || '', data.user || '', data.title || '', data.date || '',
-      data.place || '', data.attendees || '', data.agenda || '',
-      data.minutes || '', data.quality || ''
-    ]
-  );
+  var sh = sheetWithHeaders_('部門会議議事録', DEPT_MINUTES_HEADERS);
+  var idCol = colOf_(DEPT_MINUTES_HEADERS, '議事録ID');
+  var row = findRowById_(sh, idCol, data.id);
+  var isUpdate = row > 0;
+  var id = row ? String(data.id) : (data.id ? String(data.id) : Utilities.getUuid());
+
+  // 上書きのときは、最初に登録したときの「日時・部門・入力者」をそのまま残す。
+  // 直した人は別に「修正日時・修正者」へ記録する（誰が作って誰が直したかを両方残すため）。
+  var firstTs = isUpdate ? sh.getRange(row, 1).getValue() : ts;
+  var origCampus = isUpdate ? String(sh.getRange(row, 2).getValue()) : (data.campus || '');
+  var origUser = isUpdate ? String(sh.getRange(row, 3).getValue()) : (data.user || '');
+  var values = [
+    firstTs, origCampus, origUser, data.title || '', data.date || '',
+    data.place || '', data.attendees || '', data.agenda || '',
+    data.minutes || '', data.quality || '', id,
+    isUpdate ? ts : '', isUpdate ? (data.user || '') : ''
+  ];
+  if (row) {
+    sh.getRange(row, 1, 1, values.length).setValues([values]);
+  } else {
+    sh.appendRow(values);
+  }
+
+  // 決定事項は入れ替え（この議事録IDの行を消してから入れ直す）。
+  var dsh = sheetWithHeaders_('部門決定事項', DEPT_DECISION_HEADERS);
+  var dIdCol = colOf_(DEPT_DECISION_HEADERS, '議事録ID');
+  if (row && dsh.getLastRow() >= 2) {
+    var dv = dsh.getRange(2, dIdCol, dsh.getLastRow() - 1, 1).getValues();
+    // 下から消す（消すたびに行番号がずれるため）。
+    for (var k = dv.length - 1; k >= 0; k--) {
+      if (String(dv[k][0]) === id) dsh.deleteRow(k + 2);
+    }
+  }
 
   var decisions = data.decisions || [];
   for (var i = 0; i < decisions.length; i++) {
     var d = decisions[i] || {};
-    appendRow_(
-      '部門決定事項',
-      DEPT_DECISION_HEADERS,
-      [
-        ts, data.campus || '', data.user || '', data.title || '', data.date || '',
-        d.title || '', d.detail || '', d.reason || '', d.owner || '', d.due || '', d.related || ''
-      ]
-    );
+    dsh.appendRow([
+      firstTs, origCampus, origUser, data.title || '', data.date || '',
+      d.title || '', d.detail || '', d.reason || '', d.owner || '', d.due || '', d.related || '', id
+    ]);
   }
-  return { ok: true, decisions: decisions.length };
+
+  // 事前共有した会議なら、その事前共有に議事録IDを入れる（ダッシュボードの事前共有から外れる）。
+  // ここで失敗しても議事録の保存は済んでいるので、保存の結果には響かせない。
+  if (data.preshareId) {
+    try {
+      linkDeptPreshare_(data.preshareId, id);
+    } catch (err) {}
+  }
+  return {
+    ok: true, decisions: decisions.length, id: id, updated: isUpdate,
+    editedAt: isUpdate ? ts : '', editedBy: isUpdate ? (data.user || '') : ''
+  };
 }
 
 // 部門会議議事録の一覧（新しい順・最大100件）。
@@ -535,7 +732,9 @@ function listDeptMinutes_(data) {
       ts: cellStr_(r[0]), campus: String(r[1] == null ? '' : r[1]), user: String(r[2] == null ? '' : r[2]),
       title: String(r[3] == null ? '' : r[3]), date: cellStr_(r[4]), place: String(r[5] == null ? '' : r[5]),
       attendees: String(r[6] == null ? '' : r[6]), agenda: String(r[7] == null ? '' : r[7]),
-      minutes: String(r[8] == null ? '' : r[8]), quality: String(r[9] == null ? '' : r[9])
+      minutes: String(r[8] == null ? '' : r[8]), quality: String(r[9] == null ? '' : r[9]),
+      id: String(r[10] == null ? '' : r[10]),
+      editedAt: cellStr_(r[11]), editedBy: String(r[12] == null ? '' : r[12])
     });
   }
   items.reverse();
@@ -563,6 +762,175 @@ function listDeptDecisions_(data) {
   items.reverse();
   if (items.length > 200) items = items.slice(0, 200);
   return { ok: true, items: items };
+}
+
+// 部門会議の事前共有。会議の前に、手順1の会議情報と議題・レジュメを全部門へ出しておく
+//（ダッシュボードの「部門会議の事前共有」で、出席者が議題・レジュメを見ながら会議を進めるため）。
+// ★列は見出し名で引く（colOf_）。「議事録ID」はこの会議の議事録を保存したときに入る。
+var DEPT_PRESHARE_SHEET = '部門会議事前共有';
+var DEPT_PRESHARE_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '場所', '出席者', '議題・レジュメ', '事前共有ID', '更新日時', '更新者', '議事録ID'];
+
+function preshareCell_(r, name) {
+  return cellStr_(r[colOf_(DEPT_PRESHARE_HEADERS, name) - 1]);
+}
+
+// data.id があれば、その事前共有を上書きする。
+// 最初に共有したときの「日時・部門・入力者」と、結び付いた「議事録ID」はそのまま残す。
+function saveDeptPreshare_(data) {
+  var H = DEPT_PRESHARE_HEADERS;
+  var sh = sheetWithHeaders_(DEPT_PRESHARE_SHEET, H);
+  var row = findRowById_(sh, colOf_(H, '事前共有ID'), data.id);
+  var cur = row ? sh.getRange(row, 1, 1, H.length).getValues()[0] : null;
+  var id = data.id ? String(data.id) : Utilities.getUuid();
+  var ts = nowJp_('');
+  var rec = {
+    '日時': cur ? preshareCell_(cur, '日時') : ts,
+    '部門': cur ? preshareCell_(cur, '部門') : (data.campus || ''),
+    '入力者': cur ? preshareCell_(cur, '入力者') : (data.user || ''),
+    '会議名': data.title || '',
+    '開催日時': data.date || '',
+    '場所': data.place || '',
+    '出席者': data.attendees || '',
+    '議題・レジュメ': data.agenda || '',
+    '事前共有ID': id,
+    '更新日時': cur ? ts : '',
+    '更新者': cur ? (data.user || '') : '',
+    '議事録ID': cur ? preshareCell_(cur, '議事録ID') : ''
+  };
+  var values = H.map(function (h) { return String(rec[h]); });
+  // appendRow は手入力と同じ解釈で書くため、「- 9月の実績」で始まる議題が数式とみなされたり、
+  // 開催日時が日付に化けたりする。先に文字列書式を付けてから setValues で書く。
+  sh.getRange(row || sh.getLastRow() + 1, 1, 1, H.length).setNumberFormat('@').setValues([values]);
+  return { ok: true, id: id, updated: Boolean(row), ts: rec['日時'] };
+}
+
+// 部門会議の事前共有の一覧（新しい順・最大100件）。
+// 議事録を保存した会議・日の過ぎた会議を外すのは Next 側（lib/deptMinutesPreshare.ts）で行う。
+function listDeptPreshare_(data) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(DEPT_PRESHARE_SHEET);
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, DEPT_PRESHARE_HEADERS.length).getValues();
+  var items = [];
+  for (var i = 0; i < values.length; i++) {
+    var r = values[i];
+    items.push({
+      id: preshareCell_(r, '事前共有ID'), ts: preshareCell_(r, '日時'),
+      campus: preshareCell_(r, '部門'), user: preshareCell_(r, '入力者'),
+      title: preshareCell_(r, '会議名'), date: preshareCell_(r, '開催日時'),
+      place: preshareCell_(r, '場所'), attendees: preshareCell_(r, '出席者'),
+      agenda: preshareCell_(r, '議題・レジュメ'),
+      editedAt: preshareCell_(r, '更新日時'), editedBy: preshareCell_(r, '更新者'),
+      minutesId: preshareCell_(r, '議事録ID')
+    });
+  }
+  items.reverse();
+  if (items.length > 100) items = items.slice(0, 100);
+  return { ok: true, items: items };
+}
+
+// 議事録を保存したとき、元になった事前共有に議事録IDを入れる（saveDeptMinutes_ から呼ぶ）。
+function linkDeptPreshare_(preshareId, minutesId) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(DEPT_PRESHARE_SHEET);
+  if (!sh) return;
+  var row = findRowById_(sh, colOf_(DEPT_PRESHARE_HEADERS, '事前共有ID'), preshareId);
+  if (!row) return;
+  sh.getRange(row, colOf_(DEPT_PRESHARE_HEADERS, '議事録ID')).setNumberFormat('@').setValue(String(minutesId));
+}
+
+// 全体研修会アンケート（/kenshu）。1人1行（研修会×部門×氏名）で持ち、送り直すと同じ行を上書きする。
+// 「仕事」「人生・プライベート」は1行に1つを改行でつないで1セルに入れる（セルを折り返せばそのまま読める）。
+// 「研修会」は lib/kenshu/survey.ts の SURVEY.id。次の研修会では別の id になり、別の行として残る。
+// ★列は見出し名で引く（colOf_）。
+var KENSHU_SHEET = '研修会アンケート';
+var KENSHU_HEADERS = ['研修会', '部門', '氏名', '仕事の件数', '仕事', '人生・プライベートの件数', '人生・プライベート', '提出日時', '更新日時'];
+
+function kenshuCell_(r, name) {
+  return cellStr_(r[colOf_(KENSHU_HEADERS, name) - 1]);
+}
+
+function kenshuLines_(v) {
+  return String(v == null ? '' : v).split('\n')
+    .map(function (s) { return s.trim(); })
+    .filter(function (s) { return s; });
+}
+
+function kenshuItem_(r) {
+  return {
+    work: kenshuLines_(kenshuCell_(r, '仕事')),
+    life: kenshuLines_(kenshuCell_(r, '人生・プライベート')),
+    submittedAt: kenshuCell_(r, '提出日時'),
+    updatedAt: kenshuCell_(r, '更新日時')
+  };
+}
+
+// 研修会×部門×氏名が一致する行番号（無ければ 0）
+function findKenshuRow_(sh, data) {
+  if (sh.getLastRow() < 2) return 0;
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, KENSHU_HEADERS.length).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var r = values[i];
+    if (kenshuCell_(r, '研修会') === String(data.survey || '') &&
+        kenshuCell_(r, '部門') === String(data.campus || '') &&
+        kenshuCell_(r, '氏名') === String(data.user || '')) return i + 2;
+  }
+  return 0;
+}
+
+// 本人の回答（まだ出していなければ item: null）
+function getKenshuAnswer_(data) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(KENSHU_SHEET);
+  if (!sh) return { ok: true, item: null };
+  var row = findKenshuRow_(sh, data);
+  if (!row) return { ok: true, item: null };
+  return { ok: true, item: kenshuItem_(sh.getRange(row, 1, 1, KENSHU_HEADERS.length).getValues()[0]) };
+}
+
+// 回答の保存。2回目以降は同じ行を上書きし、最初の「提出日時」は残して「更新日時」を入れる。
+function saveKenshuAnswer_(data) {
+  var H = KENSHU_HEADERS;
+  var clean = function (list) {
+    return (list || [])
+      .map(function (s) { return String(s == null ? '' : s).replace(/[\r\n]+/g, ' ').trim(); })
+      .filter(function (s) { return s; });
+  };
+  var work = clean(data.work);
+  var life = clean(data.life);
+  if (!data.survey || !data.campus || !data.user) return { ok: false, reason: 'bad_request' };
+  if (!work.length || !life.length) return { ok: false, reason: 'empty' };
+
+  // 同じ人が続けて押したときに2行できないよう、探してから書くまでを1人ずつにする
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = sheetWithHeaders_(KENSHU_SHEET, H);
+    var row = findKenshuRow_(sh, data);
+    var cur = row ? sh.getRange(row, 1, 1, H.length).getValues()[0] : null;
+    var ts = nowJp_('');
+    var rec = {
+      '研修会': String(data.survey),
+      '部門': String(data.campus),
+      '氏名': String(data.user),
+      '仕事の件数': work.length,
+      '仕事': work.join('\n'),
+      '人生・プライベートの件数': life.length,
+      '人生・プライベート': life.join('\n'),
+      '提出日時': cur ? kenshuCell_(cur, '提出日時') : ts,
+      '更新日時': cur ? ts : ''
+    };
+    var values = H.map(function (h) { return rec[h]; });
+    var target = row || sh.getLastRow() + 1;
+    // 「- 」「=」で始まる行が数式に、日時が日付型に化けないよう、先に文字列書式を付けてから書く。件数だけは数値
+    sh.getRange(target, 1, 1, H.length).setNumberFormat('@');
+    sh.getRange(target, colOf_(H, '仕事の件数')).setNumberFormat('0');
+    sh.getRange(target, colOf_(H, '人生・プライベートの件数')).setNumberFormat('0');
+    sh.getRange(target, 1, 1, H.length).setValues([values]);
+    return { ok: true, item: kenshuItem_(values) };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // 中間報告の「定例項目」を管理するシート（無ければ作成）。
@@ -755,8 +1123,9 @@ function findTabByTitle_(tabs, hint, exclude) {
 // 返す列（この順・見出しの完全一致で拾う）
 var INQUIRY_COLUMNS = [
   'No.', '日付', '生徒氏名', '学校名', '学年', '媒体', '受講期', '連絡',
-  '体験日', '体験', '入塾提案面談日', '本人OK', 'クローズ予定日', '結果',
+  '体験日', '体験', '入塾提案面談日', '本人OK', 'クローズ予定日', '結果', '入塾日',
 ];
+// ※「入塾日」は台帳（問合せ管理 Web アプリ）にだけある列。旧スプレッドシートには無いので空で返る。
 // 備考は見出しが長い（「備考(架電日時・検討中理由・見送り理由・その他補足事項)」）ので前方一致で拾う。
 var INQUIRY_NOTE_PREFIX = '備考';
 // 備考の最大文字数（プロンプトが膨らむのを防ぐ）
@@ -806,6 +1175,11 @@ function findInquiryHeader_(values) {
 }
 
 function listInquiryBoard_(data) {
+  // 問合せ管理 Web アプリの台帳に1件でもあれば、そちらを正とする（旧スプレッドシートは読まない）。
+  // 台帳が空のあいだは従来どおり旧スプレッドシートを読むので、移行前でも問い合わせQAは止まらない。
+  var db = listInquiryRecords_(data);
+  if (db.ok && db.items.length > 0) return maskInquiryRecords_(db.items);
+
   if (!INQUIRY_BOARD_ID) return { ok: false, reason: 'board_not_configured', items: [] };
 
   var ss;
@@ -873,6 +1247,634 @@ function listInquiryBoard_(data) {
   }
 
   return { ok: true, items: items, campuses: campuses, fetchedAt: nowJp_() };
+}
+
+
+// ===== 問合せ台帳（問合せ管理 Web アプリ /inquiry-board の保存先） =============
+// 1件1行。日付は「YYYY-MM-DD」の文字列で持つ（シートの自動日付変換を避けるため列を書式 @ にする）。
+// 削除は「削除」列に 1 を立てる論理削除（誤操作で消えても復元できるように）。
+
+function inquiryDbSheet_() {
+  var id = INQUIRY_DB_ID || SPREADSHEET_ID;
+  var ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(INQUIRY_DB_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(INQUIRY_DB_SHEET);
+    sh.appendRow(INQUIRY_DB_HEADERS);
+    sh.setFrozenRows(1);
+    // 全列を文字列扱いにする（日付・電話番号・郵便番号が勝手に変換されないように）
+    sh.getRange(1, 1, sh.getMaxRows(), INQUIRY_DB_HEADERS.length).setNumberFormat('@');
+  } else if (sh.getLastRow() === 0) {
+    sh.appendRow(INQUIRY_DB_HEADERS);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, sh.getMaxRows(), INQUIRY_DB_HEADERS.length).setNumberFormat('@');
+  } else {
+    // 列が増えたときは、無い見出しを右端に足す（既存の列の位置は変えない。読み書きは見出し名で引く）
+    var cur = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+    var have = {};
+    for (var i = 0; i < cur.length; i++) have[String(cur[i]).trim()] = true;
+    for (var c = 0; c < INQUIRY_DB_HEADERS.length; c++) {
+      var h = INQUIRY_DB_HEADERS[c];
+      if (have[h]) continue;
+      var at = sh.getLastColumn() + 1;
+      sh.getRange(1, at).setValue(h);
+      sh.getRange(1, at, sh.getMaxRows(), 1).setNumberFormat('@');
+      have[h] = true;
+    }
+  }
+  return sh;
+}
+
+// 台帳のセル→文字列。Date が紛れ込んだら YYYY-MM-DD にする。
+function dbCellStr_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd');
+  return String(v == null ? '' : v).trim();
+}
+
+// 見出し→列番号（0始まり）。台帳は見出し名で引く（列の追加に強くするため）。
+function dbColMap_(sh) {
+  var headers = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+  var map = {};
+  for (var c = 0; c < headers.length; c++) {
+    var h = String(headers[c] == null ? '' : headers[c]).trim();
+    if (h && map[h] === undefined) map[h] = c;
+  }
+  return map;
+}
+
+function dbRowToObj_(row, col) {
+  var obj = {};
+  for (var i = 0; i < INQUIRY_DB_HEADERS.length; i++) {
+    var h = INQUIRY_DB_HEADERS[i];
+    obj[h] = col[h] === undefined ? '' : dbCellStr_(row[col[h]]);
+  }
+  return obj;
+}
+
+// オブジェクト → シートの1行。列の位置は見出し名（col）で決める。
+function dbObjToRow_(obj, col, width) {
+  var row = [];
+  for (var i = 0; i < width; i++) row.push('');
+  for (var j = 0; j < INQUIRY_DB_HEADERS.length; j++) {
+    var h = INQUIRY_DB_HEADERS[j];
+    if (col[h] === undefined) continue;
+    row[col[h]] = obj[h] == null ? '' : String(obj[h]);
+  }
+  return row;
+}
+
+function listInquiryRecords_(data) {
+  var sh;
+  try {
+    sh = inquiryDbSheet_();
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed', items: [] };
+  }
+  if (sh.getLastRow() < 2) return { ok: true, items: [], fetchedAt: nowJp_() };
+  var col = dbColMap_(sh);
+  var values = sh.getDataRange().getValues();
+  var items = [];
+  for (var r = 1; r < values.length; r++) {
+    var obj = dbRowToObj_(values[r], col);
+    if (!obj['ID']) continue;
+    if (obj['削除'] === '1') continue;
+    delete obj['削除'];
+    items.push(obj);
+  }
+  return { ok: true, items: items, fetchedAt: nowJp_() };
+}
+
+// 台帳の行番号（1始まり）を ID で探す。無ければ -1。
+function dbFindRow_(sh, col, id) {
+  if (col['ID'] === undefined || sh.getLastRow() < 2) return -1;
+  var ids = sh.getRange(2, col['ID'] + 1, sh.getLastRow() - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() === id) return i + 2;
+  }
+  return -1;
+}
+
+// 校舎内の次の No.（最大＋1）。
+function dbNextNo_(sh, col, campus) {
+  if (sh.getLastRow() < 2) return 1;
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+  var max = 0;
+  for (var i = 0; i < values.length; i++) {
+    if (dbCellStr_(values[i][col['校舎']]) !== campus) continue;
+    var n = Number(values[i][col['No.']]);
+    if (n > max) max = n;
+  }
+  return max + 1;
+}
+
+// 新規（ID が台帳に無い）なら追加、あれば上書き。No. が空なら校舎内で採番する。
+// LockService で同時登録の No. 重複を防ぐ。
+function saveInquiryRecord_(data) {
+  var rec = data.record || {};
+  var id = String(rec['ID'] || '').trim();
+  if (!id) return { ok: false, reason: 'bad_id' };
+  if (!String(rec['校舎'] || '').trim()) return { ok: false, reason: 'invalid' };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = inquiryDbSheet_();
+    var col = dbColMap_(sh);
+    var width = Math.max(sh.getLastColumn(), INQUIRY_DB_HEADERS.length);
+    var row = dbFindRow_(sh, col, id);
+    var ts = nowJp_();
+
+    if (row === -1) {
+      if (!Number(rec['No.'])) rec['No.'] = dbNextNo_(sh, col, String(rec['校舎']));
+      if (!rec['作成日時']) rec['作成日時'] = ts;
+      if (!rec['作成者']) rec['作成者'] = rec['更新者'] || '';
+      rec['更新日時'] = ts;
+      rec['削除'] = '';
+      // appendRow は「手入力と同じ解釈」で書くため、電話番号の先頭 0 が落ちたり日付が Date に化けたりする。
+      // 先に文字列書式を付けてから setValues で書く（書式を後から付けても、落ちた 0 は戻らない）。
+      var newRow = sh.getLastRow() + 1;
+      sh.getRange(newRow, 1, 1, width).setNumberFormat('@').setValues([dbObjToRow_(rec, col, width)]);
+      return { ok: true, item: rec };
+    }
+
+    var cur = dbRowToObj_(sh.getRange(row, 1, 1, width).getValues()[0], col);
+    if (cur['削除'] === '1') return { ok: false, reason: 'not_found' };
+    // 作成情報は元の値を守る。No. も空で来たら元の値を使う（校舎が変わったときだけ採番し直す）。
+    rec['作成日時'] = cur['作成日時'];
+    rec['作成者'] = cur['作成者'];
+    if (!Number(rec['No.'])) {
+      rec['No.'] = String(rec['校舎']) === cur['校舎'] ? cur['No.'] : dbNextNo_(sh, col, String(rec['校舎']));
+    }
+    rec['更新日時'] = ts;
+    rec['削除'] = '';
+    sh.getRange(row, 1, 1, width).setNumberFormat('@').setValues([dbObjToRow_(rec, col, width)]);
+    return { ok: true, item: rec };
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed:' + err };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteInquiryRecord_(data) {
+  var id = String(data.id || '').trim();
+  if (!id) return { ok: false, reason: 'bad_id' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = inquiryDbSheet_();
+    var col = dbColMap_(sh);
+    var row = dbFindRow_(sh, col, id);
+    if (row === -1) return { ok: false, reason: 'not_found' };
+    sh.getRange(row, col['削除'] + 1).setValue('1');
+    sh.getRange(row, col['更新日時'] + 1).setValue(nowJp_());
+    sh.getRange(row, col['更新者'] + 1).setValue(String(data.user || ''));
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed:' + err };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---- 「今日の注意点」AI の一言（1日1回生成・その日は固定） ------------------
+
+function aiNotesSheet_() {
+  var id = INQUIRY_DB_ID || SPREADSHEET_ID;
+  var ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(AI_NOTES_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(AI_NOTES_SHEET);
+    sh.appendRow(AI_NOTES_HEADERS);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, sh.getMaxRows(), AI_NOTES_HEADERS.length).setNumberFormat('@');
+  } else if (sh.getLastRow() === 0) {
+    sh.appendRow(AI_NOTES_HEADERS);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, sh.getMaxRows(), AI_NOTES_HEADERS.length).setNumberFormat('@');
+  }
+  return sh;
+}
+
+// その日の一言を全対象ぶん返す。{ date: 'YYYY-MM-DD' }
+function getDailyAiNotes_(data) {
+  var date = String(data.date || '').trim();
+  if (!date) return { ok: false, reason: 'bad_date', items: [] };
+  var sh;
+  try {
+    sh = aiNotesSheet_();
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed', items: [] };
+  }
+  if (sh.getLastRow() < 2) return { ok: true, items: [] };
+  var values = sh.getDataRange().getValues();
+  var items = [];
+  for (var r = 1; r < values.length; r++) {
+    var row = values[r];
+    if (dbCellStr_(row[0]) !== date) continue;
+    items.push({ '日付': date, '対象': dbCellStr_(row[1]), '本文': dbCellStr_(row[2]), '生成日時': dbCellStr_(row[3]) });
+  }
+  return { ok: true, items: items };
+}
+
+// 一言を保存する。{ notes: [{ 日付, 対象, 本文, 生成日時 }] } 同じ日付×対象があれば上書き。
+// 古い行（AI_NOTES_KEEP_DAYS より前）は保存のついでに消す。
+function saveDailyAiNotes_(data) {
+  var notes = data.notes || [];
+  if (!notes.length) return { ok: true, saved: 0 };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = aiNotesSheet_();
+    var values = sh.getLastRow() < 2 ? [] : sh.getRange(2, 1, sh.getLastRow() - 1, AI_NOTES_HEADERS.length).getValues();
+    var cutoff = Utilities.formatDate(new Date(Date.now() - AI_NOTES_KEEP_DAYS * 86400000), 'Asia/Tokyo', 'yyyy-MM-dd');
+    var kept = [];
+    var index = {};
+    for (var r = 0; r < values.length; r++) {
+      var d = dbCellStr_(values[r][0]);
+      if (!d || d < cutoff) continue;
+      index[d + '|' + dbCellStr_(values[r][1])] = kept.length;
+      kept.push([d, dbCellStr_(values[r][1]), dbCellStr_(values[r][2]), dbCellStr_(values[r][3])]);
+    }
+    var saved = 0;
+    for (var i = 0; i < notes.length; i++) {
+      var n = notes[i] || {};
+      var date = String(n['日付'] || '').trim();
+      var scope = String(n['対象'] || '').trim();
+      var text = String(n['本文'] || '').trim();
+      if (!date || !scope || !text) continue;
+      var row = [date, scope, text, String(n['生成日時'] || nowJp_())];
+      var k = date + '|' + scope;
+      if (index[k] !== undefined) kept[index[k]] = row;
+      else { index[k] = kept.length; kept.push(row); }
+      saved++;
+    }
+    // 2行目以降を丸ごと書き直す（行数が少ないので単純に）
+    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, AI_NOTES_HEADERS.length).clearContent();
+    if (kept.length) sh.getRange(2, 1, kept.length, AI_NOTES_HEADERS.length).setNumberFormat('@').setValues(kept);
+    return { ok: true, saved: saved };
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed:' + err };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 台帳の行 → 問い合わせQA に渡す形（個人情報を落とし、氏名をマスクする）。
+// 旧スプレッドシート経由の listInquiryBoard_ と同じキー名で返す（lib/inquiryBoard.ts が両方を同じ型で読む）。
+function maskInquiryRecords_(items) {
+  var out = [];
+  var campuses = [];
+  var seen = {};
+  for (var i = 0; i < items.length; i++) {
+    if (out.length >= INQUIRY_MAX_ROWS) break;
+    var r = items[i];
+    var campus = String(r['校舎'] || '').replace(/[\s　]/g, '');
+    if (campus && !seen[campus]) { seen[campus] = true; campuses.push(campus); }
+    var obj = { '校舎': campus };
+    for (var k = 0; k < INQUIRY_COLUMNS.length; k++) {
+      var key = INQUIRY_COLUMNS[k];
+      var val = String(r[key] == null ? '' : r[key]);
+      if (key === '生徒氏名') val = maskName_(val);
+      obj[key] = val;
+    }
+    var note = cleanNote_(r['備考']);
+    if (note.length > INQUIRY_NOTE_MAX) note = note.slice(0, INQUIRY_NOTE_MAX) + '…';
+    obj['備考'] = note;
+    out.push(obj);
+  }
+  return { ok: true, items: out, campuses: campuses, fetchedAt: nowJp_(), source: 'db' };
+}
+
+// 【移行用・GAS エディタから一度実行】旧スプレッドシート（INQUIRY_BOARD_ID）の校舎シートを
+// 「問合せ台帳」へ写す。校舎＋No.＋生徒氏名 が同じ行は飛ばすので、何度実行しても二重にならない。
+// 実行後は問い合わせQAも台帳を読むようになる（listInquiryBoard_ 参照）。
+var LEGACY_START_YEAR = 2026; // 旧シートの「5/21」のような年無しの日付を補う年（5月始まりの期の開始年）
+
+// ---- 旧スプレッドシート（2026小中等部問合せ管理）からの取り込み・差分取り込み ----------------
+//
+// 使い方（Apps Script のエディタから実行）
+//   previewLegacyDiff()  … 旧シートと台帳を見比べて、何が追加・更新されるかを「旧シート差分」タブに書く（台帳は変えない）
+//   applyLegacyDiff()    … 上の内容を台帳に反映する（追加＋空欄の穴埋め＋備考の追記）。結果も「旧シート差分」タブに書く
+//   importLegacyInquiryBoard() … applyLegacyDiff() と同じ（初回の一括取り込みも、2回目以降の差分取り込みも同じ関数で済む）
+//
+// 行の突き合わせ：校舎＋生徒氏名（空白を除いて比較）。同じ校舎に同名が複数あるときは No. でも絞る。
+//   同じ校舎に無ければ他の校舎の同名を探す（アプリ側で校舎を直したケース。県中対策→オンライン等）。
+//   台帳で削除済みの行も突き合わせに使う（アプリで消した人を旧シートから復活させない）。
+// 反映のルール：
+//   - 台帳に無い人 → 追加。No. は旧シートの番号を使うが、その番号がすでに台帳の別人に使われていれば次の番号を付け、
+//     備考に「旧シートNo.xx」と残す
+//   - 台帳にある人 → 台帳が空欄の項目だけ旧シートの値で埋める。備考は旧シートにあって台帳に無い行だけ末尾に足す
+//   - 両方に値があって違う項目 → 台帳（アプリ）の値を優先し、「競合」として一覧に出すだけ（担当者が見て判断）
+var LEGACY_REPORT_SHEET = '旧シート差分';
+var LEGACY_FILL_FIELDS = ['日付', 'ふりがな', '学校名', '学年', '電話番号', '媒体', '受講期', '連絡', '体験日', '体験',
+  '入塾提案面談日', '本人OK', 'クローズ予定日', '結果', '保護者名', '郵便番号', '住所', 'メールアドレス', 'DM'];
+var LEGACY_CONFLICT_FIELDS = ['日付', '学年', '電話番号', '連絡', '体験日', '体験', '入塾提案面談日', '本人OK', 'クローズ予定日', '結果', 'DM'];
+
+function importLegacyInquiryBoard() {
+  return applyLegacyDiff();
+}
+
+function previewLegacyDiff() {
+  var d = legacyDiff_();
+  writeLegacyReport_(d, false);
+  var msg = '【確認のみ】追加 ' + d.adds.length + ' 件、更新 ' + d.updates.length + ' 件、競合 ' + d.conflicts.length + ' 件、変更なし ' + d.unchanged + ' 件。「' + LEGACY_REPORT_SHEET + '」タブに一覧を書きました。';
+  Logger.log(msg);
+  return { preview: true, added: d.adds.length, updated: d.updates.length, conflicts: d.conflicts.length, unchanged: d.unchanged, message: msg };
+}
+
+function applyLegacyDiff() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var d = legacyDiff_();
+    var sh = d.sheet;
+    var col = d.col;
+    var width = d.width;
+    var ts = nowJp_();
+
+    // 更新（1行ずつ書き戻す）
+    for (var u = 0; u < d.updates.length; u++) {
+      var up = d.updates[u];
+      var rowArr = d.values[up.rowIndex].slice();
+      for (var f in up.fill) rowArr[col[f]] = up.fill[f];
+      if (up.noteAdd.length) {
+        var curNote = dbCellStr_(rowArr[col['備考']]);
+        rowArr[col['備考']] = (curNote ? curNote + '\n' : '') + '[旧シート ' + ts.slice(0, 10) + ']\n' + up.noteAdd.join('\n');
+      }
+      rowArr[col['更新日時']] = ts;
+      rowArr[col['更新者']] = '旧シート差分';
+      for (var w = 0; w < width; w++) rowArr[w] = rowArr[w] == null ? '' : (rowArr[w] instanceof Date ? dbCellStr_(rowArr[w]) : String(rowArr[w]));
+      sh.getRange(up.rowIndex + 1, 1, 1, width).setNumberFormat('@').setValues([rowArr]);
+    }
+
+    // 追加（まとめて書く）
+    if (d.adds.length) {
+      var rows = [];
+      for (var a = 0; a < d.adds.length; a++) {
+        var rec = d.adds[a];
+        rec['ID'] = Utilities.getUuid();
+        rec['作成日時'] = ts; rec['作成者'] = '旧シート移行';
+        rec['更新日時'] = ts; rec['更新者'] = '旧シート移行';
+        rec['削除'] = '';
+        rows.push(dbObjToRow_(rec, col, width));
+      }
+      var start = sh.getLastRow() + 1;
+      sh.getRange(start, 1, rows.length, width).setNumberFormat('@').setValues(rows);
+    }
+
+    writeLegacyReport_(d, true);
+    var msg = '追加 ' + d.adds.length + ' 件、更新 ' + d.updates.length + ' 件、競合（台帳を優先） ' + d.conflicts.length + ' 件、変更なし ' + d.unchanged + ' 件。「' + LEGACY_REPORT_SHEET + '」タブに一覧を書きました。';
+    Logger.log(msg);
+    return { preview: false, added: d.adds.length, updated: d.updates.length, conflicts: d.conflicts.length, unchanged: d.unchanged, message: msg };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function legacyNameKey_(s) {
+  return String(s == null ? '' : s).replace(/[\s　]/g, '');
+}
+
+// 旧シートの全タブを読んで、台帳の見出し名キーのオブジェクトにして返す。
+function readLegacyRows_() {
+  if (!INQUIRY_BOARD_ID) throw new Error('INQUIRY_BOARD_ID が未設定です。');
+  var src = SpreadsheetApp.openById(INQUIRY_BOARD_ID);
+  var alias = { '入塾/講習会提案日': '入塾提案面談日' };
+  var sheets = src.getSheets();
+  var out = [];
+  for (var si = 0; si < sheets.length; si++) {
+    var s = sheets[si];
+    if (s.isSheetHidden && s.isSheetHidden()) continue;
+    if (s.getLastRow() < 2) continue;
+    var values = s.getDataRange().getValues();
+    var hr = findInquiryHeader_(values);
+    if (hr === -1) continue;
+    var campus = String(s.getName()).replace(/[\s　]/g, '');
+    // 台帳では「県中対策」を通塾の「県中」とオンラインの「オンライン」に分けている。
+    // 旧シートからは区別できないので「県中」に入れ、オンラインの人は担当者が校舎を直す。
+    if (campus === '県中対策') campus = '県中';
+
+    var headers = values[hr];
+    var colOf = {};
+    var noteCol = -1;
+    var nameCol = -1;
+    for (var c = 0; c < headers.length; c++) {
+      var h = String(headers[c] == null ? '' : headers[c]).replace(/[\s　]/g, '');
+      if (!h) continue;
+      h = alias[h] || h;
+      if (colOf[h] === undefined) colOf[h] = c;
+      if (h === '生徒氏名') nameCol = c;
+      if (noteCol === -1 && h.indexOf(INQUIRY_NOTE_PREFIX) === 0) noteCol = c;
+    }
+    if (nameCol === -1) continue;
+    // ふりがなは見出しが無い（生徒氏名の右隣）ので位置で拾う
+    var kanaCol = !String(headers[nameCol + 1] || '').trim() ? nameCol + 1 : -1;
+    // DM 列は見出し行の1つ下に「DM」と書かれていることがあるので、A列の値で判定する
+    var dmCol = colOf['DM'] !== undefined ? colOf['DM'] : 0;
+
+    for (var r = hr + 1; r < values.length; r++) {
+      var row = values[r];
+      var name = String(row[nameCol] == null ? '' : row[nameCol]).trim();
+      var date = legacyDate_(colOf['日付'] === undefined ? '' : row[colOf['日付']]);
+      if (!name && !date) continue; // 空行・小計行
+      if (name === 'DM' || name === '生徒氏名') continue;
+      if (name.indexOf('テ') === 0 && noteCol !== -1 && String(row[noteCol]).indexOf('テスト') !== -1) continue;
+
+      var pick = function (h) { return colOf[h] === undefined ? '' : String(row[colOf[h]] == null ? '' : row[colOf[h]]).trim(); };
+      var no = Number(row[colOf['No.']]) || 0;
+      out.push({
+        'ID': '',
+        '校舎': campus,
+        'No.': no ? String(no) : '',
+        '日付': date,
+        '生徒氏名': name,
+        'ふりがな': kanaCol === -1 ? '' : String(row[kanaCol] == null ? '' : row[kanaCol]).trim(),
+        '学校名': pick('学校名'),
+        '学年': pick('学年'),
+        '電話番号': pick('電話番号'),
+        '媒体': pick('媒体'),
+        '紹介者': '',
+        '受講期': pick('受講期'),
+        '連絡': pick('連絡'),
+        '体験日': legacyDate_(colOf['体験日'] === undefined ? '' : row[colOf['体験日']]),
+        '体験': legacyMark_(pick('体験')),
+        '入塾提案面談日': legacyDate_(colOf['入塾提案面談日'] === undefined ? '' : row[colOf['入塾提案面談日']]),
+        '本人OK': legacyMark_(pick('本人OK')),
+        'クローズ予定日': legacyDate_(colOf['クローズ予定日'] === undefined ? '' : row[colOf['クローズ予定日']]),
+        '結果': pick('結果'),
+        '入塾日': '',
+        '備考': noteCol === -1 ? '' : String(row[noteCol] == null ? '' : row[noteCol]).trim(),
+        '保護者名': pick('保護者名'),
+        '郵便番号': pick('郵便番号'),
+        '住所': pick('住所'),
+        'メールアドレス': pick('メールアドレス'),
+        'DM': legacyMark_(String(row[dmCol] == null ? '' : row[dmCol]).trim()),
+        '受付ID': '',
+        '_sheet': s.getName(),
+        '_row': r + 1,
+      });
+    }
+  }
+  return out;
+}
+
+// 旧シートと台帳を突き合わせて、追加・更新・競合を決める（書き込みはしない）。
+function legacyDiff_() {
+  var legacy = readLegacyRows_();
+  var sh = inquiryDbSheet_();
+  var col = dbColMap_(sh);
+  var width = Math.max(sh.getLastColumn(), INQUIRY_DB_HEADERS.length);
+  var values = sh.getLastRow() < 1 ? [] : sh.getDataRange().getValues();
+
+  // 台帳の行（削除済みも含める。削除した人を旧シートから復活させないため）
+  var ledger = [];          // { rowIndex, obj }
+  var byCampusName = {};    // 校舎|氏名 → [ledger idx]
+  var byName = {};          // 氏名 → [ledger idx]
+  var usedNo = {};          // 校舎 → { No.: true }
+  var maxNo = {};
+  for (var r = 1; r < values.length; r++) {
+    var obj = dbRowToObj_(values[r], col);
+    if (!obj['ID']) continue;
+    var idx = ledger.length;
+    ledger.push({ rowIndex: r, obj: obj });
+    var nk = legacyNameKey_(obj['生徒氏名']);
+    var ck = obj['校舎'] + '|' + nk;
+    (byCampusName[ck] = byCampusName[ck] || []).push(idx);
+    (byName[nk] = byName[nk] || []).push(idx);
+    var n = Number(obj['No.']) || 0;
+    if (n) {
+      (usedNo[obj['校舎']] = usedNo[obj['校舎']] || {})[n] = true;
+      if (!maxNo[obj['校舎']] || n > maxNo[obj['校舎']]) maxNo[obj['校舎']] = n;
+    }
+  }
+
+  var adds = [], updates = [], conflicts = [], unchanged = 0;
+  var matched = {}; // ledger idx → true（同じ台帳行に2つの旧行を当てない）
+  for (var i = 0; i < legacy.length; i++) {
+    var L = legacy[i];
+    var nk2 = legacyNameKey_(L['生徒氏名']);
+    if (!nk2) continue; // 氏名なしの行は突き合わせできないので飛ばす
+    var cands = byCampusName[L['校舎'] + '|' + nk2] || [];
+    if (!cands.length) cands = byName[nk2] || [];
+    cands = cands.filter(function (x) { return !matched[x]; });
+    var hit = -1;
+    if (cands.length === 1) hit = cands[0];
+    else if (cands.length > 1) {
+      // 同名が複数：No. が同じものを優先、無ければ最初
+      var sameNo = cands.filter(function (x) { return L['No.'] && ledger[x].obj['No.'] === L['No.']; });
+      hit = sameNo.length ? sameNo[0] : cands[0];
+    }
+
+    if (hit === -1) {
+      // 追加。No. が台帳の別人と重なるなら採番し直す
+      var cp = L['校舎'];
+      var wantNo = Number(L['No.']) || 0;
+      var noteExtra = '';
+      if (wantNo && usedNo[cp] && usedNo[cp][wantNo]) {
+        maxNo[cp] = (maxNo[cp] || 0) + 1;
+        noteExtra = '旧シートNo.' + wantNo;
+        L['No.'] = String(maxNo[cp]);
+      } else if (!wantNo) {
+        maxNo[cp] = (maxNo[cp] || 0) + 1;
+        L['No.'] = String(maxNo[cp]);
+      } else if (wantNo > (maxNo[cp] || 0)) {
+        maxNo[cp] = wantNo;
+      }
+      (usedNo[cp] = usedNo[cp] || {})[Number(L['No.'])] = true;
+      if (noteExtra) L['備考'] = (L['備考'] ? L['備考'] + '\n' : '') + noteExtra;
+      adds.push(L);
+      continue;
+    }
+
+    matched[hit] = true;
+    var T = ledger[hit].obj;
+    if (T['削除'] === '1') { unchanged++; continue; } // アプリで削除済み。復活させない
+    var fill = {};
+    var hasFill = false;
+    for (var f = 0; f < LEGACY_FILL_FIELDS.length; f++) {
+      var fld = LEGACY_FILL_FIELDS[f];
+      var lv = String(L[fld] == null ? '' : L[fld]).trim();
+      var tv = String(T[fld] == null ? '' : T[fld]).trim();
+      if (!lv) continue;
+      if (!tv) { fill[fld] = lv; hasFill = true; }
+      else if (lv !== tv && LEGACY_CONFLICT_FIELDS.indexOf(fld) !== -1) {
+        conflicts.push({ campus: T['校舎'], no: T['No.'], name: T['生徒氏名'], field: fld, ledger: tv, legacy: lv, sheet: L['_sheet'], row: L['_row'] });
+      }
+    }
+    // 備考：旧シートにあって台帳に無い行だけ足す
+    var noteAdd = [];
+    var tNote = String(T['備考'] || '');
+    var lLines = String(L['備考'] || '').split('\n');
+    for (var n2 = 0; n2 < lLines.length; n2++) {
+      var line = lLines[n2].trim();
+      if (line && tNote.indexOf(line) === -1) noteAdd.push(line);
+    }
+    if (hasFill || noteAdd.length) {
+      updates.push({ rowIndex: ledger[hit].rowIndex, campus: T['校舎'], no: T['No.'], name: T['生徒氏名'], fill: fill, noteAdd: noteAdd, sheet: L['_sheet'], row: L['_row'] });
+    } else {
+      unchanged++;
+    }
+  }
+  return { sheet: sh, col: col, width: width, values: values, adds: adds, updates: updates, conflicts: conflicts, unchanged: unchanged };
+}
+
+// 「旧シート差分」タブに結果を書く（毎回書き直す）。
+function writeLegacyReport_(d, applied) {
+  var id = INQUIRY_DB_ID || SPREADSHEET_ID;
+  var ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  var rp = ss.getSheetByName(LEGACY_REPORT_SHEET) || ss.insertSheet(LEGACY_REPORT_SHEET);
+  rp.clearContents();
+  var ts = nowJp_();
+  var head = ['実行日時', '区分', '校舎', 'No.', '生徒氏名', '項目', '台帳の値', '旧シートの値', '旧シートの場所'];
+  var rows = [head];
+  var tag = applied ? '' : '（確認のみ・未反映）';
+  for (var a = 0; a < d.adds.length; a++) {
+    var A = d.adds[a];
+    rows.push([ts, '追加' + tag, A['校舎'], A['No.'], A['生徒氏名'], '', '', A['日付'] + ' ' + (A['結果'] || '追客中'), A['_sheet'] + ' ' + A['_row'] + '行目']);
+  }
+  for (var u = 0; u < d.updates.length; u++) {
+    var U = d.updates[u];
+    for (var f in U.fill) rows.push([ts, '空欄を埋める' + tag, U.campus, U.no, U.name, f, '', U.fill[f], U.sheet + ' ' + U.row + '行目']);
+    if (U.noteAdd.length) rows.push([ts, '備考に追記' + tag, U.campus, U.no, U.name, '備考', '', U.noteAdd.join(' / '), U.sheet + ' ' + U.row + '行目']);
+  }
+  for (var c = 0; c < d.conflicts.length; c++) {
+    var C = d.conflicts[c];
+    rows.push([ts, '競合（台帳を優先）', C.campus, C.no, C.name, C.field, C.ledger, C.legacy, C.sheet + ' ' + C.row + '行目']);
+  }
+  if (rows.length === 1) rows.push([ts, '差分なし', '', '', '', '', '', '', '']);
+  rp.getRange(1, 1, rows.length, head.length).setNumberFormat('@').setValues(rows);
+  rp.setFrozenRows(1);
+}
+
+// 旧シートの日付セル → YYYY-MM-DD。Date 型はそのまま、「5/21」「5月21日」は年を補う。
+// 「5/21.6/29」のような複数日はそのまま文字列で残す（Web アプリ側は文字入力として見せる）。
+function legacyDate_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd');
+  var s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  var full = /^(\d{4})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})日?$/.exec(s);
+  if (full) return isoDate_(Number(full[1]), Number(full[2]), Number(full[3])) || s;
+  var md = /^(\d{1,2})[\/\-.月](\d{1,2})日?$/.exec(s);
+  if (md) {
+    var m = Number(md[1]);
+    return isoDate_(m >= 5 ? LEGACY_START_YEAR : LEGACY_START_YEAR + 1, m, Number(md[2])) || s;
+  }
+  return s;
+}
+
+function isoDate_(y, m, d) {
+  if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return '';
+  return y + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
+}
+
+// 〇○◯⚪︎◎ → 〇、×✕✖ → ✕
+function legacyMark_(s) {
+  s = String(s == null ? '' : s).trim();
+  if (!s) return '';
+  if (/[〇○◯⚪◎]/.test(s)) return '〇';
+  if (/[×✕✖]/.test(s)) return '✕';
+  return s;
 }
 
 

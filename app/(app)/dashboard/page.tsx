@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/auth';
-import { ADMIN_CAMPUS } from '@/lib/staff';
+import { getSession } from '@/lib/core/auth';
+import { ADMIN_CAMPUS } from '@/lib/core/staff';
 import DashboardUI from '@/components/DashboardUI';
 
 export default function DashboardPage() {

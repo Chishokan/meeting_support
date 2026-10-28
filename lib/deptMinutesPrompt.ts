@@ -35,6 +35,18 @@ const INSTRUCTIONS = `
 - 文字起こしに無い事実を創作しない。聞き取れていない・言及が無い箇所は【要確認】と書く。
 - 文字起こしは誤変換を含む。文脈から明らかな誤変換（固有名詞・数字）は直してよいが、
   自信が無い箇所は原文のまま残し、末尾に「（聞き取り不明瞭）」と付ける。
+- 【議題・レジュメ】は「会議の前に用意したもの」であって、話し合った結果ではない。
+  ここに書かれた案・数字・予定を、会議で決まったことのように書いてはならない。
+  実際に話し合われたかどうかは、必ず文字起こしとメモで確かめる。
+  使い道は次の3つに限る：
+  （1）議題の並び順と呼び方をそろえる（レジュメの言い方に合わせる）
+  （2）レジュメにあるのに話に出てこない項目を「未実施」として拾う
+  （3）固有名詞・数字の表記を確かめる（聞き取りが怪しいときの答え合わせ）
+- 【議事録メモ】が渡されたときは、文字起こしより優先して扱う。
+  人が会議中に「残そう」と判断して書いたものなので、固有名詞・数字・日付・担当者名が
+  食い違う場合はメモの表記を採る。ただしメモに無いことをメモの内容として書かない。
+  メモは要点だけで文になっていないことが多いので、文字起こしで前後を補って読みやすくする。
+  メモにあって文字起こしに無い項目も、聞き取れなかっただけとみなして議事録に載せる。
 - 「決定事項」と「継続審議・保留」を厳密に区別する。
   司会や参加者が「じゃあそれで」「決まりですね」等と合意した内容だけを決定事項にする。
   誰かが提案しただけ・言いっぱなしのものは決定事項に入れず、継続審議へ回す。
@@ -89,29 +101,57 @@ export function buildDeptMinutesPrompt(dept: string, name: string): string {
 }
 
 function metaBlock(meta: MeetingMeta): string {
-  const agenda = meta.agenda.trim()
-    ? meta.agenda.trim().split('\n').map((l) => `  ・${l.trim()}`).filter((l) => l.trim() !== '・').join('\n')
-    : '  （入力なし）';
-  return [
+  const head = [
     '【会議情報（利用者の入力・正）】',
     `- 会議名：${meta.title.trim() || '（未入力）'}`,
     `- 開催日時：${meta.date.trim() || '（未入力）'}`,
     `- 場所：${meta.place.trim() || '（未入力）'}`,
     `- 出席者：${meta.attendees.trim() || '（未入力）'}`,
-    '- 事前に予定していた議題：',
+  ];
+
+  // 議題の欄には、箇条書きの議題だけでなく会議のレジュメがそのまま貼られることがある。
+  // 行ごとに「・」を付けると見出し・番号・空行まで箇条書きになって元の構造が壊れるので、
+  // 入力された形のまま（インデントだけ付けて）渡す。
+  const agenda = meta.agenda.trim();
+  if (!agenda) return [...head, '- 事前に予定していた議題／レジュメ：（入力なし）'].join('\n');
+
+  return [
+    ...head,
+    '- 事前に予定していた議題／レジュメ（下の「＝＝＝」に挟まれた部分。箇条書きのことも、',
+    '  レジュメをそのまま貼ったこともある）：',
+    '＝＝＝ 議題・レジュメ（ここから）＝＝＝',
     agenda,
+    '＝＝＝ 議題・レジュメ（ここまで）＝＝＝',
   ].join('\n');
 }
 
-// 初回：文字起こしから議事録ドラフトを作らせる。
-export function buildDraftRequest(meta: MeetingMeta, transcript: string): string {
+// 文字起こしのブロック。保存済みの議事録を直すときは無いこともある。
+function transcriptBlock(transcript: string): string[] {
+  const t = transcript.trim();
+  if (!t) return [];
+  return ['', '【会議の文字起こし（録音から自動生成。誤変換あり）】', t];
+}
+
+// 会議中に人が取ったメモ。あれば文字起こしと一緒に渡す。
+// 人が「残そう」と判断して書いたものなので、文字起こしより信頼できる前提で扱わせる。
+function memoBlock(memo: string): string[] {
+  const m = memo.trim();
+  if (!m) return [];
+  return [
+    '',
+    '【議事録メモ（会議中に人が手で書いたもの。文字起こしより正確）】',
+    m,
+  ];
+}
+
+// 初回：文字起こし（＋メモ）から議事録ドラフトを作らせる。
+export function buildDraftRequest(meta: MeetingMeta, transcript: string, memo = ''): string {
   return [
     metaBlock(meta),
+    ...transcriptBlock(transcript),
+    ...memoBlock(memo),
     '',
-    '【会議の文字起こし（録音から自動生成。誤変換あり）】',
-    transcript.trim(),
-    '',
-    '上の文字起こしから、指示どおり2ブロックを出力してください。',
+    '上の内容から、指示どおり2ブロックを出力してください。',
   ].join('\n');
 }
 
@@ -121,13 +161,14 @@ export function buildReviseRequest(
   transcript: string,
   draft: string,
   instruction: string,
+  memo = '',
 ): string {
   return [
     metaBlock(meta),
+    ...transcriptBlock(transcript),
+    ...memoBlock(memo),
     '',
-    '【会議の文字起こし（録音から自動生成。誤変換あり）】',
-    transcript.trim(),
-    '',
+    // 保存済みの議事録を直すときは文字起こしが無い。そのときはこの本文だけが材料になる。
     '【現在の議事録（利用者が編集済みの場合あり）】',
     draft.trim(),
     '',

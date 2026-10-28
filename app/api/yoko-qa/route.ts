@@ -1,11 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import { MODEL, THINKING } from '@/lib/systemPrompt';
 import { buildYokoQaPrompt } from '@/lib/yokoQaPrompt';
-import { loadYokoDocs, confirmedDocs, formatDocs, formatIndex } from '@/lib/knowledgeDocs';
+import { loadYokoDocs, confirmedDocs, formatDocs, formatIndex } from '@/lib/core/knowledgeDocs';
 import { buildCards, docPeriod } from '@/lib/yokoCards';
-import { logInteraction } from '@/lib/log';
-import { sanitizeHistory, stripRoleBleed } from '@/lib/sanitize';
+import { logInteraction } from '@/lib/core/log';
+import { sanitizeHistory, stripRoleBleed } from '@/lib/core/sanitize';
 
 const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
 

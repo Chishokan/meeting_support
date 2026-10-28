@@ -12,11 +12,11 @@
 | 機能 | 保存先 | 経路 |
 |---|---|---|
 | 問い合わせ | スプレッドシート「問い合わせ」 | Apps Script `saveInquiry` / `listInquiries` |
-| 数値報告 | スプレッドシート「夏期数値」 | `saveNumbers` / `listNumbers` |
+| 数値報告 | スプレッドシート「月次数値」「講習数値」 | `saveNumberReport` / `listNumberReports` |
 | 成功事例 | スプレッドシート「成功事例」 | `saveSuccess` / `listSuccess` |
 | 中間報告 | スプレッドシート「中間報告状況」 | `appendProgress` / `listProgress` |
 | 議事録 | Google ドキュメント | `saveMinutes` |
-| 会社の前提知識 | `lib/companyKnowledge.ts`（ハードコード19行） | プロンプトに直接埋め込み |
+| 会社の前提知識 | `lib/core/companyKnowledge.ts`（ハードコード19行） | プロンプトに直接埋め込み |
 
 **課題**: 知識が `companyKnowledge.ts` の19行しかない。
 理念・規程・マニュアル・イベント要項・過去の議事録などは
@@ -209,7 +209,7 @@ Claude が判断 → tool: read_file("40_イベント/2026/夏期講習/要項.m
 | `read_file(path)` | ファイル本文を読む | Git 内ファイル読み込み |
 | `grep_knowledge(query)` | 全文検索（索引で当たらない時の保険） | ripgrep 相当 |
 | `list_dir(path)` | 階層を見る | fs |
-| `get_numbers(dept)` | 数値報告の最新値 | 既存 `listNumbers` |
+| `get_numbers(dept)` | 数値報告の最新値 | 既存 `listNumberReports` |
 | `get_inquiries(keyword)` | 過去の問い合わせ回答 | 既存 `listInquiries` |
 
 **設計上の要点**
@@ -229,7 +229,7 @@ Claude が判断 → tool: read_file("40_イベント/2026/夏期講習/要項.m
 | 部門責任者 | 上記＋自部門の `admin_only` |
 | 総務・人事・支援・管理 | 全て |
 
-現在の認証は氏名＋部門＋合言葉の簡易版（`lib/auth.ts` は署名なしBase64）。
+現在の認証は氏名＋部門＋合言葉の簡易版（`lib/core/auth.ts` は署名なしBase64）。
 知識ベースに機微情報を載せる前に **Google SSO への移行が前提条件**。
 それまでは `admin_only` を作らず、機微情報は Git に置かない運用にする。
 
@@ -251,7 +251,7 @@ Claude が判断 → tool: read_file("40_イベント/2026/夏期講習/要項.m
 ### Phase 1：初期投入（2週間）
 
 - [ ] 既存資料を階層へ移動（まずは「理念」「部門マニュアル」「今年度イベント」の3系統に絞る）
-- [ ] `lib/companyKnowledge.ts` の19行を `10_理念・方針/` へ移し、実際の理念で肉付け
+- [x] `lib/core/companyKnowledge.ts` の本文を `10_理念・方針/COMPANY.md` へ移した。残り：実際の理念・第36期経営指針書で肉付け
 - [ ] 手動で Markdown 化し Git に投入（この時点では自動化なし）
 - [ ] `INDEX.md` を手書き
 

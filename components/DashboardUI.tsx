@@ -2,16 +2,73 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { STAFF } from '@/lib/staff';
+import { STAFF } from '@/lib/core/staff';
+import YokoCard, { type YokoCardData } from '@/components/YokoCard';
+import MinutesDetail from '@/components/MinutesDetail';
+import {
+  draftForNext,
+  draftFromPreshare,
+  draftFromRow,
+  draftHasWork,
+  readDraft,
+  stashDraft,
+  type MinutesDraft,
+} from '@/lib/deptMinutesDraft';
+import ShareItemDetail from '@/components/ShareItemDetail';
+import PreshareDetail from '@/components/PreshareDetail';
+import PreshareList from '@/components/PreshareList';
+import { localDay, upcomingPreshares, type PreshareRow } from '@/lib/deptMinutesPreshare';
+import ProgressDetail from '@/components/ProgressDetail';
+import { extractDecisions, extractSection, summarizeSection } from '@/lib/deptMinutesParse';
 import type { ProgressEntry } from '@/lib/progressPrompt';
 import type { SuccessRow } from '@/app/api/success/route';
+import type { MinutesRow } from '@/app/api/dept-minutes/list/route';
+import type { ShareRow } from '@/app/api/share-items/route';
 
-type ProgressItem = { ts: string; campus: string; user: string; progress: ProgressEntry[] };
+type ProgressItem = {
+  ts: string;
+  campus: string;
+  user: string;
+  progress: ProgressEntry[];
+  note?: string; // 「その他・共有事項」。カードには出さず［詳細］で読む
+};
+
+// ★中間報告まわりの表示を一時的に止めている。
+//   再開するときはここを true に戻すだけでよい（提出状況の数値・部門別の状況・
+//   報告すべき項目・部門メンバーの報告状況・直近の中間報告がまとめて戻る）。
+//   false の間は中間報告の API も呼ばない。
+const SHOW_PROGRESS = false;
+
+// 中間報告の「直近の報告内容」カードだけは SHOW_PROGRESS と別に出せる。
+// ★中間報告を左メニューから外したので、カードも止めている（古い報告が残り続けるため）。
+//   メニューに戻すときは、ここも true に戻す。
+const SHOW_RECENT_PROGRESS = false;
+
+// 直近の事前共有事項（会議AIの事前報告から集めた協議・決裁・報告）。
+// ★いまは部門会議の事前共有を優先して隠している。戻すときは true にするだけでよい
+//   （false の間は一覧の API も呼ばない）。
+const SHOW_SHARE_ITEMS = false;
+
+// クイックスタート（各画面への入口）。左メニューと同じ内容なので非表示にし、
+// その分を直近の議事録・事前共有事項に回している。再開するときは true に戻す。
+const SHOW_QUICKSTART = false;
 
 // メンバー行に出す進捗の最大件数（超えた分は「他N件」にまとめる）。
 const MAX_SHOWN_ITEMS = 3;
 // 成功事例パネルに出す件数（新しい順）。
 const MAX_SHOWN_CASES = 6;
+// 直近の中間報告カードに出す件数（部門ごとに1件ずつ、新しい順）。
+const MAX_SHOWN_PROGRESS = 8;
+// 1枚のカードに出す進捗項目の件数（超えた分は「他N件」）。
+const MAX_SHOWN_PROGRESS_ITEMS = 4;
+// ダッシュボードに出す直近の議事録・要項カードの件数。
+const MAX_SHOWN_MINUTES = 5;
+const MAX_SHOWN_YOKO = 4;
+// 事前共有事項のカード件数。協議・決裁は会議で扱うので、報告より前に出す。
+const MAX_SHOWN_SHARE = 6;
+// 部門会議の事前共有のカード件数（今日 → これから → 議事録待ちの順）。
+const MAX_SHOWN_PRESHARE = 6;
+const SHARE_ORDER: Record<string, number> = { 協議: 0, 決裁: 1, 報告: 2 };
 
 function fmtDateTime(s: string) {
   // GAS からは 'yyyy/MM/dd HH:mm' 等の文字列で来る。日付部分だけ簡潔に表示。
@@ -32,25 +89,45 @@ export default function DashboardUI({
   const [items, setItems] = useState<ProgressItem[]>([]);
   const [deptItems, setDeptItems] = useState<string[]>([]);
   const [cases, setCases] = useState<SuccessRow[]>([]);
+  const [minutes, setMinutes] = useState<MinutesRow[]>([]);
+  const [shareItems, setShareItems] = useState<ShareRow[]>([]);
+  // 部門会議の事前共有（会議情報と議題・レジュメ）。
+  const [preshares, setPreshares] = useState<PreshareRow[]>([]);
+  const [openPreshare, setOpenPreshare] = useState<{ row: PreshareRow; when: string } | null>(null);
+  // ［詳細］で開く事前共有事項。議事録と同じくこのページ上で開く。
+  const [openShare, setOpenShare] = useState<ShareRow | null>(null);
+  // ［詳細］で開く議事録。画面を移らずにこのページ上で開く。
+  const [openMinutes, setOpenMinutes] = useState<MinutesRow | null>(null);
+  // ［詳細］で開く中間報告。事前共有事項・議事録と同じくポップアップで開く。
+  const [openProgress, setOpenProgress] = useState<ProgressItem | null>(null);
+  const [yoko, setYoko] = useState<YokoCardData[]>([]);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
+  // 成功事例は既定で閉じておく。毎日見るものではなく、必要なときに開く扱いにする。
+  const [showCases, setShowCases] = useState(false);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        // 提出状況と、この部門の報告項目（管理部門は項目パネルを出さないので取得しない）を並行取得。
-        const [statusRes, itemsRes, successRes] = await Promise.all([
-          fetch('/api/progress/latest'),
-          isAdmin ? Promise.resolve(null) : fetch('/api/progress/items'),
+        // 中間報告は非表示のあいだ取得しない（GAS への無駄な往復を減らす）。
+        const [statusRes, itemsRes, successRes, minutesRes, yokoRes, shareRes, preRes] = await Promise.all([
+          SHOW_PROGRESS || SHOW_RECENT_PROGRESS ? fetch('/api/progress/latest') : Promise.resolve(null),
+          SHOW_PROGRESS && !isAdmin ? fetch('/api/progress/items') : Promise.resolve(null),
           fetch('/api/success').catch(() => null),
+          fetch('/api/dept-minutes/list?scope=minutes').catch(() => null),
+          fetch('/api/yoko-qa').catch(() => null),
+          SHOW_SHARE_ITEMS ? fetch('/api/share-items').catch(() => null) : Promise.resolve(null),
+          fetch('/api/dept-minutes/preshare').catch(() => null),
         ]);
-        const j = await statusRes.json().catch(() => ({}));
-        if (!alive) return;
-        if (j?.ok && Array.isArray(j.items)) {
-          setItems(j.items as ProgressItem[]);
-        } else if (j?.reason === 'not_configured') {
-          setNote('中間報告の連携（Apps Script）が未設定です。');
+        if (statusRes) {
+          const j = await statusRes.json().catch(() => ({}));
+          if (!alive) return;
+          if (j?.ok && Array.isArray(j.items)) {
+            setItems(j.items as ProgressItem[]);
+          } else if (j?.reason === 'not_configured') {
+            setNote('中間報告の連携（Apps Script）が未設定です。');
+          }
         }
         if (itemsRes) {
           const j2 = await itemsRes.json().catch(() => ({}));
@@ -59,12 +136,28 @@ export default function DashboardUI({
             setDeptItems((j2.items[campus] as unknown[]).map((s) => String(s)));
           }
         }
-        // 成功事例は取得できなくても他の表示は止めない（未設定・未集計なら空のまま）。
+        // 以下は取得できなくても他の表示は止めない（未設定・未集計なら空のまま）。
         const j3 = successRes ? await successRes.json().catch(() => ({})) : {};
         if (!alive) return;
         if (j3?.ok && Array.isArray(j3.items)) setCases(j3.items as SuccessRow[]);
+
+        const j4 = minutesRes ? await minutesRes.json().catch(() => ({})) : {};
+        if (!alive) return;
+        if (j4?.ok && Array.isArray(j4.items)) setMinutes(j4.items as MinutesRow[]);
+
+        const j5 = yokoRes ? await yokoRes.json().catch(() => ({})) : {};
+        if (!alive) return;
+        if (j5?.ok && Array.isArray(j5.cards)) setYoko(j5.cards as YokoCardData[]);
+
+        const j6 = shareRes ? await shareRes.json().catch(() => ({})) : {};
+        if (!alive) return;
+        if (j6?.ok && Array.isArray(j6.items)) setShareItems(j6.items as ShareRow[]);
+
+        const j7 = preRes ? await preRes.json().catch(() => ({})) : {};
+        if (!alive) return;
+        if (j7?.ok && Array.isArray(j7.items)) setPreshares(j7.items as PreshareRow[]);
       } catch {
-        if (alive) setNote('中間報告状況の取得に失敗しました。');
+        if (alive) setNote('情報の取得に失敗しました。');
       } finally {
         if (alive) setLoading(false);
       }
@@ -84,6 +177,12 @@ export default function DashboardUI({
     return map;
   }, [items]);
 
+  // 部門ごとの直近1件を新しい順に。自部門も他部門も同じ並びに混ぜる。
+  const recentProgress = useMemo(
+    () => [...latestByCampus.values()].sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, MAX_SHOWN_PROGRESS),
+    [latestByCampus],
+  );
+
   // 自部門メンバーごとの直近1件。
   const latestByMember = useMemo(() => {
     const map = new Map<string, ProgressItem>();
@@ -98,18 +197,26 @@ export default function DashboardUI({
     <div className="dash-panel">
       <h2>クイックスタート</h2>
       <div className="quick-links">
+        <Link href="/dept-minutes" className="quick-link">
+          <span>
+            <b>部門会議の議事録をつくる</b>
+            <small>録音から議事録・決定事項を共有</small>
+          </span>
+        </Link>
         <Link href="/chat" className="quick-link">
           <span>
             <b>会議AIで事前報告をつくる</b>
             <small>会議前の報告を対話で整理</small>
           </span>
         </Link>
-        <Link href="/progress" className="quick-link">
-          <span>
-            <b>中間報告を送る</b>
-            <small>決議事項の進捗を締切までに報告</small>
-          </span>
-        </Link>
+        {SHOW_PROGRESS && (
+          <Link href="/progress" className="quick-link">
+            <span>
+              <b>中間報告を送る</b>
+              <small>決議事項の進捗を締切までに報告</small>
+            </span>
+          </Link>
+        )}
         <Link href="/report" className="quick-link">
           <span>
             <b>報告をドキュメントへ転記</b>
@@ -120,33 +227,340 @@ export default function DashboardUI({
     </div>
   );
 
-  const successPanel = (
-    <div className="dash-panel full">
-      <h2>この夏の成功事例（全部門）</h2>
-      {cases.length === 0 ? (
+  // 直近の議事録（全部門）。カードの見た目は「部門会議議事録」画面と同じものを使う。
+  const minutesPanel = (
+    <div className="dash-panel">
+      <h2>
+        直近の議事録
+        <Link href="/dept-minutes" className="panel-more">すべて見る</Link>
+      </h2>
+      {minutes.length === 0 ? (
         <p className="dash-empty">
-          {loading
-            ? '読み込み中…'
-            : 'まだ成功事例はありません。会議AIの「夏の結果報告」でまとめ、'}
-          {!loading && <><Link href="/report">報告</Link>から転記すると、ここに集まります。</>}
+          {loading ? '読み込み中…' : 'まだ保存された議事録はありません。'}
+          {!loading && <> <Link href="/dept-minutes">部門会議</Link>から作れます。</>}
         </p>
       ) : (
-        <ul className="case-list">
-          {cases.slice(0, MAX_SHOWN_CASES).map((c, i) => (
-            <li key={i} className="case-item">
-              <div className="case-head">
-                <span className="case-title">{c.title || '（件名なし）'}</span>
-                <span className="recent-date">{c.campus}／{c.user}　{fmtDateTime(c.ts)}</span>
-              </div>
-              {c.action && <p className="case-line"><b>取り組み</b>{c.action}</p>}
-              {c.result && <p className="case-line"><b>結果</b>{c.result}</p>}
-              {c.point && <p className="case-line"><b>ポイント</b>{c.point}</p>}
-            </li>
-          ))}
+        <ul className="dm-meet-list">
+          {minutes.slice(0, MAX_SHOWN_MINUTES).map((m, i) => {
+            const agenda = summarizeSection(extractSection(m.minutes, '議題') || m.agenda, 2);
+            const decCount = extractDecisions(m.minutes).length;
+            return (
+              <li key={`${m.ts}-${i}`}>
+                <div className="dm-meet-head">
+                  <span className="dm-meet-date">{fmtDateTime(m.date || m.ts)}</span>
+                  <span className="dm-dec-campus">{m.campus}</span>
+                </div>
+                <div className="dm-meet-title">{m.title || '（会議名なし）'}</div>
+                {agenda.length > 0 && (
+                  <ul className="dm-meet-agenda">
+                    {agenda.map((a, k) => <li key={k}>{a}</li>)}
+                  </ul>
+                )}
+                <div className="dm-meet-foot">
+                  <span className="dm-meet-count">
+                    決定 {decCount} 件{m.user && ` ／ ${m.user}`}
+                  </span>
+                  <button className="dm-detail" onClick={() => setOpenMinutes(m)}>詳細</button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
   );
+
+  // 直近の事前共有事項。会議AIで作り「報告」で転記した「協議・決裁・報告」を全部門分まとめる。
+  // 会議の前にここを見れば、当日どこで議論になるかが分かる状態にするのが狙い。
+  const sharePanel = (
+    <div className="dash-panel">
+      <h2>
+        直近の事前共有事項
+        <Link href="/chat" className="panel-more">会議AIでつくる</Link>
+      </h2>
+      {shareItems.length === 0 ? (
+        <p className="dash-empty">
+          {loading
+            ? '読み込み中…'
+            : 'まだ事前共有事項はありません。会議AIで事前報告をまとめ、'}
+          {!loading && <><Link href="/report">報告</Link>から転記すると、ここに集まります。</>}
+        </p>
+      ) : (
+        <ul className="share-list">
+          {[...shareItems]
+            .sort((a, b) => (SHARE_ORDER[a.kind] ?? 9) - (SHARE_ORDER[b.kind] ?? 9))
+            .slice(0, MAX_SHOWN_SHARE)
+            .map((s, i) => (
+              <li key={`${s.ts}-${i}`} className={`share-item ${s.kind === '協議' ? 'k-giron' : s.kind === '決裁' ? 'k-kessai' : 'k-hokoku'}`}>
+                <div className="share-top">
+                  <span className="share-kind">{s.kind || '報告'}</span>
+                  <span className="share-meta">{s.campus}／{s.user}　{fmtDateTime(s.ts)}</span>
+                </div>
+                <div className="share-title">{s.title}</div>
+                {/* 経緯・論点・意見はカードに入れると見切れるので、詳細で全文を読む */}
+                <div className="share-foot">
+                  <button className="dm-detail" onClick={() => setOpenShare(s)}>詳細</button>
+                </div>
+              </li>
+            ))}
+        </ul>
+      )}
+    </div>
+  );
+
+  // 部門会議の事前共有（全部門）。「部門会議議事録」の手順1で［事前共有で報告する］を押した会議。
+  // 出席者が議題・レジュメを見ながら会議を進められるよう、今日の会議をいちばん上に出す。
+  // 議事録を保存した会議は外れて「直近の議事録」に移る（並べ方・外し方は upcomingPreshares）。
+  const upcoming = upcomingPreshares(preshares, localDay());
+  const preshareRest = upcoming.length - MAX_SHOWN_PRESHARE;
+  const presharePanel = (
+    <div className="dash-panel">
+      <h2>
+        部門会議の事前共有
+        <Link href="/dept-minutes" className="panel-more">事前共有する</Link>
+      </h2>
+      {upcoming.length === 0 ? (
+        <p className="dash-empty">
+          {loading ? '読み込み中…' : 'これからの部門会議の事前共有はありません。'}
+          {!loading && (
+            <>
+              {' '}
+              <Link href="/dept-minutes">部門会議</Link>の「1 会議の情報・事前共有」を入力して［事前共有で報告する］を押すと、ここに載ります。
+            </>
+          )}
+        </p>
+      ) : (
+        <>
+          <PreshareList
+            views={upcoming.slice(0, MAX_SHOWN_PRESHARE)}
+            grid
+            onOpen={(row, when) => setOpenPreshare({ row, when })}
+            onStart={startFromPreshare}
+          />
+          {preshareRest > 0 && (
+            <p className="dept-items-note">
+              ほかに {preshareRest} 件あります。<Link href="/dept-minutes">部門会議</Link>の画面ですべて見られます。
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+
+  // 部門会議の画面へ、下書き（会議情報・議題）を渡してから移る。
+  // この端末に作りかけの議事録（文字起こし・メモ・議事録）が残っていれば、消す前に確かめる。
+  function openInMinutes(d: MinutesDraft) {
+    if (draftHasWork(readDraft()) && !confirm('この端末に作りかけの議事録があります。消して、この会議の下書きを開きますか？')) return;
+    stashDraft(d);
+    window.location.href = '/dept-minutes';
+  }
+
+  // 事前共有の会議の議事録づくりを始める。
+  function startFromPreshare(row: PreshareRow) {
+    // 同じ会議を入力中なら、作りかけの内容を残したまま画面を開く。
+    if (readDraft()?.preshareId === row.id) {
+      window.location.href = '/dept-minutes';
+      return;
+    }
+    openInMinutes({
+      ...draftFromPreshare(row),
+      notice: '事前共有の会議を読み込みました。手順2で音声を取り込んでください。議事録を保存すると、この事前共有に結び付きます。',
+    });
+  }
+
+  // 部門会議のループ：保存した議事録から、次回の会議の下書き（引き継ぎの議題つき）を作る。
+  function startNext(row: MinutesRow) {
+    openInMinutes({
+      ...draftForNext(row),
+      notice: '前回の議事録から、次回の会議情報と議題の下書きを作りました。開催日時と「今回の議題」を書き足して、［事前共有で報告する］を押してください。',
+    });
+  }
+
+  // 直近の中間報告（全部門）。
+  // 部門ごとの直近1件を新しい順に出す。単純に新しい順の N 件にすると、報告の多い部門で
+  // 埋まって他部門が見えなくなる。「自部門だけでなく他部門も見られる」ことが目的なので、
+  // 部門を1件ずつ拾ったうえで新しい順に並べる。
+  const progressPanel = (
+    <div className="dash-panel full">
+      <h2>
+        直近の中間報告（全部門）
+        <Link href="/progress" className="panel-more">中間報告を送る</Link>
+      </h2>
+      {recentProgress.length === 0 ? (
+        <p className="dash-empty">
+          {loading ? '読み込み中…' : 'まだ中間報告はありません。'}
+          {!loading && <> <Link href="/progress">中間報告</Link>から送れます。</>}
+        </p>
+      ) : (
+        <ul className="prog-list">
+          {recentProgress.map((it) => {
+            const shown = it.progress.slice(0, MAX_SHOWN_PROGRESS_ITEMS);
+            const rest = it.progress.length - shown.length;
+            return (
+              <li key={`${it.campus}-${it.ts}`} className={`prog-item${it.campus === campus ? ' mine' : ''}`}>
+                <div className="prog-top">
+                  <span className="prog-campus">{it.campus}</span>
+                  {it.campus === campus && <span className="prog-mine">自部門</span>}
+                  <span className="share-meta">{it.user}　{fmtDateTime(it.ts)}</span>
+                </div>
+                {shown.length === 0 ? (
+                  <div className="member-progress-empty">報告内容の記録がありません。</div>
+                ) : (
+                  <ul className="member-progress">
+                    {shown.map((p, i) => (
+                      <li key={i}>
+                        <span className="progress-name">{p.name}</span>
+                        <span className={`progress-status ${p.status === '完了' ? 'done' : ''}`}>
+                          {p.status || '—'}
+                        </span>
+                      </li>
+                    ))}
+                    {rest > 0 && <li className="progress-more">他{rest}件</li>}
+                  </ul>
+                )}
+                {/* 完了予定日・原因・その他の共有事項はカードに入れると見切れるので詳細で読む */}
+                <div className="prog-foot">
+                  <button className="dm-detail" onClick={() => setOpenProgress(it)}>詳細</button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+
+  // 実施中・開始間近の要項。保護者対応でその場で見るものなので、全部門に同じものを出す。
+  const yokoPanel = (
+    <div className="dash-panel full">
+      <h2>
+        実施期間中の要項
+        <Link href="/helpdesk" className="panel-more">要項QAで聞く</Link>
+      </h2>
+      {yoko.length === 0 ? (
+        <p className="dash-empty">
+          {loading ? '読み込み中…' : '実施中・開始間近の要項はありません。'}
+          {!loading && <> <Link href="/helpdesk">要項QA</Link>で確定済みの一覧を見られます。</>}
+        </p>
+      ) : (
+        <div className="iqa-cards">
+          {yoko.slice(0, MAX_SHOWN_YOKO).map((c) => (
+            <YokoCard key={c.file} card={c} compact />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  // 成功事例は既定では畳んでおく。毎日見るものではないので、
+  // 議事録・共有事項・要項より前に場所を取らないようにする。
+  const successPanel = (
+    <div className="dash-panel full">
+      <h2>
+        成功事例（全部門）
+        <button
+          type="button"
+          className="panel-more as-button"
+          onClick={() => setShowCases((v) => !v)}
+          aria-expanded={showCases}
+        >
+          {showCases ? '閉じる' : `成功事例を見る${cases.length > 0 ? `（${cases.length}件）` : ''}`}
+        </button>
+      </h2>
+      {showCases && (
+        cases.length === 0 ? (
+          <p className="dash-empty">
+            {loading
+              ? '読み込み中…'
+              : 'まだ成功事例はありません。会議AIの「月次報告」「講習の結果報告」でまとめ、「報告完了」と送ると'}
+            {!loading && 'ここに集まります。'}
+          </p>
+        ) : (
+          <ul className="case-list">
+            {cases.slice(0, MAX_SHOWN_CASES).map((c, i) => (
+              <li key={i} className="case-item">
+                <div className="case-head">
+                  <span className="case-title">{c.title || '（件名なし）'}</span>
+                  <span className="recent-date">{c.campus}／{c.user}　{fmtDateTime(c.ts)}</span>
+                </div>
+                {c.action && <p className="case-line"><b>取り組み</b>{c.action}</p>}
+                {c.result && <p className="case-line"><b>結果</b>{c.result}</p>}
+                {c.point && <p className="case-line"><b>ポイント</b>{c.point}</p>}
+              </li>
+            ))}
+          </ul>
+        )
+      )}
+    </div>
+  );
+
+  // ── 中間報告を止めているあいだのダッシュボード ──
+  // 直近の議事録と、いま使う要項を出す。SHOW_PROGRESS を true に戻すと、
+  // ここを素通りして下の従来のダッシュボード（提出状況）に戻る。
+  if (!SHOW_PROGRESS) {
+    return (
+      <div className="dash">
+        <div className="page-head">
+          <h1>ダッシュボード</h1>
+          <p>
+            {campus}／{name} さん、おつかれさまです。
+            これからの部門会議の議題（事前共有）・直近の議事録・実施期間中の要項をまとめます。
+          </p>
+        </div>
+
+        {note && <p className="dash-note">{note}</p>}
+
+        <div className="dash-grid">
+          {SHOW_QUICKSTART && quickStart}
+          {/* 部門会議の事前共有（左）と直近の議事録（右）を、横幅いっぱいを2等分して並べる。
+              会議前に議題を見て、会議のあとに議事録を見る（部門会議の行き来がひと目で分かる）。
+              直近の事前共有事項は SHOW_SHARE_ITEMS を true に戻すと、この下に出る。 */}
+          <div className="dash-pair">
+            {presharePanel}
+            {minutesPanel}
+          </div>
+          {SHOW_SHARE_ITEMS && sharePanel}
+          {SHOW_RECENT_PROGRESS && progressPanel}
+          {yokoPanel}
+          {successPanel}
+        </div>
+
+        {/* 議事録の詳細（ポップアップ）。議事録画面と同じ部品を使う。 */}
+        {openMinutes && (
+          <MinutesDetail
+            row={openMinutes}
+            onClose={() => setOpenMinutes(null)}
+            // 編集画面はダッシュボードに無いので、内容を渡してから議事録の画面へ移る。
+            onEdit={() => {
+              stashDraft(draftFromRow(openMinutes));
+              window.location.href = '/dept-minutes';
+            }}
+            onNext={() => startNext(openMinutes)}
+          />
+        )}
+        {openShare && (
+          <ShareItemDetail row={openShare} onClose={() => setOpenShare(null)} />
+        )}
+        {openPreshare && (
+          <PreshareDetail
+            row={openPreshare.row}
+            when={openPreshare.when}
+            me={name}
+            onClose={() => setOpenPreshare(null)}
+            onStart={() => startFromPreshare(openPreshare.row)}
+            // 直したら、開いている詳細と一覧の両方を入れ替える（読み込み直さずに済む）。
+            onSaved={(next) => {
+              setPreshares((rows) => rows.map((r) => (r.id === next.id ? next : r)));
+              setOpenPreshare((o) => (o ? { ...o, row: next } : o));
+            }}
+          />
+        )}
+        {openProgress && (
+          <ProgressDetail row={openProgress} onClose={() => setOpenProgress(null)} />
+        )}
+      </div>
+    );
+  }
 
   // ── 管理部門（総務・人事・支援・管理）：全部門の提出状況を俯瞰する ──
   if (isAdmin) {
@@ -175,7 +589,7 @@ export default function DashboardUI({
         </div>
 
         <div className="dash-grid">
-          {quickStart}
+          {SHOW_QUICKSTART && quickStart}
 
           <div className="dash-panel">
             <h2>部門別の中間報告状況</h2>
@@ -248,7 +662,7 @@ export default function DashboardUI({
       </div>
 
       <div className="dash-grid">
-        {quickStart}
+        {SHOW_QUICKSTART && quickStart}
 
         <div className="dash-panel wide">
           <h2>報告すべき項目・期日</h2>

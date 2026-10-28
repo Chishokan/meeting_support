@@ -8,3 +8,6 @@ out/
 .vercel
 next-env.d.ts
 tsconfig.tsbuildinfo
+
+# 問合せ管理（/inquiry-board）の開発用ローカル保存先（APPS_SCRIPT_URL 未設定時）
+.data/

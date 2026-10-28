@@ -1,0 +1,415 @@
+'use client';
+
+// 門配管理：月間一覧。地区を切り替え、「日付 × 学校」の表で1か月の計画と実績を見渡す。
+// 表の上に学校ごとのボトム（最低配布数）と達成率を出し、足りない学校がひと目で分かるようにする。
+
+import { useEffect, useMemo, useState } from 'react';
+import {
+  DISTRICTS, RATES, bottomOf, daysOf, findStaffConflicts, settingFor, shiftMonth, todayJst, weekOf,
+  type MonpaiRecord, type School,
+} from '@/lib/monpai/model';
+import { draftPlanApi, fetchMaster, fetchMaterials, fetchRecords, masterApi, reasonText, saveRecordApi, type Master, type PlanItem } from '@/lib/monpai/client';
+import { startTime } from '@/lib/monpai/history';
+import MonpaiRecordForm, { type Draft } from './MonpaiRecordForm';
+
+const DISTRICT_KEY = 'monpai.district';
+
+const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
+
+export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) {
+  const today = todayJst();
+  const [district, setDistrict] = useState<string>(DISTRICTS[0]);
+  const [month, setMonth] = useState(today.slice(0, 7));
+  const [master, setMaster] = useState<Master | null>(null);
+  const [records, setRecords] = useState<MonpaiRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [cellList, setCellList] = useState<{ date: string; school: string } | null>(null);
+  const [materialNames, setMaterialNames] = useState<string[]>([]);
+  const [plan, setPlan] = useState<{ summary: string; items: (PlanItem & { pick: boolean })[]; dropped: number; basis?: { months: number; visits: number; staff: number } } | null>(null);
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planMsg, setPlanMsg] = useState('');
+  const [rateEdit, setRateEdit] = useState<{ school: string; value: string } | null>(null);
+  const [rateBusy, setRateBusy] = useState(false);
+  const [rateMsg, setRateMsg] = useState('');
+
+  // 前回見ていた地区を覚えておく（端末ごと。読めなくても動く）
+  useEffect(() => {
+    try {
+      const d = localStorage.getItem(DISTRICT_KEY);
+      if (d && (DISTRICTS as readonly string[]).includes(d)) setDistrict(d);
+    } catch {}
+  }, []);
+  function pickDistrict(d: string) {
+    setDistrict(d);
+    try { localStorage.setItem(DISTRICT_KEY, d); } catch {}
+  }
+
+  useEffect(() => {
+    fetchMaster().then((r) => (r.ok ? setMaster(r.master) : setError(reasonText(r.reason))));
+    fetchMaterials().then((r) => r.ok && setMaterialNames(r.items.map((i) => i.name)));
+  }, []);
+
+  // ボトムの率をこの月・この学校だけ変える（月別設定に保存。学校マスタの画面の「月別設定」と同じもの）
+  async function saveRate(school: School, value: string | null) {
+    const own = master?.settings.find((x) => x.month === month && x.school === school.name);
+    const recruit = !!settingFor(master?.settings ?? [], month, school.name)?.recruit;
+    setRateBusy(true);
+    setRateMsg('');
+    // 既定に戻す：この学校だけの設定を消す（募集期の印が付いていれば、率だけ空にして残す）
+    const r = value === null
+      ? own?.recruit
+        ? await masterApi('POST', { type: 'setting', month, school: school.name, rate: '', recruit: true })
+        : own ? await masterApi('DELETE', { type: 'setting', month, school: school.name }) : { ok: true }
+      : await masterApi('POST', { type: 'setting', month, school: school.name, rate: value, recruit });
+    setRateBusy(false);
+    if (!r.ok) return setRateMsg(r.errors?.join(' ') || reasonText(r.reason ?? ''));
+    setRateEdit(null);
+    const m = await fetchMaster();
+    if (m.ok) setMaster(m.master);
+  }
+
+  async function makePlan() {
+    setPlanBusy(true);
+    setPlanMsg('');
+    const r = await draftPlanApi(district, month);
+    setPlanBusy(false);
+    if (!r.ok) return setPlanMsg(reasonText(r.reason));
+    setPlan({ summary: r.summary, dropped: r.dropped, basis: r.basis, items: r.items.map((i) => ({ ...i, pick: true })) });
+  }
+
+  async function adoptPlan() {
+    if (!plan) return;
+    setPlanBusy(true);
+    setPlanMsg('');
+    const saved: MonpaiRecord[] = [];
+    let failed = 0;
+    for (const p of plan.items.filter((i) => i.pick)) {
+      const r = await saveRecordApi({
+        district, date: p.date, time: p.time, school: p.school, staff1: p.staff1, staff2: p.staff2,
+        material: p.material, planned: p.planned, done: null, status: '予定', reason: '', memo: '',
+      });
+      if (r.ok) saved.push(r.item); else failed++;
+    }
+    setPlanBusy(false);
+    setRecords((prev) => [...prev, ...saved]);
+    if (failed) setPlanMsg(`${saved.length}件を登録しました。${failed}件は登録できませんでした。`);
+    else setPlan(null);
+  }
+
+  useEffect(() => {
+    setLoading(true);
+    fetchRecords([month]).then((r) => {
+      setLoading(false);
+      if (r.ok) { setRecords(r.items); setError(''); } else setError(reasonText(r.reason));
+    });
+  }, [month]);
+
+  const schools: School[] = useMemo(
+    () => (master?.schools ?? []).filter((s) => s.district === district).sort((a, b) => a.order - b.order),
+    [master, district],
+  );
+  const days = useMemo(() => daysOf(month), [month]);
+  const inDistrict = useMemo(() => records.filter((r) => r.district === district), [records, district]);
+
+  const cell = (date: string, school: string) => inDistrict.filter((r) => r.date === date && r.school === school);
+
+  // 担当の重なり（全地区）：同じ人・同じ日・時間が重なる予定。この地区に関係するものを上に出す
+  const conflicts = useMemo(() => findStaffConflicts(records), [records]);
+  const conflictIds = useMemo(() => new Set(conflicts.flatMap((c) => c.items.map((r) => r.id))), [conflicts]);
+  const mineFirst = [...conflicts].sort((a, b) => Number(!a.items.some((r) => r.district === district)) - Number(!b.items.some((r) => r.district === district)));
+
+  const summary = schools.map((s) => {
+    const rs = inDistrict.filter((r) => r.school === s.name && r.status !== '中止');
+    const planned = rs.reduce((a, r) => a + r.planned, 0);
+    const done = rs.reduce((a, r) => a + (r.done ?? 0), 0);
+    const st = settingFor(master?.settings ?? [], month, s.name);
+    return { school: s, ...bottomOf(s, master?.settings ?? [], month), planned, done, custom: st?.rate != null };
+  });
+  const total = summary.reduce(
+    (a, x) => ({ bottom: a.bottom + x.bottom, planned: a.planned + x.planned, done: a.done + x.done }),
+    { bottom: 0, planned: 0, done: 0 },
+  );
+
+  function openCell(date: string, school: string) {
+    const rs = cell(date, school);
+    if (rs.length === 0) setDraft({ date, district, school });
+    else if (rs.length === 1) setDraft(rs[0]);
+    else setCellList({ date, school });
+  }
+
+  function onSaved(r: MonpaiRecord) {
+    setRecords((prev) => {
+      const rest = prev.filter((x) => x.id !== r.id);
+      return r.date.startsWith(month) ? [...rest, r] : rest;
+    });
+    setDraft(null);
+  }
+  function onDeleted(id: string) {
+    setRecords((prev) => prev.filter((x) => x.id !== id));
+    setDraft(null);
+  }
+
+  const [y, m] = month.split('-');
+
+  return (
+    <div className="mp">
+      <div className="mp-toolbar">
+        <div className="mp-tabs">
+          {DISTRICTS.map((d) => (
+            <button key={d} className={`mp-tab ${d === district ? 'active' : ''}`} onClick={() => pickDistrict(d)}>
+              {d}
+            </button>
+          ))}
+        </div>
+        <div className="mp-month">
+          <button className="mp-btn" onClick={() => setMonth(shiftMonth(month, -1))} aria-label="前の月">◀</button>
+          <span className="mp-month-label">{y}年{Number(m)}月</span>
+          <button className="mp-btn" onClick={() => setMonth(shiftMonth(month, 1))} aria-label="次の月">▶</button>
+          {month !== today.slice(0, 7) && (
+            <button className="mp-btn" onClick={() => setMonth(today.slice(0, 7))}>今月</button>
+          )}
+          <button className="mp-btn ai" disabled={planBusy || schools.length === 0} onClick={makePlan}>
+            {planBusy && !plan ? 'AIが計画案を作成中…' : 'AIで計画案を作る'}
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="mp-note">{error}</div>}
+      {planMsg && !plan && <div className="mp-note">{planMsg}</div>}
+      {master?.backend === 'local' && (
+        <div className="mp-note">手元の開発用の保存先（.data/monpai.json）を使っています。</div>
+      )}
+
+      {master && schools.length === 0 ? (
+        <div className="mp-empty">
+          {district}地区の学校がまだ登録されていません。門配管理のスプレッドシートの「学校マスタ」に追加してください。
+        </div>
+      ) : (
+        <>
+          <div className="ib-table-wrap mp-summary-wrap">
+            <table className="mp-summary">
+              <thead>
+                <tr>
+                  <th>学校</th><th className="mp-num">生徒数</th><th className="mp-num">ボトム</th>
+                  <th className="mp-num">計画</th><th className="mp-num">実績</th><th className="mp-bar-col">達成率（実績÷ボトム）</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.map((x) => {
+                  const p = pct(x.done, x.bottom);
+                  const planP = pct(x.planned, x.bottom);
+                  return (
+                    <tr key={x.school.name}>
+                      <td className="mp-school">{x.school.name}</td>
+                      <td className="mp-num">{x.school.students}</td>
+                      <td className="mp-num">
+                        {x.bottom}
+                        {rateEdit?.school === x.school.name ? (
+                          <span className="mp-rate-edit">
+                            <input
+                              type="number" min={1} max={100} step={1} autoFocus aria-label="ボトムの率（%）"
+                              value={rateEdit.value}
+                              onChange={(e) => setRateEdit({ ...rateEdit, value: e.target.value })}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveRate(x.school, rateEdit.value);
+                                if (e.key === 'Escape') setRateEdit(null);
+                              }}
+                            />%
+                            <button className="mp-btn primary" disabled={rateBusy} onClick={() => saveRate(x.school, rateEdit.value)}>保存</button>
+                            <button className="mp-btn" disabled={rateBusy} onClick={() => saveRate(x.school, null)} title={`既定（${Math.round((x.recruit ? RATES[x.school.kind].recruit : RATES[x.school.kind].normal) * 100)}%）に戻す`}>既定</button>
+                            <button className="mp-btn" disabled={rateBusy} onClick={() => setRateEdit(null)} aria-label="やめる">×</button>
+                          </span>
+                        ) : (
+                          <button
+                            className={`mp-rate mp-rate-btn ${x.custom ? 'custom' : ''}`}
+                            title="押すと、この月のこの学校の率を変えられます"
+                            onClick={() => { setRateMsg(''); setRateEdit({ school: x.school.name, value: String(Math.round(x.rate * 100)) }); }}
+                          >
+                            {Math.round(x.rate * 100)}%{x.recruit ? '・募集期' : ''}{x.custom ? '（変更）' : ''} ✎
+                          </button>
+                        )}
+                      </td>
+                      <td className={`mp-num ${x.planned < x.bottom ? 'short' : ''}`}>{x.planned}</td>
+                      <td className="mp-num">{x.done}</td>
+                      <td>
+                        <div className="mp-bar" title={`計画 ${planP}% ／ 実績 ${p}%`}>
+                          <div className="mp-bar-plan" style={{ width: `${Math.min(planP, 100)}%` }} />
+                          <div className={`mp-bar-done ${p >= 100 ? 'ok' : ''}`} style={{ width: `${Math.min(p, 100)}%` }} />
+                          <span className="mp-bar-label">{p}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr className="mp-total">
+                  <td>地区合計</td><td />
+                  <td className="mp-num">{total.bottom}</td>
+                  <td className="mp-num">{total.planned}</td>
+                  <td className="mp-num">{total.done}</td>
+                  <td className="mp-num">{pct(total.done, total.bottom)}%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          {rateMsg && <div className="mp-note">{rateMsg}</div>}
+          <p className="mp-legend">
+            <span className="mp-key plan" />計画 <span className="mp-key done" />実績　計画がボトムに届かない学校は計画の数字が赤。表のマスを押すと追加・編集できます。ボトムの下の「20% ✎」を押すと、この月の率を学校ごとに変えられます。
+          </p>
+
+          {conflicts.length > 0 && (
+            <div className="mp-conflicts" role="status">
+              <h3>担当の重なり（全地区）<span className="mp-count">{conflicts.length}</span></h3>
+              <p className="mp-muted">同じ人が同じ日に、時間の重なる門配を2か所以上持っています。時間がずれていれば（例 15:15 と 17:30）重なりにはしません。</p>
+              <ul>
+                {mineFirst.map((c) => (
+                  <li key={c.date + c.staff} className={c.kind === '重なり' ? 'bad' : 'warn'}>
+                    <b>{Number(c.date.slice(5, 7))}/{Number(c.date.slice(8))}（{weekOf(c.date)}） {c.staff}</b>
+                    <span className="mp-conflict-kind">{c.kind === '重なり' ? '時間が重なる' : '時間未定のため要確認'}</span>
+                    <span className="mp-conflict-items">
+                      {c.items.map((r) => (
+                        <button key={r.id} className="mp-link" onClick={() => { pickDistrict(r.district); setDraft(r); }}>
+                          {r.district}・{r.school} {r.time || '時間未定'}
+                        </button>
+                      ))}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="ib-table-wrap">
+            <table className="mp-grid">
+              <thead>
+                <tr>
+                  <th className="mp-day">日</th>
+                  <th className="mp-day">曜</th>
+                  {schools.map((s) => <th key={s.name}>{s.name}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {days.map((d) => (
+                  <tr key={d.date} className={`${d.holiday ? 'holiday' : ''} ${d.date === today ? 'today' : ''}`}>
+                    <td className="mp-day">{d.day}</td>
+                    <td className="mp-day mp-week-cell">{d.week}</td>
+                    {schools.map((s) => {
+                      const rs = cell(d.date, s.name);
+                      const planned = rs.filter((r) => r.status !== '中止').reduce((a, r) => a + r.planned, 0);
+                      const reported = rs.filter((r) => r.done != null);
+                      const done = reported.reduce((a, r) => a + (r.done ?? 0), 0);
+                      const canceled = rs.length > 0 && rs.every((r) => r.status === '中止');
+                      const unreported = rs.some((r) => r.status === '予定') && d.date < today;
+                      const cls = canceled ? 'canceled' : unreported ? 'unreported' : reported.length && done >= planned ? 'done' : rs.length ? 'planned' : '';
+                      const clash = rs.some((r) => conflictIds.has(r.id));
+                      return (
+                        <td key={s.name} className="mp-cell-td">
+                          <button
+                            className={`mp-cell ${cls} ${clash ? 'conflict' : ''}`}
+                            onClick={() => openCell(d.date, s.name)}
+                            title={(clash ? '担当の予定が重なっています\n' : '') + rs.map((r) => `${r.time} ${r.staff1}${r.staff2 ? '・' + r.staff2 : ''} ${r.material}`).join('\n')}
+                          >
+                            {rs.length > 0 && (
+                              <>
+                                <span className="mp-cell-num">
+                                  {canceled ? '中止' : `${planned}/${reported.length ? done : '—'}`}
+                                </span>
+                                {(() => {
+                                  // 配布の開始時刻（「17:30-18:15」→ 17:30）。時刻の無い予定は出さない
+                                  const times = Array.from(new Set(rs.map((r) => startTime(r.time)).filter(Boolean)));
+                                  return times.length > 0 && <span className="mp-cell-time">{times.join('・')}〜</span>;
+                                })()}
+                                <span className="mp-cell-staff">
+                                  {Array.from(new Set(rs.flatMap((r) => [r.staff1, r.staff2]).filter(Boolean))).join('・')}
+                                </span>
+                              </>
+                            )}
+                          </button>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mp-legend">マスの数字は「計画/実績」、その下が配布の開始時刻と担当。<span className="mp-key unreported" />過ぎた日で実績が未報告　<span className="mp-key done" />計画どおり配布済み</p>
+        </>
+      )}
+      {loading && <div className="mp-loading">読み込み中…</div>}
+
+      {cellList && (
+        <div className="mp-modal-bg" onClick={() => setCellList(null)}>
+          <div className="mp-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="mp-modal-head"><h2>{cellList.date.slice(5).replace('-', '/')} {cellList.school}</h2></div>
+            <div className="mp-form">
+              {cell(cellList.date, cellList.school).map((r) => (
+                <button key={r.id} className="mp-list-item" onClick={() => { setCellList(null); setDraft(r); }}>
+                  {r.time || '時間未定'}　{r.staff1}{r.staff2 ? '・' + r.staff2 : ''}　計画{r.planned}／実績{r.done ?? '—'}{r.status === '中止' ? '（中止）' : ''}
+                </button>
+              ))}
+            </div>
+            <div className="mp-modal-foot">
+              <span className="mp-spacer" />
+              <button className="mp-btn" onClick={() => setCellList(null)}>閉じる</button>
+              <button className="mp-btn primary" onClick={() => { const c = cellList; setCellList(null); setDraft({ date: c.date, district, school: c.school }); }}>＋ 追加</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {plan && (
+        <div className="mp-modal-bg">
+          <div className="mp-modal wide" role="dialog" aria-modal="true">
+            <div className="mp-modal-head"><h2>AIの計画案</h2><span className="mp-modal-sub">{district}地区・{y}年{Number(m)}月</span></div>
+            <div className="mp-form">
+              {plan.basis && (
+                <p className="mp-muted">
+                  {plan.basis.visits > 0
+                    ? `直近${plan.basis.months}か月の実績 ${plan.basis.visits} 回分（受け取り率・曜日・時間・担当）をもとに作成しました。`
+                    : 'この地区にはまだ実績が無いため、一般的な目安で作成しました。'}
+                  {plan.basis.staff === 0 && ' この地区は担当者の記録が無いため、担当はすべて「未定」にしています。'}
+                </p>
+              )}
+              {plan.summary && <p className="mp-plan-summary">{plan.summary}</p>}
+              {plan.items.length === 0 && <p className="mp-muted">追加が必要な予定はありません（またはボトムを満たしています）。</p>}
+              {plan.items.map((p, i) => (
+                <label key={i} className={`mp-plan-item ${p.pick ? '' : 'off'}`}>
+                  <input type="checkbox" checked={p.pick} onChange={(e) => setPlan({ ...plan, items: plan.items.map((x, j) => (j === i ? { ...x, pick: e.target.checked } : x)) })} />
+                  <span className="mp-plan-main">
+                    <span><b>{Number(p.date.slice(5, 7))}/{Number(p.date.slice(8))}（{daysOf(month).find((d) => d.date === p.date)?.week}）</b> {p.time} <b className="mp-card-school">{p.school}</b> {p.planned}部</span>
+                    <span className="mp-plan-sub">担当 {[p.staff1, p.staff2].filter(Boolean).join('・') || '未定'}{p.material ? `　${p.material}` : ''}</span>
+                    {p.why && <span className="mp-plan-why">{p.why}</span>}
+                  </span>
+                </label>
+              ))}
+              {plan.dropped > 0 && <p className="mp-muted">条件に合わない案（土日・地区外の学校・既存の予定と重なる等）を {plan.dropped} 件除きました。</p>}
+              {planMsg && <div className="mp-err">{planMsg}</div>}
+            </div>
+            <div className="mp-modal-foot">
+              <span className="mp-muted">登録後に表のマスから日付・担当・部数を直せます。</span>
+              <span className="mp-spacer" />
+              <button className="mp-btn" disabled={planBusy} onClick={() => { setPlan(null); setPlanMsg(''); }}>閉じる</button>
+              <button className="mp-btn primary" disabled={planBusy || !plan.items.some((i) => i.pick)} onClick={adoptPlan}>
+                {planBusy ? '登録中…' : `選んだ ${plan.items.filter((i) => i.pick).length} 件を登録`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {draft && (
+        <MonpaiRecordForm
+          draft={draft}
+          schools={schools}
+          staffNames={staffNames}
+          materialNames={materialNames}
+          onClose={() => setDraft(null)}
+          onSaved={onSaved}
+          onDeleted={onDeleted}
+        />
+      )}
+    </div>
+  );
+}

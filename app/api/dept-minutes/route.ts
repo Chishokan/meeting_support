@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/core/auth';
 import { MODEL, THINKING } from '@/lib/systemPrompt';
 import {
   buildDeptMinutesPrompt,
@@ -7,8 +7,8 @@ import {
   buildReviseRequest,
   type MeetingMeta,
 } from '@/lib/deptMinutesPrompt';
-import { logInteraction } from '@/lib/log';
-import { stripRoleBleed } from '@/lib/sanitize';
+import { logInteraction } from '@/lib/core/log';
+import { stripRoleBleed } from '@/lib/core/sanitize';
 
 // モデルが偽の user/assistant ターン（崩れた us/use/usb を含む）を書き始めたら即停止させる。
 const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
@@ -43,17 +43,27 @@ export async function POST(req: Request) {
   const mode = body?.mode === 'revise' ? 'revise' : 'draft';
   const meta = readMeta(body?.meta);
   const transcript = String(body?.transcript ?? '').trim();
-  if (!transcript) return new Response('transcript required', { status: 400 });
-  if (transcript.length > MAX_TRANSCRIPT) return new Response('transcript too long', { status: 413 });
+  // 会議中に人が書いたメモ（任意）。文字起こしと一緒に渡す。
+  const memo = String(body?.memo ?? '').trim();
+  // 新規作成は録音かメモが要る（どちらか一方でよい）。
+  // 保存済みの議事録を直すときは文字起こしが手元に無いので、議事録本文があればよい。
+  if (transcript.length + memo.length > MAX_TRANSCRIPT) {
+    return new Response('transcript too long', { status: 413 });
+  }
 
   const draft = String(body?.draft ?? '');
   const instruction = String(body?.instruction ?? '').trim();
-  if (mode === 'revise' && !instruction) return new Response('instruction required', { status: 400 });
+  if (mode === 'revise') {
+    if (!instruction) return new Response('instruction required', { status: 400 });
+    if (!draft.trim()) return new Response('draft required', { status: 400 });
+  } else if (!transcript && !memo) {
+    return new Response('transcript or memo required', { status: 400 });
+  }
 
   const userText =
     mode === 'revise'
-      ? buildReviseRequest(meta, transcript, draft, instruction)
-      : buildDraftRequest(meta, transcript);
+      ? buildReviseRequest(meta, transcript, draft, instruction, memo)
+      : buildDraftRequest(meta, transcript, memo);
 
   const encoder = new TextEncoder();
   let full = '';
@@ -103,7 +113,7 @@ export async function POST(req: Request) {
           await logInteraction({
             user: session.name,
             campus: session.campus,
-            input: `[部門会議議事録/${mode}] ${meta.title || '（会議名未入力）'}｜文字起こし${transcript.length}字${instruction ? `｜修正指示：${instruction}` : ''}`,
+            input: `[部門会議議事録/${mode}] ${meta.title || '（会議名未入力）'}｜文字起こし${transcript.length}字${memo ? `｜メモ${memo.length}字` : ''}${instruction ? `｜修正指示：${instruction}` : ''}`,
             output: stripRoleBleed(full),
           });
         } catch {}
