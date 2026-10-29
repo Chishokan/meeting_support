@@ -29,6 +29,8 @@
  *     ※ 旧スプレッドシートの行を台帳へ移すときは、GAS エディタで importLegacyInquiryBoard() を一度実行する（何度実行しても二重登録しない）。
  *   - action:'getKenshuAnswer' / 'saveKenshuAnswer'
  *                               … 全体研修会アンケート（/kenshu）→ 「研修会アンケート」シートに1人1行（研修会×部門×氏名）。送り直すと上書き
+ *     ※アプリにログインできないスタッフ用の Google フォームは、GAS エディタで createKenshuForm() を一度実行すると作られる
+ *       （回答は同じ「研修会アンケート」シートに、アプリの回答と同じ形で入る）
  *   - action:'listGoals'        … 目標管理用 → 中等部会議議事録（GOALS_BOOK_ID）の「秋～冬行動計画」タブから月×校舎×指標の目標／実績を返す
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
  *
@@ -931,6 +933,133 @@ function saveKenshuAnswer_(data) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ===== 全体研修会アンケートの Google フォーム（アプリにログインできないスタッフ用） =====
+// 使い方：この内容を Apps Script の新しいファイル（例：kenshu_form.gs）に貼って保存し、
+//         関数 createKenshuForm を選んで一度だけ実行する（初回は権限の承認が出る）。
+//         実行ログに出る「スタッフに配る回答用URL」を配る。
+// 何をするか：
+//  ・アプリと同じ2つの質問（＋お名前・所属）の Google フォームを作る（ログイン不要・送信後も編集できる）
+//  ・回答をこのスプレッドシートの「研修会アンケート（フォーム回答）」タブで受ける
+//  ・送信のたびに onKenshuFormSubmit が動き、「研修会アンケート」タブにもアプリの回答と同じ形で
+//    1人1行（研修会×所属×お名前）入れる。回答を編集して送り直すと同じ行を上書きする
+// 何度実行してもフォームは1つだけ（2回目以降は送信のトリガーを張り直し、URL を出し直すだけ）。
+// ※同じプロジェクトにある saveKenshuAnswer_（研修会アンケートの保存）を使う。
+var KENSHU_SURVEY_ID = '2026-10-31'; // ★lib/kenshu/survey.ts の SURVEY.id と同じにする
+var KENSHU_FORM_TITLE = '全体研修会アンケート（10/31・土）';
+var KENSHU_FORM_SHEET = '研修会アンケート（フォーム回答）';
+// 所属の選択肢。アプリのログインと同じ書き方にしてある（同じ人がアプリでも出したとき、同じ行にまとまるように）
+var KENSHU_FORM_CAMPUSES = ['小中等部', 'RED個別', '高等部', 'LEC', '英検', 'NEP', '総務・人事・支援・管理', 'その他'];
+// 行頭の「・」「- 」「1.」「(1)」「①」などの印（lib/kenshu/survey.ts の splitLines と同じ）
+var KENSHU_BULLET = /^\s*(?:[・•●○◯◆■□✓✔☐☑]\s*|[-*＊]\s+|\d{1,3}[.)．、）](?!\d)\s*|[(（]\d{1,3}[)）]\s*|[①-⑳]\s*)/;
+
+function createKenshuForm() {
+  var props = PropertiesService.getScriptProperties();
+  var ssId = (typeof SPREADSHEET_ID !== 'undefined' && SPREADSHEET_ID) ? SPREADSHEET_ID : '';
+  var ss = ssId ? SpreadsheetApp.openById(ssId) : SpreadsheetApp.getActiveSpreadsheet();
+  var form = null;
+  var id = props.getProperty('KENSHU_FORM_ID');
+  if (id) {
+    try { form = FormApp.openById(id); } catch (e) { form = null; }
+  }
+
+  if (!form) {
+    form = FormApp.create(KENSHU_FORM_TITLE);
+    form.setDescription([
+      'この1年（2026年11月〜2027年10月）で達成したいこと・やってみたいことを、仕事と人生・プライベートの両方について、思いつくまま書き出してください。',
+      '・1行に1つずつ書きます。いくつでもOKです。',
+      '・送信したあとも、表示される「回答を編集」から研修会の当日まで直せます。',
+      '・研修会の当日は、この内容をもとにグループで話し合います。',
+      '※智翔館アプリにログインできる方は、総合メニューの「全体研修会アンケート」からも回答できます（どちらか一方で大丈夫です）。'
+    ].join('\n'));
+    form.setConfirmationMessage('ありがとうございました。10/31（土）の研修会でお会いしましょう。\n直したいときは「回答を編集」から、研修会の当日まで直せます。');
+    form.setAllowResponseEdits(true);
+    form.setShowLinkToRespondAgain(false);
+    try { form.setRequireLogin(false); } catch (e) { /* Google Workspace 以外のアカウントでは設定できない（既定でログイン不要） */ }
+
+    var items = {};
+    items.name = form.addTextItem()
+      .setTitle('お名前')
+      .setHelpText('フルネームで書いてください（例：智翔 太郎）')
+      .setRequired(true).getId();
+    items.campus = form.addMultipleChoiceItem()
+      .setTitle('所属')
+      .setChoiceValues(KENSHU_FORM_CAMPUSES)
+      .setRequired(true).getId();
+    items.work = form.addParagraphTextItem()
+      .setTitle('1. この1年で、仕事で達成したいこと、やってみたいことを、なんでも書いてください。いくつでもOKです。')
+      .setHelpText('1行に1つずつ書いてください。大きな目標から小さな「やってみたい」まで、思いついた順で大丈夫です。\n例：日野校の新年度スタートを80名にする／後輩を1人、一人で任せられるまで育てる')
+      .setRequired(true).getId();
+    items.life = form.addParagraphTextItem()
+      .setTitle('2. この1年で、人生・プライベートで達成したいこと、やってみたいことを、なんでも書いてみてください。いくつでもOKです。')
+      .setHelpText('1行に1つずつ書いてください。たくさん出してみてください。\n例：家族で北海道に旅行する／フルマラソンを完走する／毎朝30分、本を読む')
+      .setRequired(true).getId();
+
+    // 回答をこのスプレッドシートで受ける。できたタブ（「フォームの回答 1」など）の名前を付け直す
+    var before = ss.getSheets().map(function (s) { return s.getName(); });
+    form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
+    SpreadsheetApp.flush();
+    var added = ss.getSheets().filter(function (s) { return before.indexOf(s.getName()) < 0; });
+    if (added.length === 1 && !ss.getSheetByName(KENSHU_FORM_SHEET)) added[0].setName(KENSHU_FORM_SHEET);
+
+    props.setProperty('KENSHU_FORM_ID', form.getId());
+    props.setProperty('KENSHU_FORM_ITEMS', JSON.stringify(items));
+  }
+
+  // 送信のトリガーは1つだけ張る（何度実行しても二重にならないように、張り直す）
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'onKenshuFormSubmit') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('onKenshuFormSubmit').forForm(form).onFormSubmit().create();
+
+  var url = form.getPublishedUrl();
+  try { url = form.shortenFormUrl(url); } catch (e) { /* 短縮できなくても元の URL で使える */ }
+  Logger.log('スタッフに配る回答用URL：' + url);
+  Logger.log('フォームの編集URL：' + form.getEditUrl());
+  return { url: url, editUrl: form.getEditUrl() };
+}
+
+// フォームの送信（回答の編集を含む）で動く。「研修会アンケート」タブにアプリの回答と同じ形で入れる。
+// ※トリガーから呼ぶので、名前の最後に _ を付けない。
+function onKenshuFormSubmit(e) {
+  var res = e && e.response;
+  if (!res) return;
+  var ids = {};
+  try { ids = JSON.parse(PropertiesService.getScriptProperties().getProperty('KENSHU_FORM_ITEMS') || '{}'); } catch (err) { ids = {}; }
+  var v = {};
+  res.getItemResponses().forEach(function (ir) {
+    var item = ir.getItem();
+    var key = null;
+    for (var k in ids) { if (ids[k] === item.getId()) key = k; }
+    if (!key) key = kenshuFormKeyByTitle_(item.getTitle()); // ID が読めないときは質問の文で見分ける
+    if (key) v[key] = ir.getResponse();
+  });
+  var r = saveKenshuAnswer_({
+    survey: KENSHU_SURVEY_ID,
+    campus: String(v.campus || '').trim(),
+    user: String(v.name || '').replace(/\s+/g, ''), // アプリの氏名と同じく空白なしにそろえる
+    work: kenshuSplit_(v.work),
+    life: kenshuSplit_(v.life)
+  });
+  if (!r.ok) console.warn('[KENSHU_FORM] 研修会アンケートに入れられませんでした：' + r.reason);
+}
+
+function kenshuFormKeyByTitle_(title) {
+  var t = String(title || '');
+  if (t.indexOf('お名前') === 0) return 'name';
+  if (t.indexOf('所属') === 0) return 'campus';
+  if (t.indexOf('1.') === 0) return 'work';
+  if (t.indexOf('2.') === 0) return 'life';
+  return null;
+}
+
+// 段落の回答を1行1つに分ける（箇条書きの印を外し、1行300文字・100個まで）
+function kenshuSplit_(text) {
+  return String(text == null ? '' : text).split(/\r?\n/)
+    .map(function (l) { return l.replace(KENSHU_BULLET, '').trim().slice(0, 300); })
+    .filter(function (l) { return l; })
+    .slice(0, 100);
 }
 
 // 中間報告の「定例項目」を管理するシート（無ければ作成）。
