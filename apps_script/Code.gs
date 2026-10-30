@@ -21,6 +21,7 @@
  *   - action:'listNumberReports' … 会議AI・数値報告画面での参照 → 指定シート（月次数値／講習数値）を新しい順に返す
  *     ※ 旧「夏期数値」シート（2026年夏まで）はそのまま残してある。読み書きはしない。
  *   - action:'saveReview'   … 「全体会議振り返り」の入力      → 「全体会議振り返り」シートに1行で記録
+ *   - action:'saveTaskReport' … 「重要タスク報告」（小中等部の週次）→ 「重要タスク報告」シートに1件1行（出し直すと追記）
  *   - action:'saveSuccess'  … 月次・講習結果報告の成功事例       → 「成功事例」シートに1件1行で記録（「報告」転記時に自動）
  *   - action:'listSuccess'  … ダッシュボード用の成功事例一覧  → 「成功事例」シートを新しい順に返す
  *   - action:'listInquiryBoard' … 問い合わせQA用の小中等部問合せ管理 → 「問合せ台帳」（下記）を優先し、無ければ旧スプレッドシート（INQUIRY_BOARD_ID）を校舎シートごとに読む。いずれも個人情報を落として返す
@@ -180,6 +181,10 @@ function doPost(e) {
         [data.ts || nowIso_(), data.campus || '', data.user || '', data.content || '']
       );
       return json_({ ok: true });
+    }
+
+    if (action === 'saveTaskReport') {
+      return json_(saveTaskReport_(data));
     }
 
     if (action === 'getKenshuAnswer') {
@@ -928,6 +933,34 @@ function saveKenshuAnswer_(data) {
     sh.getRange(target, colOf_(H, '人生・プライベートの件数')).setNumberFormat('0');
     sh.getRange(target, 1, 1, H.length).setValues([values]);
     return { ok: true, item: kenshuItem_(values) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 重要タスク報告（/task-report・小中等部の週次）を「重要タスク報告」シートに1件1行で追記する。
+// 設問と見出しはアプリ側（lib/taskReport.ts）が持ち、headers / row で送ってくる。見出しはシートが空のときだけ書く。
+// 返り値の saved は、このスクリプトが再デプロイ済みかをアプリ側で見分けるための印
+//（古いスクリプトは未知の action を会話ログとして ok を返すため、印が無ければ保存されていない）。
+var TASK_REPORT_SHEET = '重要タスク報告';
+function saveTaskReport_(data) {
+  if (!data.headers || !data.row || !data.headers.length || data.headers.length !== data.row.length) {
+    return { ok: false, reason: 'bad_request' };
+  }
+  var H = ['日時', '部門', '記入者'].concat(data.headers);
+  var values = [nowJp_(data.ts), data.campus || '', data.user || ''].concat(data.row).map(function (v) { return String(v); });
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(TASK_REPORT_SHEET) || ss.insertSheet(TASK_REPORT_SHEET);
+    if (sh.getLastRow() === 0) {
+      sh.getRange(1, 1, 1, H.length).setValues([H]);
+      sh.setFrozenRows(1);
+    }
+    // 「- 」「=」で始まる行が数式に、日時が日付型に化けないよう、先に文字列書式を付けてから書く
+    sh.getRange(sh.getLastRow() + 1, 1, 1, H.length).setNumberFormat('@').setValues([values]);
+    return { ok: true, saved: 'taskReport' };
   } finally {
     lock.releaseLock();
   }

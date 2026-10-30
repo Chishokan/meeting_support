@@ -4,13 +4,14 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useState } from 'react';
 
-type NavItem = { href: string; label: string; desc?: string; soon?: boolean; hidden?: boolean };
+type NavItem = { href: string; label: string; desc?: string; soon?: boolean; hidden?: boolean; depts?: string[] };
 type NavGroup = { title?: string; items: NavItem[] };
 
 // 左メニュー。会議DXの基本は「部門会議」（事前共有 → 録音 → 議事録 → 次回の事前共有）なので、
 // ダッシュボードのすぐ下に置く。全体会議で使うものは見出しの下にまとめる。
 // 要項QAと「ご意見・不具合の報告」はヘルプデスク（総合メニューのアプリ・/helpdesk）へ移した。
 // ★hidden: true はメニューに出さないだけで、画面は URL で開ける。戻すときは hidden を外す。
+// ★depts を付けた項目は、その部門でログインした人にだけ出す（項目が1つも出ない見出しは見出しごと出さない）。
 const NAV: NavGroup[] = [
   {
     items: [
@@ -27,6 +28,12 @@ const NAV: NavGroup[] = [
       // 事前報告は会議AIの「報告完了」で自動転記するので、メニューからは外す（会議AIの画面から手で転記もできる）。
       { href: '/report', label: '報告の転記', desc: '事前報告を会議ドキュメントへ', hidden: true },
       { href: '/progress', label: '中間報告', desc: '次の会議まで｜決議事項の進捗', hidden: true },
+    ],
+  },
+  {
+    title: '小中等部',
+    items: [
+      { href: '/task-report', label: '重要タスク報告', desc: '毎週｜マイルストーンの進み具合と改善・工夫', depts: ['小中等部'] },
     ],
   },
 ];
@@ -52,6 +59,10 @@ export default function Sidebar({ name, campus }: { name: string; campus: string
   // 非表示の画面を URL で開いたときも、スマホの上のバーに画面名を出す。
   const current = ALL_ITEMS.find((n) => isActive(pathname, n.href));
 
+  const groups = NAV
+    .map((g) => ({ ...g, items: g.items.filter((n) => !n.hidden && (!n.depts || n.depts.includes(campus))) }))
+    .filter((g) => g.items.length > 0);
+
   return (
     <>
       {/* モバイル用トップバー */}
@@ -71,10 +82,10 @@ export default function Sidebar({ name, campus }: { name: string; campus: string
         </div>
 
         <nav className="sidebar-nav">
-          {NAV.map((g, gi) => (
+          {groups.map((g, gi) => (
             <div key={g.title ?? gi} className="nav-group">
               {g.title && <div className="nav-group-title">{g.title}</div>}
-              {g.items.filter((n) => !n.hidden).map((n) => {
+              {g.items.map((n) => {
                 const active = isActive(pathname, n.href);
                 return (
                   <Link
