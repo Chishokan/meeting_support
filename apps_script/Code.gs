@@ -22,6 +22,9 @@
  *     ※ 旧「夏期数値」シート（2026年夏まで）はそのまま残してある。読み書きはしない。
  *   - action:'saveReview'   … 「全体会議振り返り」の入力      → 「全体会議振り返り」シートに1行で記録
  *   - action:'saveTaskReport' … 「重要タスク報告」（小中等部の週次）→ 「重要タスク報告」シートに1件1行（出し直すと追記）
+ *   - action:'getTaskEvaluation' … AI壁打ち用。重要タスク評価シート（TASK_EVAL_BOOK_ID）の校舎タブ（A〜G列）を表示値のまま返す
+ *   - action:'appendPlanActions' … AI壁打ちの行動計画の案を、秋～冬行動計画（GOALS_BOOK_ID）の「校舎×区分×日付」のセルに
+ *                                   「★行動」として書き足す（今ある文は消さない）＋「AI壁打ち書き込み」シートに記録
  *   - action:'saveSuccess'  … 月次・講習結果報告の成功事例       → 「成功事例」シートに1件1行で記録（「報告」転記時に自動）
  *   - action:'listSuccess'  … ダッシュボード用の成功事例一覧  → 「成功事例」シートを新しい順に返す
  *   - action:'listInquiryBoard' … 問い合わせQA用の小中等部問合せ管理 → 「問合せ台帳」（下記）を優先し、無ければ旧スプレッドシート（INQUIRY_BOARD_ID）を校舎シートごとに読む。いずれも個人情報を落として返す
@@ -89,6 +92,13 @@ var GOALS_BOOK_ID = '';
 // 旧タブに「このシート内容を『秋～冬行動計画』に移行しました。こちらのシートは削除します。」と
 // 注記があり、タブの並びは変わる前提。名前で引く。
 var GOALS_SHEET_NAME = '秋～冬行動計画';
+
+// 「AI壁打ち」が読む重要タスク評価シートのID（URL の /d/ と /edit の間）。校舎ごとのタブ（日野校・駅前校…）を読む。
+// 毎週の評価を別のファイルで作ったときは、ここを新しいファイルのIDに変えて再デプロイする。
+var TASK_EVAL_BOOK_ID = '1lDWFQSOIHY18UbOB2XYokRgI_jCzPKA7sOX_O7NqQXk';
+// 評価シートのタブ名＝秋～冬行動計画の校舎の行の名前。★lib/taskCoach.ts の COACH_SCHOOLS と同じにする。
+var TASK_COACH_SCHOOLS = ['日野校', '駅前校', '大野校', '日宇校'];
+var PLAN_LOG_SHEET = 'AI壁打ち書き込み';
 
 // 部門（campus）→ タブ探索キーワード。タブ名にこの文字列が含まれていれば、そのタブに振り分ける。
 // ※タブ名が部門名と少し違っても振り分けられるようにするための対応表。タブ名変更時はここを直す。
@@ -185,6 +195,14 @@ function doPost(e) {
 
     if (action === 'saveTaskReport') {
       return json_(saveTaskReport_(data));
+    }
+
+    if (action === 'getTaskEvaluation') {
+      return json_(getTaskEvaluation_(data));
+    }
+
+    if (action === 'appendPlanActions') {
+      return json_(appendPlanActions_(data));
     }
 
     if (action === 'getKenshuAnswer') {
@@ -961,6 +979,105 @@ function saveTaskReport_(data) {
     // 「- 」「=」で始まる行が数式に、日時が日付型に化けないよう、先に文字列書式を付けてから書く
     sh.getRange(sh.getLastRow() + 1, 1, 1, H.length).setNumberFormat('@').setValues([values]);
     return { ok: true, saved: 'taskReport' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// AI壁打ち：重要タスク評価シートの校舎タブを、表示値（「14%」「動いているが…」など見えているとおり）で返す。
+function getTaskEvaluation_(data) {
+  if (!TASK_EVAL_BOOK_ID) return { ok: false, reason: 'eval_not_configured' };
+  if (TASK_COACH_SCHOOLS.indexOf(data.school) === -1) return { ok: false, reason: 'bad_school' };
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(TASK_EVAL_BOOK_ID);
+  } catch (err) {
+    return { ok: false, reason: 'eval_open_failed' };
+  }
+  var sh = ss.getSheetByName(data.school);
+  if (!sh) return { ok: false, reason: 'eval_sheet_not_found' };
+  var n = Math.min(Math.max(sh.getLastRow(), 1), 60);
+  return { ok: true, rows: sh.getRange(1, 1, n, 7).getDisplayValues() };
+}
+
+// 「11/04」と「11/4」を同じに扱う。
+function planDate_(v) {
+  return normCell_(v).replace(/^0/, '').replace(/\/0/, '/');
+}
+
+// 秋～冬行動計画で「校舎×区分×日付」のセルを探す。見つからなければ null。
+// 「月日」の行からその日付の列を見つけ、その下（次の「月日」の行まで）にある校舎の3行（外部・内部・他）から区分の行を選ぶ。
+// 月のブロックの上下に「月日」の行が2つあるが、上から探すので先に見つかる上の行を使う。
+function findPlanCell_(values, school, kind, date) {
+  for (var r = 0; r < values.length; r++) {
+    if (normCell_(values[r][0]) !== '月日') continue;
+    var col = -1;
+    for (var c = 1; c < values[r].length; c++) {
+      if (planDate_(values[r][c]) === date) { col = c; break; }
+    }
+    if (col < 0) continue;
+    for (var rr = r + 1; rr < values.length && rr < r + 60; rr++) {
+      var head = normCell_(values[rr][0]);
+      if (head === '月日') break;
+      if (head !== school) continue;
+      for (var k = 0; k < 3 && rr + k < values.length; k++) {
+        if (k > 0 && normCell_(values[rr + k][0]) !== '') break;
+        if (normCell_(values[rr + k][2]) === kind) return { row: rr + k, col: col };
+      }
+      return null;
+    }
+  }
+  return null;
+}
+
+// AI壁打ち：行動計画の案を、秋～冬行動計画の該当セルに「★行動」として書き足す。
+// 今ある文は消さない。同じ「★行動」がすでにあるセルには書かない（二度押し対策）。
+// 書いたものは「AI壁打ち書き込み」シートにも1件1行で残す（いつ・誰が・どのセルに書いたか）。
+function appendPlanActions_(data) {
+  if (!GOALS_BOOK_ID) return { ok: false, reason: 'goals_not_configured' };
+  if (TASK_COACH_SCHOOLS.indexOf(data.school) === -1) return { ok: false, reason: 'bad_school' };
+  var actions = data.actions || [];
+  if (!actions.length || actions.length > 20) return { ok: false, reason: 'bad_request' };
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(GOALS_BOOK_ID);
+  } catch (err) {
+    return { ok: false, reason: 'goals_open_failed' };
+  }
+  var sh = ss.getSheetByName(GOALS_SHEET_NAME);
+  if (!sh) return { ok: false, reason: 'goals_sheet_not_found' };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var values = sh.getDataRange().getDisplayValues();
+    var ts = nowJp_(data.ts);
+    var results = [];
+    var logs = [];
+    for (var i = 0; i < actions.length; i++) {
+      var a = actions[i] || {};
+      var text = String(a.text || '').replace(/[\r\n]+/g, ' ').slice(0, 120);
+      var date = planDate_(a.date);
+      var kind = normCell_(a.kind);
+      var res = { date: date, kind: kind, text: text };
+      var pos = text ? findPlanCell_(values, data.school, kind, date) : null;
+      if (!pos) { res.status = 'not_found'; results.push(res); continue; }
+      var range = sh.getRange(pos.row + 1, pos.col + 1);
+      res.cell = range.getA1Notation();
+      var cur = String(values[pos.row][pos.col] || '');
+      var add = '★' + text;
+      if (cur.split('\n').indexOf(add) !== -1) { res.status = 'skipped'; results.push(res); continue; }
+      var next = cur ? cur + '\n' + add : add;
+      range.setValue(next);
+      values[pos.row][pos.col] = next;
+      res.status = 'written';
+      results.push(res);
+      logs.push([ts, data.campus || '', data.user || '', data.school, date, kind, add, res.cell]);
+    }
+    for (var j = 0; j < logs.length; j++) {
+      appendRow_(PLAN_LOG_SHEET, ['日時', '部門', '記入者', '校舎', '日付', '区分', '内容', 'セル'], logs[j]);
+    }
+    return { ok: true, saved: 'planActions', results: results };
   } finally {
     lock.releaseLock();
   }
