@@ -14,6 +14,9 @@ const nextConfig = {
     return config;
   },
   experimental: {
+    // 議事録の社長送付 PDF（lib/deptMinutesDigestPdf.ts）は pdfkit で作る。
+    // pdfkit と依存部品はバンドルすると内部のデータ読み込みが壊れるので、node_modules から読ませる。
+    serverComponentsExternalPackages: ['pdfkit'],
     // 要項QA は knowledge/ 配下の Markdown を実行時に fs で読む。
     // Next はコードから辿れないファイルをサーバ関数に含めないため、明示的に同梱する。
     // ★ knowledge/ の置き場所を変えたらここも直すこと（変え忘れると本番だけ 0 件になる）。
@@ -22,6 +25,9 @@ const nextConfig = {
       // 部門会議議事録の文字起こしは GLOSSARY.md の社内用語をヒントとして読む
       //（lib/transcribeVocab.ts）。外すと本番だけ用語が効かなくなる。
       '/api/dept-minutes/transcribe': ['./knowledge/00_index/GLOSSARY.md'],
+      // 議事録の社長送付 PDF の日本語フォント（lib/deptMinutesDigestPdf.ts が実行時に読む）。
+      // 外すと本番だけ PDF が作れなくなる。
+      '/api/dept-minutes/digest': ['./assets/fonts/*.ttf'],
     },
   },
 };

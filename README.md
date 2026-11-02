@@ -76,6 +76,8 @@
     （apps_script/Code.gs の saveDeptMinutes_ / listDeptMinutes_ / listDeptDecisions_）
   - テンプレートに沿わなかった点（話し合えなかった議題・結論の出なかった議題・担当や期限が
     決まっていない決定など）は「会議の質チェック」として議事録の後ろに出力され、シートにも残る
+  - 保存した議事録は、A4 1枚のまとめ（PDF）になって社長の LINE WORKS へ自動で届く
+    （下の「議事録の社長への自動送付」。apps_script/MinutesNotify.gs）
 - ここを直すと全社員の AI に一括反映
 
 ## 問合せ管理アプリ（小中等部 問合せ管理の Web アプリ化）
@@ -372,6 +374,51 @@ WAV は圧縮しないので通信量は増える（1時間の会議でおよそ
 区間の長さを変えるときは `lib/audioChunk.ts` の `SEGMENT_SECONDS` を直し、
 `app/api/dept-minutes/transcribe/route.ts` の実行時間上限に収まるか必ず確認すること
 （録音の区切りは `components/DeptMinutesUI.tsx` で `SEGMENT_SECONDS` に合わせてある）。
+
+## 議事録の社長への自動送付（LINE WORKS）
+部門会議の議事録が保存されると、AI が要点を **A4 1枚のまとめ（PDF）** にして、社長の LINE WORKS へ
+自動で送る。PDF のあとに、概要・決定事項の件名・要確認だけを書いた本文も届く。
+
+| 部品 | 役割 |
+|---|---|
+| `apps_script/MinutesNotify.gs` | 10分ごとのトリガーで「部門会議議事録」シートを見て、まだ送っていない議事録を会議DXに渡し、返ってきた PDF を LINE WORKS Bot で送る。シートに送付日時を書く |
+| `app/api/dept-minutes/digest/route.ts` | 議事録1件を受け取り、まとめ（PDF とトークの本文）を返す。Apps Script だけが合言葉（`MINUTES_DIGEST_SECRET`）付きで呼ぶ |
+| `lib/deptMinutesDigestAi.ts` | AI への指示（何をどう要約するか）★まとめの書き方を変えるときはここ |
+| `lib/deptMinutesDigest.ts` | AI の出力の整形・検査、トークの本文、ファイル名 |
+| `lib/deptMinutesDigestPdf.ts` | PDF の見た目（pdfkit）。1枚に収まる一番大きい文字（10pt〜7.5pt）を選ぶ。7.5pt でも収まらない長い議事録だけ2枚以上になる |
+| `assets/fonts/` | PDF の日本語フォント（Noto Sans JP、SIL OFL）。`next.config.mjs` の `outputFileTracingIncludes` で本番に同梱している |
+
+送る議事録・送り方:
+- 2026-11-02 以降に登録された議事録（`MINUTES_NOTIFY_SINCE` で変えられる）で、まだ送っていないもの
+- 保存してから10分たってから送る（保存した直後に直して保存し直すことが多いため。`MINUTES_NOTIFY_DELAY_MIN`）
+- 送ったあとで直された議事録は送り直さない。`MINUTES_NOTIFY_RESEND_EDITS` を `true` にすると「修正版」として送り直す
+- 生徒・保護者の氏名は PDF に載せない（AI への指示で人数・立場に置き換える）
+- 「部門会議議事録」シートの右端に「社長送付日時」「社長送付メモ」の列ができる。
+  送り直したいときは、その行の2つのセルを空にする（次の回に送られる）
+- 失敗したら「社長送付メモ」に「失敗(回数) 理由」が残り、次の回にやり直す。3回失敗したら止まる
+  （直したらメモを空にする）。PDF が送れなかったときは何も届いていないので、やり直しても二重には届かない
+
+セットアップ（初回のみ）:
+1. Vercel の環境変数に `MINUTES_DIGEST_SECRET`（長いランダムな文字列）を入れて再デプロイする。
+   `ANTHROPIC_API_KEY` は会議AIと同じものを使う
+2. 「会議サポートアプリログ」スプレッドシートの 拡張機能 > Apps Script を開き、＋ > スクリプト で
+   `MinutesNotify` を作って `apps_script/MinutesNotify.gs` を丸ごと貼る（Code.gs と同じプロジェクト。Web アプリの再デプロイは不要）
+3. プロジェクトの設定 > スクリプト プロパティ に入れる:
+   - `APP_BASE_URL`（例 `https://meeting-support.vercel.app`）、`MINUTES_DIGEST_SECRET`（1. と同じ値）
+   - `MINUTES_NOTIFY_USER_IDS`（社長の LINE WORKS ユーザーID。複数ならカンマ区切り）
+   - `LW_CLIENT_ID` `LW_CLIENT_SECRET` `LW_SERVICE_ACCOUNT` `LW_PRIVATE_KEY` `LW_BOT_ID`
+     （「経理への自動連絡」と同じ LINE WORKS のアプリ・Bot の値をコピーしてよい。議事録用に別の Bot から
+     送るなら `MINUTES_LW_BOT_ID` も入れる。社長がその Bot とトークできる状態にしておく）
+   - `MINUTES_NOTIFY_TEST_USER_ID`（自分の LINE WORKS ユーザーID。4. の確認用）
+   - （任意）`MINUTES_PDF_FOLDER_ID`：送った PDF の控えを置く Google ドライブのフォルダ
+4. エディタで順に実行して確かめる（初回は権限の承認が出る）:
+   - `previewMinutesDigest` … 最新の議事録のまとめ PDF がマイドライブにできる（会議DX 側の確認。送らない）
+   - `testMinutesNotify` … 同じものが**自分にだけ**届く（LINE WORKS の確認。社長には送らない）
+5. `setupMinutesNotify` を実行する。10分ごとのトリガーができ、実行ログに「次の回に送る予定」の議事録が出る
+
+止めるときは `removeMinutesNotify` を実行する。
+Apps Script 側の動き（送る行の選び方・呼ぶ順番・失敗時の扱い）は `node scripts/test-minutes-notify.mjs` で確認できる。
+まとめと PDF の部品は `npm test` に含まれる。
 
 ## 全体研修会アンケート（/kenshu）
 10/31（土）全体研修会の事前アンケート。総合メニューの独立アプリで、全部門が利用できる。
