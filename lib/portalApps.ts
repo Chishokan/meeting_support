@@ -1,12 +1,13 @@
 // 総合画面（メニュー）に並べる智翔館アプリの一覧。
 // ★アプリを増やすときはここに1件足すだけでメニューに出る。
 //   status: 'ready'（使える）／'soon'（準備中：カードは出すが開けない）
-//   canUse: 部門で使える人を絞るときに指定する（省略すると全員）。
+//   canUse: 部門（や名前）で使える人を絞るときに指定する（省略すると全員）。
 //   external: 別の Web アプリ（別ドメイン）を開くカード。新しいタブで開く。
 
 import { canUseInquiryBoard, INQUIRY_BOARD_DEPTS } from './inquiryBoardAccess';
 import { canUseInterview, interviewAppUrl, INTERVIEW_DEPTS, type InterviewDept } from './interviewApp';
 import { APTITUDE_DEPTS, canUseAptitude } from './aptitude/access';
+import { canUseChishokanAi } from './chishokanAi/access';
 
 // 面談管理は別アプリ（面談予約システム）の管理画面。部門ごとに URL が分かれている。
 // 管理画面にはログインの仕組みが無く、カードは管理画面の URL をそのまま開く。
@@ -31,12 +32,21 @@ export type PortalApp = {
   desc: string;
   href: string;
   status: 'ready' | 'soon';
-  canUse?: (campus: string) => boolean;
+  canUse?: (campus: string, name: string) => boolean;
   deniedNote?: string; // canUse で弾かれた人に出す一言
   external?: boolean;
 };
 
 export const PORTAL_APPS: PortalApp[] = [
+  {
+    id: 'chishokan-ai',
+    name: '智翔館AI（試用版）',
+    desc: '社内の資料（理念・方針・要項・チラシ制作ルール）を調べて答える相談窓口。業務計画の相談や、資料が方針に沿っているかのチェック（PDF・画像を添付）に',
+    href: '/ai',
+    status: 'ready',
+    canUse: (_campus, name) => canUseChishokanAi(name),
+    deniedNote: '試用中です（試用メンバーのみ利用できます）',
+  },
   {
     id: 'meeting',
     name: '会議DX',

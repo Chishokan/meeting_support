@@ -3,15 +3,17 @@ import { getSession } from '@/lib/core/auth';
 import { PORTAL_APPS } from '@/lib/portalApps';
 
 export default function PortalPage() {
-  // layout でログインを確認済み。ここでは部門による出し分けにだけ使う。
-  const campus = getSession()?.campus ?? '';
+  // layout でログインを確認済み。ここでは部門（と名前）による出し分けにだけ使う。
+  const s = getSession();
+  const campus = s?.campus ?? '';
+  const name = s?.name ?? '';
 
   return (
     <div className="portal">
       <h1 className="portal-title">使うアプリを選んでください</h1>
       <div className="portal-grid">
         {PORTAL_APPS.map((a) => {
-          const allowed = !a.canUse || a.canUse(campus);
+          const allowed = !a.canUse || a.canUse(campus, name);
           const open = a.status === 'ready' && allowed;
           const body = (
             <>
