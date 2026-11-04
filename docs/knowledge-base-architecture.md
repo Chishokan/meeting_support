@@ -273,7 +273,7 @@ Claude が判断 → tool: read_file("40_イベント/2026/夏期講習/要項.m
 - [ ] Drive スキャン＋差分検出
 - [ ] 形式別コンバータ（Docs / Sheets / xlsx / docx / PDF / 画像）
 - [ ] front matter・summary の自動生成
-- [ ] `INDEX.md` 自動生成
+- [x] `INDEX.md` 自動生成（`npm run index`＝scripts/build-index.mjs。front matter から作る）
 - [ ] Claude タスクで日次実行、PR 作成
 
 **完了条件**: Drive を更新した翌朝、AIの回答に反映されている
