@@ -19,6 +19,8 @@ const nextConfig = {
     // ★ knowledge/ の置き場所を変えたらここも直すこと（変え忘れると本番だけ 0 件になる）。
     outputFileTracingIncludes: {
       '/api/yoko-qa': ['./knowledge/**/*.md'],
+      // 智翔館AI は回答方針・索引・各資料を実行時に読む（lib/chishokanAi/knowledgeTools.ts）。
+      '/api/chishokan-ai': ['./knowledge/**/*.md'],
       // 部門会議議事録の文字起こしは GLOSSARY.md の社内用語をヒントとして読む
       //（lib/transcribeVocab.ts）。外すと本番だけ用語が効かなくなる。
       '/api/dept-minutes/transcribe': ['./knowledge/00_index/GLOSSARY.md'],
