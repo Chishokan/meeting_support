@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --experimental-strip-types --no-warnings --test \"lib/**/*.test.ts\""
+    "test": "node --experimental-strip-types --no-warnings --test \"lib/**/*.test.ts\"",
+    "index": "node scripts/build-index.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.69.0",

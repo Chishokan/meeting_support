@@ -6,7 +6,7 @@
 
 - 2026年11月時点で、Drive からの自動同期の仕組みは無い（設計書 `docs/knowledge-base-architecture.md` の Phase 3 で作る予定）。
   原本が更新されたら、このフォルダのファイルを直接直す
-- 直したら、front matter の `updated` と `00_index/INDEX.md` も直す
+- 直したら、front matter の `updated` を直し、`npm run index` で `00_index/INDEX.md` を作り直して一緒にコミットする（索引は手で書かない）
 - `40_要項/` だけは、要項ドキュメントから `scripts/import-yoko.mjs` で取り込む（`status: 確定` のものだけがAIに渡る）
 - このフォルダはそのまま本番のアプリに同梱される。main に入れた時点で全職員のAIに反映される
 
