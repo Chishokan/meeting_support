@@ -14,6 +14,7 @@ const EXAMPLES = [
   '冬期講習の外部生募集の計画を立てたい。今期の方針に沿って相談に乗ってください',
   '全社共通テーマの4つと、それぞれ仕事で意識することを教えて',
   '定期テスト対策のチラシを作りたい。何から決めればいい？',
+  '冬期講習の外部生募集の計画書を Google ドキュメントで作って',
   '（資料を添付して）この資料が会社の方針に沿っているかチェックして',
 ];
 
@@ -77,6 +78,22 @@ async function toAttach(file: File): Promise<Attach | null> {
     return { name: file.name, mime: 'text/plain', kind: 'text', data: await file.text() };
   }
   return null;
+}
+
+// 回答の中のURLを押せるリンクにする（作った文書のURLなど）。
+function Linkified({ text }: { text: string }) {
+  const parts = text.split(/(https?:\/\/[^\s)）」]+)/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        /^https?:\/\//.test(p) ? (
+          <a key={i} href={p} target="_blank" rel="noopener noreferrer">{p}</a>
+        ) : (
+          <span key={i}>{p}</span>
+        ),
+      )}
+    </>
+  );
 }
 
 export default function ChishokanAiUI({ name, campus }: { name: string; campus: string }) {
@@ -210,7 +227,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           {messages.map((m, i) => (
             <div key={i} className={`msg ${m.role}`}>
               <div>
-                <div className="bubble">{m.content || '資料を確認しています…'}</div>
+                <div className="bubble">{m.content ? <Linkified text={m.content} /> : '資料を確認しています…'}</div>
               </div>
             </div>
           ))}

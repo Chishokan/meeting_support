@@ -7,28 +7,11 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { officeToText, type OfficeKind } from './officeText';
 import { extractDriveIds, reasonText } from './driveLinks';
+import { callGas, type GasResult } from './gas';
 
 export { MAX_LINKS } from './driveLinks';
 
-type GasResult = { ok?: boolean; reason?: string; name?: string; kind?: string; text?: string; base64?: string };
-
-async function callGas(payload: Record<string, unknown>): Promise<GasResult> {
-  const url = process.env.APPS_SCRIPT_URL;
-  if (!url) return { ok: false, reason: 'not_configured' };
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: process.env.APPS_SCRIPT_TOKEN || '', ...payload }),
-      cache: 'no-store',
-    });
-    const j = (await res.json().catch(() => null)) as GasResult | null;
-    if (!res.ok || !j) return { ok: false, reason: 'upstream_error' };
-    return j;
-  } catch {
-    return { ok: false, reason: 'network_error' };
-  }
-}
+type DriveGasResult = GasResult & { name?: string; kind?: string; text?: string; base64?: string };
 
 export type DriveRead = { id: string; name: string; ok: boolean; note: string };
 
@@ -42,7 +25,7 @@ export async function readDriveLinks(text: string): Promise<{ blocks: Anthropic.
   const ids = extractDriveIds(text);
   const blocks: Anthropic.ContentBlockParam[] = [];
   const reads: DriveRead[] = [];
-  const results = await Promise.all(ids.map((id) => callGas({ action: 'readDriveFile', id })));
+  const results = (await Promise.all(ids.map((id) => callGas({ action: 'readDriveFile', id })))) as DriveGasResult[];
   for (const [i, j] of results.entries()) {
     const id = ids[i];
     const name = j.name || 'ファイル';

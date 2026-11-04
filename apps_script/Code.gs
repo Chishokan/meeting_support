@@ -104,9 +104,23 @@ var PLAN_LOG_SHEET = 'AI壁打ち書き込み';
 // ★ここに入れたフォルダと、その下のフォルダにあるファイルだけを読む。空なら何も読まない。
 //   名簿・成績・給与・人事のフォルダは入れないこと（このスクリプトは持ち主の権限で読むため、
 //   リンクさえ分かれば誰でも読めてしまう）。例：['1rDTV-Lg3YJmZHMSTfHs-ErDnpR3lhR_x'] // 05_広告制作
-var AI_READ_FOLDER_IDS = [];
+var AI_READ_FOLDER_IDS = [
+  '1rDTV-Lg3YJmZHMSTfHs-ErDnpR3lhR_x', // 05_広告制作
+  '1b7qfB8Ey-fkFxm7XMFtbkoARyuiKmzoz', // 10_研修会議
+  '1x3qb8GA-rBxV3DoTmH00s4efJHn3GBKD'  // 04_講習
+];
+// 入れていないフォルダ（2026-11-04 確認）：00_進行中（要対応生徒リスト・成果配分案がある）、03_模試テスト（模試の入力シート・
+// 生徒ランキング・受検票・進学希望者一覧がある）、07_名簿成績出席、11_総務、総会（目標シート・プライベートのやりたいこと一覧がある）
 // フォルダの指定に関係なく読まないファイル名（念のための二重の歯止め）。
-var AI_READ_BLOCK_WORDS = ['名簿', '成績', '個票', '給与', '賞与', '成果配分', '人事評価', '健康', 'パスワード', 'password'];
+var AI_READ_BLOCK_WORDS = ['名簿', '成績', '個票', '給与', '賞与', '成果配分', '人事評価', '健康', 'パスワード', 'password',
+  '宛名', '住所', '目標シート', 'プライベート', '（回答）', '(回答)', '入力シート', '受検票', 'ランキング', '生徒リスト',
+  '進学希望者', '出席', '面談'];
+
+// 智翔館AI が作った Google ドキュメントの保存先。この下に「AI作成」フォルダを作って入れる。
+var AI_OUTPUT_PARENT_ID = '16VRA3zstFpsKGKc2UsFXAuP75lNXlcCm'; // 00_進行中
+var AI_OUTPUT_FOLDER_NAME = 'AI作成';
+// 作った文書の共有：'view'＝リンクを知っている人が閲覧可（初期値）、'edit'＝リンクを知っている人が編集可、'none'＝共有しない
+var AI_OUTPUT_SHARING = 'view';
 // 1ファイルで返す上限（文字数・Office/PDF の大きさ）
 var AI_READ_MAX_CHARS = 60000;
 var AI_READ_MAX_BYTES = 4 * 1024 * 1024;
@@ -206,6 +220,10 @@ function doPost(e) {
 
     if (action === 'saveTaskReport') {
       return json_(saveTaskReport_(data));
+    }
+
+    if (action === 'createAiDoc') {
+      return json_(createAiDoc_(data));
     }
 
     if (action === 'readDriveFile') {
@@ -2244,6 +2262,85 @@ function nowJp_(ts) {
 
 function nowIso_() {
   return Utilities.formatDate(new Date(), 'Asia/Tokyo', "yyyy-MM-dd'T'HH:mm:ss");
+}
+
+// ---- 智翔館AI：Google ドキュメントを作る ------------------------------------
+// data.title と data.markdown（見出し・箇条書き・表・段落）から文書を作り、00_進行中/AI作成 に置いてURLを返す。
+function createAiDoc_(data) {
+  var title = String(data.title || '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 80);
+  var md = String(data.markdown || '');
+  if (!title || !md.trim()) return { ok: false, reason: 'empty' };
+  if (md.length > 30000) return { ok: false, reason: 'too_long' };
+  var folder;
+  try { folder = aiOutputFolder_(); } catch (e) { return { ok: false, reason: 'folder_failed' }; }
+
+  var stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+  var name = stamp + '_AI作成_' + title;
+  var doc = DocumentApp.create(name);
+  var body = doc.getBody();
+  body.clear();
+  body.appendParagraph(title).setHeading(DocumentApp.ParagraphHeading.TITLE);
+  body.appendParagraph('智翔館AIが作った下書きです（依頼：' + String(data.campus || '') + '／' + String(data.user || '') + '、' +
+    Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm') + '）。数字・日付・方針は担当者が確認してから使ってください。')
+    .setItalic(true);
+  aiAppendMarkdown_(body, md);
+  // DocumentApp.create の最初の空段落を消す
+  try { if (body.getNumChildren() > 1 && body.getChild(0).asText().getText() === '') body.removeChild(body.getChild(0)); } catch (e) {}
+  doc.saveAndClose();
+
+  var file = DriveApp.getFileById(doc.getId());
+  folder.addFile(file);
+  try { DriveApp.getRootFolder().removeFile(file); } catch (e) {}
+  if (AI_OUTPUT_SHARING === 'view') file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  if (AI_OUTPUT_SHARING === 'edit') file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
+  return { ok: true, saved: 'aiDoc', name: name, url: doc.getUrl() };
+}
+
+function aiOutputFolder_() {
+  var parent = DriveApp.getFolderById(AI_OUTPUT_PARENT_ID);
+  var it = parent.getFoldersByName(AI_OUTPUT_FOLDER_NAME);
+  return it.hasNext() ? it.next() : parent.createFolder(AI_OUTPUT_FOLDER_NAME);
+}
+
+// 素朴な Markdown（# 見出し、- 箇条書き、1. 番号、| 表 |、段落）を文書にする。**太字** の記号は外す。
+function aiAppendMarkdown_(body, md) {
+  var lines = md.replace(/\r\n/g, '\n').split('\n');
+  var table = [];
+  function clean(s) { return s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1'); }
+  function flushTable() {
+    if (!table.length) return;
+    var rows = table.filter(function (r) { return !/^\s*\|?\s*:?-{2,}/.test(r.join('|')); });
+    var cells = rows.map(function (r) { return r.map(function (c) { return clean(c.trim()); }); });
+    var width = 0;
+    cells.forEach(function (r) { width = Math.max(width, r.length); });
+    cells = cells.map(function (r) { while (r.length < width) r.push(''); return r; });
+    if (cells.length) {
+      var t = body.appendTable(cells);
+      try { for (var c = 0; c < width; c++) t.getRow(0).getCell(c).editAsText().setBold(true); } catch (e) {}
+    }
+    table = [];
+  }
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      table.push(line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|'));
+      continue;
+    }
+    flushTable();
+    var m;
+    if (!line.trim()) continue;
+    if ((m = /^(#{1,3})\s+(.*)$/.exec(line))) {
+      var h = [DocumentApp.ParagraphHeading.HEADING1, DocumentApp.ParagraphHeading.HEADING2, DocumentApp.ParagraphHeading.HEADING3][m[1].length - 1];
+      body.appendParagraph(clean(m[2])).setHeading(h);
+    } else if ((m = /^\s*[-*・]\s+(.*)$/.exec(line))) {
+      body.appendListItem(clean(m[1])).setGlyphType(DocumentApp.GlyphType.BULLET);
+    } else if ((m = /^\s*\d+[.)．]\s+(.*)$/.exec(line))) {
+      body.appendListItem(clean(m[1])).setGlyphType(DocumentApp.GlyphType.NUMBER);
+    } else {
+      body.appendParagraph(clean(line));
+    }
+  }
+  flushTable();
 }
 
 // ---- 智翔館AI：Google ドライブのファイルを読む ---------------------------------

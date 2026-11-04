@@ -17,6 +17,8 @@ import { canUseChishokanAi } from '@/lib/chishokanAi/access';
 import { buildChishokanAiPrompt } from '@/lib/chishokanAi/prompt';
 import { KNOWLEDGE_ROOT, KNOWLEDGE_TOOLS, runKnowledgeTool } from '@/lib/chishokanAi/knowledgeTools';
 import { readDriveLinks } from '@/lib/chishokanAi/driveFiles';
+import { CREATE_DOC_TOOL } from '@/lib/chishokanAi/createDocTool';
+import { runCreateDoc, type CreatedDoc } from '@/lib/chishokanAi/createDoc';
 
 const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
 
@@ -96,12 +98,14 @@ export async function POST(req: Request) {
         }
       : { role: m.role, content: m.content },
   );
-  const tools = KNOWLEDGE_TOOLS as unknown as Anthropic.Tool[];
+  // 資料を読む3つの道具と、頼まれたときに Google ドキュメントの下書きを作る道具（1回の回答で1つまで）。
+  const tools = [...KNOWLEDGE_TOOLS, CREATE_DOC_TOOL] as unknown as Anthropic.Tool[];
 
   const encoder = new TextEncoder();
   let full = '';
   const usage: string[] = [];
   const opened: string[] = [];
+  const createdDocs: CreatedDoc[] = [];
 
   const rs = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -143,11 +147,21 @@ export async function POST(req: Request) {
             if (block.type !== 'tool_use') continue;
             toolCalls++;
             const input = (block.input ?? {}) as Record<string, unknown>;
-            const out =
-              toolCalls > MAX_TOOL_CALLS
-                ? 'ツールの上限に達しました。ここまでにわかった範囲で答えてください。'
-                : await runKnowledgeTool(root, block.name, input);
-            opened.push(`${block.name}:${String(input.path ?? input.query ?? '')}`);
+            let out: string;
+            if (toolCalls > MAX_TOOL_CALLS) {
+              out = 'ツールの上限に達しました。ここまでにわかった範囲で答えてください。';
+            } else if (block.name === CREATE_DOC_TOOL.name) {
+              if (createdDocs.length >= 1) {
+                out = '文書は1回の回答で1つまでです。作った文書のURLを伝えてください。';
+              } else {
+                const r = await runCreateDoc(input, { campus: session.campus, user: session.name });
+                createdDocs.push(r.created);
+                out = r.toolResult;
+              }
+            } else {
+              out = await runKnowledgeTool(root, block.name, input);
+            }
+            opened.push(block.name === CREATE_DOC_TOOL.name ? `create_google_doc:${String(input.title ?? '')}` : `${block.name}:${String(input.path ?? input.query ?? '')}`);
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           }
           convo.push({ role: 'user', content: results });
@@ -163,11 +177,14 @@ export async function POST(req: Request) {
         const driveNote = drive.reads.length
           ? `（リンク: ${drive.reads.map((r) => `${r.name}${r.ok ? '' : `＝読めず:${r.note}`}`).join('、')}）`
           : '';
+        const docNote = createdDocs.length
+          ? `（作成した文書: ${createdDocs.map((d) => (d.ok ? `${d.title} ${d.url}` : `${d.title}＝作れず:${d.note}`)).join('、')}）`
+          : '';
         try {
           await logInteraction({
             user: session.name,
             campus: session.campus,
-            input: `[智翔館AI] ${lastUser?.content ?? ''}${attachNote}${driveNote}\n（調べた資料: ${opened.join('、') || 'なし'}）`,
+            input: `[智翔館AI] ${lastUser?.content ?? ''}${attachNote}${driveNote}${docNote}\n（調べた資料: ${opened.join('、') || 'なし'}）`,
             output: stripRoleBleed(full),
           });
         } catch {}
