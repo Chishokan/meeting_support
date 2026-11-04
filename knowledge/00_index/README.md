@@ -1,7 +1,7 @@
 # knowledge/ の歩き方
 
 智翔館の社内知識をAIが参照できる形で置く場所。
-ここ（Git 上の Markdown）が**AIが読む正本**。原本（Google ドライブ・Canva・pptx など）の場所は、
+ここ（Git 上の Markdown）が**AIが読む正本**。制作担当のPCの `chishokan/knowledge/`（confirmed・facts.csv）は古い写しで、正本ではない（2026-11-04 決定）。原本（Google ドライブ・Canva・pptx など）の場所は、
 各ファイルの front matter の `source` に書く。
 
 - 2026年11月時点で、Drive からの自動同期の仕組みは無い（設計書 `docs/knowledge-base-architecture.md` の Phase 3 で作る予定）。
