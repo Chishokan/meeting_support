@@ -2272,11 +2272,12 @@ function createAiDoc_(data) {
   if (!title || !md.trim()) return { ok: false, reason: 'empty' };
   if (md.length > 30000) return { ok: false, reason: 'too_long' };
   var folder;
-  try { folder = aiOutputFolder_(); } catch (e) { return { ok: false, reason: 'folder_failed' }; }
+  try { folder = aiOutputFolder_(); } catch (e) { return { ok: false, reason: 'folder_failed', detail: String(e).slice(0, 200) }; }
 
   var stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
   var name = stamp + '_AI作成_' + title;
-  var doc = DocumentApp.create(name);
+  var doc;
+  try { doc = DocumentApp.create(name); } catch (e) { return { ok: false, reason: 'create_failed', detail: String(e).slice(0, 200) }; }
   var body = doc.getBody();
   body.clear();
   body.appendParagraph(title).setHeading(DocumentApp.ParagraphHeading.TITLE);
@@ -2297,9 +2298,37 @@ function createAiDoc_(data) {
 }
 
 function aiOutputFolder_() {
-  var parent = DriveApp.getFolderById(AI_OUTPUT_PARENT_ID);
-  var it = parent.getFoldersByName(AI_OUTPUT_FOLDER_NAME);
-  return it.hasNext() ? it.next() : parent.createFolder(AI_OUTPUT_FOLDER_NAME);
+  // 保存先（00_進行中）を開けないとき（このスクリプトの持ち主のアカウントから見えない等）は、
+  // 持ち主のマイドライブ直下の「AI作成」フォルダに置く（無ければ作る）。
+  try {
+    var parent = DriveApp.getFolderById(AI_OUTPUT_PARENT_ID);
+    var it = parent.getFoldersByName(AI_OUTPUT_FOLDER_NAME);
+    return it.hasNext() ? it.next() : parent.createFolder(AI_OUTPUT_FOLDER_NAME);
+  } catch (e) {
+    var name = (typeof AI_OUTPUT_FOLDER_NAME === 'string' ? AI_OUTPUT_FOLDER_NAME : 'AI作成');
+    var it2 = DriveApp.getFoldersByName(name);
+    return it2.hasNext() ? it2.next() : DriveApp.createFolder(name);
+  }
+}
+
+// 【診断用】エディタでこの関数を選んで実行し、「実行ログ」を見る。
+// このスクリプトを動かしているアカウント、保存先・読めるフォルダが開けるか、試しに文書を1つ作れるかを表示する。
+function testAiDrive() {
+  var log = [];
+  try { log.push('実行アカウント：' + Session.getEffectiveUser().getEmail()); } catch (e) { log.push('実行アカウント：取得できず'); }
+  log.push('設定の有無：AI_OUTPUT_PARENT_ID=' + (typeof AI_OUTPUT_PARENT_ID) + '、AI_READ_FOLDER_IDS=' + (typeof AI_READ_FOLDER_IDS));
+  try { log.push('保存先（00_進行中）：' + DriveApp.getFolderById(AI_OUTPUT_PARENT_ID).getName() + ' → 開けた'); }
+  catch (e) { log.push('保存先（00_進行中）：開けない（' + e + '）'); }
+  try {
+    for (var i = 0; i < AI_READ_FOLDER_IDS.length; i++) {
+      try { log.push('読めるフォルダ：' + DriveApp.getFolderById(AI_READ_FOLDER_IDS[i]).getName() + ' → 開けた'); }
+      catch (e) { log.push('読めるフォルダ ' + AI_READ_FOLDER_IDS[i] + '：開けない（' + e + '）'); }
+    }
+  } catch (e) { log.push('読めるフォルダ：設定が読めない（' + e + '）'); }
+  var r = createAiDoc_({ title: '動作確認（削除してよい）', markdown: '# 動作確認\n- 智翔館AIの文書作成テスト', campus: '診断', user: 'testAiDrive' });
+  log.push('文書の作成：' + JSON.stringify(r));
+  Logger.log(log.join('\n'));
+  return log.join('\n');
 }
 
 // 素朴な Markdown（# 見出し、- 箇条書き、1. 番号、| 表 |、段落）を文書にする。**太字** の記号は外す。
