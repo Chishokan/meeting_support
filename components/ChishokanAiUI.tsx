@@ -60,6 +60,12 @@ async function imageToBase64(file: File): Promise<{ data: string; mime: string }
 async function toAttach(file: File): Promise<Attach | null> {
   const mime = file.type || '';
   const ext = (file.name.split('.').pop() ?? '').toLowerCase();
+  // Word・Excel・PowerPoint は、この画面の中で文字と表を取り出してから送る（送る量が軽くなる）。
+  if (ext === 'docx' || ext === 'xlsx' || ext === 'pptx') {
+    const { officeToText } = await import('@/lib/chishokanAi/officeText');
+    const text = await officeToText(ext, await file.arrayBuffer());
+    return { name: file.name, mime: 'text/plain', kind: 'text', data: text };
+  }
   if (mime === 'application/pdf' || ext === 'pdf') {
     return { name: file.name, mime: 'application/pdf', kind: 'pdf', data: await toBase64(file) };
   }
@@ -91,8 +97,11 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     if (!files.length) return;
     const next: Attach[] = [...attachments];
     const skipped: string[] = [];
+    const legacy: string[] = [];
     for (const f of files) {
       try {
+        const ext = (f.name.split('.').pop() ?? '').toLowerCase();
+        if (ext === 'doc' || ext === 'xls' || ext === 'ppt') { legacy.push(f.name); continue; }
         const a = await toAttach(f);
         if (a) next.push(a);
         else skipped.push(f.name);
@@ -105,11 +114,10 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
       return;
     }
     setAttachments(next.slice(0, 5));
-    setAttachNote(
-      skipped.length
-        ? `${skipped.join('・')} は未対応です。PowerPoint・Excel・Word は「PDFに書き出して」添付してください。`
-        : '',
-    );
+    const notes: string[] = [];
+    if (legacy.length) notes.push(`${legacy.join('・')} は古い形式のため読めません。.docx・.xlsx・.pptx で保存し直すか、PDFにして添付してください。`);
+    if (skipped.length) notes.push(`${skipped.join('・')} は未対応か、読み取れませんでした。`);
+    setAttachNote(notes.join(' '));
   }
 
   async function ask(text: string) {
@@ -170,6 +178,8 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
         <p>
           社内の資料（理念・方針・要項・チラシ制作ルールなど）を調べて答えます（{campus} / {name} さん）。
           答えには出典の資料名が付きます。
+          資料は、PDF・画像・Word・Excel・PowerPoint を添付するか、Google ドキュメント・スプレッドシート・スライドのリンクを貼ると読みます
+          （リンクは決められたフォルダの中のファイルだけ・1回に3件まで）。
         </p>
         <p className="yq-pending-note">
           まだ入っていない資料：佐世保市の地域情報、Webページ制作・スライド制作のルール、業績の数字。
@@ -215,7 +225,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
             <input
               type="file"
               multiple
-              accept=".pdf,image/*,.txt,.csv,.md"
+              accept=".pdf,image/*,.txt,.csv,.md,.docx,.xlsx,.pptx,.doc,.xls,.ppt"
               onChange={onPickFiles}
               style={{ display: 'none' }}
             />
@@ -233,7 +243,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="相談したいことを書いてください（⌘/Ctrl+Enter で送信）"
+            placeholder="相談したいことを書いてください。Google のファイルはリンクを貼れば読みます（⌘/Ctrl+Enter で送信）"
           />
           <button onClick={() => ask(input)} disabled={busy || (!input.trim() && attachments.length === 0)}>
             {busy ? '…' : '送信'}

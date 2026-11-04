@@ -100,6 +100,17 @@ var TASK_EVAL_BOOK_ID = '1lDWFQSOIHY18UbOB2XYokRgI_jCzPKA7sOX_O7NqQXk';
 var TASK_COACH_SCHOOLS = ['日野校', '駅前校', '大野校', '日宇校'];
 var PLAN_LOG_SHEET = 'AI壁打ち書き込み';
 
+// 智翔館AI（/ai）が、職員の貼った Google ドライブのリンクから読んでよいフォルダ（フォルダID）。
+// ★ここに入れたフォルダと、その下のフォルダにあるファイルだけを読む。空なら何も読まない。
+//   名簿・成績・給与・人事のフォルダは入れないこと（このスクリプトは持ち主の権限で読むため、
+//   リンクさえ分かれば誰でも読めてしまう）。例：['1rDTV-Lg3YJmZHMSTfHs-ErDnpR3lhR_x'] // 05_広告制作
+var AI_READ_FOLDER_IDS = [];
+// フォルダの指定に関係なく読まないファイル名（念のための二重の歯止め）。
+var AI_READ_BLOCK_WORDS = ['名簿', '成績', '個票', '給与', '賞与', '成果配分', '人事評価', '健康', 'パスワード', 'password'];
+// 1ファイルで返す上限（文字数・Office/PDF の大きさ）
+var AI_READ_MAX_CHARS = 60000;
+var AI_READ_MAX_BYTES = 4 * 1024 * 1024;
+
 // 部門（campus）→ タブ探索キーワード。タブ名にこの文字列が含まれていれば、そのタブに振り分ける。
 // ※タブ名が部門名と少し違っても振り分けられるようにするための対応表。タブ名変更時はここを直す。
 var TAB_HINTS = {
@@ -195,6 +206,10 @@ function doPost(e) {
 
     if (action === 'saveTaskReport') {
       return json_(saveTaskReport_(data));
+    }
+
+    if (action === 'readDriveFile') {
+      return json_(readDriveFile_(data));
     }
 
     if (action === 'getTaskEvaluation') {
@@ -414,6 +429,8 @@ function inquiryFolder_() {
 function authorizeAll() {
   try { DocumentApp.openById(REPORT_DOC_ID).getName(); } catch (e) {}
   try { inquiryFolder_().getName(); } catch (e) {}
+  try { DriveApp.getRootFolder().getName(); } catch (e) {}
+  try { SlidesApp.getActivePresentation(); } catch (e) {}
 }
 
 function appendRow_(sheetName, headers, row) {
@@ -2227,6 +2244,129 @@ function nowJp_(ts) {
 
 function nowIso_() {
   return Utilities.formatDate(new Date(), 'Asia/Tokyo', "yyyy-MM-dd'T'HH:mm:ss");
+}
+
+// ---- 智翔館AI：Google ドライブのファイルを読む ---------------------------------
+// data.id のファイルを、AI_READ_FOLDER_IDS の中にあるときだけ文字にして返す。
+// Google ドキュメント・スプレッドシート・スライドは文字にする。
+// Word・Excel・PowerPoint・PDF は中身（base64）を返し、アプリ側で文字にする。
+function readDriveFile_(data) {
+  if (!AI_READ_FOLDER_IDS.length) return { ok: false, reason: 'not_configured' };
+  var id = String(data.id || '');
+  if (!/^[\w-]{10,}$/.test(id)) return { ok: false, reason: 'bad_id' };
+  var file;
+  try { file = DriveApp.getFileById(id); } catch (e) { return { ok: false, reason: 'not_found' }; }
+  var name = file.getName();
+  var lower = name.toLowerCase();
+  for (var w = 0; w < AI_READ_BLOCK_WORDS.length; w++) {
+    if (lower.indexOf(AI_READ_BLOCK_WORDS[w].toLowerCase()) !== -1) return { ok: false, reason: 'blocked_name', name: name };
+  }
+  if (!aiReadAllowed_(file)) return { ok: false, reason: 'not_allowed', name: name };
+
+  var mime = file.getMimeType();
+  try {
+    if (mime === MimeType.GOOGLE_DOCS) {
+      return { ok: true, name: name, kind: 'doc', text: aiCap_(DocumentApp.openById(id).getBody().getText()) };
+    }
+    if (mime === MimeType.GOOGLE_SHEETS) {
+      return { ok: true, name: name, kind: 'sheet', text: aiCap_(aiSheetText_(SpreadsheetApp.openById(id))) };
+    }
+    if (mime === MimeType.GOOGLE_SLIDES) {
+      return { ok: true, name: name, kind: 'slides', text: aiCap_(aiSlidesText_(SlidesApp.openById(id))) };
+    }
+    var office = {
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+      'application/pdf': 'pdf'
+    }[mime];
+    if (!office) return { ok: false, reason: 'unsupported', name: name, mime: mime };
+    if (file.getSize() > AI_READ_MAX_BYTES) return { ok: false, reason: 'too_large', name: name };
+    return { ok: true, name: name, kind: office, base64: Utilities.base64Encode(file.getBlob().getBytes()) };
+  } catch (err) {
+    return { ok: false, reason: 'read_failed', name: name };
+  }
+}
+
+// ファイルの親フォルダをさかのぼり、許可したフォルダの下にあるかを調べる。
+function aiReadAllowed_(file) {
+  var queue = [];
+  var parents = file.getParents();
+  while (parents.hasNext()) queue.push(parents.next());
+  var seen = {};
+  for (var depth = 0; depth < 30 && queue.length; depth++) {
+    var next = [];
+    for (var i = 0; i < queue.length; i++) {
+      var f = queue[i];
+      var fid = f.getId();
+      if (seen[fid]) continue;
+      seen[fid] = true;
+      if (AI_READ_FOLDER_IDS.indexOf(fid) !== -1) return true;
+      var ps = f.getParents();
+      while (ps.hasNext()) next.push(ps.next());
+    }
+    queue = next;
+  }
+  return false;
+}
+
+function aiCap_(text) {
+  text = String(text || '');
+  return text.length <= AI_READ_MAX_CHARS ? text : text.slice(0, AI_READ_MAX_CHARS) + '\n\n（長いため ' + AI_READ_MAX_CHARS + ' 文字で切りました）';
+}
+
+// スプレッドシート：シートごとに、表示どおりの値をタブ区切りで（1シート300行・40列まで）。
+function aiSheetText_(ss) {
+  var out = [];
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var sh = sheets[i];
+    var rows = Math.min(sh.getLastRow(), 300);
+    var cols = Math.min(sh.getLastColumn(), 40);
+    var body = '（空）';
+    if (rows > 0 && cols > 0) {
+      var values = sh.getRange(1, 1, rows, cols).getDisplayValues();
+      var lines = [];
+      for (var r = 0; r < values.length; r++) {
+        var line = values[r].join('\t').replace(/\t+$/, '');
+        if (line) lines.push(line.replace(/\n/g, ' '));
+      }
+      body = lines.join('\n') + (sh.getLastRow() > 300 ? '\n（300行で切りました）' : '');
+    }
+    out.push('## シート「' + sh.getName() + '」\n' + body);
+  }
+  return out.join('\n\n');
+}
+
+// スライド：1枚ずつ、図形と表の文字、話す内容（ノート）を。
+function aiSlidesText_(pres) {
+  var out = [];
+  var slides = pres.getSlides();
+  for (var i = 0; i < slides.length; i++) {
+    var texts = [];
+    var els = slides[i].getPageElements();
+    for (var j = 0; j < els.length; j++) {
+      var el = els[j];
+      var t = el.getPageElementType();
+      if (t === SlidesApp.PageElementType.SHAPE) {
+        var s = el.asShape().getText().asString().trim();
+        if (s) texts.push(s);
+      } else if (t === SlidesApp.PageElementType.TABLE) {
+        var tb = el.asTable();
+        for (var r = 0; r < tb.getNumRows(); r++) {
+          var cells = [];
+          for (var c = 0; c < tb.getNumColumns(); c++) {
+            try { cells.push(tb.getCell(r, c).getText().asString().trim()); } catch (e) { cells.push(''); }
+          }
+          texts.push(cells.join(' | '));
+        }
+      }
+    }
+    var notes = '';
+    try { notes = slides[i].getNotesPage().getSpeakerNotesShape().getText().asString().trim(); } catch (e) {}
+    out.push('## スライド ' + (i + 1) + '\n' + (texts.join('\n') || '（文字なし）') + (notes ? '\n（ノート）' + notes : ''));
+  }
+  return out.join('\n\n');
 }
 
 function json_(obj) {

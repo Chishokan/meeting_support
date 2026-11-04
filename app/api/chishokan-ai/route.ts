@@ -2,7 +2,8 @@
 //
 // 流れ：会社の前提（COMPANY.md）＋回答方針（00_index/CLAUDE.md）＋索引（00_index/INDEX.md）を渡し、
 // AIが read_file / grep_knowledge / list_dir で必要な資料だけを読んで答える（lib/chishokanAi/knowledgeTools.ts）。
-// 添付（PDF・画像・テキスト）は今回の質問にだけ付ける。資料の方針チェックに使う。
+// 添付（PDF・画像・テキスト。Word・Excel・PowerPoint は画面側で文字にしてから送る）は今回の質問にだけ付ける。
+// 質問に Google ドライブのリンクがあれば、Apps Script で中身を読んで一緒に渡す（読めるフォルダは限定。lib/chishokanAi/driveFiles.ts）。
 // 試用中は使える人を絞っている（lib/chishokanAi/access.ts）。
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -15,6 +16,7 @@ import { sanitizeHistory, stripRoleBleed } from '@/lib/core/sanitize';
 import { canUseChishokanAi } from '@/lib/chishokanAi/access';
 import { buildChishokanAiPrompt } from '@/lib/chishokanAi/prompt';
 import { KNOWLEDGE_ROOT, KNOWLEDGE_TOOLS, runKnowledgeTool } from '@/lib/chishokanAi/knowledgeTools';
+import { readDriveLinks } from '@/lib/chishokanAi/driveFiles';
 
 const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
 
@@ -54,6 +56,7 @@ async function readText(p: string): Promise<string> {
 }
 
 export async function POST(req: Request) {
+  const requestStarted = Date.now();
   const session = getSession();
   if (!session) return new Response('unauthorized', { status: 401 });
   if (!canUseChishokanAi(session.name)) return new Response('智翔館AIは試用中のため、まだ利用できません。', { status: 403 });
@@ -70,6 +73,10 @@ export async function POST(req: Request) {
     readText(path.join(root, '00_index', 'INDEX.md')),
   ]);
 
+  // 最後の質問に Google ドライブのリンクがあれば読む（最大3件）。
+  const lastUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+  const drive = await readDriveLinks(lastUserText);
+
   const system: Anthropic.TextBlockParam[] = [
     {
       type: 'text',
@@ -82,6 +89,7 @@ export async function POST(req: Request) {
       ? {
           role: m.role,
           content: [
+            ...drive.blocks,
             ...attachBlocks(attachments),
             { type: 'text', text: m.content, cache_control: { type: 'ephemeral' } },
           ] as Anthropic.ContentBlockParam[],
@@ -97,7 +105,8 @@ export async function POST(req: Request) {
 
   const rs = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const started = Date.now();
+      // リンクの読み込みにかかった時間も含めて、60秒の制限に収める。
+      const started = requestStarted;
       let toolCalls = 0;
       try {
         for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -151,11 +160,14 @@ export async function POST(req: Request) {
         } catch {}
         const lastUser = [...messages].reverse().find((m) => m.role === 'user');
         const attachNote = attachments.length ? `（添付: ${attachments.map((a) => a.name).join('、')}）` : '';
+        const driveNote = drive.reads.length
+          ? `（リンク: ${drive.reads.map((r) => `${r.name}${r.ok ? '' : `＝読めず:${r.note}`}`).join('、')}）`
+          : '';
         try {
           await logInteraction({
             user: session.name,
             campus: session.campus,
-            input: `[智翔館AI] ${lastUser?.content ?? ''}${attachNote}\n（調べた資料: ${opened.join('、') || 'なし'}）`,
+            input: `[智翔館AI] ${lastUser?.content ?? ''}${attachNote}${driveNote}\n（調べた資料: ${opened.join('、') || 'なし'}）`,
             output: stripRoleBleed(full),
           });
         } catch {}

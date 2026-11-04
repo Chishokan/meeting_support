@@ -12,6 +12,11 @@
   - PDF・画像・テキストを添付すると、方針チェック観点（10_理念・方針/方針チェック観点_2026.md）に沿ってアドバイスする
   - 答え方は knowledge/00_index/CLAUDE.md（回答方針）で決まる。Markdown を直せばコードを変えずに答え方が変わる
   - 会話は画面の中だけ。会話ログには、質問・回答と「調べた資料」が残る
+  - 資料の読み込み：Word（.docx）・Excel（.xlsx）・PowerPoint（.pptx）を添付すると、画面の中で文字と表を取り出して AI に渡す（jszip を追加）。
+    古い形式（.doc・.xls・.ppt）は案内を出して受け付けない
+  - Google ドキュメント・スプレッドシート・スライド（と、ドライブ上の Word・Excel・PowerPoint・PDF）は、質問にリンクを貼ると読む（1回に3件まで）。
+    **apps_script/Code.gs の再デプロイが必要**（readDriveFile_ を追加。Drive・Slides の権限の承認が要る）。
+    読めるのは Code.gs の `AI_READ_FOLDER_IDS` に入れたフォルダの下だけ（空なら何も読まない）。名簿・成績・給与などの語を含むファイル名は読まない
 - 試用中は使える人を絞る。**Vercel の環境変数 CHISHOKAN_AI_MEMBERS** にログイン名をカンマ区切りで書く
   （例：安藤純平,冨松太一）。「*」で全員。未設定なら安藤純平のみ
 - knowledge/00_index/CLAUDE.md を智翔館AIの回答方針として書き直した（主な相談と読む資料、まだ無い資料、方針チェックの進め方）
