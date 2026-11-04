@@ -36,7 +36,7 @@ dept: 小中等部            # 全社 / 小中等部 / RED個別 / 高等部 / 
 owner: 安東瑞輝           # 更新責任者
 updated: 2026-06-01
 source: drive:1AbcDEf...  # 原本の Drive ファイルID
-source_type: spreadsheet  # doc / spreadsheet / xlsx / docx / pdf / image
+source_type: spreadsheet  # doc / spreadsheet / xlsx / docx / pptx / pdf / image
 tags: [夏期講習, 外部生募集, 要項]
 visibility: all           # all / admin_only
 summary: 2026年度夏期講習の日程・料金・外部生募集条件をまとめたもの
