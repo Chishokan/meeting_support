@@ -2032,6 +2032,247 @@ function writeLegacyReport_(d, applied) {
   rp.setFrozenRows(1);
 }
 
+// ---- HP フォームの通知メールから、台帳の空欄（ふりがな・学年 など）を埋める ---------------------
+//
+// 使い方（Apps Script のエディタから。このスクリプトを実行する Google アカウントの Gmail を読む。
+//        初回は Gmail の読み取り許可を求められる）
+//   previewFillFromHpMails() … 何が埋まるかを「HPメール補完」タブに書くだけ（台帳は変えない）
+//   applyFillFromHpMails()   … 台帳に反映する。結果も「HPメール補完」タブに書く
+//
+// 対象メール：HP_MAIL_FROM から届いた、本文が「お子様名：…」「ふりがな：…」の形の通知メール（直近 HP_MAIL_DAYS 日）。
+// 突き合わせ：お子様名（空白を除いて比較）が同じ台帳の行。同名が複数あれば電話番号の数字が同じ行、それも無ければ日付が近い行。
+// 反映：台帳が空欄の項目だけメールの値で埋める（ふりがな・学年・学校名・電話番号・保護者名・郵便番号・住所・メールアドレス）。
+//       受験希望日・希望日程・希望コース・ご相談内容などは、備考にまだ無ければ「[HPメール 11/4 本番レベル模試] 受験希望日:…」として足す。
+//       既に入っている値は上書きしない。何度実行しても同じ結果（2回目以降は変更なし）。
+var HP_MAIL_FROM = 'hp-info@chishokan.co.jp';
+var HP_MAIL_DAYS = 180;
+var HP_MAIL_REPORT_SHEET = 'HPメール補完';
+// メール本文の「ラベル：値」→ 台帳の列。左の語を含むラベルを右の列に当てる（上から順）。
+var HP_MAIL_LABELS = [
+  { col: '保護者ふりがな', any: /(ふりがな|フリガナ|よみ)/, need: /保護者/ },
+  { col: 'ふりがな', any: /(ふりがな|フリガナ|よみ)/, not: /保護者/ },
+  { col: '保護者名', any: /保護者/, not: /(ふりがな|フリガナ|電話|メール)/ },
+  { col: '生徒氏名', any: /(お子様名|お子さま名|お子様|生徒氏名|生徒名|お名前|氏名)/, not: /(保護者|ふりがな|フリガナ)/ },
+  { col: '学年', any: /学年/ },
+  { col: '学校名', any: /学校/, not: /校舎/ },
+  { col: '電話番号', any: /(電話|TEL|Tel|tel)/ },
+  { col: 'メールアドレス', any: /(メール|Mail|mail)/ },
+  { col: '郵便番号', any: /郵便/ },
+  { col: '住所', any: /住所/ },
+];
+var HP_MAIL_FILL_COLS = ['ふりがな', '学年', '学校名', '電話番号', '保護者名', '郵便番号', '住所', 'メールアドレス'];
+// 備考に残すラベル（上の列に当たらなかったもののうち、意味のあるもの）
+var HP_MAIL_NOTE_LABELS = /(希望|日程|日時|コース|講座|校舎|相談|内容|問い合わせ|問合せ|備考|きっかけ|媒体)/;
+
+function previewFillFromHpMails() { return hpMailFill_(false); }
+function applyFillFromHpMails() { return hpMailFill_(true); }
+
+function hpMailFill_(apply) {
+  var mails = readHpMails_();
+  var sh = inquiryDbSheet_();
+  var col = dbColMap_(sh);
+  var width = Math.max(sh.getLastColumn(), INQUIRY_DB_HEADERS.length);
+  var values = sh.getLastRow() < 1 ? [] : sh.getDataRange().getValues();
+
+  // 台帳：氏名 → 行の一覧（削除済みは除く）
+  var byName = {};
+  for (var r = 1; r < values.length; r++) {
+    var obj = dbRowToObj_(values[r], col);
+    if (!obj['ID'] || obj['削除'] === '1') continue;
+    var nk = legacyNameKey_(obj['生徒氏名']);
+    if (!nk) continue;
+    (byName[nk] = byName[nk] || []).push({ rowIndex: r, obj: obj });
+  }
+
+  var report = [];  // [区分, 校舎, No., 氏名, 項目, 値, メール日時, 件名]
+  var changes = {}; // rowIndex → { fill: {}, noteAdd: [] }
+  var unmatched = 0, matched = 0;
+  for (var i = 0; i < mails.length; i++) {
+    var m = mails[i];
+    var f = m.fields;
+    var name = f['生徒氏名'] || '';
+    var nk2 = legacyNameKey_(name);
+    if (!nk2) continue;
+    var cands = byName[nk2] || [];
+    if (!cands.length) {
+      unmatched++;
+      report.push(['台帳に無い', '', '', name, '', (f['学年'] || '') + ' ' + (f['学校名'] || ''), m.date, m.subject]);
+      continue;
+    }
+    var hit = cands[0];
+    if (cands.length > 1) {
+      var tel = String(f['電話番号'] || '').replace(/[^0-9]/g, '');
+      var same = cands.filter(function (c) { return tel && String(c.obj['電話番号']).replace(/[^0-9]/g, '') === tel; });
+      if (same.length) hit = same[0];
+      else {
+        // 日付がメールに近い行
+        var md = m.dateIso;
+        cands.sort(function (a, b) { return Math.abs(dayDiff_(a.obj['日付'], md)) - Math.abs(dayDiff_(b.obj['日付'], md)); });
+        hit = cands[0];
+      }
+    }
+    matched++;
+    var ch = changes[hit.rowIndex] || (changes[hit.rowIndex] = { fill: {}, noteAdd: [], obj: hit.obj });
+    for (var k = 0; k < HP_MAIL_FILL_COLS.length; k++) {
+      var c2 = HP_MAIL_FILL_COLS[k];
+      var mv = c2 === '学年' ? hpGrade_(f['学年']) : (f[c2] || '');
+      if (c2 === '保護者名' && f['保護者ふりがな'] && mv) mv = mv + '（' + f['保護者ふりがな'] + '）';
+      if (!mv) continue;
+      if (String(hit.obj[c2] || '').trim()) continue;      // 既に入っている
+      if (ch.fill[c2]) continue;                              // 先のメールで埋める予定
+      ch.fill[c2] = mv;
+      report.push([apply ? '埋めた' : '埋める（確認のみ）', hit.obj['校舎'], hit.obj['No.'], hit.obj['生徒氏名'], c2, mv, m.date, m.subject]);
+    }
+    // 備考に残す項目
+    var extras = [];
+    for (var lb in f.extras) extras.push(lb + ':' + f.extras[lb]);
+    if (extras.length) {
+      var line = '[HPメール ' + m.dateShort + (m.form ? ' ' + m.form : '') + '] ' + extras.join(' ／ ');
+      var curNote = String(hit.obj['備考'] || '');
+      var already = extras.every(function (e) { return curNote.indexOf(e.split(':').slice(1).join(':')) !== -1; });
+      if (!already && ch.noteAdd.indexOf(line) === -1) {
+        ch.noteAdd.push(line);
+        report.push([apply ? '備考に追記' : '備考に追記（確認のみ）', hit.obj['校舎'], hit.obj['No.'], hit.obj['生徒氏名'], '備考', line, m.date, m.subject]);
+      }
+    }
+  }
+
+  var updated = 0;
+  if (apply) {
+    var ts = nowJp_();
+    for (var ri in changes) {
+      var c3 = changes[ri];
+      var hasFill = Object.keys(c3.fill).length > 0;
+      if (!hasFill && !c3.noteAdd.length) continue;
+      var idx = Number(ri);
+      var rowArr = values[idx].slice();
+      for (var fcol in c3.fill) rowArr[col[fcol]] = c3.fill[fcol];
+      if (c3.noteAdd.length) {
+        var n0 = dbCellStr_(rowArr[col['備考']]);
+        rowArr[col['備考']] = (n0 ? n0 + '\n' : '') + c3.noteAdd.join('\n');
+      }
+      rowArr[col['更新日時']] = ts;
+      rowArr[col['更新者']] = 'HPメール補完';
+      for (var w = 0; w < width; w++) rowArr[w] = rowArr[w] == null ? '' : (rowArr[w] instanceof Date ? dbCellStr_(rowArr[w]) : String(rowArr[w]));
+      sh.getRange(idx + 1, 1, 1, width).setNumberFormat('@').setValues([rowArr]);
+      updated++;
+    }
+  }
+
+  // レポート
+  var id = INQUIRY_DB_ID || SPREADSHEET_ID;
+  var ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  var rp = ss.getSheetByName(HP_MAIL_REPORT_SHEET) || ss.insertSheet(HP_MAIL_REPORT_SHEET);
+  rp.clearContents();
+  var head = ['実行日時', '区分', '校舎', 'No.', '生徒氏名', '項目', '値', 'メール日時', 'メール件名'];
+  var out = [head];
+  var ts2 = nowJp_();
+  for (var q = 0; q < report.length; q++) out.push([ts2].concat(report[q]));
+  if (out.length === 1) out.push([ts2, '変更なし', '', '', '', '', '', '', '']);
+  rp.getRange(1, 1, out.length, head.length).setNumberFormat('@').setValues(out);
+  rp.setFrozenRows(1);
+
+  var msg = (apply ? '' : '【確認のみ】') + 'メール ' + mails.length + ' 通を読み、台帳の行に当たったもの ' + matched + ' 通、台帳に無い ' + unmatched + ' 通。'
+    + (apply ? '更新した行 ' + updated + ' 件。' : '') + '明細は「' + HP_MAIL_REPORT_SHEET + '」タブ。';
+  Logger.log(msg);
+  return { preview: !apply, mails: mails.length, matched: matched, unmatched: unmatched, updated: updated, message: msg };
+}
+
+// Gmail から通知メールを読み、「ラベル：値」を台帳の列名に当てて返す。
+function readHpMails_() {
+  var query = 'from:' + HP_MAIL_FROM + ' newer_than:' + HP_MAIL_DAYS + 'd';
+  var out = [];
+  var start = 0;
+  while (true) {
+    var threads = GmailApp.search(query, start, 100);
+    if (!threads.length) break;
+    for (var t = 0; t < threads.length; t++) {
+      var msgs = threads[t].getMessages();
+      for (var j = 0; j < msgs.length; j++) {
+        var msg = msgs[j];
+        var parsed = parseHpMail_(msg.getPlainBody() || '');
+        if (!parsed.fields['生徒氏名']) continue;
+        var d = msg.getDate();
+        var subject = String(msg.getSubject() || '');
+        out.push({
+          fields: parsed.fields,
+          date: Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy/MM/dd HH:mm'),
+          dateShort: Utilities.formatDate(d, 'Asia/Tokyo', 'M/d HH:mm'),
+          dateIso: Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd'),
+          subject: subject,
+          form: hpFormName_(subject),
+        });
+      }
+    }
+    start += threads.length;
+    if (threads.length < 100 || start >= 2000) break;
+  }
+  // 古い順に並べる（同じ人に複数あれば、先に来たメールの値を使う）
+  out.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+  return out;
+}
+
+// 本文の各行「ラベル：値」を読む。列に当たらないラベルは extras に残す。
+function parseHpMail_(body) {
+  var fields = { extras: {} };
+  var lines = String(body).replace(/\r\n?/g, '\n').split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) continue;
+    if (/^(--|―|＝|=|個人情報保護方針|このメールは)/.test(line)) break; // フッター以降は読まない
+    var m = /^([^：:]{1,20})[：:]\s*(.*)$/.exec(line);
+    if (!m) continue;
+    var label = m[1].trim();
+    var val = m[2].trim();
+    if (!val) continue;
+    var hitCol = '';
+    for (var k = 0; k < HP_MAIL_LABELS.length; k++) {
+      var rule = HP_MAIL_LABELS[k];
+      if (!rule.any.test(label)) continue;
+      if (rule.not && rule.not.test(label)) continue;
+      if (rule.need && !rule.need.test(label)) continue;
+      hitCol = rule.col;
+      break;
+    }
+    if (hitCol) {
+      if (!fields[hitCol]) fields[hitCol] = val;
+    } else if (HP_MAIL_NOTE_LABELS.test(label)) {
+      fields.extras[label] = val.length > 200 ? val.slice(0, 200) + '…' : val;
+    }
+  }
+  return { fields: fields };
+}
+
+// 件名からフォーム名らしい部分を取る（【本番レベル模試】… のような形）。無ければ空。
+function hpFormName_(subject) {
+  var m = /[【\[]([^】\]]{1,20})[】\]]/.exec(subject || '');
+  if (m) return m[1];
+  var s = String(subject || '').replace(/^(Re:|Fwd?:)\s*/i, '').trim();
+  return s.length <= 20 ? s : '';
+}
+
+// 「中学3年生」「小6」「高校1年」→ 台帳の学年（小１〜高３・全角数字）。読めなければそのまま。
+function hpGrade_(s) {
+  var t = String(s == null ? '' : s).replace(/[\s　]/g, '');
+  if (!t) return '';
+  var m = /^(小学|中学|高校|小|中|高)(?:校)?([0-9０-９])(?:年生?|年)?$/.exec(t);
+  if (!m) return t;
+  var head = m[1].charAt(0);
+  var zen = '０１２３４５６７８９';
+  var n = m[2];
+  var nz = /[0-9]/.test(n) ? zen.charAt(Number(n)) : n;
+  return head + nz;
+}
+
+function dayDiff_(a, b) {
+  var pa = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(a || ''));
+  var pb = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(b || ''));
+  if (!pa || !pb) return 99999;
+  var da = new Date(Number(pa[1]), Number(pa[2]) - 1, Number(pa[3]));
+  var db = new Date(Number(pb[1]), Number(pb[2]) - 1, Number(pb[3]));
+  return Math.round((da - db) / 86400000);
+}
+
 // 旧シートの日付セル → YYYY-MM-DD。Date 型はそのまま、「5/21」「5月21日」は年を補う。
 // 「5/21.6/29」のような複数日はそのまま文字列で残す（Web アプリ側は文字入力として見せる）。
 function legacyDate_(v) {
