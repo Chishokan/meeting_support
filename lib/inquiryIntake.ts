@@ -35,14 +35,16 @@ export type IntakeFields = {
   message: string;  // お問い合わせ内容
   submissionId: string; // フォーム側の送信ID（あれば二重登録防止に使う）
   formName: string; // どのフォームから来たか（資料請求・テスト対策 など）。Webhook URL の ?form= で渡す
+  extras: string;   // 上のどれにも当てはまらなかった項目（受験希望日 など）。「項目名:値 ／ …」の形で備考に残す
 };
+type AliasKey = Exclude<keyof IntakeFields, 'extras'>;
 
 /**
  * 項目名の候補。左から順に探し、最初に値があるものを使う。
  * 通知メールの項目名（お子様名 …）と、Contact Form 7 で付けやすい英語名の両方を受け付ける。
  * ★WordPress 側でフォームの項目名を変えたらここに足す。
  */
-export const FIELD_ALIASES: Record<keyof IntakeFields, string[]> = {
+export const FIELD_ALIASES: Record<AliasKey, string[]> = {
   // 実際の CF7 フォーム（例：「●中学生向け定期テスト対策」）のタグは
   //   your-name（お子様名）/ your-parent（保護者名）/ your-school / your-class（学年）/ your-tel / your-email / your-message
   studentName: ['student_name', 'お子様名', 'お子さま名', '生徒氏名', '生徒名', 'your-name', 'name'],
@@ -80,21 +82,77 @@ function normKey(k: string): string {
   return k.toLowerCase().replace(/[\s　_\-]/g, '');
 }
 
+/**
+ * 項目名が候補（FIELD_ALIASES）に無いときの当て方。キーに含まれる言葉で判断する。
+ * フォームごとにタグ名が違い（your-kana / your-furigana / student-kana2 …）、候補に無い名前だと
+ * ふりがな・学年が空のまま登録されていたため。上から順に見て、先に当たった項目に割り当てる。
+ * （キーは normKey 済み＝小文字・空白/ハイフン/アンダースコア無しで比べる）
+ */
+const FUZZY_RULES: { key: AliasKey; any: RegExp; not?: RegExp }[] = [
+  { key: 'guardianKana', any: /(kana|furigana|hurigana|ふりがな|フリガナ|よみ|yomi|ruby)/, not: undefined },
+  { key: 'kana', any: /(kana|furigana|hurigana|ふりがな|フリガナ|よみ|yomi|ruby)/, not: /(parent|guardian|hogosha|保護者)/ },
+  { key: 'guardianName', any: /(parent|guardian|hogosha|保護者)/, not: /(kana|furigana|hurigana|ふりがな|フリガナ|mail|tel|phone|電話)/ },
+  { key: 'studentName', any: /(name|氏名|名前|お子様|お子さま|生徒|student|seito)/, not: /(kana|furigana|ふりがな|フリガナ|parent|guardian|保護者|school|学校|campus|校舎|form|user|company|会社)/ },
+  { key: 'grade', any: /(grade|gakunen|学年|class|gakusei)/ },
+  { key: 'school', any: /(school|学校|gakkou|gakko)/, not: /(campus|校舎)/ },
+  { key: 'campus', any: /(campus|校舎|kousha|kosha)/ },
+  { key: 'phone', any: /(tel|phone|電話|denwa)/ },
+  { key: 'email', any: /(mail|メール)/ },
+  { key: 'postal', any: /(zip|postal|郵便|yubin)/ },
+  { key: 'address', any: /(address|住所|jusho|jyusho)/ },
+  { key: 'course', any: /(course|コース|講座|kouza)/ },
+  { key: 'referrer', any: /(referr|紹介|shokai)/ },
+  { key: 'message', any: /(message|内容|お問い合わせ|問合せ|備考|comment|naiyou|naiyo)/ },
+];
+// 保護者ふりがなの規則だけは「保護者」を含むことが条件（上の not と逆）
+const GUARDIAN_WORD = /(parent|guardian|hogosha|保護者)/;
+
+// 備考に残す対象から外すキー（技術的なもの・同意チェック・既に別の形で使うもの）
+const EXTRA_SKIP = /^(token|form|formname|formtitle|submissionid|id|entryid|formidentry|wpcf7.*|_.*|.*consent.*|.*acceptance.*|.*recaptcha.*|.*honeypot.*|yourconsent|privacy|同意.*|個人情報.*)$/;
+
 export function readFields(payload: IntakePayload): IntakeFields {
-  const lookup = new Map<string, unknown>();
+  const lookup = new Map<string, { raw: string; v: unknown }>();
   for (const [k, v] of Object.entries(payload)) {
     const nk = normKey(k);
-    if (!lookup.has(nk)) lookup.set(nk, v);
+    if (!lookup.has(nk)) lookup.set(nk, { raw: k, v });
   }
+  const used = new Set<string>();
   const pick = (aliases: string[]) => {
     for (const a of aliases) {
-      const v = text(lookup.get(normKey(a)));
-      if (v) return v;
+      const nk = normKey(a);
+      const v = text(lookup.get(nk)?.v);
+      if (v) { used.add(nk); return v; }
     }
     return '';
   };
-  const out = {} as IntakeFields;
-  for (const key of Object.keys(FIELD_ALIASES) as (keyof IntakeFields)[]) out[key] = pick(FIELD_ALIASES[key]);
+  const out = { extras: '' } as IntakeFields;
+  for (const key of Object.keys(FIELD_ALIASES) as AliasKey[]) out[key] = pick(FIELD_ALIASES[key]);
+
+  // 候補に無い名前の項目を、キーに含まれる言葉で当てる（空のままの項目だけ）
+  for (const rule of FUZZY_RULES) {
+    if (out[rule.key]) continue;
+    for (const [nk, { v }] of lookup) {
+      if (used.has(nk) || !rule.any.test(nk)) continue;
+      if (rule.not && rule.not.test(nk)) continue;
+      if (rule.key === 'guardianKana' && !GUARDIAN_WORD.test(nk)) continue;
+      const val = text(v);
+      if (!val) continue;
+      out[rule.key] = val;
+      used.add(nk);
+      break;
+    }
+  }
+
+  // どれにも当たらなかった項目は捨てずに備考へ（受験希望日・希望日時 など。フォームの項目名もここで分かる）
+  const extras: string[] = [];
+  for (const [nk, { raw, v }] of lookup) {
+    if (used.has(nk) || EXTRA_SKIP.test(nk)) continue;
+    const val = text(v);
+    if (!val) continue;
+    extras.push(`${raw}:${val.length > 200 ? val.slice(0, 200) + '…' : val}`);
+    if (extras.length >= 12) break;
+  }
+  out.extras = extras.join(' ／ ');
   out.phone = normalizePhone(out.phone);
   return out;
 }
@@ -191,6 +249,7 @@ export function buildNoteChunk(f: IntakeFields, todayIso: string, timeHm = ''): 
     f.course ? `希望コース:${f.course}` : '',
     f.consult ? `相談事項:${stripFormBoilerplate(f.consult)}` : '',
     f.message ? `内容:${stripFormBoilerplate(f.message)}` : '',
+    f.extras, // 当てはまる欄が無かった項目（受験希望日 など）
   ].filter(Boolean);
   return `[${head}] ${parts.join(' ／ ') || '（本文なし）'}`;
 }
