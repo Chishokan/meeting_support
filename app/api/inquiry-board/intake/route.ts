@@ -87,6 +87,8 @@ async function handle(req: Request): Promise<Response> {
   });
 
   const fields = readFields(payload);
+  // どの項目名で届いたかをログに残す（値は残さない）。ふりがな・学年が空で登録されるときの調査用
+  const keys = Object.keys(payload).filter((k) => k !== 'token');
 
   const list = await listRecords();
   if (!list.ok) return Response.json({ ok: false, reason: list.reason }, { status: 502 });
@@ -94,7 +96,7 @@ async function handle(req: Request): Promise<Response> {
   const decision = decideIntake(fields, list.items, todayIso(), nowHm());
 
   if (decision.action === 'skip') {
-    console.log('[INQUIRY_INTAKE]', JSON.stringify({ action: 'skip', reason: decision.reason, submissionId: fields.submissionId }));
+    console.log('[INQUIRY_INTAKE]', JSON.stringify({ action: 'skip', reason: decision.reason, submissionId: fields.submissionId, keys }));
     return Response.json({ ok: true, action: 'skip', reason: decision.reason });
   }
 
@@ -104,13 +106,13 @@ async function handle(req: Request): Promise<Response> {
   if (decision.action === 'append') {
     const r = await updateRecord(decision.target.id, v.value, INTAKE_USER);
     if (!r.ok) return Response.json({ ok: false, reason: r.reason }, { status: 502 });
-    console.log('[INQUIRY_INTAKE]', JSON.stringify({ action: 'append', campus: r.item.campus, no: r.item.no, form: fields.formName }));
+    console.log('[INQUIRY_INTAKE]', JSON.stringify({ action: 'append', campus: r.item.campus, no: r.item.no, form: fields.formName, keys, kana: !!fields.kana, grade: !!fields.grade }));
     return Response.json({ ok: true, action: 'append', campus: r.item.campus, no: r.item.no, id: r.item.id });
   }
 
   const r = await createRecord(v.value, INTAKE_USER);
   if (!r.ok) return Response.json({ ok: false, reason: r.reason }, { status: 502 });
-  console.log('[INQUIRY_INTAKE]', JSON.stringify({ action: 'create', campus: r.item.campus, no: r.item.no, form: fields.formName }));
+  console.log('[INQUIRY_INTAKE]', JSON.stringify({ action: 'create', campus: r.item.campus, no: r.item.no, form: fields.formName, keys, kana: !!fields.kana, grade: !!fields.grade }));
   return Response.json({ ok: true, action: 'create', campus: r.item.campus, no: r.item.no, id: r.item.id });
 }
 
