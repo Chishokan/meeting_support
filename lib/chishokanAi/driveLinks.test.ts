@@ -28,3 +28,16 @@ test('reasonText：理由を職員向けの言葉にする', () => {
   assert.match(reasonText('blocked_name'), /名簿/);
   assert.match(reasonText('???'), /失敗/);
 });
+
+test('extractDriveFolderIds・driveIdFrom：フォルダのリンクとIDを取り出す', async () => {
+  const { extractDriveFolderIds, driveIdFrom } = await import('./driveLinks.ts');
+  assert.deepEqual(
+    extractDriveFolderIds('見て https://drive.google.com/drive/folders/16VRA3zstFpsKGKc2UsFX?usp=drive_link と https://drive.google.com/drive/u/0/folders/1AnotherFolderXX'),
+    ['16VRA3zstFpsKGKc2UsFX', '1AnotherFolderXX'],
+  );
+  assert.equal(driveIdFrom('https://docs.google.com/document/d/1DocIdAAAAAAAA/edit'), '1DocIdAAAAAAAA');
+  assert.equal(driveIdFrom('https://drive.google.com/drive/folders/1FolderIdBBBBBB'), '1FolderIdBBBBBB');
+  assert.equal(driveIdFrom('  1RawIdCCCCCCCCC '), '1RawIdCCCCCCCCC');
+  assert.equal(driveIdFrom('短い'), null);
+  assert.equal(driveIdFrom(42), null);
+});

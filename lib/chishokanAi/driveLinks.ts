@@ -9,6 +9,24 @@ const PATTERNS = [
   /https?:\/\/drive\.google\.com\/open\?(?:[^\s]*&)?id=([\w-]{10,})/g,
 ];
 
+const FOLDER_PATTERN = /https?:\/\/drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/([\w-]{10,})/g;
+
+/** 文章から Google ドライブのフォルダIDを取り出す（出てきた順・重複なし・上限つき）。 */
+export function extractDriveFolderIds(text: string, max = MAX_LINKS): string[] {
+  const ids: string[] = [];
+  for (const m of text.matchAll(FOLDER_PATTERN)) if (!ids.includes(m[1])) ids.push(m[1]);
+  return ids.slice(0, max);
+}
+
+/** ツールに渡された「URL か ID」から ID を取り出す。取り出せなければ null。 */
+export function driveIdFrom(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const s = input.trim();
+  const fromUrl = extractDriveIds(s, 1)[0] ?? extractDriveFolderIds(s, 1)[0];
+  if (fromUrl) return fromUrl;
+  return /^[\w-]{10,}$/.test(s) ? s : null;
+}
+
 /** 文章から Google ドライブのファイルIDを取り出す（出てきた順・重複なし・上限つき）。 */
 export function extractDriveIds(text: string, max = MAX_LINKS): string[] {
   const found: { id: string; at: number }[] = [];
@@ -30,6 +48,7 @@ const REASONS: Record<string, string> = {
   unsupported: 'この種類のファイルには対応していません',
   too_large: 'ファイルが大きすぎます（4MBまで）',
   bad_id: 'リンクの形が正しくありません',
+  not_folder: 'フォルダではありません',
   read_failed: '読み取りに失敗しました',
   not_deployed: 'Apps Script が古いままです（再デプロイが必要）',
   upstream_error: 'Apps Script との通信に失敗しました',

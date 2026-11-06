@@ -16,7 +16,8 @@ import { sanitizeHistory, stripRoleBleed } from '@/lib/core/sanitize';
 import { canUseChishokanAi } from '@/lib/chishokanAi/access';
 import { buildChishokanAiPrompt } from '@/lib/chishokanAi/prompt';
 import { KNOWLEDGE_ROOT, KNOWLEDGE_TOOLS, runKnowledgeTool } from '@/lib/chishokanAi/knowledgeTools';
-import { readDriveLinks } from '@/lib/chishokanAi/driveFiles';
+import { readDriveLinks, runDriveTool, type DriveRead } from '@/lib/chishokanAi/driveFiles';
+import { DRIVE_TOOLS } from '@/lib/chishokanAi/driveTools';
 import { CREATE_DOC_TOOL } from '@/lib/chishokanAi/createDocTool';
 import { runCreateDoc, type CreatedDoc } from '@/lib/chishokanAi/createDoc';
 
@@ -99,7 +100,8 @@ export async function POST(req: Request) {
       : { role: m.role, content: m.content },
   );
   // 資料を読む3つの道具と、頼まれたときに Google ドキュメントの下書きを作る道具（1回の回答で1つまで）。
-  const tools = [...KNOWLEDGE_TOOLS, CREATE_DOC_TOOL] as unknown as Anthropic.Tool[];
+  const tools = [...KNOWLEDGE_TOOLS, ...DRIVE_TOOLS, CREATE_DOC_TOOL] as unknown as Anthropic.Tool[];
+  const driveToolReads: DriveRead[] = [];
 
   const encoder = new TextEncoder();
   let full = '';
@@ -150,6 +152,15 @@ export async function POST(req: Request) {
             let out: string;
             if (toolCalls > MAX_TOOL_CALLS) {
               out = 'ツールの上限に達しました。ここまでにわかった範囲で答えてください。';
+            } else if (block.name === 'list_drive_folder' || block.name === 'read_drive_file') {
+              // ドライブを読むのは1回の回答で合わせて4回まで（60秒の制限に収めるため）
+              if (driveToolReads.length >= 4) {
+                out = 'ドライブの読み込みは1回の回答で4回までです。ここまでにわかった範囲で答えてください。';
+              } else {
+                const r = await runDriveTool(block.name, input);
+                if (r.read) driveToolReads.push(r.read);
+                out = r.text;
+              }
             } else if (block.name === CREATE_DOC_TOOL.name) {
               if (createdDocs.length >= 1) {
                 out = '文書は1回の回答で1つまでです。作った文書のURLを伝えてください。';
@@ -174,8 +185,9 @@ export async function POST(req: Request) {
         } catch {}
         const lastUser = [...messages].reverse().find((m) => m.role === 'user');
         const attachNote = attachments.length ? `（添付: ${attachments.map((a) => a.name).join('、')}）` : '';
-        const driveNote = drive.reads.length
-          ? `（リンク: ${drive.reads.map((r) => `${r.name}${r.ok ? '' : `＝読めず:${r.note}`}`).join('、')}）`
+        const allReads = [...drive.reads, ...driveToolReads];
+        const driveNote = allReads.length
+          ? `（ドライブ: ${allReads.map((r) => `${r.name}${r.ok ? '' : `＝読めず:${r.note}`}`).join('、')}）`
           : '';
         const docNote = createdDocs.length
           ? `（作成した文書: ${createdDocs.map((d) => (d.ok ? `${d.title} ${d.url}` : `${d.title}＝作れず:${d.note}`)).join('、')}）`
