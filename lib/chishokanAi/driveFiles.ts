@@ -105,6 +105,11 @@ export async function runDriveTool(name: string, input: Record<string, unknown>)
     return { text: r.text, read: r.read };
   }
   const r = await readOne(id, false);
+  // フォルダのIDを read_drive_file に渡すと「見つからない」になる。その場合はフォルダとして一覧を返す。
+  if (!r.read.ok) {
+    const asFolder = await listOne(id);
+    if (asFolder.read.ok) return { text: `（これはフォルダでした。中身の一覧です）\n${asFolder.text}`, read: asFolder.read };
+  }
   const text = r.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('\n');
   return { text, read: r.read };
 }
