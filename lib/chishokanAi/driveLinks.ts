@@ -18,10 +18,24 @@ export function extractDriveFolderIds(text: string, max = MAX_LINKS): string[] {
   return ids.slice(0, max);
 }
 
-/** ツールに渡された「URL か ID」から ID を取り出す。取り出せなければ null。 */
+/**
+ * AI が読めるフォルダ（Apps Script の AI_READ_FOLDER_IDS と同じ）。
+ * AI はフォルダ名だけでも開けるように、名前から ID を引けるようにしておく。
+ * ★Apps Script 側の AI_READ_FOLDER_IDS を変えたら、ここも合わせる。
+ */
+export const DRIVE_ROOTS: Record<string, string> = {
+  '05_広告制作': '1rDTV-Lg3YJmZHMSTfHs-ErDnpR3lhR_x',
+  '10_研修会議': '1b7qfB8Ey-fkFxm7XMFtbkoARyuiKmzoz',
+  '04_講習': '1x3qb8GA-rBxV3DoTmH00s4efJHn3GBKD',
+};
+
+/** ツールに渡された「URL か ID か、読めるフォルダの名前」から ID を取り出す。取り出せなければ null。 */
 export function driveIdFrom(input: unknown): string | null {
   if (typeof input !== 'string') return null;
   const s = input.trim();
+  for (const [name, id] of Object.entries(DRIVE_ROOTS)) {
+    if (s === name || s === name.replace(/^\d+_/, '')) return id;
+  }
   const fromUrl = extractDriveIds(s, 1)[0] ?? extractDriveFolderIds(s, 1)[0];
   if (fromUrl) return fromUrl;
   return /^[\w-]{10,}$/.test(s) ? s : null;

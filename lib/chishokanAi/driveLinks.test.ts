@@ -41,3 +41,10 @@ test('extractDriveFolderIds・driveIdFrom：フォルダのリンクとIDを取�
   assert.equal(driveIdFrom('短い'), null);
   assert.equal(driveIdFrom(42), null);
 });
+
+test('driveIdFrom：読めるフォルダの一番上は名前でも開ける', async () => {
+  const { driveIdFrom, DRIVE_ROOTS } = await import('./driveLinks.ts');
+  assert.equal(driveIdFrom('05_広告制作'), DRIVE_ROOTS['05_広告制作']);
+  assert.equal(driveIdFrom('広告制作'), DRIVE_ROOTS['05_広告制作']);
+  assert.equal(driveIdFrom('04_講習'), DRIVE_ROOTS['04_講習']);
+});
