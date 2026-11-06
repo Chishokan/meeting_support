@@ -30,7 +30,7 @@ const client = new Anthropic();
 
 // ツールを使う往復の上限。60秒の制限に収めるため、時間でも打ち切る（最後の1回はツール無しで答えさせる）。
 const MAX_ROUNDS = 6;
-const MAX_TOOL_CALLS = 8;
+const MAX_TOOL_CALLS = 10;
 const TIME_BUDGET_MS = 40_000;
 
 type Msg = { role: 'user' | 'assistant'; content: string };
@@ -153,9 +153,9 @@ export async function POST(req: Request) {
             if (toolCalls > MAX_TOOL_CALLS) {
               out = 'ツールの上限に達しました。ここまでにわかった範囲で答えてください。';
             } else if (block.name === 'list_drive_folder' || block.name === 'read_drive_file') {
-              // ドライブを読むのは1回の回答で合わせて4回まで（60秒の制限に収めるため）
-              if (driveToolReads.length >= 4) {
-                out = 'ドライブの読み込みは1回の回答で4回までです。ここまでにわかった範囲で答えてください。';
+              // ドライブを読むのは1回の回答で合わせて6回まで（60秒の制限に収めるため）
+              if (driveToolReads.length >= 6) {
+                out = 'ドライブの読み込みは1回の回答で6回までです。ここまでにわかった範囲で答えてください。';
               } else {
                 const r = await runDriveTool(block.name, input);
                 if (r.read) driveToolReads.push(r.read);
