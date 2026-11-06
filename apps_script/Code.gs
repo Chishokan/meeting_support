@@ -2427,7 +2427,7 @@ function readDriveFile_(data) {
 }
 
 // data.id のフォルダが AI_READ_FOLDER_IDS の中（またはそのもの）なら、中身の一覧を返す（60件まで）。
-// 名簿・成績などの語を含む名前は一覧にも出さない。
+// 名簿・成績などの語を含む名前と、_ で始まる名前（制作素材・制作メモなど）は一覧に出さない。
 function listDriveFolder_(data) {
   if (!AI_READ_FOLDER_IDS.length) return { ok: false, reason: 'not_configured' };
   var id = String(data.id || '');
@@ -2439,6 +2439,8 @@ function listDriveFolder_(data) {
   var items = [];
   var more = false;
   function blocked(n) {
+    // 名前が _ で始まるもの（_制作素材・_制作メモ・_運用資料など）は、先生向けの一覧に出さない
+    if (n.charAt(0) === '_') return true;
     var l = n.toLowerCase();
     for (var w = 0; w < AI_READ_BLOCK_WORDS.length; w++) if (l.indexOf(AI_READ_BLOCK_WORDS[w].toLowerCase()) !== -1) return true;
     return false;
