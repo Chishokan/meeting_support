@@ -8,6 +8,7 @@ import { canUseInquiryBoard, INQUIRY_BOARD_DEPTS } from './inquiryBoardAccess';
 import { canUseInterview, interviewAppUrl, INTERVIEW_DEPTS, type InterviewDept } from './interviewApp';
 import { APTITUDE_DEPTS, canUseAptitude } from './aptitude/access';
 import { canUseChishokanAi } from './chishokanAi/access';
+import { hubConfigured } from './core/hub';
 
 // 面談管理は別アプリ（面談予約システム）の管理画面。部門ごとに URL が分かれている。
 // 管理画面にはログインの仕組みが無く、カードは管理画面の URL をそのまま開く。
@@ -94,5 +95,23 @@ export const PORTAL_APPS: PortalApp[] = [
     desc: '要項QA（申込方法・支払い・日程を要項から確認）、操作マニュアルのダウンロード、アプリへのご意見・不具合の報告',
     href: '/helpdesk',
     status: 'ready',
+  },
+  // 給与アプリ（Color HRM）へ、ログインしたまま移る（統合計画 第3段階）。
+  // /api/auth/to-color が一回限りのリンクを発行して移す。従来の入り方でログインした人は、ログインし直しになる。
+  {
+    id: 'color-pay',
+    name: '給与・シフト',
+    desc: 'シフトの提出・確認、勤怠、給与明細（給与アプリ）。ログインしたまま開きます',
+    href: '/api/auth/to-color?next=pay',
+    status: hubConfigured() ? 'ready' : 'soon',
+    external: true,
+  },
+  {
+    id: 'color-hrm',
+    name: '講師育成（キャリアパス）',
+    desc: '講師の研修・カラー・目標の管理（給与アプリの採用・育成）。ログインしたまま開きます',
+    href: '/api/auth/to-color?next=hrm',
+    status: hubConfigured() ? 'ready' : 'soon',
+    external: true,
   },
 ];
