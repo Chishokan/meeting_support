@@ -226,6 +226,10 @@ function doPost(e) {
       return json_(createAiDoc_(data));
     }
 
+    if (action === 'listDriveFolder') {
+      return json_(listDriveFolder_(data));
+    }
+
     if (action === 'readDriveFile') {
       return json_(readDriveFile_(data));
     }
@@ -2412,6 +2416,49 @@ function readDriveFile_(data) {
   } catch (err) {
     return { ok: false, reason: 'read_failed', name: name };
   }
+}
+
+// data.id のフォルダが AI_READ_FOLDER_IDS の中（またはそのもの）なら、中身の一覧を返す（60件まで）。
+// 名簿・成績などの語を含む名前は一覧にも出さない。
+function listDriveFolder_(data) {
+  if (!AI_READ_FOLDER_IDS.length) return { ok: false, reason: 'not_configured' };
+  var id = String(data.id || '');
+  if (!/^[\w-]{10,}$/.test(id)) return { ok: false, reason: 'bad_id' };
+  var folder;
+  try { folder = DriveApp.getFolderById(id); } catch (e) { return { ok: false, reason: 'not_found' }; }
+  var name = folder.getName();
+  if (AI_READ_FOLDER_IDS.indexOf(id) === -1 && !aiReadAllowed_(folder)) return { ok: false, reason: 'not_allowed', name: name };
+  var items = [];
+  var more = false;
+  function blocked(n) {
+    var l = n.toLowerCase();
+    for (var w = 0; w < AI_READ_BLOCK_WORDS.length; w++) if (l.indexOf(AI_READ_BLOCK_WORDS[w].toLowerCase()) !== -1) return true;
+    return false;
+  }
+  function fmt(d) { return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd'); }
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    var f = subs.next();
+    if (blocked(f.getName())) continue;
+    if (items.length >= 60) { more = true; break; }
+    items.push({ id: f.getId(), name: f.getName(), kind: 'フォルダ', updated: fmt(f.getLastUpdated()), folder: true });
+  }
+  var labels = {};
+  labels[MimeType.GOOGLE_DOCS] = 'Googleドキュメント';
+  labels[MimeType.GOOGLE_SHEETS] = 'Googleスプレッドシート';
+  labels[MimeType.GOOGLE_SLIDES] = 'Googleスライド';
+  labels['application/pdf'] = 'PDF';
+  labels['application/vnd.openxmlformats-officedocument.wordprocessingml.document'] = 'Word';
+  labels['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] = 'Excel';
+  labels['application/vnd.openxmlformats-officedocument.presentationml.presentation'] = 'PowerPoint';
+  var files = folder.getFiles();
+  while (!more && files.hasNext()) {
+    var file = files.next();
+    if (blocked(file.getName())) continue;
+    if (items.length >= 60) { more = true; break; }
+    items.push({ id: file.getId(), name: file.getName(), kind: labels[file.getMimeType()] || 'その他（' + file.getMimeType() + '）', updated: fmt(file.getLastUpdated()), folder: false });
+  }
+  return { ok: true, name: name, items: items, more: more };
 }
 
 // ファイルの親フォルダをさかのぼり、許可したフォルダの下にあるかを調べる。
