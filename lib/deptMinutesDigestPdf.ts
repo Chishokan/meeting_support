@@ -153,7 +153,7 @@ class Layout {
   }
 }
 
-function header(L: Layout, d: Digest) {
+function header(L: Layout, d: Digest, no?: string) {
   const { doc, s } = L;
   const xs = s * 0.82;
   // 部門のバッジ
@@ -165,12 +165,20 @@ function header(L: Layout, d: Digest) {
   doc.roundedRect(MX, L.y, bw, bh, 2).fill(color);
   doc.fillColor('#ffffff').text(dept, MX + 5, L.y + bh * 0.16, { lineBreak: false });
   doc.font('R').fontSize(xs).fillColor(C.sub).text('部門会議 議事録まとめ', MX + bw + 7, L.y + bh * 0.16, { lineBreak: false });
+  let right = PAGE_W - MX;
   if (d.revised) {
     doc.font('B').fontSize(xs);
     const t = '修正版';
     const rw = doc.widthOfString(t) + 10;
-    doc.roundedRect(PAGE_W - MX - rw, L.y, rw, bh, 2).fill(C.ng);
-    doc.fillColor('#ffffff').text(t, PAGE_W - MX - rw + 5, L.y + bh * 0.16, { lineBreak: false });
+    right -= rw;
+    doc.roundedRect(right, L.y, rw, bh, 2).fill(C.ng);
+    doc.fillColor('#ffffff').text(t, right + 5, L.y + bh * 0.16, { lineBreak: false });
+    right -= 8;
+  }
+  if (no) {
+    // 複数の会議をまとめた PDF の通し番号（No. 2 / 5）
+    doc.font('R').fontSize(xs).fillColor(C.sub);
+    doc.text(no, right - doc.widthOfString(no), L.y + bh * 0.16, { lineBreak: false });
   }
   L.y += bh + s * 0.5;
 
@@ -396,9 +404,9 @@ function strip(L: Layout, label: string, body: Seg[][] | Seg[], tone: 'navy' | '
   L.gap(0.45);
 }
 
-function footer(doc: Doc, d: Digest, s: number) {
-  const range = doc.bufferedPageRange();
-  for (let i = range.start; i < range.start + range.count; i++) {
+/** start ページから count 枚に、その会議の出典と作成日時を書く。 */
+function footer(doc: Doc, d: Digest, s: number, start: number, count: number) {
+  for (let i = start; i < start + count; i++) {
     doc.switchToPage(i);
     // 下の余白に書くと pdfkit が改ページしてしまうので、一時的に余白を外す。
     const keep = doc.page.margins.bottom;
@@ -409,34 +417,59 @@ function footer(doc: Doc, d: Digest, s: number) {
     const id = d.id ? `（議事録ID ${d.id.slice(0, 8)}…）` : '';
     doc.font('R').fontSize(fs).fillColor(C.sub)
       .text(`出典：会議DX「部門会議議事録」${id}　※生徒の氏名は省略`, MX, y, { lineBreak: false });
-    const right = `${d.createdAt} 作成${range.count > 1 ? `　${i - range.start + 1} / ${range.count}` : ''}`;
+    const right = `${d.createdAt} 作成${count > 1 ? `　${i - start + 1} / ${count}` : ''}`;
     const rw = doc.widthOfString(right);
     doc.text(right, PAGE_W - MX - rw, y, { lineBreak: false });
     doc.page.margins.bottom = keep;
   }
 }
 
-function build(d: Digest, s: number, fonts: { regular: Buffer; bold: Buffer }): Doc {
+type Fonts = { regular: Buffer; bold: Buffer };
+
+function newDoc(fonts: Fonts, title: string): Doc {
   // 既定フォントに Noto を渡す（pdfkit 標準の Helvetica はデータファイルを読むので使わない）。
   const doc = new PDFDocument({
     size: 'A4',
     margins: { top: TOP, bottom: BOTTOM, left: MX, right: MX },
     bufferPages: true,
     font: fonts.regular as unknown as string,
-    info: { Title: `議事録まとめ ${d.title} ${d.date}`, Author: '会議DX', Subject: '部門会議 議事録まとめ' },
+    info: { Title: title, Author: '会議DX', Subject: '部門会議 議事録まとめ' },
   });
   doc.registerFont('R', fonts.regular);
   doc.registerFont('B', fonts.bold);
+  return doc;
+}
+
+/** 今のページから1会議分を書く（収まらなければ pdfkit が次のページに続ける）。 */
+function draw(doc: Doc, d: Digest, s: number, no?: string) {
   const L = new Layout(doc, s);
-  header(L, d);
+  header(L, d, no);
   summaryBox(L, d);
   decisions(L, d);
   todos(L, d);
   lists(L, d);
   strip(L, '次回会議', L.segs(d.next || '【要確認】'), 'navy');
   if (d.checks.length) strip(L, '要確認', d.checks.map((c) => L.segs(c)), 'amber');
-  footer(doc, d, s);
+}
+
+function build(d: Digest, s: number, fonts: Fonts): Doc {
+  const doc = newDoc(fonts, `議事録まとめ ${d.title} ${d.date}`);
+  draw(doc, d, s);
+  footer(doc, d, s, 0, doc.bufferedPageRange().count);
   return doc;
+}
+
+/** 1枚に収まる一番大きい文字を探す。どれでも収まらなければ最小の文字。試しに作った PDF も返す。 */
+function fit(d: Digest, fonts: Fonts): { doc: Doc; s: number; pages: number } {
+  let last: { doc: Doc; s: number; pages: number } | null = null;
+  for (const s of SIZES) {
+    const doc = build(d, s, fonts);
+    const pages = doc.bufferedPageRange().count;
+    if (last) last.doc.end();
+    last = { doc, s, pages };
+    if (pages === 1) break;
+  }
+  return last!;
 }
 
 function toBuffer(doc: Doc): Promise<Buffer> {
@@ -453,15 +486,32 @@ export type DigestPdf = { pdf: Buffer; pages: number; fontSize: number };
 
 /** 1枚に収まる一番大きい文字で PDF を作る。どの大きさでも収まらなければ最小の文字で複数枚にする。 */
 export async function renderDigestPdf(d: Digest, fonts = loadFonts()): Promise<DigestPdf> {
-  let last: { doc: Doc; s: number } | null = null;
-  for (const s of SIZES) {
-    const doc = build(d, s, fonts);
-    const pages = doc.bufferedPageRange().count;
-    if (pages === 1) return { pdf: await toBuffer(doc), pages, fontSize: s };
-    if (last) last.doc.end();
-    last = { doc, s };
-  }
-  const { doc, s } = last!;
-  const pages = doc.bufferedPageRange().count;
+  const { doc, s, pages } = fit(d, fonts);
   return { pdf: await toBuffer(doc), pages, fontSize: s };
+}
+
+export type DigestsPdf = { pdf: Buffer; pages: number; fontSizes: number[] };
+
+/**
+ * 複数の会議を1つの PDF にする（1会議ごとに新しいページから。右上に No. 1 / 5 の通し番号）。
+ * 文字の大きさは会議ごとに、1枚に収まる一番大きいものを選ぶ（週ごとのまとめ：scripts/minutes-digest-files.mjs）。
+ */
+export async function renderDigestsPdf(ds: Digest[], title: string, fonts = loadFonts()): Promise<DigestsPdf> {
+  if (!ds.length) throw new Error('会議がありません');
+  const sizes = ds.map((d) => {
+    const r = fit(d, fonts);
+    r.doc.end();
+    return r.s;
+  });
+  const doc = newDoc(fonts, title);
+  const ranges: [number, number][] = [];
+  ds.forEach((d, i) => {
+    if (i > 0) doc.addPage();
+    const start = doc.bufferedPageRange().count - 1;
+    draw(doc, d, sizes[i], ds.length > 1 ? `No. ${i + 1} / ${ds.length}` : undefined);
+    ranges.push([start, doc.bufferedPageRange().count - start]);
+  });
+  ranges.forEach(([start, count], i) => footer(doc, ds[i], sizes[i], start, count));
+  const pages = doc.bufferedPageRange().count;
+  return { pdf: await toBuffer(doc), pages, fontSizes: sizes };
 }

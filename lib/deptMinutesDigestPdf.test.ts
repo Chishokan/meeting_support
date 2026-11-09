@@ -1,9 +1,11 @@
-// 議事録の社長送付 PDF（deptMinutesDigestPdf.ts）のテスト。  npm test
+// 議事録の1枚まとめの PDF（deptMinutesDigestPdf.ts）と Word（deptMinutesDigestDocx.ts）のテスト。  npm test
 // assets/fonts/ の Noto Sans JP を実際に使って PDF を作る（数秒かかる）。
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderDigestPdf } from './deptMinutesDigestPdf.ts';
+import JSZip from 'jszip';
+import { renderDigestPdf, renderDigestsPdf } from './deptMinutesDigestPdf.ts';
+import { digestsDocx } from './deptMinutesDigestDocx.ts';
 import type { Digest } from './deptMinutesDigest.ts';
 
 const base: Digest = {
@@ -65,4 +67,24 @@ test('renderDigestPdf: 量が多いと文字を小さくして1枚に収め、�
   assert.ok(h.pages >= 2, `pages ${h.pages}`);
   assert.equal(h.fontSize, 7.5);
   assert.equal(pageCount(h.pdf), h.pages);
+});
+
+test('renderDigestsPdf: 複数の会議を1つの PDF にし、会議ごとに新しいページから始める', async () => {
+  const second: Digest = { ...base, title: '週礼', dept: '小中等部', id: '1a783aa4-e40b-4fa0-ad60-50b4d485afd3' };
+  const r = await renderDigestsPdf([base, second], '部門会議 議事録まとめ（11/2〜11/8 保存分）');
+  assert.equal(r.pages, 2);
+  assert.equal(pageCount(r.pdf), 2);
+  assert.deepEqual(r.fontSizes, [10, 10]);
+  await assert.rejects(() => renderDigestsPdf([], 'x'), /会議がありません/);
+});
+
+test('digestsDocx: 会議ごとにセクションを分けた Word（docx）を作る', async () => {
+  const buf = await digestsDocx([{ digest: base, size: 10 }, { digest: { ...base, title: '週礼' }, size: 9 }], '議事録まとめ');
+  assert.equal(buf.subarray(0, 2).toString('latin1'), 'PK');
+  const xml = (await JSZip.loadAsync(buf)).file('word/document.xml');
+  assert.ok(xml);
+  const text = await xml.async('string');
+  assert.equal((text.match(/<w:sectPr/g) || []).length, 2);
+  assert.match(text, /No\. 2 \/ 2/);
+  assert.match(text, /中高連携会議/);
 });

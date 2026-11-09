@@ -15,6 +15,10 @@
   - **セットアップが必要**（README「議事録の社長への自動送付」）：Vercel の環境変数 `MINUTES_DIGEST_SECRET`、
     Apps Script に `apps_script/MinutesNotify.gs` を追加してスクリプト プロパティを設定し、`setupMinutesNotify` を1回実行する。
     Code.gs の Web アプリの再デプロイは不要
+- 議事録の週次まとめを作るスクリプト（scripts/minutes-digest-files.mjs）を追加した
+  - 前の週に保存された議事録の要点（JSON）から、A4・1会議1ページの PDF と Word、Google ドキュメント用の HTML を作る
+  - Claude のスケジュール実行（毎週月曜の朝）で使う。PDF・Word はアプリに届き、Google ドライブには Google ドキュメントが保存される
+  - 画面・本番の動きは変わらない（スクリプトと部品の追加だけ）
 
 ## [0.23.0] - 2026-11-04
 

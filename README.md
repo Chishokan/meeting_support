@@ -428,6 +428,28 @@ WAV は圧縮しないので通信量は増える（1時間の会議でおよそ
 Apps Script 側の動き（送る行の選び方・呼ぶ順番・失敗時の扱い）は `node scripts/test-minutes-notify.mjs` で確認できる。
 まとめと PDF の部品は `npm test` に含まれる。
 
+## 議事録の週次まとめ（毎週月曜・PDF／Word／Google ドキュメント）
+前の週（月〜日）に「部門会議議事録」シートへ保存された議事録を、A4・1会議1ページのまとめにする。
+Claude のスケジュール実行（毎週月曜 7:46・日本時間）が、議事録を読んで要点を書き、下のスクリプトで
+ファイルを作る。体裁どおりの PDF と Word は Claude のアプリに届き、Google ドライブの
+「部門会議 議事録まとめ（毎週）」フォルダには同じ内容の Google ドキュメントが保存される。
+保存された議事録が無い週はファイルを作らない。
+
+| 部品 | 役割 |
+|---|---|
+| `scripts/minutes-digest-files.mjs` | 要点の JSON から PDF・Word・Google ドキュメント用 HTML を作る（使い方はファイル冒頭） |
+| `lib/deptMinutesDigestPdf.ts` | PDF（社長送付と同じ見た目。複数の会議を1つの PDF にする `renderDigestsPdf`） |
+| `lib/deptMinutesDigestDocx.ts` | Word（会議ごとにセクションを分ける。行送りは固定値） |
+| `lib/deptMinutesDigestHtml.ts` | Google ドキュメント用の短い HTML |
+| `lib/deptMinutesDigestAi.ts` | 要点の書き方（社長送付と同じ決まり。週次まとめでもこの指示文に従って書く） |
+
+- Claude の Google ドライブ連携は PDF・Word をそのまま上げられない（中身を文字として渡すため、PDF は数十万文字になる）。
+  そのためドライブには HTML を渡して Google ドキュメントに変換させている。PDF・Word が要るときは、
+  アプリに届いたファイルを使うか、Google ドキュメントの［ファイル］→［ダウンロード］から書き出す
+- Word が1会議1ページに収まるかは、LibreOffice（soffice）で PDF に変換して確かめる（フォントは assets/fonts の Noto Sans JP で代用し、
+  下の余白を 8mm 広げて測る）。収まらない会議だけ文字を小さくする（10pt〜7.5pt）
+- 試すとき: `node --experimental-strip-types --no-warnings scripts/minutes-digest-files.mjs <入力.json> <出力フォルダ>`
+
 ## 全体研修会アンケート（/kenshu）
 10/31（土）全体研修会の事前アンケート。総合メニューの独立アプリで、全部門が利用できる。
 質問は2つだけの自由記述で、この1年で「仕事」「人生・プライベート」それぞれで達成したいこと・やってみたいことを、

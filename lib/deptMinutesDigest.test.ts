@@ -13,6 +13,7 @@ import {
   toDigest,
   type DigestInput,
 } from './deptMinutesDigest.ts';
+import { digestsHtml } from './deptMinutesDigestHtml.ts';
 
 const input = (over: Partial<DigestInput> = {}): DigestInput => ({
   id: '427f9cf1-9a07-46e1-8fb1-e9f9553d2c3c',
@@ -141,4 +142,22 @@ test('parseInput: 議事録本文が無ければ null。revised は true のと�
   assert.equal(p.revised, false);
   assert.equal(p.title, '12');
   assert.equal(parseInput({ minutes: '本文', revised: true })!.revised, true);
+});
+
+test('digestsHtml: 会議ごとに改ページし、文字をエスケープし、【要確認】に印を付ける', () => {
+  const body = normalizeDigest({
+    summary: '<script>概要</script>',
+    decisions: [{ title: '件名', detail: '内容', owner: '太田', due: '【要確認】' }],
+    todos: [{ task: 'やること', owner: '', due: '', status: 'done' }],
+  })!;
+  const d1 = toDigest(input(), body, new Date('2026-11-09T00:00:00Z'));
+  const d2 = toDigest(input({ title: '週礼' }), body, new Date('2026-11-09T00:00:00Z'));
+  const html = digestsHtml([d1, d2], 'まとめ & 題');
+  assert.equal((html.match(/page-break-before:always/g) || []).length, 1);
+  assert.match(html, /<title>まとめ &amp; 題<\/title>/);
+  assert.match(html, /&lt;script&gt;概要&lt;\/script&gt;/);
+  assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /期限：<b style="background:#fff2cc">要確認<\/b>/);
+  assert.match(html, /No\. 2 \/ 2/);
+  assert.match(html, /<td>〇<\/td>/);
 });
