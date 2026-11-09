@@ -426,6 +426,60 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .task-done button { color: var(--navy); background: #fff; border: 1px solid #cdd8e3; font-size: 13px; padding: 8px 18px; }
 @media (max-width: 620px) { .task-body { padding: 16px 16px 40px; } .task-q { padding: 12px 12px 14px; } }
 
+/* ============ AI壁打ち（小中等部） ============ */
+.coach-body { padding: 20px 24px 48px; max-width: 820px; display: grid; gap: 14px; }
+.coach-pick { display: flex; gap: 14px; flex-wrap: wrap; }
+.coach-pick label { display: flex; flex-direction: column; gap: 4px; margin: 0; flex: 1; min-width: 200px; }
+.coach-pick span, .coach-goal span { font-size: 12px; font-weight: 700; color: #667; }
+.coach-pick select { padding: 9px 10px; font-size: 14px; font-family: inherit; }
+.coach-note { margin: 0; font-size: 13px; color: #445; background: #eef3f8; border-radius: 8px; padding: 9px 14px; }
+.coach-eval { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; font-size: 14px; }
+.coach-eval summary { cursor: pointer; font-weight: 700; color: #2a2f36; }
+.coach-eval summary small { font-weight: 400; color: #8a94a0; margin-left: 10px; font-size: 12px; }
+.coach-eval dl { margin: 10px 0 2px; display: grid; gap: 4px; }
+.coach-eval dt { font-size: 12px; font-weight: 700; color: var(--navy); }
+.coach-eval dd { margin: 0 0 6px; line-height: 1.7; }
+.coach-eval ul { margin: 10px 0 2px; padding-left: 1.2em; line-height: 1.8; }
+.coach-chat { min-height: 120px; }
+.coach-chat .msg { margin: 10px 0; }
+.coach-starters { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 0; }
+.coach-starters button, .coach-buttons button {
+  font-family: inherit; font-size: 13px; color: var(--navy); background: #fff; border: 1px solid #cdd8e3;
+  border-radius: 999px; padding: 7px 14px; cursor: pointer;
+}
+.coach-starters button:hover, .coach-buttons button:hover:not(:disabled) { background: #eef3f8; }
+.coach-buttons button:disabled, .coach-starters button:disabled { opacity: .5; cursor: default; }
+.coach-buttons button.primary-btn { color: #fff; background: var(--navy); border-color: var(--navy); font-weight: 700; }
+.coach-buttons button.primary-btn:hover:not(:disabled) { background: #173b5c; }
+.coach-input { display: grid; gap: 8px; }
+.coach-input textarea {
+  width: 100%; min-height: 84px; resize: vertical; padding: 10px 12px; font-size: 15px; line-height: 1.7;
+  font-family: inherit; border: 1px solid #cdd3da; border-radius: 10px;
+}
+.coach-buttons { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.text-btn { font-family: inherit; font-size: 13px; color: #667; background: none; border: none; cursor: pointer; padding: 4px 6px; }
+.coach-buttons .text-btn { border: none; background: none; color: #667; }
+.coach-plan { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 16px; display: grid; gap: 10px; }
+.coach-plan h2 { margin: 0; font-size: 16px; color: var(--navy); }
+.coach-goal { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.coach-goal input { padding: 8px 10px; font-size: 14px; }
+.coach-summary { margin: 0; font-size: 13px; color: #445; line-height: 1.7; }
+.coach-plan table { width: 100%; border-collapse: collapse; }
+.coach-plan th { font-size: 12px; color: #667; text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.coach-plan td { padding: 4px 6px; vertical-align: top; }
+.coach-plan td select { width: auto; padding: 6px 6px; font-size: 13px; }
+.coach-plan td input { padding: 6px 8px; font-size: 14px; }
+.coach-results { margin: 0; padding-left: 1.2em; font-size: 13px; line-height: 1.8; }
+.coach-results .written { color: #2e6b4f; }
+.coach-results .skipped { color: #667; }
+.coach-results .not_found { color: #c0392b; }
+@media (max-width: 620px) {
+  .coach-body { padding: 16px 16px 40px; }
+  .coach-plan table, .coach-plan tbody, .coach-plan tr, .coach-plan td { display: block; width: 100%; }
+  .coach-plan thead { display: none; }
+  .coach-plan tr { border-bottom: 1px solid var(--line); padding: 6px 0; }
+}
+
 /* ============ 数値報告 ============ */
 .numbers-body { padding: 20px 24px 48px; display: grid; gap: 20px; grid-template-columns: minmax(320px, 1fr) minmax(300px, 400px); align-items: start; }
 .numbers-form { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }

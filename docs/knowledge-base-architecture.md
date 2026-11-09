@@ -133,7 +133,7 @@ dept: 小中等部            # 全社 / 小中等部 / RED個別 / 高等部 / 
 owner: 安東瑞輝           # 更新責任者
 updated: 2026-06-01
 source: drive:1AbcDEf...  # 原本の Drive ファイルID（再取得・リンク提示用）
-source_type: spreadsheet  # doc / spreadsheet / xlsx / docx / pdf / image
+source_type: spreadsheet  # doc / spreadsheet / xlsx / docx / pptx / pdf / image
 tags: [夏期講習, 外部生募集, 要項]
 visibility: all           # all / admin_only
 summary: 2026年度夏期講習の日程・料金・外部生募集条件をまとめたもの
@@ -243,7 +243,7 @@ Claude が判断 → tool: read_file("40_イベント/2026/夏期講習/要項.m
 
 - [ ] 現在の資料の所在を一覧化（Drive／ローカル／紙）
 - [ ] フォルダ階層と命名規約を確定（本書 §3 をたたき台に）
-- [ ] 各フォルダの更新責任者（owner）を決める ← **ここが最重要。担当者不在のフォルダは必ず腐る**
+- [x] 各フォルダの更新責任者（owner）を決める ← **ここが最重要。担当者不在のフォルダは必ず腐る**（2026-11 時点：全フォルダをシステム担当の安藤純平が担当）
 - [ ] `00_index/` の4ファイルを手書きで作成
 
 **完了条件**: 空でも階層が Drive 上に存在し、責任者が決まっている
@@ -273,7 +273,7 @@ Claude が判断 → tool: read_file("40_イベント/2026/夏期講習/要項.m
 - [ ] Drive スキャン＋差分検出
 - [ ] 形式別コンバータ（Docs / Sheets / xlsx / docx / PDF / 画像）
 - [ ] front matter・summary の自動生成
-- [ ] `INDEX.md` 自動生成
+- [x] `INDEX.md` 自動生成（`npm run index`＝scripts/build-index.mjs。front matter から作る）
 - [ ] Claude タスクで日次実行、PR 作成
 
 **完了条件**: Drive を更新した翌朝、AIの回答に反映されている
