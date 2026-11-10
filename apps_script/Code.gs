@@ -556,6 +556,9 @@ function saveNumberReport_(data) {
   if (!headers.length || !row.length) return { ok: false, reason: 'no_headers' };
   var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+  // 後から足した列（高等部の「高卒」など）でシートの列数が足りなければ、末尾に列を足す。
+  var need = Math.max(headers.length, row.length);
+  if (sh.getMaxColumns() < need) sh.insertColumnsAfter(sh.getMaxColumns(), need - sh.getMaxColumns());
   if (sh.getLastRow() === 0) {
     sh.appendRow(headers);
   } else {

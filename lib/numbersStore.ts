@@ -9,6 +9,7 @@ import {
   NUMBER_FORMS,
   rowToValues,
   sheetHeaders,
+  trimEmptyTail,
   valuesToRow,
   type NumberEntry,
   type NumberValues,
@@ -30,6 +31,15 @@ export async function saveNumbers({ kind, period, dept, campus, user, values }: 
   const url = process.env.APPS_SCRIPT_URL;
   if (!url) return { ok: false, reason: 'not_configured' };
   const form = NUMBER_FORMS[kind];
+  // 末尾に足した列（高卒など）が空なら送らない（numberReports.ts の trimEmptyTail）。
+  const payload = trimEmptyTail(form, sheetHeaders(form), [
+    new Date().toISOString(),
+    period,
+    dept,
+    campus,
+    user,
+    ...valuesToRow(form, values),
+  ]);
 
   try {
     const res = await fetch(url, {
@@ -39,8 +49,8 @@ export async function saveNumbers({ kind, period, dept, campus, user, values }: 
         action: 'saveNumberReport',
         token: process.env.APPS_SCRIPT_TOKEN || '',
         sheet: form.sheet,
-        headers: sheetHeaders(form),
-        row: [new Date().toISOString(), period, dept, campus, user, ...valuesToRow(form, values)],
+        headers: payload.headers,
+        row: payload.row,
       }),
     });
     const j = await res.json().catch(() => null);

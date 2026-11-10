@@ -13,6 +13,8 @@ export type ReportKind = 'monthly' | 'season';
 // short は一覧表示だけで使う短縮名（label はシート見出しに使う）。
 // breakdown を持つ列は直接入力せず、ポップアップで内訳（breakdown に書いた隠し項目の各列）を入れ、その合計を入れる。
 // rows は自由記入欄（1列だけの項目）の行数。
+// depts があれば、その部門だけに出す列（例：学年別の「高卒」は高等部だけ）。
+// tail は後から足した列。シートの既存の列の並びを崩さないよう、全項目の列の後ろ（シートの末尾）に置く。
 export type NumberCol = {
   key: string;
   label: string;
@@ -20,6 +22,8 @@ export type NumberCol = {
   placeholder?: string;
   breakdown?: string;
   rows?: number;
+  depts?: string[];
+  tail?: boolean;
 };
 // hidden の項目は入力欄の一覧に出さない（内訳の保存用。シートには列として残る）。
 // depts があればその部門だけ、exceptDepts があればその部門以外に出す（どちらも無ければ全部門）。
@@ -39,6 +43,11 @@ const NO_STUDENT_DEPTS = [ADMIN_CAMPUS];
 
 // 生徒数の学年別内訳（小2〜高3）。
 export const GRADES = ['小2', '小3', '小4', '小5', '小6', '中1', '中2', '中3', '高1', '高2', '高3'];
+
+// 高等部の高卒コース。学年別の内訳の最後に出す（高等部だけ）。
+// 後から足した列なので tail にして、シートでは「数値報告（自由記述）」の後ろの列に入れる。
+export const GRAD_GRADE = '高卒';
+const GRAD_DEPTS = ['高等部'];
 
 export const MONTHLY_FIELDS: NumberField[] = [
   {
@@ -84,6 +93,7 @@ export const MONTHLY_FIELDS: NumberField[] = [
   },
   // ★学年別の内訳（隠し項目）は必ず最後に置き、この順を変えない。
   //   シートの既存の列の並びを崩さないよう、後から足した列は末尾に付け足している（新しく足すときも末尾へ）。
+  //   既存の項目に列を足すとき（学年別の「高卒」など）は、その列に tail を付ける（シートでは末尾の列になる）。
   gradeField('studentsByGrade', '生徒数（月末）の学年別'),
   gradeField('studentsLastByGrade', '生徒数（昨年同月）の学年別'),
   gradeField('enrollByGrade', '入会（実績）の学年別'),
@@ -113,8 +123,22 @@ export function fieldsFor(form: NumberForm, dept: string): NumberField[] {
   );
 }
 
+// その部門で使う列（depts の付いた列は、その部門のときだけ）。
+export function colsFor(field: NumberField, dept: string): NumberCol[] {
+  return field.cols.filter((c) => !c.depts || c.depts.includes(dept));
+}
+
 function gradeField(key: string, label: string): NumberField {
-  return { key, label, short: '学年別', hidden: true, cols: GRADES.map((g) => ({ key: g, label: g, placeholder: '○' })) };
+  return {
+    key,
+    label,
+    short: '学年別',
+    hidden: true,
+    cols: [
+      ...GRADES.map((g) => ({ key: g, label: g, placeholder: '○' })),
+      { key: GRAD_GRADE, label: GRAD_GRADE, placeholder: '○', depts: GRAD_DEPTS, tail: true },
+    ],
+  };
 }
 
 // 「その他、部門ごとのイベント等」に必ず入れてもらう数値（部門別）。★部門の増減・項目の変更はここを編集する。
@@ -131,10 +155,11 @@ export const EVENT_GUIDES: Record<string, { items: string; template: string }> =
 };
 
 // 内訳の合計（数字だけを拾って足す。1つも入っていなければ空文字）。
-export function sumBreakdown(field: NumberField, values: NumberValues): string {
+// dept を渡すと、その部門に出す列だけを足す（ほかの部門の列に残った値を合計に入れない）。
+export function sumBreakdown(field: NumberField, values: NumberValues, dept?: string): string {
   let total = 0;
   let any = false;
-  for (const c of field.cols) {
+  for (const c of dept === undefined ? field.cols : colsFor(field, dept)) {
     const n = parseInt((values[cellKey(field, c)] ?? '').replace(/[^0-9]/g, ''), 10);
     if (!Number.isNaN(n)) {
       total += n;
@@ -345,14 +370,31 @@ function colHeader(f: NumberField, c: NumberCol): string {
   return f.cols.length === 1 ? f.label : `${f.label}｜${c.label}`;
 }
 
-// スプレッドシートの見出し。fields と必ず同じ並びになる。
+// シートの列の並び（見出しと行の値で共通）。fields の順に並べ、tail の列だけは全部の後ろに回す。
+// 保存（Apps Script）は列の位置で書き込むので、既存の列の位置は変えないこと。
+function sheetCols(form: NumberForm): { f: NumberField; c: NumberCol }[] {
+  const all = form.fields.flatMap((f) => f.cols.map((c) => ({ f, c })));
+  return [...all.filter((x) => !x.c.tail), ...all.filter((x) => x.c.tail)];
+}
+
+// スプレッドシートの見出し。valuesToRow と必ず同じ並びになる。
 export function sheetHeaders(form: NumberForm): string[] {
-  return [...LEAD_HEADERS, ...form.fields.flatMap((f) => f.cols.map((c) => colHeader(f, c)))];
+  return [...LEAD_HEADERS, ...sheetCols(form).map(({ f, c }) => colHeader(f, c))];
 }
 
 // 見出しと同じ並びで1行分の配列にする（日時〜入力者は含めない。未入力は空文字）。
 export function valuesToRow(form: NumberForm, values: NumberValues): string[] {
-  return form.fields.flatMap((f) => f.cols.map((c) => (values[cellKey(f, c)] ?? '').trim()));
+  return sheetCols(form).map(({ f, c }) => (values[cellKey(f, c)] ?? '').trim());
+}
+
+// 送る見出しと行（日時〜入力者を含む）から、末尾の tail の列のうち空のものを外す。
+// 高卒の値が無い登録は今までと同じ列数で送り、シートの列数を超えて書かないようにする
+// （列を足す処理が無い古い Apps Script のままでも、高卒を入れない部門の登録は失敗しない）。
+export function trimEmptyTail(form: NumberForm, headers: string[], row: string[]): { headers: string[]; row: string[] } {
+  const base = LEAD_HEADERS.length + sheetCols(form).filter(({ c }) => !c.tail).length;
+  let n = row.length;
+  while (n > base && !row[n - 1]) n--;
+  return { headers: headers.slice(0, n), row: row.slice(0, n) };
 }
 
 // シートの1行（見出しキーの連想配列）を入力値へ戻す。

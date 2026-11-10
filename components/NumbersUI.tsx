@@ -6,6 +6,7 @@ import {
   EVENT_GUIDES,
   NUMBER_FORMS,
   campusesFor,
+  colsFor,
   fieldsFor,
   unitLabel,
   cellKey,
@@ -47,15 +48,17 @@ function reasonText(reason: string | undefined): string {
 type BreakdownCol = { col: NumberCol; bf: NumberField };
 
 // 学年別の人数を入れるポップアップ。1つの項目（生徒数・入会）の内訳列（例：月末と昨年同月）を並べて入れる。
-// 「決定」で各列の合計を元の画面の欄に入れる。
+// 「決定」で各列の合計を元の画面の欄に入れる。学年は部門に出すものだけ（「高卒」は高等部だけ）。
 function BreakdownModal({
   title,
+  dept,
   cols,
   values,
   onSave,
   onClose,
 }: {
   title: string;
+  dept: string;
   cols: BreakdownCol[];
   values: NumberValues;
   onSave: (next: NumberValues) => void;
@@ -63,12 +66,12 @@ function BreakdownModal({
 }) {
   const [draft, setDraft] = useState<NumberValues>(() => {
     const d: NumberValues = {};
-    for (const { bf } of cols) for (const c of bf.cols) d[cellKey(bf, c)] = values[cellKey(bf, c)] ?? '';
+    for (const { bf } of cols) for (const c of colsFor(bf, dept)) d[cellKey(bf, c)] = values[cellKey(bf, c)] ?? '';
     return d;
   });
   const close = useCallback(() => onClose(), [onClose]);
   useModalDismiss(close);
-  const grades = cols[0]?.bf.cols ?? [];
+  const grades = cols[0] ? colsFor(cols[0].bf, dept) : [];
 
   return (
     <div className="dm-modal-bg" onClick={close}>
@@ -123,7 +126,7 @@ function BreakdownModal({
               <tr>
                 <th scope="row">合計</th>
                 {cols.map(({ col, bf }) => {
-                  const total = sumBreakdown(bf, draft);
+                  const total = sumBreakdown(bf, draft, dept);
                   return (
                     <td key={col.key}>
                       <b>{total || '—'}</b>{total ? ' 名' : ''}
@@ -221,7 +224,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
   function saveBreakdown(f: NumberField, cols: BreakdownCol[], draft: NumberValues) {
     setValues((prev) => {
       const next = { ...prev, ...draft };
-      for (const { col, bf } of cols) next[cellKey(f, col)] = sumBreakdown(bf, draft);
+      for (const { col, bf } of cols) next[cellKey(f, col)] = sumBreakdown(bf, draft, dept);
       return next;
     });
     setBreakdownOf(null);
@@ -249,7 +252,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
   // 部門を切り替える前に入れた値（その部門に無い項目）は送らない。
   function valuesForDept(): NumberValues {
     const out: NumberValues = {};
-    for (const f of fieldsFor(form, dept)) for (const c of f.cols) {
+    for (const f of fieldsFor(form, dept)) for (const c of colsFor(f, dept)) {
       const k = cellKey(f, c);
       if (values[k]) out[k] = values[k];
     }
@@ -465,6 +468,7 @@ export default function NumbersUI({ name, campus }: { name: string; campus: stri
         return (
           <BreakdownModal
             title={`${breakdownOf.label}の学年別`}
+            dept={dept}
             cols={cols}
             values={values}
             onSave={(draft) => saveBreakdown(breakdownOf, cols, draft)}
