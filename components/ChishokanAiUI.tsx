@@ -4,19 +4,32 @@
 // 会話は画面の中だけに持つ（端末には保存しない）。ログはこれまでどおり会話ログのシートに残る。
 
 import { useEffect, useRef, useState } from 'react';
+import AiMarkdown, { CopyButton } from '@/components/AiMarkdown';
+import { toPlainText } from '@/lib/chishokanAi/markdown';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };
 
 const MAX_TOTAL_BYTES = 3_500_000; // 送信全体の目安（Vercel のリクエスト上限に対する余裕分）
 
+// 先頭の（　）は使い方の補足。押したときは外して入力欄に入れる。
 const EXAMPLES = [
   '冬期講習の外部生募集の計画を立てたい。今期の方針に沿って相談に乗ってください',
-  '全社共通テーマの4つと、それぞれ仕事で意識することを教えて',
-  '定期テスト対策のチラシを作りたい。何から決めればいい？',
+  '中3冬期講習のチラシの原稿を作って',
+  '全体会議で9月の振り返りを発表するスライドの流れを考えて',
   '冬期講習の外部生募集の計画書を Google ドキュメントで作って',
+  '（文章を貼って）この保護者向けの文章を、やわらかい表現に直して',
   '（資料を添付して）この資料が会社の方針に沿っているかチェックして',
 ];
+
+// スマートフォン・タブレット（Shift キーが無い）では、Enter は改行にして、送信はボタンで行う。
+function enterSends(): boolean {
+  try {
+    return !window.matchMedia('(pointer: coarse)').matches;
+  } catch {
+    return true;
+  }
+}
 
 function toBase64(file: File): Promise<string> {
   return new Promise((res, rej) => {
@@ -80,7 +93,7 @@ async function toAttach(file: File): Promise<Attach | null> {
   return null;
 }
 
-// 回答の中のURLを押せるリンクにする（作った文書のURLなど）。
+// 職員の質問の中のURLを押せるリンクにする（回答は AiMarkdown で整えて表示する）。
 function Linkified({ text }: { text: string }) {
   const parts = text.split(/(https?:\/\/[^\s)）」]+)/g);
   return (
@@ -103,6 +116,11 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   const [attachments, setAttachments] = useState<Attach[]>([]);
   const [attachNote, setAttachNote] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
+  // 送信のしかたの案内。スマートフォンでは Enter が改行になるので、表示を切り替える（画面の表示後に判定する）。
+  const [sendHint, setSendHint] = useState('Enter で送信・Shift+Enter で改行');
+  useEffect(() => {
+    if (!enterSends()) setSendHint('送信は右のボタンで');
+  }, []);
 
   useEffect(() => {
     if (messages.length) endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -181,8 +199,10 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     }
   }
 
+  // Enter で送信、Shift+Enter で改行（一般的なチャットAIと同じ）。日本語の変換を確定する Enter では送らない。
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (e.metaKey || e.ctrlKey || (!e.shiftKey && enterSends())) {
       e.preventDefault();
       ask(input);
     }
@@ -193,21 +213,21 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
       <div className="page-head">
         <h1>智翔館AI（試用版）</h1>
         <p>
-          社内の資料（理念・方針・要項・チラシ制作ルールなど）を調べて答えます（{campus} / {name} さん）。
-          答えには出典の資料名が付きます。
-          資料は、PDF・画像・Word・Excel・PowerPoint を添付するか、Google ドキュメント・スプレッドシート・スライドのリンクを貼ると読みます
-          （リンクは決められたフォルダの中のファイルだけ・1回に3件まで）。
+          社内の資料（理念・方針・要項・部門の計画・地域の情報・チラシやスライドの作り方など）を調べて答えます（{campus} / {name} さん）。
+          社内のこと（日付・料金・数字・方針など）は社内の資料だけをもとに答え、出典の資料名を付けます。Web は見ません。
+          文章の手直し・要約・アイデア出しなど、ふだんのチャットAIと同じ使い方もできます。
         </p>
         <p className="yq-pending-note">
-          まだ入っていない資料：佐世保市の地域情報、Webページ制作・スライド制作のルール、業績の数字。
-          これらは「資料に無い」と答えます。会話はこの画面を閉じると消えます。
+          資料は、PDF・画像・Word・Excel・PowerPoint を添付するか、Google ドキュメント・スプレッドシート・スライドのリンクを貼ると読みます
+          （リンクは決められたフォルダの中のファイルだけ・1回に3件まで）。業績の数字（売上・利益）は持っていません。
+          会話はこの画面を閉じると消えます。
         </p>
       </div>
 
       {messages.length === 0 && (
         <div className="iqa-examples">
           {EXAMPLES.map((e) => (
-            <button key={e} className="iqa-example" onClick={() => setInput(e.replace(/^（資料を添付して）/, ''))} disabled={busy}>
+            <button key={e} className="iqa-example" onClick={() => setInput(e.replace(/^（[^）]*）/, ''))} disabled={busy}>
               {e}
             </button>
           ))}
@@ -224,13 +244,27 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
 
       <div className="wrap">
         <div className="messages">
-          {messages.map((m, i) => (
-            <div key={i} className={`msg ${m.role}`}>
-              <div>
-                <div className="bubble">{m.content ? <Linkified text={m.content} /> : '資料を確認しています…'}</div>
+          {messages.map((m, i) => {
+            const streaming = busy && i === messages.length - 1;
+            return (
+              <div key={i} className={`msg ${m.role}`}>
+                <div>
+                  {m.role === 'user' ? (
+                    <div className="bubble"><Linkified text={m.content} /></div>
+                  ) : (
+                    <div className="bubble md-bubble">
+                      {m.content ? <AiMarkdown text={m.content} /> : '資料を確認しています…'}
+                    </div>
+                  )}
+                  {m.role === 'assistant' && m.content && !streaming && (
+                    <div className="msg-actions">
+                      <CopyButton text={() => toPlainText(m.content)} label="回答をコピー" className="msg-action" />
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <div ref={endRef} />
         </div>
       </div>
@@ -260,7 +294,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="相談したいことを書いてください。Google のファイルはリンクを貼れば読みます（⌘/Ctrl+Enter で送信）"
+            placeholder={`相談したいことを書いてください。Google のファイルはリンクを貼れば読みます（${sendHint}）`}
           />
           <button onClick={() => ask(input)} disabled={busy || (!input.trim() && attachments.length === 0)}>
             {busy ? '…' : '送信'}
