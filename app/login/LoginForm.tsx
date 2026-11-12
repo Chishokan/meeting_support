@@ -18,7 +18,7 @@ const NOTICES: Record<string, string> = {
   nodept: '所属部門が登録されていません。管理者にお問い合わせください。',
 };
 
-export default function LoginForm({ hubReady, legacy }: { hubReady: boolean; legacy: boolean }) {
+export default function LoginForm({ hubReady, legacy, forgotUrl }: { hubReady: boolean; legacy: boolean; forgotUrl: string }) {
   const [mode, setMode] = useState<'hub' | 'legacy'>(hubReady ? 'hub' : 'legacy');
   const [notice, setNotice] = useState('');
   const [err, setErr] = useState('');
@@ -104,7 +104,9 @@ export default function LoginForm({ hubReady, legacy }: { hubReady: boolean; leg
             {busy ? '確認中…' : depts.length ? 'この部門ではじめる' : 'ログイン'}
           </button>
           {err && <div className="err">{err}</div>}
-          <p className="sub" style={{ marginTop: 12 }}>パスワードがわからないときは、管理者にお問い合わせください。</p>
+          <p className="sub" style={{ marginTop: 12 }}>
+            {forgotUrl ? <a href={forgotUrl}>パスワードを忘れた方・まだ決めていない方</a> : 'パスワードがわからないときは、管理者にお問い合わせください。'}
+          </p>
           {legacy && (
             <p className="sub">
               <a href="#" onClick={(e) => { e.preventDefault(); setErr(''); setMode('legacy'); }}>
