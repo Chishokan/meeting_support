@@ -3,7 +3,7 @@
 // AI の回答（Markdown）を、見出し・表・箇条書き・コード枠に整えて表示する。
 // 中身の分け方は lib/chishokanAi/markdown.ts。ここは描くだけで、HTML としては埋め込まない（文字として描く）。
 
-import { useState, type ReactNode } from 'react';
+import { memo, useMemo, useState, type ReactNode } from 'react';
 import { parseMarkdown, type Block, type Inline } from '@/lib/chishokanAi/markdown';
 
 /** クリップボードに文字を写す。https でない画面や古いブラウザでは、選択してコピーする方法に切り替える。 */
@@ -134,6 +134,10 @@ function renderBlock(b: Block, i: number): ReactNode {
   }
 }
 
-export default function AiMarkdown({ text }: { text: string }) {
-  return <div className="md">{parseMarkdown(text).map(renderBlock)}</div>;
+// 会話が長くなっても、変わっていない回答は描き直さない。
+function AiMarkdown({ text }: { text: string }) {
+  const blocks = useMemo(() => parseMarkdown(text), [text]);
+  return <div className="md">{blocks.map(renderBlock)}</div>;
 }
+
+export default memo(AiMarkdown);

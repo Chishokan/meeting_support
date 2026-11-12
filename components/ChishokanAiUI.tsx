@@ -2,15 +2,52 @@
 
 // 智翔館AI の画面。社内ナレッジを調べて答える相談窓口（API は /api/chishokan-ai）。
 // 会話は画面の中だけに持つ（端末には保存しない）。ログはこれまでどおり会話ログのシートに残る。
+//
+// 回答は 1行1つの JSON で届く（lib/chishokanAi/conversation.ts）。文章・作業中の表示・読んだ資料・注意・途中で切れた知らせを分けて表示する。
+// 会話の持ち越し：AI が読んだナレッジのパスと、文字にした資料（Word・Excel・PowerPoint・テキストの添付、ドライブの資料）を覚えておき、
+// 次の質問と一緒に送る。PDF・画像は大きいので持ち越さない（続けて聞くときは付け直してもらう）。
 
 import { useEffect, useRef, useState } from 'react';
 import AiMarkdown, { CopyButton } from '@/components/AiMarkdown';
 import { toPlainText } from '@/lib/chishokanAi/markdown';
+import {
+  CONTINUE_PROMPT,
+  EMPTY_CONTEXT,
+  mergeContext,
+  parseEvents,
+  type CarryContext,
+  type Source,
+} from '@/lib/chishokanAi/conversation';
 
-type Msg = { role: 'user' | 'assistant'; content: string };
+type Msg = {
+  role: 'user' | 'assistant';
+  /** 画面に出す文（質問は添付名つき、回答は Markdown） */
+  content: string;
+  /** 質問のうち API に送る文（添付名を付けない） */
+  api?: string;
+  /** 作業中の表示（📄 …を読んでいます） */
+  status?: string;
+  sources?: Source[];
+  notices?: string[];
+  cut?: 'time' | 'length' | null;
+  stopped?: boolean;
+  /** エラーの知らせ。次の質問の履歴には入れない */
+  error?: boolean;
+};
 type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };
 
 const MAX_TOTAL_BYTES = 3_500_000; // 送信全体の目安（Vercel のリクエスト上限に対する余裕分）
+
+/** API に送る履歴（エラーの知らせ・空の回答を除き、質問は添付名を付けない文にする）。 */
+function toApi(msgs: Msg[]): { role: 'user' | 'assistant'; content: string }[] {
+  return msgs
+    .filter((m) => !m.error && (m.role === 'user' ? (m.api ?? m.content).trim() : m.content.trim()))
+    .map((m) => ({ role: m.role, content: m.role === 'user' ? m.api ?? m.content : m.content }));
+}
+
+function sourceLabel(s: Source): string {
+  return s.kind === 'knowledge' ? (s.path.split('/').pop() ?? s.path).replace(/\.md$/, '') : s.name;
+}
 
 // 先頭の（　）は使い方の補足。押したときは外して入力欄に入れる。
 const EXAMPLES = [
@@ -115,6 +152,10 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   const [busy, setBusy] = useState(false);
   const [attachments, setAttachments] = useState<Attach[]>([]);
   const [attachNote, setAttachNote] = useState('');
+  // この会話で読んだ資料（次の質問と一緒に送る）
+  const [context, setContext] = useState<CarryContext>(EMPTY_CONTEXT);
+  const contextRef = useRef<CarryContext>(EMPTY_CONTEXT);
+  const abortRef = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   // 送信のしかたの案内。スマートフォンでは Enter が改行になるので、表示を切り替える（画面の表示後に判定する）。
   const [sendHint, setSendHint] = useState('Enter で送信・Shift+Enter で改行');
@@ -125,6 +166,11 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   useEffect(() => {
     if (messages.length) endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  function updateContext(next: CarryContext) {
+    contextRef.current = next;
+    setContext(next);
+  }
 
   async function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -155,6 +201,78 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     setAttachNote(notes.join(' '));
   }
 
+  /**
+   * API に送って、届いた回答を index 番目の回答に書き込む。
+   * continuation のときは、今ある回答の後ろに足していく（「続きを書く」）。
+   */
+  async function run(
+    apiMessages: { role: 'user' | 'assistant'; content: string }[],
+    index: number,
+    opts: { attachments?: Attach[]; continuation?: boolean; start: Msg },
+  ) {
+    const ac = new AbortController();
+    abortRef.current = ac;
+    setBusy(true);
+    let draft: Msg = { ...opts.start, status: '', cut: null, stopped: false };
+    const show = () => {
+      const d = { ...draft };
+      setMessages((prev) => prev.map((m, i) => (i === index ? d : m)));
+    };
+    show();
+    try {
+      const res = await fetch('/api/chishokan-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: apiMessages,
+          attachments: opts.attachments ?? [],
+          context: contextRef.current,
+          continuation: !!opts.continuation,
+        }),
+        signal: ac.signal,
+      });
+      if (!res.ok || !res.body) {
+        const t = await res.text().catch(() => '');
+        draft = { ...draft, content: draft.content || t || 'エラーが発生しました。', error: !draft.content };
+        return;
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const { events, rest } = parseEvents(buf);
+        buf = rest;
+        if (!events.length) continue;
+        for (const ev of events) {
+          if (ev.t === 'text') draft = { ...draft, content: draft.content + ev.v, status: '' };
+          else if (ev.t === 'status') draft = { ...draft, status: ev.v };
+          else if (ev.t === 'sources') draft = { ...draft, sources: [...(draft.sources ?? []), ...ev.items] };
+          else if (ev.t === 'notice') draft = { ...draft, notices: [...(draft.notices ?? []), ev.v] };
+          else if (ev.t === 'cut') draft = { ...draft, cut: ev.reason };
+          else if (ev.t === 'error') draft = { ...draft, notices: [...(draft.notices ?? []), ev.v], error: !draft.content };
+          else if (ev.t === 'context') updateContext(mergeContext(contextRef.current, { reads: ev.reads, texts: ev.texts }));
+        }
+        show();
+      }
+    } catch (e) {
+      if ((e as Error)?.name === 'AbortError') draft = { ...draft, stopped: true };
+      else if (draft.content) draft = { ...draft, notices: [...(draft.notices ?? []), '通信が途中で切れました。'] };
+      else draft = { ...draft, content: '通信エラーが発生しました。', error: true };
+    } finally {
+      draft = { ...draft, status: '' };
+      if (!draft.content && !draft.stopped && !draft.error) {
+        draft = { ...draft, content: '回答を作れませんでした。もう一度お試しください。', error: true };
+      }
+      if (!draft.content && draft.stopped) draft = { ...draft, content: '（停止しました）', error: true };
+      show();
+      abortRef.current = null;
+      setBusy(false);
+    }
+  }
+
   async function ask(text: string) {
     const q = text.trim();
     if ((!q && attachments.length === 0) || busy) return;
@@ -164,39 +282,47 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     setInput('');
     setAttachments([]);
     setAttachNote('');
-    setBusy(true);
 
-    // 画面には添付名つきで出し、API には本文だけを送る（添付は今回の質問にだけ付ける）。
-    const shown: Msg[] = [...messages, { role: 'user', content: label }];
-    const sent: Msg[] = [...messages, { role: 'user', content }];
-    setMessages([...shown, { role: 'assistant', content: '' }]);
+    // 画面には添付名つきで出し、API には本文だけを送る。
+    const base: Msg[] = [...messages, { role: 'user', content: label, api: content }];
+    // 文字にした添付は、次の質問からも AI に渡す。PDF・画像は持ち越さない。
+    const texts = sending.filter((a) => a.kind === 'text').map((a) => ({ name: a.name, text: a.data }));
+    const heavy = sending.filter((a) => a.kind !== 'text').map((a) => a.name);
+    const start: Msg = {
+      role: 'assistant',
+      content: '',
+      notices: heavy.length ? [`PDF・画像（${heavy.join('、')}）は、次の質問には持ち越しません。続けて聞くときは付け直してください。`] : undefined,
+    };
+    setMessages([...base, start]);
+    await run(toApi(base), base.length, { attachments: sending, start });
+    if (texts.length) updateContext(mergeContext(contextRef.current, { texts }));
+  }
 
-    try {
-      const res = await fetch('/api/chishokan-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: sent, attachments: sending }),
-      });
-      if (!res.ok || !res.body) {
-        const t = await res.text().catch(() => '');
-        setMessages([...shown, { role: 'assistant', content: t || 'エラーが発生しました。' }]);
-        return;
-      }
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let acc = '';
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        acc += dec.decode(value, { stream: true });
-        setMessages([...shown, { role: 'assistant', content: acc }]);
-      }
-      if (!acc) setMessages([...shown, { role: 'assistant', content: '回答を作れませんでした。もう一度お試しください。' }]);
-    } catch {
-      setMessages([...shown, { role: 'assistant', content: '通信エラーが発生しました。' }]);
-    } finally {
-      setBusy(false);
-    }
+  // 途中で切れた回答の続きを書かせる。画面には出さない「（続き）…」を送り、同じ回答の後ろに足す。
+  async function continueAnswer() {
+    const last = messages[messages.length - 1];
+    if (busy || !last || last.role !== 'assistant' || !last.cut) return;
+    const apiMessages = [...toApi(messages), { role: 'user' as const, content: CONTINUE_PROMPT }];
+    await run(apiMessages, messages.length - 1, { continuation: true, start: { ...last, cut: null } });
+  }
+
+  // いちばん新しい回答を作り直す（添付の PDF・画像は付け直されない）。
+  async function regenerate() {
+    const last = messages[messages.length - 1];
+    if (busy || !last || last.role !== 'assistant') return;
+    const base = messages.slice(0, -1);
+    const start: Msg = { role: 'assistant', content: '' };
+    setMessages([...base, start]);
+    await run(toApi(base), base.length, { start });
+  }
+
+  function stop() {
+    abortRef.current?.abort();
+  }
+
+  function reset() {
+    setMessages([]);
+    updateContext(EMPTY_CONTEXT);
   }
 
   // Enter で送信、Shift+Enter で改行（一般的なチャットAIと同じ）。日本語の変換を確定する Enter では送らない。
@@ -207,6 +333,8 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
       ask(input);
     }
   }
+
+  const carried = context.reads.length + context.texts.length;
 
   return (
     <div className="iqa-page">
@@ -235,30 +363,82 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
       )}
 
       {messages.length > 0 && (
-        <div className="yq-list">
-          <button className="yq-toggle" onClick={() => setMessages([])} disabled={busy}>
+        <div className="yq-list ai-convo-bar">
+          <button className="yq-toggle" onClick={reset} disabled={busy}>
             新しい相談を始める（会話を消す）
           </button>
+          {carried > 0 && (
+            <span className="ai-carry-note" title={[...context.reads, ...context.texts.map((t) => t.name)].join('\n')}>
+              この会話で読んだ資料 {carried} 件を、次の質問でもAIに渡します
+            </span>
+          )}
         </div>
       )}
 
       <div className="wrap">
         <div className="messages">
           {messages.map((m, i) => {
-            const streaming = busy && i === messages.length - 1;
-            return (
-              <div key={i} className={`msg ${m.role}`}>
-                <div>
-                  {m.role === 'user' ? (
+            const isLast = i === messages.length - 1;
+            const streaming = busy && isLast;
+            if (m.role === 'user') {
+              return (
+                <div key={i} className="msg user">
+                  <div>
                     <div className="bubble"><Linkified text={m.content} /></div>
-                  ) : (
-                    <div className="bubble md-bubble">
-                      {m.content ? <AiMarkdown text={m.content} /> : '資料を確認しています…'}
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div key={i} className="msg assistant">
+                <div>
+                  <div className={`bubble md-bubble${m.error ? ' ai-error' : ''}`}>
+                    {m.content ? <AiMarkdown text={m.content} /> : <span className="ai-status">{m.status || '考えています…'}</span>}
+                  </div>
+                  {streaming && m.content && m.status && <div className="ai-status ai-status-line">{m.status}</div>}
+                  {m.stopped && m.content && !m.error && <div className="ai-flag">（停止しました）</div>}
+                  {m.cut && !streaming && (
+                    <div className="ai-cut">
+                      ⚠ 回答が途中で切れました（{m.cut === 'time' ? '時間の上限' : '長さの上限'}）。
+                      {isLast && (
+                        <button type="button" className="msg-action" onClick={continueAnswer} disabled={busy}>
+                          続きを書く
+                        </button>
+                      )}
                     </div>
                   )}
-                  {m.role === 'assistant' && m.content && !streaming && (
+                  {m.notices?.map((n, j) => (
+                    <div key={j} className="ai-notice">{n}</div>
+                  ))}
+                  {!streaming && m.sources && m.sources.length > 0 && (
+                    <div className="ai-sources">
+                      <span className="ai-sources-label">読んだ資料</span>
+                      {m.sources.map((s, j) =>
+                        s.kind === 'drive' ? (
+                          <a key={j} className="ai-source" href={`https://drive.google.com/open?id=${encodeURIComponent(s.id)}`} target="_blank" rel="noopener noreferrer">
+                            {sourceLabel(s)}
+                          </a>
+                        ) : (
+                          <span key={j} className="ai-source" title={s.path}>{sourceLabel(s)}</span>
+                        ),
+                      )}
+                    </div>
+                  )}
+                  {m.content && !m.error && !streaming && (
                     <div className="msg-actions">
                       <CopyButton text={() => toPlainText(m.content)} label="回答をコピー" className="msg-action" />
+                      {isLast && !busy && (
+                        <button type="button" className="msg-action" onClick={regenerate}>
+                          もう一度答えさせる
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {m.error && isLast && !busy && i > 0 && (
+                    <div className="msg-actions">
+                      <button type="button" className="msg-action" onClick={regenerate}>
+                        もう一度送る
+                      </button>
                     </div>
                   )}
                 </div>
@@ -296,9 +476,15 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
             onKeyDown={onKeyDown}
             placeholder={`相談したいことを書いてください。Google のファイルはリンクを貼れば読みます（${sendHint}）`}
           />
-          <button onClick={() => ask(input)} disabled={busy || (!input.trim() && attachments.length === 0)}>
-            {busy ? '…' : '送信'}
-          </button>
+          {busy ? (
+            <button type="button" className="ai-stop" onClick={stop}>
+              停止
+            </button>
+          ) : (
+            <button onClick={() => ask(input)} disabled={!input.trim() && attachments.length === 0}>
+              送信
+            </button>
+          )}
         </div>
       </div>
     </div>

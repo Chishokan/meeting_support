@@ -5,6 +5,12 @@
 // 添付（PDF・画像・テキスト。Word・Excel・PowerPoint は画面側で文字にしてから送る）は今回の質問にだけ付ける。
 // 質問に Google ドライブのリンクがあれば、Apps Script で中身を読んで一緒に渡す（読めるフォルダは限定。lib/chishokanAi/driveFiles.ts）。
 // 試用中は使える人を絞っている（lib/chishokanAi/access.ts）。
+//
+// 回答は 1行1つの JSON（NDJSON）で送る（決まりは lib/chishokanAi/conversation.ts）：
+//   文章の断片、作業中の表示（📄 …を読んでいます）、読んだ資料、次の質問に持ち越す資料、出典の注意、途中で切れた知らせ。
+// 会話の持ち越し：画面が覚えている「前に読んだナレッジのパス」と「文字にした資料」を受け取り、ナレッジは読み直して
+// （確定していない要項などは読まない関門を通す）、今回の質問と一緒に AI に渡す。
+// 停止：画面が通信を切ったら、AI への問い合わせも止める。時間切れ：60秒の制限の手前で止め、「途中で切れました」を送る。
 
 import Anthropic from '@anthropic-ai/sdk';
 import { promises as fs } from 'node:fs';
@@ -15,23 +21,46 @@ import { logInteraction } from '@/lib/core/log';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/core/sanitize';
 import { canUseChishokanAi } from '@/lib/chishokanAi/access';
 import { buildChishokanAiPrompt } from '@/lib/chishokanAi/prompt';
-import { KNOWLEDGE_ROOT, KNOWLEDGE_TOOLS, runKnowledgeTool } from '@/lib/chishokanAi/knowledgeTools';
-import { readDriveLinks, runDriveTool, type DriveRead } from '@/lib/chishokanAi/driveFiles';
+import {
+  KNOWLEDGE_ROOT,
+  KNOWLEDGE_TOOLS,
+  listAllowedFiles,
+  readFileDetailed,
+  runKnowledgeToolDetailed,
+} from '@/lib/chishokanAi/knowledgeTools';
+import { readDriveLinks, runDriveTool, type DriveRead, type DriveText } from '@/lib/chishokanAi/driveFiles';
+import { extractDriveFolderIds, extractDriveIds } from '@/lib/chishokanAi/driveLinks';
 import { DRIVE_TOOLS } from '@/lib/chishokanAi/driveTools';
 import { CREATE_DOC_TOOL } from '@/lib/chishokanAi/createDocTool';
 import { runCreateDoc, type CreatedDoc } from '@/lib/chishokanAi/createDoc';
+import {
+  buildCarryBlock,
+  citationWarnings,
+  citedPaths,
+  encodeEvent,
+  normalizeContext,
+  statusFor,
+  type AiEvent,
+  type Source,
+} from '@/lib/chishokanAi/conversation';
 
 const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
 
 export const runtime = 'nodejs';
+// ★実行時間の上限（秒）。Vercel のプランで延ばせるなら、ここと下の LIMIT_MS を一緒に上げる。
 export const maxDuration = 60;
+const LIMIT_MS = 60_000;
 
 const client = new Anthropic();
 
-// ツールを使う往復の上限。60秒の制限に収めるため、時間でも打ち切る（最後の1回はツール無しで答えさせる）。
+// ツールを使う往復の上限。
 const MAX_ROUNDS = 6;
 const MAX_TOOL_CALLS = 10;
-const TIME_BUDGET_MS = 40_000;
+// これを過ぎたら道具を使わせず、わかった範囲で書かせる（書く時間を残す）。
+const TOOL_BUDGET_MS = 35_000;
+// 制限の手前で止めて「途中で切れました」を送る（Vercel に打ち切られると、画面には何も届かない）。
+const HARD_STOP_MS = LIMIT_MS - 6_000;
+const MAX_TOKENS = 8000;
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };
@@ -58,6 +87,21 @@ async function readText(p: string): Promise<string> {
   return fs.readFile(p, 'utf8').catch(() => '');
 }
 
+// プロンプトキャッシュの区切りを、いちばん新しい道具の結果に移す（往復のたびに前の結果まで読み直さないように）。
+// 区切りは、システム・今回の質問・最新の道具の結果の3つ（上限は4つ）。
+function markLatestToolResults(convo: Anthropic.MessageParam[]) {
+  for (let i = 0; i < convo.length - 1; i++) {
+    const c = convo[i].content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) if (b.type === 'tool_result' && 'cache_control' in b) delete (b as { cache_control?: unknown }).cache_control;
+  }
+  const last = convo[convo.length - 1];
+  if (last && Array.isArray(last.content) && last.content.length) {
+    const b = last.content[last.content.length - 1];
+    if (b.type === 'tool_result') (b as Anthropic.ToolResultBlockParam).cache_control = { type: 'ephemeral' };
+  }
+}
+
 export async function POST(req: Request) {
   const requestStarted = Date.now();
   const session = getSession();
@@ -69,16 +113,14 @@ export async function POST(req: Request) {
   const messages = sanitizeHistory(raw) as Msg[];
   if (messages.length === 0) return new Response('messages required', { status: 400 });
   const attachments: Attach[] = Array.isArray(body?.attachments) ? body.attachments.slice(0, 5) : [];
+  const carry = normalizeContext(body?.context);
+  const continuation = body?.continuation === true;
 
   const root = path.join(process.cwd(), KNOWLEDGE_ROOT);
   const [policy, index] = await Promise.all([
     readText(path.join(root, '00_index', 'CLAUDE.md')),
     readText(path.join(root, '00_index', 'INDEX.md')),
   ]);
-
-  // 最後の質問に Google ドライブのリンクがあれば読む（最大3件）。
-  const lastUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
-  const drive = await readDriveLinks(lastUserText);
 
   const system: Anthropic.TextBlockParam[] = [
     {
@@ -87,47 +129,95 @@ export async function POST(req: Request) {
       cache_control: { type: 'ephemeral' },
     },
   ];
-  const convo: Anthropic.MessageParam[] = messages.map((m, i) =>
-    i === messages.length - 1
-      ? {
-          role: m.role,
-          content: [
-            ...drive.blocks,
-            ...attachBlocks(attachments),
-            { type: 'text', text: m.content, cache_control: { type: 'ephemeral' } },
-          ] as Anthropic.ContentBlockParam[],
-        }
-      : { role: m.role, content: m.content },
-  );
   // 資料を読む3つの道具と、頼まれたときに Google ドキュメントの下書きを作る道具（1回の回答で1つまで）。
   const tools = [...KNOWLEDGE_TOOLS, ...DRIVE_TOOLS, CREATE_DOC_TOOL] as unknown as Anthropic.Tool[];
-  const driveToolReads: DriveRead[] = [];
+  const lastUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 
   const encoder = new TextEncoder();
+  const ac = new AbortController();
+  let clientGone = false;
+  let timedOut = false;
+  const onClientAbort = () => {
+    clientGone = true;
+    ac.abort();
+  };
+  req.signal?.addEventListener?.('abort', onClientAbort);
+
   let full = '';
   const usage: string[] = [];
   const opened: string[] = [];
   const createdDocs: CreatedDoc[] = [];
+  const driveToolReads: DriveRead[] = [];
+  let driveLinkReads: DriveRead[] = [];
+  const turnReads: string[] = []; // 今回 read_file で読めたナレッジ
+  const carryTexts: DriveText[] = []; // 今回ドライブから読めた文字（次の質問に持ち越す）
+  let cut: 'time' | 'length' | null = null;
 
   const rs = new ReadableStream<Uint8Array>({
     async start(controller) {
-      // リンクの読み込みにかかった時間も含めて、60秒の制限に収める。
-      const started = requestStarted;
+      const send = (ev: AiEvent) => {
+        if (clientGone) return;
+        try {
+          controller.enqueue(encoder.encode(encodeEvent(ev)));
+        } catch {
+          clientGone = true;
+        }
+      };
+      const timer = setTimeout(() => {
+        timedOut = true;
+        ac.abort();
+      }, Math.max(1_000, HARD_STOP_MS - (Date.now() - requestStarted)));
       let toolCalls = 0;
       try {
+        // 最後の質問に Google ドライブのリンクがあれば読む（最大3件）。
+        if (extractDriveIds(lastUserText).length || extractDriveFolderIds(lastUserText).length) {
+          send({ t: 'status', v: '🔗 リンクの資料を読んでいます' });
+        }
+        const drive = await readDriveLinks(lastUserText);
+        driveLinkReads = drive.reads;
+        carryTexts.push(...drive.carry);
+
+        // 前の回に読んだナレッジを読み直す（関門を通るものだけ）。
+        const carriedKnowledge: { path: string; text: string }[] = [];
+        if (carry.reads.length) send({ t: 'status', v: '📚 前に読んだ資料を開き直しています' });
+        for (const p of carry.reads) {
+          const r = await readFileDetailed(root, p);
+          if (r.ok) carriedKnowledge.push({ path: r.path, text: r.text });
+        }
+        const carryBlock = buildCarryBlock(carriedKnowledge, carry.texts);
+
+        const convo: Anthropic.MessageParam[] = messages.map((m, i) =>
+          i === messages.length - 1
+            ? {
+                role: m.role,
+                content: [
+                  ...(carryBlock ? [{ type: 'text' as const, text: carryBlock }] : []),
+                  ...drive.blocks,
+                  ...attachBlocks(attachments),
+                  { type: 'text', text: m.content, cache_control: { type: 'ephemeral' } },
+                ] as Anthropic.ContentBlockParam[],
+              }
+            : { role: m.role, content: m.content },
+        );
+
         for (let round = 0; round < MAX_ROUNDS; round++) {
+          if (ac.signal.aborted) break;
           const lastRound =
-            round === MAX_ROUNDS - 1 || toolCalls >= MAX_TOOL_CALLS || Date.now() - started > TIME_BUDGET_MS;
-          const stream = client.messages.stream({
-            model: MODEL,
-            max_tokens: 6000,
-            thinking: THINKING,
-            system,
-            tools,
-            tool_choice: lastRound ? { type: 'none' } : { type: 'auto' },
-            messages: convo,
-            stop_sequences: STOP,
-          });
+            round === MAX_ROUNDS - 1 || toolCalls >= MAX_TOOL_CALLS || Date.now() - requestStarted > TOOL_BUDGET_MS;
+          if (round > 0) markLatestToolResults(convo);
+          const stream = client.messages.stream(
+            {
+              model: MODEL,
+              max_tokens: MAX_TOKENS,
+              thinking: THINKING,
+              system,
+              tools,
+              tool_choice: lastRound ? { type: 'none' } : { type: 'auto' },
+              messages: convo,
+              stop_sequences: STOP,
+            },
+            { signal: ac.signal },
+          );
           let roundText = '';
           for await (const ev of stream) {
             if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
@@ -135,12 +225,15 @@ export async function POST(req: Request) {
               const piece = !roundText && full ? `\n\n${ev.delta.text}` : ev.delta.text;
               roundText += ev.delta.text;
               full += piece;
-              controller.enqueue(encoder.encode(piece));
+              send({ t: 'text', v: piece });
             }
           }
           const msg = await stream.finalMessage();
           const u = msg.usage;
-          usage.push(`in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} out=${u.output_tokens}`);
+          usage.push(
+            `in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`,
+          );
+          if (msg.stop_reason === 'max_tokens') cut = 'length';
           if (msg.stop_reason !== 'tool_use') break;
 
           convo.push({ role: 'assistant', content: msg.content });
@@ -149,6 +242,7 @@ export async function POST(req: Request) {
             if (block.type !== 'tool_use') continue;
             toolCalls++;
             const input = (block.input ?? {}) as Record<string, unknown>;
+            send({ t: 'status', v: statusFor(block.name, input) });
             let out: string;
             if (toolCalls > MAX_TOOL_CALLS) {
               out = 'ツールの上限に達しました。ここまでにわかった範囲で答えてください。';
@@ -159,6 +253,7 @@ export async function POST(req: Request) {
               } else {
                 const r = await runDriveTool(block.name, input);
                 if (r.read) driveToolReads.push(r.read);
+                if (r.carry) carryTexts.push(r.carry);
                 out = r.text;
               }
             } else if (block.name === CREATE_DOC_TOOL.name) {
@@ -170,22 +265,65 @@ export async function POST(req: Request) {
                 out = r.toolResult;
               }
             } else {
-              out = await runKnowledgeTool(root, block.name, input);
+              const r = await runKnowledgeToolDetailed(root, block.name, input);
+              if (r.readPath && !turnReads.includes(r.readPath)) turnReads.push(r.readPath);
+              out = r.text;
             }
-            opened.push(block.name === CREATE_DOC_TOOL.name ? `create_google_doc:${String(input.title ?? '')}` : `${block.name}:${String(input.path ?? input.query ?? '')}`);
+            opened.push(
+              block.name === CREATE_DOC_TOOL.name
+                ? `create_google_doc:${String(input.title ?? '')}`
+                : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? '')}`,
+            );
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           }
           convo.push({ role: 'user', content: results });
         }
-      } catch {
-        controller.enqueue(encoder.encode('\n[エラーが発生しました。もう一度お試しください。]'));
+      } catch (e) {
+        if (!ac.signal.aborted) {
+          console.error('[chishokan-ai] error', e);
+          send({ t: 'error', v: 'エラーが発生しました。もう一度お試しください。' });
+        }
       } finally {
+        clearTimeout(timer);
+        req.signal?.removeEventListener?.('abort', onClientAbort);
+        if (timedOut) cut = 'time';
+
+        // 読んだ資料（今回）と、次の質問に持ち越すもの。
+        const sources: Source[] = [
+          ...turnReads.map((p) => ({ kind: 'knowledge' as const, path: p })),
+          ...[...driveLinkReads, ...driveToolReads]
+            .filter((r) => r.ok && r.note !== 'フォルダ一覧')
+            .filter((r, i, a) => a.findIndex((x) => x.id === r.id) === i)
+            .map((r) => ({ kind: 'drive' as const, name: r.name, id: r.id })),
+        ];
+        if (sources.length) send({ t: 'sources', items: sources });
+        if (turnReads.length || carryTexts.length) send({ t: 'context', reads: turnReads, texts: carryTexts });
+
+        // 出典に挙がっている資料を、この会話で実際に開いたかを確かめる。
+        if (full && citedPaths(full).length) {
+          try {
+            const known = new Set(await listAllowedFiles(root));
+            const read = new Set([...carry.reads, ...turnReads]);
+            for (const w of citationWarnings(full, read, known)) send({ t: 'notice', v: w });
+          } catch {}
+        }
+        if (cut && !clientGone) send({ t: 'cut', reason: cut });
+
+        const flags = [continuation ? '続き' : '', clientGone ? '停止' : '', cut === 'time' ? '時間切れ' : cut === 'length' ? '長さで切れた' : '']
+          .filter(Boolean)
+          .join('・');
         try {
-          console.log('[chishokan-ai]', `rounds=${usage.length}`, usage.join(' | '), `tools=${opened.join(',')}`);
+          console.log(
+            '[chishokan-ai]',
+            `rounds=${usage.length}`,
+            usage.join(' | '),
+            `tools=${opened.join(',')}`,
+            `carry=${carry.reads.length}+${carry.texts.length}`,
+            flags ? `flags=${flags}` : '',
+          );
         } catch {}
-        const lastUser = [...messages].reverse().find((m) => m.role === 'user');
         const attachNote = attachments.length ? `（添付: ${attachments.map((a) => a.name).join('、')}）` : '';
-        const allReads = [...drive.reads, ...driveToolReads];
+        const allReads = [...driveLinkReads, ...driveToolReads];
         const driveNote = allReads.length
           ? `（ドライブ: ${allReads.map((r) => `${r.name}${r.ok ? '' : `＝読めず:${r.note}`}`).join('、')}）`
           : '';
@@ -196,16 +334,22 @@ export async function POST(req: Request) {
           await logInteraction({
             user: session.name,
             campus: session.campus,
-            input: `[智翔館AI] ${lastUser?.content ?? ''}${attachNote}${driveNote}${docNote}\n（調べた資料: ${opened.join('、') || 'なし'}）`,
+            input: `[智翔館AI]${flags ? `（${flags}）` : ''} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}\n（調べた資料: ${opened.join('、') || 'なし'}）`,
             output: stripRoleBleed(full),
           });
         } catch {}
-        controller.close();
+        try {
+          controller.close();
+        } catch {}
       }
+    },
+    cancel() {
+      // 画面が通信を切った（停止・画面を閉じた）
+      onClientAbort();
     },
   });
 
   return new Response(rs, {
-    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+    headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' },
   });
 }
