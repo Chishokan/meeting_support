@@ -54,6 +54,18 @@ export async function callHub<T>(action: string, data: Record<string, unknown>):
   return json;
 }
 
+// 智翔館アプリに入れるロール。いまは社員だけ（管理者・教室担当者・授業担当者）。
+// スタッフ（講師・アルバイト）は入れない。給与アプリ（Color）には今までどおり直接ログインする。
+// スタッフに開くときは、ロール別のメニューを用意してからここに足す（統合計画 第4段階）。
+export const HUB_LOGIN_ROLES: HubRole[] = ['admin', 'staff', 'employee'];
+
+export function canLoginHub(u: Pick<HubUser, 'role'>): boolean {
+  return HUB_LOGIN_ROLES.includes(u.role);
+}
+
+export const STAFF_DENIED_MESSAGE =
+  '智翔館アプリは社員の方のみ利用できます。給与・シフトや講師育成は、給与アプリ（Color）に直接ログインしてください。';
+
 // 部門（ログインに使う campus）を決める。
 //   ・部門が1つならそれ。兼務なら、選んだもの（選べるのは自分の部門だけ）
 //   ・管理者で部門が未設定なら管理部門

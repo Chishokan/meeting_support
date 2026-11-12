@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { SESSION_COOKIE, SESSION_COOKIE_OPTIONS, encodeSession } from '@/lib/core/auth';
-import { HubError, callHub, hubConfigured, pickCampus, sessionFromHubUser, type HubUser } from '@/lib/core/hub';
+import { HubError, STAFF_DENIED_MESSAGE, callHub, canLoginHub, hubConfigured, pickCampus, sessionFromHubUser, type HubUser } from '@/lib/core/hub';
 
 // 共通ログイン（メールアドレス＋パスワード）。給与アプリと同じアカウントで照合する（統合計画 第3段階）。
 //   兼務の人は、部門を選んでもらってから入る（1回目は needCampus を返す）。
@@ -30,6 +30,9 @@ export async function POST(req: Request) {
   }
   if (!r.ok) {
     return NextResponse.json({ error: REASONS[r.reason] || REASONS.bad }, { status: 401 });
+  }
+  if (!canLoginHub(r.user)) {
+    return NextResponse.json({ error: STAFF_DENIED_MESSAGE }, { status: 403 });
   }
   const c = pickCampus(r.user, campus ? String(campus) : undefined);
   if (!c) {

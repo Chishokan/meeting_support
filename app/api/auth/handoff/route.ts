@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { SESSION_COOKIE, SESSION_COOKIE_OPTIONS, encodeSession, getSession } from '@/lib/core/auth';
-import { HubError, callHub, pickCampus, sessionFromHubUser, type HubUser } from '@/lib/core/hub';
+import { HubError, callHub, canLoginHub, pickCampus, sessionFromHubUser, type HubUser } from '@/lib/core/hub';
 
 // 給与アプリから移ってきた人のログイン（統合計画 第3段階）。
 //   給与アプリの hub_go.php が ?token=…（一回限り・60秒）を付けてここへ送る。
@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
     return fail('handoff');
   }
   if (!r.ok || !r.user) return fail('handoff');
+  if (!canLoginHub(r.user)) return fail('staff');
   // 兼務の人は、すでに同じ人でログインしていればその部門のまま。そうでなければ1つ目の部門
   const cur = getSession();
   const keep = cur?.uid === r.user.id ? cur.campus : undefined;
