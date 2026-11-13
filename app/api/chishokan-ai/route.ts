@@ -74,6 +74,10 @@ const TOOL_BUDGET_MS = 150_000;
 // 止めたあとの後片付け（会話ログの保存）の時間を残す。
 const HARD_STOP_MS = LIMIT_MS - 10_000;
 const MAX_TOKENS = 16_000;
+// じっくり考える作業（手順書に thinking: adaptive）は、考える分だけ回答の長さの上限を広げる。
+const MAX_TOKENS_DEEP = 32_000;
+// 計算の道具（Anthropic の実行環境で Python を動かす。手順書に code_execution: on の作業だけで使う）。
+const CODE_EXECUTION_TOOL = { type: 'code_execution_20260521', name: 'code_execution' };
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };
@@ -152,6 +156,8 @@ export async function POST(req: Request) {
   // 前の回に開いた手順書（持ち越しに入っていれば、その作業の続き）
   const carriedTaskPath = [...carry.reads].reverse().find((p) => p.startsWith(`${TASKS_DIR}/`));
   let activeTask: TaskDef | undefined = chosenTask ?? tasks.find((t) => t.path === carriedTaskPath);
+  // じっくり考える設定は、回答の途中では切り替えられない（考えた跡が往復の最初から要る）。回答の始めの作業で決める。
+  const deep = !!activeTask?.deepThinking;
 
   const system: Anthropic.TextBlockParam[] = [
     {
@@ -171,6 +177,9 @@ export async function POST(req: Request) {
     CREATE_SLIDES_TOOL,
   ] as unknown as Anthropic.Tool[];
   let tasksStarted = 0;
+  // 計算の道具は、作業の手順書が使うときだけ足す（回答の途中で手順書を開いたら、次の往復から足す）。
+  let codeExecution = !!activeTask?.codeExecution;
+  let codeRuns = 0;
   let templateReads = 0;
   let slidesMade = 0;
   const lastUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
@@ -259,13 +268,15 @@ export async function POST(req: Request) {
           const lastRound =
             round === MAX_ROUNDS - 1 || toolCalls >= MAX_TOOL_CALLS || Date.now() - requestStarted > TOOL_BUDGET_MS;
           if (round > 0) markLatestToolResults(convo);
+          const roundTools = codeExecution ? [...tools, CODE_EXECUTION_TOOL as unknown as Anthropic.Tool] : tools;
           const stream = client.messages.stream(
             {
               model: MODEL,
-              max_tokens: MAX_TOKENS,
-              thinking: THINKING,
+              max_tokens: deep ? MAX_TOKENS_DEEP : MAX_TOKENS,
+              // SDK 0.69 の型には adaptive がまだ無いが、API は受け付ける（Sonnet 5 以降の考える設定）
+              thinking: (deep ? { type: 'adaptive' } : THINKING) as unknown as Anthropic.ThinkingConfigParam,
               system,
-              tools,
+              tools: roundTools,
               tool_choice: lastRound ? { type: 'none' } : { type: 'auto' },
               messages: convo,
               stop_sequences: STOP,
@@ -273,10 +284,24 @@ export async function POST(req: Request) {
             { signal: ac.signal },
           );
           let roundText = '';
+          // 計算・考える時間を挟んで文章が続くときも、前の文章と段落を分ける
+          let breakBeforeText = false;
           for await (const ev of stream) {
+            if (ev.type === 'content_block_start') {
+              const b = ev.content_block as { type: string; name?: string };
+              if (b.type === 'server_tool_use') {
+                codeRuns++;
+                send({ t: 'status', v: '🧮 計算して答えを確かめています' });
+                breakBeforeText = true;
+              } else if (b.type === 'thinking' || b.type === 'redacted_thinking') {
+                if (!full) send({ t: 'status', v: '🤔 考えています' });
+              }
+            }
             if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
               // ツールを挟んで文章が続くときは、前の文章と段落を分ける。
-              const piece = !roundText && full ? `\n\n${ev.delta.text}` : ev.delta.text;
+              const sep = full && (!roundText || breakBeforeText) ? '\n\n' : '';
+              breakBeforeText = false;
+              const piece = `${sep}${ev.delta.text}`;
               roundText += ev.delta.text;
               full += piece;
               send({ t: 'text', v: piece });
@@ -288,6 +313,11 @@ export async function POST(req: Request) {
             `in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`,
           );
           if (msg.stop_reason === 'max_tokens') cut = 'length';
+          // 計算の道具が長く続くと、Anthropic 側で一度止まる（pause_turn）。そのまま送り返すと続きから再開する。
+          if (msg.stop_reason === 'pause_turn') {
+            convo.push({ role: 'assistant', content: msg.content });
+            continue;
+          }
           if (msg.stop_reason !== 'tool_use') break;
 
           convo.push({ role: 'assistant', content: msg.content });
@@ -321,6 +351,7 @@ export async function POST(req: Request) {
                 for (const p of b.reads) if (!turnReads.includes(p)) turnReads.push(p);
                 tasksStarted++;
                 activeTask = t;
+                if (t.codeExecution) codeExecution = true;
                 out = b.text;
               }
             } else if (block.name === SLIDES_TEMPLATES_TOOL.name) {
@@ -414,6 +445,8 @@ export async function POST(req: Request) {
             `carry=${carry.reads.length}+${carry.texts.length}`,
             flags ? `flags=${flags}` : '',
             activeTask ? `task=${activeTask.id}` : '',
+            deep ? 'thinking=adaptive' : '',
+            codeRuns ? `code_runs=${codeRuns}` : '',
             gaps.length ? `gaps=${gaps.join('／')}` : '',
           );
         } catch {}

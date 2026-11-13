@@ -46,6 +46,11 @@ test('parseTask：task の名前が無い・形が違うものは null', () => {
   assert.equal(t?.id, 'flyer');
   assert.equal(t?.mustInclude, '確認してほしいこと');
   assert.equal(t?.reads.length, 3);
+  assert.equal(t?.deepThinking, false);
+  assert.equal(t?.codeExecution, false);
+  const math = parseTask('x.md', '---\ntask: math-material\nthinking: adaptive\ncode_execution: on   # 検算\n---\n');
+  assert.equal(math?.deepThinking, true);
+  assert.equal(math?.codeExecution, true);
   assert.equal(parseTask('x.md', '---\ntask: Flyer!\n---\n'), null);
   assert.equal(parseTask('x.md', '本文だけ'), null);
 });

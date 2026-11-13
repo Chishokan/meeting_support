@@ -2647,7 +2647,7 @@ function createAiSlides_(data) {
   return { ok: true, saved: 'aiSlides', name: name, url: 'https://docs.google.com/presentation/d/' + copy.getId() + '/edit', warnings: warnings.slice(0, 30) };
 }
 
-// 素朴な Markdown（# 見出し、- 箇条書き、1. 番号、| 表 |、段落）を文書にする。**太字** の記号は外す。
+// 素朴な Markdown（# 見出し、- 箇条書き、1. 番号、| 表 |、段落、[改ページ]）を文書にする。**太字** の記号は外す。
 function aiAppendMarkdown_(body, md) {
   var lines = md.replace(/\r\n/g, '\n').split('\n');
   var table = [];
@@ -2674,6 +2674,8 @@ function aiAppendMarkdown_(body, md) {
     flushTable();
     var m;
     if (!line.trim()) continue;
+    // [改ページ] だけの行で次のページへ（数学の教材で、問題と解答・解説を分けるときなど）
+    if (/^\s*[\[［]改ページ[\]］]\s*$/.test(line)) { body.appendPageBreak(); continue; }
     if ((m = /^(#{1,3})\s+(.*)$/.exec(line))) {
       var h = [DocumentApp.ParagraphHeading.HEADING1, DocumentApp.ParagraphHeading.HEADING2, DocumentApp.ParagraphHeading.HEADING3][m[1].length - 1];
       body.appendParagraph(clean(m[2])).setHeading(h);

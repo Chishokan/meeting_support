@@ -15,6 +15,8 @@
 //   use_when: どんなときに使うか（AI と職員に見せる）
 //   reads: [手順書と一緒に渡す資料のパス, …]
 //   must_include: 資料づくりの回答に必ず入れる見出し（例：確認してほしいこと）。無ければ画面に注意を出す
+//   thinking: adaptive … この作業のときだけ、AI にじっくり考えさせる（数学の教材など、正しさが大事な作業。時間と費用は増える）
+//   code_execution: on … この作業のときだけ、計算の道具（Anthropic の実行環境で Python を動かす）を使わせる（答えの検算）
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -48,6 +50,10 @@ export type TaskDef = {
   useWhen: string;
   reads: string[];
   mustInclude: string;
+  /** この作業のときだけ、じっくり考えさせる（adaptive thinking） */
+  deepThinking: boolean;
+  /** この作業のときだけ、計算の道具（code_execution）を使わせる */
+  codeExecution: boolean;
   /** knowledge/ からのパス */
   path: string;
 };
@@ -82,6 +88,8 @@ export function parseTask(relPath: string, raw: string): TaskDef | null {
     useWhen: m.use_when || m.summary || '',
     reads: inlineList(m.reads),
     mustInclude: (m.must_include ?? '').trim(),
+    deepThinking: (m.thinking ?? '').trim() === 'adaptive',
+    codeExecution: ['on', 'true', 'yes'].includes((m.code_execution ?? '').trim().toLowerCase()),
     path: relPath,
   };
 }
