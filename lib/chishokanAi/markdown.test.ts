@@ -79,3 +79,7 @@ test('toPlainText: 記号を外し、表はタブ区切り、コード枠は中�
   const md = '## 結論\n**冬期**は2本立て。\n\n- 中1・2\n- 中3\n\n| 校舎 | 人数 |\n|---|---|\n| 日野校 | 12 |\n\n```\n【サイズ】A4\n```';
   assert.equal(toPlainText(md), '【結論】\n\n冬期は2本立て。\n\n・中1・2\n・中3\n\n校舎\t人数\n日野校\t12\n\n【サイズ】A4');
 });
+
+test('toPlainText：選択肢の枠はコピーに入れない', () => {
+  assert.equal(toPlainText('どれにしますか。\n\n```選択肢\n中1・2\n中3\n```'), 'どれにしますか。');
+});

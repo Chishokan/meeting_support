@@ -30,8 +30,17 @@ const FRAME = `
   広報物（チラシ・ポスター・サイネージ）は「05_広告制作」→ 講座名の納品データ → 00_確定版（配布・掲示用）の順に開く。職員にURLを求めない。
 - 添付：PDF・画像・Word・Excel・PowerPoint・テキスト（文字と表を取り出したもの）
 - 文書の作成：create_google_doc（頼まれたときだけ）
+- 作業の手順書：start_task（下の【作業の手順書】）
 - Web：見られない（検索の道具は無い）。社内の事実、地域・学校・入試の事実は、上の道具で読んだ資料だけで答え、もともと知っている知識で埋めない。
   要約・校正・文面の下書き・アイデア出しなど、事実を足さない一般的な作業は、資料を読まずにそのまま手伝ってよい（回答方針の「社内の事実と、一般的な作業」）。
+
+【作業の手順書】
+- 職員の頼みごとが下の一覧の作業に当てはまるときは、最初に start_task で手順書を開き、その手順と出力の形に沿って進める。
+  手順書が指す資料（ルール・テンプレート）もまとめて渡されるので、同じ資料を read_file で読み直さない。
+- 質問の前に「【作業の手順書：…】」があれば、職員が画面のボタンで選んだ作業。start_task は呼ばずに、それに従う。
+- 前の回に開いた手順書が「【この会話で前に読んだ資料】」にあれば、その作業の続き。
+- 一覧に無い作業は、手順書なしで回答方針に沿って進める。
+{{作業一覧}}
 
 【守ること（回答方針より優先）】
 - 下の【回答方針】に従う。
@@ -45,12 +54,14 @@ const FRAME = `
 {{索引}}
 `;
 
-type Args = { dept: string; name: string; policy: string; index: string };
+type Args = { dept: string; name: string; policy: string; index: string; tasks?: string };
 
-export function buildChishokanAiPrompt({ dept, name, policy, index }: Args): string {
+export function buildChishokanAiPrompt({ dept, name, policy, index, tasks }: Args): string {
   // 置換文字列の $ を特別扱いさせないよう、関数で渡す。
+  // 枠の差し込み場所を先に埋め、資料の中身（回答方針・索引）は最後に入れる（資料の中の {{…}} を誤って置き換えないように）。
   const text = FRAME.replace('{{部門}}', () => dept)
     .replace('{{名前}}', () => name)
+    .replace('{{作業一覧}}', () => tasks?.trim() || '（手順書はまだありません）')
     .replace('{{回答方針}}', () => policy.trim() || '（回答方針のファイルが読めませんでした）')
     .replace('{{索引}}', () => index.trim() || '（索引のファイルが読めませんでした。list_dir で探す）');
   return withCompanyKnowledge(text);

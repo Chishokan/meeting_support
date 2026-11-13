@@ -85,3 +85,19 @@ test('statusFor：道具ごとの「いまやっていること」', () => {
   assert.equal(statusFor('list_drive_folder', { folder: '1abcdefghijk' }), '📁 ドライブのフォルダを開いています');
   assert.equal(statusFor('unknown', {}), '⏳ 作業しています');
 });
+
+test('leftoverPlaceholders / findGaps / missingSectionNotice：資料づくりの回答を確かめる', async () => {
+  const { leftoverPlaceholders, findGaps, missingSectionNotice } = await import('./conversation.ts');
+  assert.deepEqual(leftoverPlaceholders('【サイズ】A4\n# {{講座名}}\n{{ 講座名 }} と {{日程}}'), ['講座名', '日程']);
+  assert.deepEqual(leftoverPlaceholders('# 2026 中３冬期講習会'), []);
+  assert.deepEqual(findGaps('結論です。\n資料に無い：佐世保北中の3学期の行事日程\n- 資料に無い: **英検の合格者数**\n本文に資料に無いと書くだけでは拾わない'), [
+    '佐世保北中の3学期の行事日程',
+    '英検の合格者数',
+  ]);
+  const long = 'あ'.repeat(1300);
+  assert.match(missingSectionNotice(long, '確認してほしいこと') ?? '', /確認してほしいこと/);
+  assert.equal(missingSectionNotice(`${long}\n## 確認してほしいこと\n- 前提`, '確認してほしいこと'), null);
+  assert.equal(missingSectionNotice('短い聞き返し', '確認してほしいこと'), null);
+  assert.equal(missingSectionNotice(`${long}\n\`\`\`選択肢\nA\nB\n\`\`\``, '確認してほしいこと'), null);
+  assert.equal(missingSectionNotice(long, ''), null);
+});

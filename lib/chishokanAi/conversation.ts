@@ -167,6 +167,8 @@ export function statusFor(tool: string, input: Record<string, unknown>): string 
     }
     case 'read_drive_file':
       return '📄 ドライブのファイルを読んでいます';
+    case 'start_task':
+      return `🧭 作業の手順書を開いています${s(input.task) ? `（${s(input.task)}）` : ''}`;
     case 'create_google_doc':
       return `📝 Google ドキュメントを作っています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
     default:
@@ -176,3 +178,33 @@ export function statusFor(tool: string, input: Record<string, unknown>): string 
 
 /** 「続きを書く」を押したときに、画面には出さずに送る質問。 */
 export const CONTINUE_PROMPT = '（続き）前の回答が途中で切れました。切れたところの直後から続きを書いてください。前置き・繰り返し・要約は書かない。';
+
+// --- 回答の確かめ（資料づくり） -----------------------------------------------
+
+/** 回答に残っている、埋めていない {{…}} を取り出す（チラシのプロンプトなどに残してはいけない）。 */
+export function leftoverPlaceholders(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(/\{\{\s*([^{}\n]{1,40}?)\s*\}\}/g)) if (!out.includes(m[1])) out.push(m[1]);
+  return out;
+}
+
+/** 回答の「資料に無い：…」の行を取り出す（ナレッジに足すべき資料の手がかりとして会話ログに残す）。 */
+export function findGaps(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(/^[\s>*・-]*資料に無い[：:]\s*(.+?)\s*$/gm)) {
+    const g = m[1].replace(/\*\*/g, '').trim();
+    if (g && !out.includes(g)) out.push(g.slice(0, 200));
+  }
+  return out;
+}
+
+/**
+ * 資料づくりの回答に、決まった見出し（例：確認してほしいこと）が無ければ注意の文を返す。
+ * 聞き返し（選択肢）や短い返事は対象にしない。
+ */
+export function missingSectionNotice(text: string, heading: string): string | null {
+  if (!heading || text.length < 1200) return null;
+  if (/```\s*(選択肢|choices)/.test(text)) return null;
+  if (text.includes(heading)) return null;
+  return `この回答には「${heading}」（置いた前提・要項に無く空けた項目・制作側で作ったコピー）がありません。数字・日付・料金は、確定した要項と照らし合わせてから使ってください。`;
+}

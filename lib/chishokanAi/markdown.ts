@@ -108,7 +108,8 @@ export function parseInline(src: string, allowBold = true): Inline[] {
 
 // --- かたまり（見出し・表・箇条書きなど） -----------------------------------
 
-const FENCE = /^\s*(```+|~~~+)\s*([\w+-]*)\s*$/;
+// 種類名は日本語でもよい（```選択肢 は画面で押せるボタンになる）
+const FENCE = /^\s*(```+|~~~+)\s*([^\s`~]*)\s*$/;
 const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
 const HR = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 const LIST_ITEM = /^(\s*)([-*+]|\d{1,3}[.)])\s+(.*)$/;
@@ -286,7 +287,11 @@ export function toPlainText(md: string): string {
       out.push(b.items.map((it) => `${'　'.repeat(it.level)}${it.ordered ? `${it.marker} ` : '・'}${inlineText(it.c)}`).join('\n'));
     } else if (b.t === 'table') {
       out.push([b.head, ...b.rows].map((r) => r.map(inlineText).join('\t')).join('\n'));
-    } else if (b.t === 'code') out.push(b.v);
+    } else if (b.t === 'code') {
+      // 選択肢の枠は、押すボタンなのでコピーには入れない
+      if (b.lang === '選択肢' || b.lang.toLowerCase() === 'choices') continue;
+      out.push(b.v);
+    }
     else if (b.t === 'hr') out.push('――――――――');
   }
   return out.join('\n\n');

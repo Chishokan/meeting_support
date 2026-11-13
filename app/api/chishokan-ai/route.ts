@@ -10,6 +10,9 @@
 //   文章の断片、作業中の表示（📄 …を読んでいます）、読んだ資料、次の質問に持ち越す資料、出典の注意、途中で切れた知らせ。
 // 会話の持ち越し：画面が覚えている「前に読んだナレッジのパス」と「文字にした資料」を受け取り、ナレッジは読み直して
 // （確定していない要項などは読まない関門を通す）、今回の質問と一緒に AI に渡す。
+// 作業の手順書（knowledge/05_作業/、lib/chishokanAi/tasks.ts）：画面の作業ボタンで選ばれたら手順書と資料を先に渡し、
+// 文章で頼まれたときは AI が start_task で開く。資料づくりの回答は、埋め残しの {{ }} と「確認してほしいこと」の有無を確かめる。
+// GET は画面の作業ボタンの一覧を返す。
 // 停止：画面が通信を切ったら、AI への問い合わせも止める。時間切れ：300秒の制限の手前で止め、「途中で切れました」を送る。
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -38,11 +41,15 @@ import {
   citationWarnings,
   citedPaths,
   encodeEvent,
+  findGaps,
+  leftoverPlaceholders,
+  missingSectionNotice,
   normalizeContext,
   statusFor,
   type AiEvent,
   type Source,
 } from '@/lib/chishokanAi/conversation';
+import { TASKS_DIR, listTasks, loadTaskBundle, taskButtons, taskListForPrompt, taskTool, type TaskDef } from '@/lib/chishokanAi/tasks';
 
 const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
 
@@ -106,6 +113,15 @@ function markLatestToolResults(convo: Anthropic.MessageParam[]) {
   }
 }
 
+// 画面の「よく使う作業」ボタンの一覧。
+export async function GET() {
+  const session = getSession();
+  if (!session) return new Response('unauthorized', { status: 401 });
+  if (!canUseChishokanAi(session.name)) return new Response('forbidden', { status: 403 });
+  const tasks = await listTasks(path.join(process.cwd(), KNOWLEDGE_ROOT), readFileDetailed);
+  return Response.json({ tasks: taskButtons(tasks) }, { headers: { 'Cache-Control': 'no-store' } });
+}
+
 export async function POST(req: Request) {
   const requestStarted = Date.now();
   const session = getSession();
@@ -121,20 +137,28 @@ export async function POST(req: Request) {
   const continuation = body?.continuation === true;
 
   const root = path.join(process.cwd(), KNOWLEDGE_ROOT);
-  const [policy, index] = await Promise.all([
+  const [policy, index, tasks] = await Promise.all([
     readText(path.join(root, '00_index', 'CLAUDE.md')),
     readText(path.join(root, '00_index', 'INDEX.md')),
+    listTasks(root, readFileDetailed),
   ]);
+  // 画面の作業ボタンで選ばれた作業
+  const chosenTask = typeof body?.task === 'string' ? tasks.find((t) => t.id === body.task) : undefined;
+  // 前の回に開いた手順書（持ち越しに入っていれば、その作業の続き）
+  const carriedTaskPath = [...carry.reads].reverse().find((p) => p.startsWith(`${TASKS_DIR}/`));
+  let activeTask: TaskDef | undefined = chosenTask ?? tasks.find((t) => t.path === carriedTaskPath);
 
   const system: Anthropic.TextBlockParam[] = [
     {
       type: 'text',
-      text: buildChishokanAiPrompt({ dept: session.campus, name: session.name, policy, index }),
+      text: buildChishokanAiPrompt({ dept: session.campus, name: session.name, policy, index, tasks: taskListForPrompt(tasks) }),
       cache_control: { type: 'ephemeral' },
     },
   ];
-  // 資料を読む3つの道具と、頼まれたときに Google ドキュメントの下書きを作る道具（1回の回答で1つまで）。
-  const tools = [...KNOWLEDGE_TOOLS, ...DRIVE_TOOLS, CREATE_DOC_TOOL] as unknown as Anthropic.Tool[];
+  // 資料を読む3つの道具、ドライブを読む道具、作業の手順書を開く道具、頼まれたときに Google ドキュメントの下書きを作る道具。
+  const START_TASK = taskTool(tasks);
+  const tools = [...KNOWLEDGE_TOOLS, ...DRIVE_TOOLS, START_TASK, CREATE_DOC_TOOL] as unknown as Anthropic.Tool[];
+  let tasksStarted = 0;
   const lastUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 
   const encoder = new TextEncoder();
@@ -190,12 +214,24 @@ export async function POST(req: Request) {
         }
         const carryBlock = buildCarryBlock(carriedKnowledge, carry.texts);
 
+        // 作業ボタンで選ばれていれば、手順書と資料を先に渡す（AI が1本ずつ探さない）。
+        let taskBlock = '';
+        if (chosenTask) {
+          send({ t: 'status', v: `🧭 手順書「${chosenTask.button}」を開いています` });
+          const b = await loadTaskBundle(root, chosenTask, readFileDetailed);
+          taskBlock = b.text;
+          for (const p of b.reads) if (!turnReads.includes(p)) turnReads.push(p);
+          tasksStarted++;
+          opened.push(`task:${chosenTask.id}`);
+        }
+
         const convo: Anthropic.MessageParam[] = messages.map((m, i) =>
           i === messages.length - 1
             ? {
                 role: m.role,
                 content: [
                   ...(carryBlock ? [{ type: 'text' as const, text: carryBlock }] : []),
+                  ...(taskBlock ? [{ type: 'text' as const, text: taskBlock }] : []),
                   ...drive.blocks,
                   ...attachBlocks(attachments),
                   { type: 'text', text: m.content, cache_control: { type: 'ephemeral' } },
@@ -260,6 +296,19 @@ export async function POST(req: Request) {
                 if (r.carry) carryTexts.push(r.carry);
                 out = r.text;
               }
+            } else if (block.name === START_TASK.name) {
+              const t = tasks.find((x) => x.id === String(input.task ?? ''));
+              if (tasksStarted >= 1) {
+                out = '手順書は1回の回答で1つまでです。開いている手順書に沿って進めてください。';
+              } else if (!t) {
+                out = `その作業の手順書はありません。ある作業：${tasks.map((x) => x.id).join('、') || 'なし'}。手順書なしで回答方針に沿って進めてください。`;
+              } else {
+                const b = await loadTaskBundle(root, t, readFileDetailed);
+                for (const p of b.reads) if (!turnReads.includes(p)) turnReads.push(p);
+                tasksStarted++;
+                activeTask = t;
+                out = b.text;
+              }
             } else if (block.name === CREATE_DOC_TOOL.name) {
               if (createdDocs.length >= 1) {
                 out = '文書は1回の回答で1つまでです。作った文書のURLを伝えてください。';
@@ -276,7 +325,7 @@ export async function POST(req: Request) {
             opened.push(
               block.name === CREATE_DOC_TOOL.name
                 ? `create_google_doc:${String(input.title ?? '')}`
-                : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? '')}`,
+                : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? input.task ?? '')}`,
             );
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           }
@@ -311,7 +360,20 @@ export async function POST(req: Request) {
             for (const w of citationWarnings(full, read, known)) send({ t: 'notice', v: w });
           } catch {}
         }
+        // 資料づくりの確かめ：埋め残しの {{ }}、決まった見出し（確認してほしいこと）の有無。
+        if (full) {
+          const left = leftoverPlaceholders(full);
+          if (left.length) {
+            send({ t: 'notice', v: `埋まっていない {{${left.slice(0, 5).join('}}・{{')}}} が残っています。貼る前・使う前に埋めてください。` });
+          }
+          if (activeTask && !cut && !clientGone) {
+            const miss = missingSectionNotice(full, activeTask.mustInclude);
+            if (miss) send({ t: 'notice', v: miss });
+          }
+        }
         if (cut && !clientGone) send({ t: 'cut', reason: cut });
+        // 「資料に無い：…」は、ナレッジに足す資料の手がかりとして会話ログに残す。
+        const gaps = findGaps(full);
 
         const flags = [continuation ? '続き' : '', clientGone ? '停止' : '', cut === 'time' ? '時間切れ' : cut === 'length' ? '長さで切れた' : '']
           .filter(Boolean)
@@ -324,6 +386,8 @@ export async function POST(req: Request) {
             `tools=${opened.join(',')}`,
             `carry=${carry.reads.length}+${carry.texts.length}`,
             flags ? `flags=${flags}` : '',
+            activeTask ? `task=${activeTask.id}` : '',
+            gaps.length ? `gaps=${gaps.join('／')}` : '',
           );
         } catch {}
         const attachNote = attachments.length ? `（添付: ${attachments.map((a) => a.name).join('、')}）` : '';
@@ -331,6 +395,8 @@ export async function POST(req: Request) {
         const driveNote = allReads.length
           ? `（ドライブ: ${allReads.map((r) => `${r.name}${r.ok ? '' : `＝読めず:${r.note}`}`).join('、')}）`
           : '';
+        const taskNote = activeTask ? `（作業: ${activeTask.id}）` : '';
+        const gapNote = gaps.length ? `（資料に無い: ${gaps.join('／')}）` : '';
         const docNote = createdDocs.length
           ? `（作成した文書: ${createdDocs.map((d) => (d.ok ? `${d.title} ${d.url}` : `${d.title}＝作れず:${d.note}`)).join('、')}）`
           : '';
@@ -338,7 +404,7 @@ export async function POST(req: Request) {
           await logInteraction({
             user: session.name,
             campus: session.campus,
-            input: `[智翔館AI]${flags ? `（${flags}）` : ''} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}\n（調べた資料: ${opened.join('、') || 'なし'}）`,
+            input: `[智翔館AI]${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}\n（調べた資料: ${opened.join('、') || 'なし'}）`,
             output: stripRoleBleed(full),
           });
         } catch {}

@@ -2,6 +2,7 @@
 
 // AI の回答（Markdown）を、見出し・表・箇条書き・コード枠に整えて表示する。
 // 中身の分け方は lib/chishokanAi/markdown.ts。ここは描くだけで、HTML としては埋め込まない（文字として描く）。
+// 種類が「選択肢」のコード枠（```選択肢）は、1行ずつ押せるボタンにする（押すとその文で質問する）。
 
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { parseMarkdown, type Block, type Inline } from '@/lib/chishokanAi/markdown';
@@ -83,7 +84,31 @@ function lines(ls: Inline[][]): ReactNode[] {
   ));
 }
 
-function renderBlock(b: Block, i: number): ReactNode {
+/** 選択肢のコード枠か（```選択肢 / ```choices）。 */
+export function isChoices(b: Block): boolean {
+  return b.t === 'code' && (b.lang === '選択肢' || b.lang.toLowerCase() === 'choices');
+}
+
+export function choiceItems(v: string): string[] {
+  return v
+    .split('\n')
+    .map((l) => l.replace(/^\s*(?:[-*・]|\d+[.)])\s*/, '').trim())
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
+function renderBlock(b: Block, i: number, onChoose?: (text: string) => void): ReactNode {
+  if (b.t === 'code' && isChoices(b)) {
+    return (
+      <div key={i} className="md-choices">
+        {choiceItems(b.v).map((c, j) => (
+          <button key={j} type="button" className="md-choice" disabled={!onChoose} onClick={() => onChoose?.(c)}>
+            {c}
+          </button>
+        ))}
+      </div>
+    );
+  }
   switch (b.t) {
     case 'heading': {
       const Tag = (['h3', 'h3', 'h4', 'h5', 'h5', 'h5'] as const)[b.level - 1] ?? 'h5';
@@ -135,9 +160,10 @@ function renderBlock(b: Block, i: number): ReactNode {
 }
 
 // 会話が長くなっても、変わっていない回答は描き直さない。
-function AiMarkdown({ text }: { text: string }) {
+// onChoose を渡したときだけ、選択肢のボタンが押せる（いちばん新しい回答だけに渡す）。
+function AiMarkdown({ text, onChoose }: { text: string; onChoose?: (text: string) => void }) {
   const blocks = useMemo(() => parseMarkdown(text), [text]);
-  return <div className="md">{blocks.map(renderBlock)}</div>;
+  return <div className="md">{blocks.map((b, i) => renderBlock(b, i, onChoose))}</div>;
 }
 
 export default memo(AiMarkdown);

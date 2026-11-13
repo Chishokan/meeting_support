@@ -6,6 +6,8 @@
 // 回答は 1行1つの JSON で届く（lib/chishokanAi/conversation.ts）。文章・作業中の表示・読んだ資料・注意・途中で切れた知らせを分けて表示する。
 // 会話の持ち越し：AI が読んだナレッジのパスと、文字にした資料（Word・Excel・PowerPoint・テキストの添付、ドライブの資料）を覚えておき、
 // 次の質問と一緒に送る。PDF・画像は大きいので持ち越さない（続けて聞くときは付け直してもらう）。
+// 作業の手順書：「よく使う作業」ボタン（knowledge/05_作業/ から作る）で選ぶと、手順書と資料を AI に先に渡す。
+// AI が ```選択肢 で聞き返したら、ボタンで答えられる。回答には 👍👎 を付けられる（会話ログに残る）。
 
 import { useEffect, useRef, useState } from 'react';
 import AiMarkdown, { CopyButton } from '@/components/AiMarkdown';
@@ -33,7 +35,11 @@ type Msg = {
   stopped?: boolean;
   /** エラーの知らせ。次の質問の履歴には入れない */
   error?: boolean;
+  /** 👍👎 */
+  rating?: 'up' | 'down';
+  feedbackSent?: boolean;
 };
+type TaskButton = { id: string; button: string; starter: string; useWhen: string };
 type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };
 
 const MAX_TOTAL_BYTES = 3_500_000; // 送信全体の目安（Vercel のリクエスト上限に対する余裕分）
@@ -45,18 +51,20 @@ function toApi(msgs: Msg[]): { role: 'user' | 'assistant'; content: string }[] {
     .map((m) => ({ role: m.role, content: m.role === 'user' ? m.api ?? m.content : m.content }));
 }
 
+// 読んだ資料の札の文字。「00_使い方」のようにどのフォルダにもある名前は、フォルダ名を付ける。
 function sourceLabel(s: Source): string {
-  return s.kind === 'knowledge' ? (s.path.split('/').pop() ?? s.path).replace(/\.md$/, '') : s.name;
+  if (s.kind === 'drive') return s.name;
+  const parts = s.path.replace(/\.md$/, '').split('/');
+  const base = parts.pop() ?? s.path;
+  return /^00_/.test(base) && parts.length ? `${parts.pop()}/${base}` : base;
 }
 
-// 先頭の（　）は使い方の補足。押したときは外して入力欄に入れる。
+// 作業ボタン以外の使い方の例。先頭の（　）は使い方の補足で、押したときは外して入力欄に入れる。
 const EXAMPLES = [
   '冬期講習の外部生募集の計画を立てたい。今期の方針に沿って相談に乗ってください',
-  '中3冬期講習のチラシの原稿を作って',
-  '全体会議で9月の振り返りを発表するスライドの流れを考えて',
-  '冬期講習の外部生募集の計画書を Google ドキュメントで作って',
+  '全社共通テーマの4つと、それぞれ仕事で意識することを教えて',
+  '佐世保市内の中学校の2学期の期末テストの日程を教えて',
   '（文章を貼って）この保護者向けの文章を、やわらかい表現に直して',
-  '（資料を添付して）この資料が会社の方針に沿っているかチェックして',
 ];
 
 // スマートフォン・タブレット（Shift キーが無い）では、Enter は改行にして、送信はボタンで行う。
@@ -156,6 +164,17 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   const [context, setContext] = useState<CarryContext>(EMPTY_CONTEXT);
   const contextRef = useRef<CarryContext>(EMPTY_CONTEXT);
   const abortRef = useRef<AbortController | null>(null);
+  // よく使う作業（手順書）と、いま選んでいる作業
+  const [tasks, setTasks] = useState<TaskButton[]>([]);
+  const [task, setTask] = useState<TaskButton | null>(null);
+  const [feedbackDraft, setFeedbackDraft] = useState<{ index: number; text: string } | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    fetch('/api/chishokan-ai', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setTasks(Array.isArray(j?.tasks) ? j.tasks : []))
+      .catch(() => {});
+  }, []);
   const endRef = useRef<HTMLDivElement>(null);
   // 送信のしかたの案内。スマートフォンでは Enter が改行になるので、表示を切り替える（画面の表示後に判定する）。
   const [sendHint, setSendHint] = useState('Enter で送信・Shift+Enter で改行');
@@ -208,7 +227,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   async function run(
     apiMessages: { role: 'user' | 'assistant'; content: string }[],
     index: number,
-    opts: { attachments?: Attach[]; continuation?: boolean; start: Msg },
+    opts: { attachments?: Attach[]; continuation?: boolean; task?: string; start: Msg },
   ) {
     const ac = new AbortController();
     abortRef.current = ac;
@@ -228,6 +247,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           attachments: opts.attachments ?? [],
           context: contextRef.current,
           continuation: !!opts.continuation,
+          task: opts.task,
         }),
         signal: ac.signal,
       });
@@ -278,10 +298,17 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     if ((!q && attachments.length === 0) || busy) return;
     const content = q || '添付した資料が、会社の方針に沿っているかチェックしてください。';
     const sending = attachments;
-    const label = sending.length ? `${content}\n（添付：${sending.map((a) => a.name).join('、')}）` : content;
+    const chosen = task;
+    const label = [
+      chosen ? `🧭 ${chosen.button}` : '',
+      content,
+      sending.length ? `（添付：${sending.map((a) => a.name).join('、')}）` : '',
+    ].filter(Boolean).join('\n');
     setInput('');
     setAttachments([]);
     setAttachNote('');
+    setTask(null);
+    setFeedbackDraft(null);
 
     // 画面には添付名つきで出し、API には本文だけを送る。
     const base: Msg[] = [...messages, { role: 'user', content: label, api: content }];
@@ -294,7 +321,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
       notices: heavy.length ? [`PDF・画像（${heavy.join('、')}）は、次の質問には持ち越しません。続けて聞くときは付け直してください。`] : undefined,
     };
     setMessages([...base, start]);
-    await run(toApi(base), base.length, { attachments: sending, start });
+    await run(toApi(base), base.length, { attachments: sending, task: chosen?.id, start });
     if (texts.length) updateContext(mergeContext(contextRef.current, { texts }));
   }
 
@@ -323,6 +350,36 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   function reset() {
     setMessages([]);
     updateContext(EMPTY_CONTEXT);
+    setTask(null);
+    setFeedbackDraft(null);
+  }
+
+  // 作業ボタン：作業を選び、入力欄が空なら文の例を入れる（そのまま直して送れる）。
+  function chooseTask(t: TaskButton | null) {
+    setTask(t);
+    if (t && !input.trim()) setInput(t.starter);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  // 👍👎 を送る（会話ログに残る）。👎 はひとことを添えられる。
+  async function sendFeedback(index: number, rating: 'up' | 'down', comment = '') {
+    const m = messages[index];
+    if (!m) return;
+    const question = [...messages.slice(0, index)].reverse().find((x) => x.role === 'user');
+    setMessages((prev) => prev.map((x, i) => (i === index ? { ...x, rating, feedbackSent: true } : x)));
+    try {
+      await fetch('/api/chishokan-ai/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rating,
+          comment,
+          question: question?.api ?? question?.content ?? '',
+          answer: m.content,
+          sources: (m.sources ?? []).map((s) => (s.kind === 'knowledge' ? s.path : s.name)),
+        }),
+      });
+    } catch {}
   }
 
   // Enter で送信、Shift+Enter で改行（一般的なチャットAIと同じ）。日本語の変換を確定する Enter では送らない。
@@ -351,6 +408,21 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           会話はこの画面を閉じると消えます。
         </p>
       </div>
+
+      {messages.length === 0 && tasks.length > 0 && (
+        <>
+          <div className="ai-section-label">よく使う作業（押すと、社内の型と資料を使って進めます）</div>
+          <div className="ai-tasks">
+            {tasks.map((t) => (
+              <button key={t.id} type="button" className="ai-task" onClick={() => chooseTask(t)} disabled={busy}>
+                <b>🧭 {t.button}</b>
+                <span>{t.useWhen}</span>
+              </button>
+            ))}
+          </div>
+          <div className="ai-section-label">ほかの使い方の例</div>
+        </>
+      )}
 
       {messages.length === 0 && (
         <div className="iqa-examples">
@@ -393,7 +465,11 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
               <div key={i} className="msg assistant">
                 <div>
                   <div className={`bubble md-bubble${m.error ? ' ai-error' : ''}`}>
-                    {m.content ? <AiMarkdown text={m.content} /> : <span className="ai-status">{m.status || '考えています…'}</span>}
+                    {m.content ? (
+                      <AiMarkdown text={m.content} onChoose={isLast && !busy ? (c) => ask(c) : undefined} />
+                    ) : (
+                      <span className="ai-status">{m.status || '考えています…'}</span>
+                    )}
                   </div>
                   {streaming && m.content && m.status && <div className="ai-status ai-status-line">{m.status}</div>}
                   {m.stopped && m.content && !m.error && <div className="ai-flag">（停止しました）</div>}
@@ -427,6 +503,28 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
                   {m.content && !m.error && !streaming && (
                     <div className="msg-actions">
                       <CopyButton text={() => toPlainText(m.content)} label="回答をコピー" className="msg-action" />
+                      <span className="ai-feedback">
+                        <button
+                          type="button"
+                          className={`msg-action${m.rating === 'up' ? ' on' : ''}`}
+                          disabled={m.feedbackSent}
+                          aria-label="役に立った"
+                          title="役に立った"
+                          onClick={() => sendFeedback(i, 'up')}
+                        >
+                          👍
+                        </button>
+                        <button
+                          type="button"
+                          className={`msg-action${m.rating === 'down' ? ' on' : ''}`}
+                          disabled={m.feedbackSent}
+                          aria-label="違っていた"
+                          title="違っていた"
+                          onClick={() => setFeedbackDraft({ index: i, text: '' })}
+                        >
+                          👎
+                        </button>
+                      </span>
                       {isLast && !busy && (
                         <button type="button" className="msg-action" onClick={regenerate}>
                           もう一度答えさせる
@@ -434,6 +532,27 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
                       )}
                     </div>
                   )}
+                  {feedbackDraft?.index === i && !m.feedbackSent && (
+                    <form
+                      className="ai-feedback-form"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        sendFeedback(i, 'down', feedbackDraft.text.trim());
+                        setFeedbackDraft(null);
+                      }}
+                    >
+                      <input
+                        autoFocus
+                        value={feedbackDraft.text}
+                        onChange={(e) => setFeedbackDraft({ index: i, text: e.target.value })}
+                        placeholder="どこが違っていましたか（空でも送れます）"
+                        maxLength={500}
+                      />
+                      <button type="submit" className="msg-action">送る</button>
+                      <button type="button" className="msg-action" onClick={() => setFeedbackDraft(null)}>やめる</button>
+                    </form>
+                  )}
+                  {m.feedbackSent && <div className="ai-feedback-thanks">評価を送りました。回答の改善に使います。</div>}
                   {m.error && isLast && !busy && i > 0 && (
                     <div className="msg-actions">
                       <button type="button" className="msg-action" onClick={regenerate}>
@@ -461,6 +580,26 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
               style={{ display: 'none' }}
             />
           </label>
+          {tasks.length > 0 && (
+            <select
+              className="ai-task-picker"
+              value={task?.id ?? ''}
+              onChange={(e) => chooseTask(tasks.find((t) => t.id === e.target.value) ?? null)}
+              aria-label="作業を選ぶ"
+              disabled={busy}
+            >
+              <option value="">🧭 作業を選ぶ</option>
+              {tasks.map((t) => (
+                <option key={t.id} value={t.id}>{t.button}</option>
+              ))}
+            </select>
+          )}
+          {task && (
+            <span className="attach-chip task-chip" title={task.useWhen}>
+              🧭 {task.button}
+              <button onClick={() => setTask(null)} aria-label="作業を外す">×</button>
+            </span>
+          )}
           {attachments.map((a, i) => (
             <span key={i} className="attach-chip">
               {a.name}
@@ -471,6 +610,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
         </div>
         <div className="inner">
           <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
