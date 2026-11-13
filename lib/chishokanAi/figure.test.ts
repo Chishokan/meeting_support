@@ -29,7 +29,7 @@ test('parseFigure：形の違う記述を断り、理由を返す', () => {
   if (!ok.ok) return;
   assert.equal(ok.spec.size, 16);
   assert.deepEqual(ok.spec.dots, ['A']);
-  assert.deepEqual(ok.spec.labels, { A: 'nw' });
+  assert.deepEqual({ ...ok.spec.labels }, { A: 'nw' }); // labels は親の無い入れ物（Object.create(null)）
 });
 
 test('renderFigureSvg：正方形と塗った四角形、点の名前、長さ、角・直角・等しい印、関数と直線', () => {
@@ -88,4 +88,16 @@ test('extractFigures：```図 枠を [図:n] に置きかえ、読めない図�
   assert.match(r.markdown, /## 第1問\n\[図:1\]\n本文\n〔図を描けませんでした：range は/);
   assert.match(r.markdown, /```text\n/); // 図でない枠はそのまま
   assert.equal(escapeXml('"a"'), '&quot;a&quot;');
+});
+
+test('parseFigure・renderFigureSvg：点の名前が Object の持ち物の名前でも落ちない／広すぎる方眼は描かない', () => {
+  // 定義していない「constructor」は点として認めない
+  assert.equal(parseFigure('{"range":[0,0,5,5],"shapes":[{"polygon":["constructor","A","B"]}],"points":{"A":[1,1],"B":[2,1]}}').ok, false);
+  // 定義した「toString」は、ふつうの点として描ける
+  const p = parseFigure('{"range":[0,0,5,5],"points":{"toString":[1,1],"B":[3,1],"C":[2,3]},"shapes":[{"polygon":["toString","B","C"]}],"labels":{"toString":"s"}}');
+  assert.ok(p.ok);
+  if (p.ok) assert.match(renderFigureSvg(p.spec).svg, /<polygon|<path/);
+  const huge = parseFigure('{"range":[0,0,200000,200000],"grid":true}');
+  assert.ok(huge.ok);
+  if (huge.ok) assert.ok(renderFigureSvg(huge.spec).svg.length < 20_000);
 });

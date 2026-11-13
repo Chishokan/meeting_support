@@ -46,8 +46,13 @@ async function saveFigurePng(svg: string, width: number, height: number, name: s
 // 数学の図（```図 の枠）。中身は座標と短い文字だけの JSON で、SVG はこちらで作る（AI の SVG や HTML は使わない）。
 function FigureBlock({ source, final }: { source: string; final: boolean }) {
   const r = useMemo(() => {
-    const p = parseFigure(source);
-    return p.ok ? { ok: true as const, caption: p.spec.caption ?? '', ...renderFigureSvg(p.spec) } : { ok: false as const, error: p.error };
+    // 図が描けなくても、回答の画面ごと落とさない
+    try {
+      const p = parseFigure(source);
+      return p.ok ? { ok: true as const, caption: p.spec.caption ?? '', ...renderFigureSvg(p.spec) } : { ok: false as const, error: p.error };
+    } catch {
+      return { ok: false as const, error: '図の記述を読めませんでした' };
+    }
   }, [source]);
   if (!r.ok) {
     return final ? (
