@@ -545,8 +545,14 @@ export default function DashboardUI({
           <PreshareDetail
             row={openPreshare.row}
             when={openPreshare.when}
+            me={name}
             onClose={() => setOpenPreshare(null)}
             onStart={() => startFromPreshare(openPreshare.row)}
+            // 直したら、開いている詳細と一覧の両方を入れ替える（読み込み直さずに済む）。
+            onSaved={(next) => {
+              setPreshares((rows) => rows.map((r) => (r.id === next.id ? next : r)));
+              setOpenPreshare((o) => (o ? { ...o, row: next } : o));
+            }}
           />
         )}
         {openProgress && (

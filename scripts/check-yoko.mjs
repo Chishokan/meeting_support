@@ -23,7 +23,7 @@ const REQUIRED = [
   { label: '申込方法', keys: ['申込方法', 'お申込み方法', 'お申し込み方法', '申込受付'] },
   { label: '支払い方法', keys: ['支払', '引き落と', '引落', '払込'] },
   { label: '連絡先', keys: ['連絡先', 'お問い合わせ', 'フリーダイヤル'] },
-  { label: '経理連絡事項', keys: ['経理連絡事項', '請求対象'] },
+  { label: '経理連絡事項', keys: ['経理連絡事項', '経理記入欄', '請求対象'] },
 ];
 
 // 消し忘れると事故になるもの。残っていたら指摘する。
@@ -85,6 +85,13 @@ for (const f of files) {
     console.log(`${confirmed ? '要修正' : '注意  '} [${confirmed ? '確定' : '下書き'}] ${f.replace(ROOT + '/', '')}`);
     console.log(`       消し忘れ: ${left.map((l) => l.label).join('、')}`);
     if (confirmed) incomplete++;
+  }
+
+  // 経理記入欄が空のまま確定している。経理の請求方法が決まる前にAIが答えないよう、注意を出す
+  //（旧テンプレートの要項には欄が無いので、欄がある場合だけ見る）。
+  if (confirmed && /経理記入日[：:]/.test(raw) && !/経理記入日[：:][ \t\u3000]*\S/.test(raw)) {
+    console.log(`注意   [確定] ${f.replace(ROOT + '/', '')}`);
+    console.log('       経理記入欄の「経理記入日」が空。経理の記入を待ってから確定・取り込みするのが原則');
   }
 
   const mark = confirmed ? '確定' : '下書き';

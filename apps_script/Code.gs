@@ -21,6 +21,10 @@
  *   - action:'listNumberReports' … 会議AI・数値報告画面での参照 → 指定シート（月次数値／講習数値）を新しい順に返す
  *     ※ 旧「夏期数値」シート（2026年夏まで）はそのまま残してある。読み書きはしない。
  *   - action:'saveReview'   … 「全体会議振り返り」の入力      → 「全体会議振り返り」シートに1行で記録
+ *   - action:'saveTaskReport' … 「重要タスク報告」（小中等部の週次）→ 「重要タスク報告」シートに1件1行（出し直すと追記）
+ *   - action:'getTaskEvaluation' … AI壁打ち用。重要タスク評価シート（TASK_EVAL_BOOK_ID）の校舎タブ（A〜G列）を表示値のまま返す
+ *   - action:'appendPlanActions' … AI壁打ちの行動計画の案を、秋～冬行動計画（GOALS_BOOK_ID）の「校舎×区分×日付」のセルに
+ *                                   「★行動」として書き足す（今ある文は消さない）＋「AI壁打ち書き込み」シートに記録
  *   - action:'saveSuccess'  … 月次・講習結果報告の成功事例       → 「成功事例」シートに1件1行で記録（「報告」転記時に自動）
  *   - action:'listSuccess'  … ダッシュボード用の成功事例一覧  → 「成功事例」シートを新しい順に返す
  *   - action:'listInquiryBoard' … 問い合わせQA用の小中等部問合せ管理 → 「問合せ台帳」（下記）を優先し、無ければ旧スプレッドシート（INQUIRY_BOARD_ID）を校舎シートごとに読む。いずれも個人情報を落として返す
@@ -29,6 +33,8 @@
  *     ※ 画面からの更新は patch（変えた項目）と expect（開いた時点の値）付きで来る。変えた項目だけを書き、
  *       他の人が同じ項目を別の値に直していたら conflict を返す（saveInquiryRecord_）。
  *     ※ 旧スプレッドシートの行を台帳へ移すときは、GAS エディタで importLegacyInquiryBoard() を一度実行する（何度実行しても二重登録しない）。
+ *   - action:'getKenshuAnswer' / 'saveKenshuAnswer'
+ *                               … 全体研修会アンケート（/kenshu）→ 「研修会アンケート」シートに1人1行（研修会×部門×氏名）。送り直すと上書き
  *   - action:'listGoals'        … 目標管理用 → 中等部会議議事録（GOALS_BOOK_ID）の「秋～冬行動計画」タブから月×校舎×指標の目標／実績を返す
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
  *
@@ -88,6 +94,51 @@ var GOALS_BOOK_ID = '';
 // 旧タブに「このシート内容を『秋～冬行動計画』に移行しました。こちらのシートは削除します。」と
 // 注記があり、タブの並びは変わる前提。名前で引く。
 var GOALS_SHEET_NAME = '秋～冬行動計画';
+
+// 「AI壁打ち」が読む重要タスク評価シートのID（URL の /d/ と /edit の間）。校舎ごとのタブ（日野校・駅前校…）を読む。
+// 毎週の評価を別のファイルで作ったときは、ここを新しいファイルのIDに変えて再デプロイする。
+var TASK_EVAL_BOOK_ID = '1lDWFQSOIHY18UbOB2XYokRgI_jCzPKA7sOX_O7NqQXk';
+// 評価シートのタブ名＝秋～冬行動計画の校舎の行の名前。★lib/taskCoach.ts の COACH_SCHOOLS と同じにする。
+var TASK_COACH_SCHOOLS = ['日野校', '駅前校', '大野校', '日宇校'];
+var PLAN_LOG_SHEET = 'AI壁打ち書き込み';
+
+// 智翔館AI（/ai）が、職員の貼った Google ドライブのリンクから読んでよいフォルダ（フォルダID）。
+// ★ここに入れたフォルダと、その下のフォルダにあるファイルだけを読む。空なら何も読まない。
+//   名簿・成績・給与・人事のフォルダは入れないこと（このスクリプトは持ち主の権限で読むため、
+//   リンクさえ分かれば誰でも読めてしまう）。例：['1rDTV-Lg3YJmZHMSTfHs-ErDnpR3lhR_x'] // 05_広告制作
+var AI_READ_FOLDER_IDS = [
+  '1rDTV-Lg3YJmZHMSTfHs-ErDnpR3lhR_x', // 05_広告制作
+  '1b7qfB8Ey-fkFxm7XMFtbkoARyuiKmzoz', // 10_研修会議
+  '1x3qb8GA-rBxV3DoTmH00s4efJHn3GBKD'  // 04_講習
+];
+// 入れていないフォルダ（2026-11-04 確認）：00_進行中（要対応生徒リスト・成果配分案がある）、03_模試テスト（模試の入力シート・
+// 生徒ランキング・受検票・進学希望者一覧がある）、07_名簿成績出席、11_総務、総会（目標シート・プライベートのやりたいこと一覧がある）
+// フォルダの指定に関係なく読まないファイル名（念のための二重の歯止め）。
+var AI_READ_BLOCK_WORDS = ['名簿', '成績', '個票', '給与', '賞与', '成果配分', '人事評価', '健康', 'パスワード', 'password',
+  '宛名', '住所', '目標シート', 'プライベート', '（回答）', '(回答)', '入力シート', '受検票', 'ランキング', '生徒リスト',
+  '進学希望者', '出席', '面談'];
+
+// 智翔館AI が作った Google ドキュメントの保存先。この下に「AI作成」フォルダを作って入れる。
+var AI_OUTPUT_PARENT_ID = '16VRA3zstFpsKGKc2UsFXAuP75lNXlcCm'; // 00_進行中
+var AI_OUTPUT_FOLDER_NAME = 'AI作成';
+// 作った文書の共有：'view'＝リンクを知っている人が閲覧可（初期値）、'edit'＝リンクを知っている人が編集可、'none'＝共有しない
+var AI_OUTPUT_SHARING = 'view';
+// 智翔館AI が Google スライドを作るときのひな形のフォルダ（15_AIスライドテンプレート）。
+// ★この中の Google スライド形式のファイルが「ひな形」になる（.pptx は使わない。開いて「Google スライドとして保存」する）。
+//   見本の文字が入ったスライドをそのまま型にする：AI が枠ごとに文字を書き換え、使うスライドを並べ直す。
+//   ファイル名がそのまま、AI が選ぶときの名前になる（例：企画書・計画書（社内向け））。
+// ★フォルダの中の画像で、名前が「ロゴ」で始まるもの（例：ロゴ_智翔館.png）を、作ったスライドに自動で置く。
+//   ひな形に自分でロゴを置いたスライドは、その画像の代替テキストのタイトルか説明に「ロゴ」と書けば、重ねて置かない。
+var AI_SLIDE_TEMPLATE_FOLDER_ID = '1XXsYhEzB8rEEvt2xxD460OmYyRn7zMj_';
+var AI_SLIDE_LOGO_PREFIX = 'ロゴ';
+// ロゴを置く場所（ページの幅・高さに対する割合）。表紙＝ひな形の1枚目から作ったスライド、ほか＝それ以外。
+var AI_SLIDE_LOGO_COVER = { left: 0.08, top: 0.07, height: 0.09 };
+var AI_SLIDE_LOGO_PAGE = { right: 0.035, top: 0.045, height: 0.055 };
+var AI_SLIDE_MAX_SLIDES = 30;
+
+// 1ファイルで返す上限（文字数・Office/PDF の大きさ）
+var AI_READ_MAX_CHARS = 60000;
+var AI_READ_MAX_BYTES = 4 * 1024 * 1024;
 
 // 部門（campus）→ タブ探索キーワード。タブ名にこの文字列が含まれていれば、そのタブに振り分ける。
 // ※タブ名が部門名と少し違っても振り分けられるようにするための対応表。タブ名変更時はここを直す。
@@ -180,6 +231,50 @@ function doPost(e) {
         [data.ts || nowIso_(), data.campus || '', data.user || '', data.content || '']
       );
       return json_({ ok: true });
+    }
+
+    if (action === 'saveTaskReport') {
+      return json_(saveTaskReport_(data));
+    }
+
+    if (action === 'createAiDoc') {
+      return json_(createAiDoc_(data));
+    }
+
+    if (action === 'listDriveFolder') {
+      return json_(listDriveFolder_(data));
+    }
+
+    if (action === 'readDriveFile') {
+      return json_(readDriveFile_(data));
+    }
+
+    if (action === 'listSlideTemplates') {
+      return json_(listSlideTemplates_(data));
+    }
+
+    if (action === 'describeSlideTemplate') {
+      return json_(describeSlideTemplate_(data));
+    }
+
+    if (action === 'createAiSlides') {
+      return json_(createAiSlides_(data));
+    }
+
+    if (action === 'getTaskEvaluation') {
+      return json_(getTaskEvaluation_(data));
+    }
+
+    if (action === 'appendPlanActions') {
+      return json_(appendPlanActions_(data));
+    }
+
+    if (action === 'getKenshuAnswer') {
+      return json_(getKenshuAnswer_(data));
+    }
+
+    if (action === 'saveKenshuAnswer') {
+      return json_(saveKenshuAnswer_(data));
     }
 
     if (action === 'saveSuccess') {
@@ -383,6 +478,8 @@ function inquiryFolder_() {
 function authorizeAll() {
   try { DocumentApp.openById(REPORT_DOC_ID).getName(); } catch (e) {}
   try { inquiryFolder_().getName(); } catch (e) {}
+  try { DriveApp.getRootFolder().getName(); } catch (e) {}
+  try { SlidesApp.getActivePresentation(); } catch (e) {}
 }
 
 function appendRow_(sheetName, headers, row) {
@@ -829,6 +926,227 @@ function linkDeptPreshare_(preshareId, minutesId) {
   var row = findRowById_(sh, colOf_(DEPT_PRESHARE_HEADERS, '事前共有ID'), preshareId);
   if (!row) return;
   sh.getRange(row, colOf_(DEPT_PRESHARE_HEADERS, '議事録ID')).setNumberFormat('@').setValue(String(minutesId));
+}
+
+// 全体研修会アンケート（/kenshu）。1人1行（研修会×部門×氏名）で持ち、送り直すと同じ行を上書きする。
+// 「仕事」「人生・プライベート」は1行に1つを改行でつないで1セルに入れる（セルを折り返せばそのまま読める）。
+// 「研修会」は lib/kenshu/survey.ts の SURVEY.id。次の研修会では別の id になり、別の行として残る。
+// ★列は見出し名で引く（colOf_）。
+var KENSHU_SHEET = '研修会アンケート';
+var KENSHU_HEADERS = ['研修会', '部門', '氏名', '仕事の件数', '仕事', '人生・プライベートの件数', '人生・プライベート', '提出日時', '更新日時'];
+
+function kenshuCell_(r, name) {
+  return cellStr_(r[colOf_(KENSHU_HEADERS, name) - 1]);
+}
+
+function kenshuLines_(v) {
+  return String(v == null ? '' : v).split('\n')
+    .map(function (s) { return s.trim(); })
+    .filter(function (s) { return s; });
+}
+
+function kenshuItem_(r) {
+  return {
+    work: kenshuLines_(kenshuCell_(r, '仕事')),
+    life: kenshuLines_(kenshuCell_(r, '人生・プライベート')),
+    submittedAt: kenshuCell_(r, '提出日時'),
+    updatedAt: kenshuCell_(r, '更新日時')
+  };
+}
+
+// 研修会×部門×氏名が一致する行番号（無ければ 0）
+function findKenshuRow_(sh, data) {
+  if (sh.getLastRow() < 2) return 0;
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, KENSHU_HEADERS.length).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var r = values[i];
+    if (kenshuCell_(r, '研修会') === String(data.survey || '') &&
+        kenshuCell_(r, '部門') === String(data.campus || '') &&
+        kenshuCell_(r, '氏名') === String(data.user || '')) return i + 2;
+  }
+  return 0;
+}
+
+// 本人の回答（まだ出していなければ item: null）
+function getKenshuAnswer_(data) {
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(KENSHU_SHEET);
+  if (!sh) return { ok: true, item: null };
+  var row = findKenshuRow_(sh, data);
+  if (!row) return { ok: true, item: null };
+  return { ok: true, item: kenshuItem_(sh.getRange(row, 1, 1, KENSHU_HEADERS.length).getValues()[0]) };
+}
+
+// 回答の保存。2回目以降は同じ行を上書きし、最初の「提出日時」は残して「更新日時」を入れる。
+function saveKenshuAnswer_(data) {
+  var H = KENSHU_HEADERS;
+  var clean = function (list) {
+    return (list || [])
+      .map(function (s) { return String(s == null ? '' : s).replace(/[\r\n]+/g, ' ').trim(); })
+      .filter(function (s) { return s; });
+  };
+  var work = clean(data.work);
+  var life = clean(data.life);
+  if (!data.survey || !data.campus || !data.user) return { ok: false, reason: 'bad_request' };
+  if (!work.length || !life.length) return { ok: false, reason: 'empty' };
+
+  // 同じ人が続けて押したときに2行できないよう、探してから書くまでを1人ずつにする
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = sheetWithHeaders_(KENSHU_SHEET, H);
+    var row = findKenshuRow_(sh, data);
+    var cur = row ? sh.getRange(row, 1, 1, H.length).getValues()[0] : null;
+    var ts = nowJp_('');
+    var rec = {
+      '研修会': String(data.survey),
+      '部門': String(data.campus),
+      '氏名': String(data.user),
+      '仕事の件数': work.length,
+      '仕事': work.join('\n'),
+      '人生・プライベートの件数': life.length,
+      '人生・プライベート': life.join('\n'),
+      '提出日時': cur ? kenshuCell_(cur, '提出日時') : ts,
+      '更新日時': cur ? ts : ''
+    };
+    var values = H.map(function (h) { return rec[h]; });
+    var target = row || sh.getLastRow() + 1;
+    // 「- 」「=」で始まる行が数式に、日時が日付型に化けないよう、先に文字列書式を付けてから書く。件数だけは数値
+    sh.getRange(target, 1, 1, H.length).setNumberFormat('@');
+    sh.getRange(target, colOf_(H, '仕事の件数')).setNumberFormat('0');
+    sh.getRange(target, colOf_(H, '人生・プライベートの件数')).setNumberFormat('0');
+    sh.getRange(target, 1, 1, H.length).setValues([values]);
+    return { ok: true, item: kenshuItem_(values) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 重要タスク報告（/task-report・小中等部の週次）を「重要タスク報告」シートに1件1行で追記する。
+// 設問と見出しはアプリ側（lib/taskReport.ts）が持ち、headers / row で送ってくる。見出しはシートが空のときだけ書く。
+// 返り値の saved は、このスクリプトが再デプロイ済みかをアプリ側で見分けるための印
+//（古いスクリプトは未知の action を会話ログとして ok を返すため、印が無ければ保存されていない）。
+var TASK_REPORT_SHEET = '重要タスク報告';
+function saveTaskReport_(data) {
+  if (!data.headers || !data.row || !data.headers.length || data.headers.length !== data.row.length) {
+    return { ok: false, reason: 'bad_request' };
+  }
+  var H = ['日時', '部門', '記入者'].concat(data.headers);
+  var values = [nowJp_(data.ts), data.campus || '', data.user || ''].concat(data.row).map(function (v) { return String(v); });
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(TASK_REPORT_SHEET) || ss.insertSheet(TASK_REPORT_SHEET);
+    if (sh.getLastRow() === 0) {
+      sh.getRange(1, 1, 1, H.length).setValues([H]);
+      sh.setFrozenRows(1);
+    }
+    // 「- 」「=」で始まる行が数式に、日時が日付型に化けないよう、先に文字列書式を付けてから書く
+    sh.getRange(sh.getLastRow() + 1, 1, 1, H.length).setNumberFormat('@').setValues([values]);
+    return { ok: true, saved: 'taskReport' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// AI壁打ち：重要タスク評価シートの校舎タブを、表示値（「14%」「動いているが…」など見えているとおり）で返す。
+function getTaskEvaluation_(data) {
+  if (!TASK_EVAL_BOOK_ID) return { ok: false, reason: 'eval_not_configured' };
+  if (TASK_COACH_SCHOOLS.indexOf(data.school) === -1) return { ok: false, reason: 'bad_school' };
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(TASK_EVAL_BOOK_ID);
+  } catch (err) {
+    return { ok: false, reason: 'eval_open_failed' };
+  }
+  var sh = ss.getSheetByName(data.school);
+  if (!sh) return { ok: false, reason: 'eval_sheet_not_found' };
+  var n = Math.min(Math.max(sh.getLastRow(), 1), 60);
+  return { ok: true, rows: sh.getRange(1, 1, n, 7).getDisplayValues() };
+}
+
+// 「11/04」と「11/4」を同じに扱う。
+function planDate_(v) {
+  return normCell_(v).replace(/^0/, '').replace(/\/0/, '/');
+}
+
+// 秋～冬行動計画で「校舎×区分×日付」のセルを探す。見つからなければ null。
+// 「月日」の行からその日付の列を見つけ、その下（次の「月日」の行まで）にある校舎の3行（外部・内部・他）から区分の行を選ぶ。
+// 月のブロックの上下に「月日」の行が2つあるが、上から探すので先に見つかる上の行を使う。
+function findPlanCell_(values, school, kind, date) {
+  for (var r = 0; r < values.length; r++) {
+    if (normCell_(values[r][0]) !== '月日') continue;
+    var col = -1;
+    for (var c = 1; c < values[r].length; c++) {
+      if (planDate_(values[r][c]) === date) { col = c; break; }
+    }
+    if (col < 0) continue;
+    for (var rr = r + 1; rr < values.length && rr < r + 60; rr++) {
+      var head = normCell_(values[rr][0]);
+      if (head === '月日') break;
+      if (head !== school) continue;
+      for (var k = 0; k < 3 && rr + k < values.length; k++) {
+        if (k > 0 && normCell_(values[rr + k][0]) !== '') break;
+        if (normCell_(values[rr + k][2]) === kind) return { row: rr + k, col: col };
+      }
+      return null;
+    }
+  }
+  return null;
+}
+
+// AI壁打ち：行動計画の案を、秋～冬行動計画の該当セルに「★行動」として書き足す。
+// 今ある文は消さない。同じ「★行動」がすでにあるセルには書かない（二度押し対策）。
+// 書いたものは「AI壁打ち書き込み」シートにも1件1行で残す（いつ・誰が・どのセルに書いたか）。
+function appendPlanActions_(data) {
+  if (!GOALS_BOOK_ID) return { ok: false, reason: 'goals_not_configured' };
+  if (TASK_COACH_SCHOOLS.indexOf(data.school) === -1) return { ok: false, reason: 'bad_school' };
+  var actions = data.actions || [];
+  if (!actions.length || actions.length > 20) return { ok: false, reason: 'bad_request' };
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(GOALS_BOOK_ID);
+  } catch (err) {
+    return { ok: false, reason: 'goals_open_failed' };
+  }
+  var sh = ss.getSheetByName(GOALS_SHEET_NAME);
+  if (!sh) return { ok: false, reason: 'goals_sheet_not_found' };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var values = sh.getDataRange().getDisplayValues();
+    var ts = nowJp_(data.ts);
+    var results = [];
+    var logs = [];
+    for (var i = 0; i < actions.length; i++) {
+      var a = actions[i] || {};
+      var text = String(a.text || '').replace(/[\r\n]+/g, ' ').slice(0, 120);
+      var date = planDate_(a.date);
+      var kind = normCell_(a.kind);
+      var res = { date: date, kind: kind, text: text };
+      var pos = text ? findPlanCell_(values, data.school, kind, date) : null;
+      if (!pos) { res.status = 'not_found'; results.push(res); continue; }
+      var range = sh.getRange(pos.row + 1, pos.col + 1);
+      res.cell = range.getA1Notation();
+      var cur = String(values[pos.row][pos.col] || '');
+      var add = '★' + text;
+      if (cur.split('\n').indexOf(add) !== -1) { res.status = 'skipped'; results.push(res); continue; }
+      var next = cur ? cur + '\n' + add : add;
+      range.setValue(next);
+      values[pos.row][pos.col] = next;
+      res.status = 'written';
+      results.push(res);
+      logs.push([ts, data.campus || '', data.user || '', data.school, date, kind, add, res.cell]);
+    }
+    for (var j = 0; j < logs.length; j++) {
+      appendRow_(PLAN_LOG_SHEET, ['日時', '部門', '記入者', '校舎', '日付', '区分', '内容', 'セル'], logs[j]);
+    }
+    return { ok: true, saved: 'planActions', results: results };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // 中間報告の「定例項目」を管理するシート（無ければ作成）。
@@ -2007,6 +2325,597 @@ function nowJp_(ts) {
 
 function nowIso_() {
   return Utilities.formatDate(new Date(), 'Asia/Tokyo', "yyyy-MM-dd'T'HH:mm:ss");
+}
+
+// ---- 智翔館AI：Google ドキュメントを作る ------------------------------------
+// data.title と data.markdown（見出し・箇条書き・表・段落）から文書を作り、00_進行中/AI作成 に置いてURLを返す。
+function createAiDoc_(data) {
+  var title = String(data.title || '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 80);
+  var md = String(data.markdown || '');
+  if (!title || !md.trim()) return { ok: false, reason: 'empty' };
+  if (md.length > 30000) return { ok: false, reason: 'too_long' };
+  var folder;
+  try { folder = aiOutputFolder_(); } catch (e) { return { ok: false, reason: 'folder_failed', detail: String(e).slice(0, 200) }; }
+
+  var stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+  var name = stamp + '_AI作成_' + title;
+  var doc;
+  try { doc = DocumentApp.create(name); } catch (e) { return { ok: false, reason: 'create_failed', detail: String(e).slice(0, 200) }; }
+  var body = doc.getBody();
+  body.clear();
+  body.appendParagraph(title).setHeading(DocumentApp.ParagraphHeading.TITLE);
+  body.appendParagraph('智翔館AIが作った下書きです（依頼：' + String(data.campus || '') + '／' + String(data.user || '') + '、' +
+    Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm') + '）。数字・日付・方針は担当者が確認してから使ってください。')
+    .setItalic(true);
+  aiAppendMarkdown_(body, md, Array.isArray(data.images) ? data.images : []);
+  // DocumentApp.create の最初の空段落を消す
+  try { if (body.getNumChildren() > 1 && body.getChild(0).asText().getText() === '') body.removeChild(body.getChild(0)); } catch (e) {}
+  doc.saveAndClose();
+
+  var file = DriveApp.getFileById(doc.getId());
+  folder.addFile(file);
+  try { DriveApp.getRootFolder().removeFile(file); } catch (e) {}
+  if (AI_OUTPUT_SHARING === 'view') file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  if (AI_OUTPUT_SHARING === 'edit') file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
+  return { ok: true, saved: 'aiDoc', name: name, url: doc.getUrl() };
+}
+
+function aiOutputFolder_() {
+  // 保存先（00_進行中）を開けないとき（このスクリプトの持ち主のアカウントから見えない等）は、
+  // 持ち主のマイドライブ直下の「AI作成」フォルダに置く（無ければ作る）。
+  try {
+    var parent = DriveApp.getFolderById(AI_OUTPUT_PARENT_ID);
+    var it = parent.getFoldersByName(AI_OUTPUT_FOLDER_NAME);
+    return it.hasNext() ? it.next() : parent.createFolder(AI_OUTPUT_FOLDER_NAME);
+  } catch (e) {
+    var name = (typeof AI_OUTPUT_FOLDER_NAME === 'string' ? AI_OUTPUT_FOLDER_NAME : 'AI作成');
+    var it2 = DriveApp.getFoldersByName(name);
+    return it2.hasNext() ? it2.next() : DriveApp.createFolder(name);
+  }
+}
+
+// 【権限の承認用】エディタでこの関数を選んで実行する。足りない権限があれば承認画面が出る。
+// 承認画面では、ドライブ・ドキュメント・スライド・スプレッドシートなど、すべての項目にチェックを入れて「続行」する
+// （以前の承認で一部の項目のチェックを外していると、エディタで実行しても承認画面が出ず、権限エラーのままになるため）。
+function authorizeAiScopes() {
+  ScriptApp.requireAllScopes(ScriptApp.AuthMode.FULL);
+  Logger.log('必要な権限はすべて承認されています。続けて testAiDrive を実行してください。');
+}
+
+// 【診断用】エディタでこの関数を選んで実行し、「実行ログ」を見る。
+// このスクリプトを動かしているアカウント、保存先・読めるフォルダが開けるか、試しに文書を1つ作れるかを表示する。
+function testAiDrive() {
+  var log = [];
+  try { log.push('実行アカウント：' + Session.getEffectiveUser().getEmail()); } catch (e) { log.push('実行アカウント：取得できず'); }
+  log.push('設定の有無：AI_OUTPUT_PARENT_ID=' + (typeof AI_OUTPUT_PARENT_ID) + '、AI_READ_FOLDER_IDS=' + (typeof AI_READ_FOLDER_IDS));
+  try { log.push('保存先（00_進行中）：' + DriveApp.getFolderById(AI_OUTPUT_PARENT_ID).getName() + ' → 開けた'); }
+  catch (e) { log.push('保存先（00_進行中）：開けない（' + e + '）'); }
+  try {
+    for (var i = 0; i < AI_READ_FOLDER_IDS.length; i++) {
+      try { log.push('読めるフォルダ：' + DriveApp.getFolderById(AI_READ_FOLDER_IDS[i]).getName() + ' → 開けた'); }
+      catch (e) { log.push('読めるフォルダ ' + AI_READ_FOLDER_IDS[i] + '：開けない（' + e + '）'); }
+    }
+  } catch (e) { log.push('読めるフォルダ：設定が読めない（' + e + '）'); }
+  var r = createAiDoc_({ title: '動作確認（削除してよい）', markdown: '# 動作確認\n- 智翔館AIの文書作成テスト', campus: '診断', user: 'testAiDrive' });
+  log.push('文書の作成：' + JSON.stringify(r));
+  try {
+    var lt = listSlideTemplates_({});
+    log.push('スライドのひな形：' + (lt.ok ? lt.templates.map(function (t) { return t.name + '（' + t.slides + '枚）'; }).join('、') : lt.reason) +
+      '／ロゴ：' + (aiSlideLogo_() ? '見つかった' : '見つからない'));
+  } catch (e) { log.push('スライドのひな形：開けない（' + e + '）'); }
+  Logger.log(log.join('\n'));
+  return log.join('\n');
+}
+
+// ---- 智翔館AI：Google スライドを作る（ひな形の見本の文字を書き換える） ------------------
+// 1. listSlideTemplates_    … ひな形の一覧（名前・枚数・各スライドの見出しらしい文字）
+// 2. describeSlideTemplate_ … 1つのひな形の、スライドごとの文字の枠と表（key・見本の文字・目安の文字数）
+// 3. createAiSlides_        … ひな形をコピーし、使うスライドを並べて文字を書き換え、ノートとロゴを入れて URL を返す
+// key は「ページ要素の番号」。グループの中は「3.1」のように「.」でつなぐ（スライドを複製しても並びは変わらない）。
+
+function aiSlideTemplateFolder_() {
+  if (!AI_SLIDE_TEMPLATE_FOLDER_ID) return null;
+  return DriveApp.getFolderById(AI_SLIDE_TEMPLATE_FOLDER_ID);
+}
+
+// ひな形のフォルダの中のファイルか（ほかのファイルをひな形として開かせない）
+function aiIsSlideTemplate_(file) {
+  if (file.getMimeType() !== MimeType.GOOGLE_SLIDES) return false;
+  var ps = file.getParents();
+  while (ps.hasNext()) if (ps.next().getId() === AI_SLIDE_TEMPLATE_FOLDER_ID) return true;
+  return false;
+}
+
+function aiSlideLogo_() {
+  var folder = aiSlideTemplateFolder_();
+  if (!folder) return null;
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var f = files.next();
+    if (f.getName().indexOf(AI_SLIDE_LOGO_PREFIX) === 0 && String(f.getMimeType()).indexOf('image/') === 0) return f;
+  }
+  return null;
+}
+
+// スライドの中の、文字のある枠と表を集める（グループの中も）。
+function aiSlideItems_(slide) {
+  var items = [];
+  function walk(els, prefix) {
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var key = prefix ? prefix + '.' + i : String(i);
+      var t = el.getPageElementType();
+      try {
+        if (t === SlidesApp.PageElementType.GROUP) {
+          walk(el.asGroup().getChildren(), key);
+        } else if (t === SlidesApp.PageElementType.SHAPE) {
+          var text = el.asShape().getText().asString().replace(/\n$/, '');
+          if (text.replace(/\s/g, '')) items.push({ key: key, type: 'text', text: text, top: el.getTop(), left: el.getLeft() });
+        } else if (t === SlidesApp.PageElementType.TABLE) {
+          var tb = el.asTable();
+          var cells = [];
+          for (var r = 0; r < tb.getNumRows(); r++) {
+            var row = [];
+            for (var c = 0; c < tb.getNumColumns(); c++) {
+              try { row.push(tb.getCell(r, c).getText().asString().replace(/\n$/, '').slice(0, 120)); } catch (e) { row.push(''); }
+            }
+            cells.push(row);
+          }
+          items.push({ key: key, type: 'table', rows: tb.getNumRows(), cols: tb.getNumColumns(), cells: cells, top: el.getTop(), left: el.getLeft() });
+        }
+      } catch (e) {}
+    }
+  }
+  walk(slide.getPageElements(), '');
+  items.sort(function (a, b) { return Math.abs(a.top - b.top) > 8 ? a.top - b.top : a.left - b.left; });
+  return items;
+}
+
+// スライドの見出しらしい文字（いちばん上の、数字だけでない文字）
+function aiSlideLabel_(items) {
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type === 'text' && !/^[\s\d０-９]+$/.test(items[i].text)) return items[i].text.replace(/\s+/g, ' ').slice(0, 30);
+  }
+  return '';
+}
+
+function aiFindTemplate_(data) {
+  var folder = aiSlideTemplateFolder_();
+  if (!folder) return null;
+  if (data.id) {
+    try {
+      var f = DriveApp.getFileById(String(data.id));
+      return aiIsSlideTemplate_(f) ? f : null;
+    } catch (e) { return null; }
+  }
+  var want = String(data.name || '').trim();
+  var files = folder.getFiles();
+  var first = null;
+  while (files.hasNext()) {
+    var x = files.next();
+    if (x.getMimeType() !== MimeType.GOOGLE_SLIDES) continue;
+    if (!first) first = x;
+    if (want && (x.getName() === want || x.getName().indexOf(want) !== -1)) return x;
+  }
+  return want ? null : first;
+}
+
+function listSlideTemplates_(data) {
+  var folder;
+  try { folder = aiSlideTemplateFolder_(); } catch (e) { return { ok: false, reason: 'template_folder_failed', detail: String(e).slice(0, 200) }; }
+  if (!folder) return { ok: false, reason: 'not_configured' };
+  var out = [];
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var f = files.next();
+    if (f.getMimeType() !== MimeType.GOOGLE_SLIDES) continue;
+    try {
+      out.push(aiTemplateCache_(f, 'list', function () {
+        var slides = SlidesApp.openById(f.getId()).getSlides();
+        var labels = [];
+        for (var i = 0; i < slides.length && i < 40; i++) labels.push(aiSlideLabel_(aiSlideItems_(slides[i])));
+        return { id: f.getId(), name: f.getName(), slides: slides.length, labels: labels };
+      }));
+    } catch (e) {
+      out.push({ id: f.getId(), name: f.getName(), slides: 0, labels: [], error: String(e).slice(0, 120) });
+    }
+  }
+  return { ok: true, templates: out };
+}
+
+// ひな形の読み取り結果は、ファイルが更新されるまで6時間とっておく（大きいひな形を毎回開かない）。
+function aiTemplateCache_(f, kind, build) {
+  var key = 'slidetpl:' + kind + ':' + f.getId() + ':' + f.getLastUpdated().getTime();
+  var cache = CacheService.getScriptCache();
+  try { var hit = cache.get(key); if (hit) return JSON.parse(hit); } catch (e) {}
+  var v = build();
+  try { var j = JSON.stringify(v); if (j.length < 90000) cache.put(key, j, 21600); } catch (e) {}
+  return v;
+}
+
+function describeSlideTemplate_(data) {
+  var f = aiFindTemplate_(data);
+  if (!f) return { ok: false, reason: 'template_not_found' };
+  return aiTemplateCache_(f, 'describe', function () { return describeSlideTemplateUncached_(f); });
+}
+
+function describeSlideTemplateUncached_(f) {
+  var pres = SlidesApp.openById(f.getId());
+  var slides = pres.getSlides();
+  var out = [];
+  for (var i = 0; i < slides.length && i < 40; i++) {
+    var items = aiSlideItems_(slides[i]).slice(0, 40).map(function (it) {
+      if (it.type === 'text') return { key: it.key, type: 'text', text: it.text.slice(0, 300), max: Math.max(8, Math.round(it.text.length * 1.4)) };
+      return { key: it.key, type: 'table', rows: it.rows, cols: it.cols, cells: it.cells };
+    });
+    var notes = '';
+    try { notes = slides[i].getNotesPage().getSpeakerNotesShape().getText().asString().trim().slice(0, 200); } catch (e) {}
+    out.push({ index: i, label: aiSlideLabel_(items), items: items, notes: notes });
+  }
+  return { ok: true, id: f.getId(), name: f.getName(), slides: out };
+}
+
+// key（「3」「3.1」）からページ要素をたどる
+function aiElementByKey_(slide, key) {
+  var parts = String(key).split('.');
+  var els = slide.getPageElements();
+  var el = null;
+  for (var i = 0; i < parts.length; i++) {
+    var n = Number(parts[i]);
+    if (!(n >= 0) || n >= els.length) return null;
+    el = els[n];
+    if (i < parts.length - 1) {
+      if (el.getPageElementType() !== SlidesApp.PageElementType.GROUP) return null;
+      els = el.asGroup().getChildren();
+    }
+  }
+  return el;
+}
+
+// スライドに、自分で置いたロゴ（代替テキストに「ロゴ」）があるか
+function aiSlideHasLogo_(slide) {
+  var els = slide.getPageElements();
+  for (var i = 0; i < els.length; i++) {
+    try {
+      var t = (els[i].getTitle() || '') + ' ' + (els[i].getDescription() || '');
+      if (t.indexOf('ロゴ') !== -1) return true;
+    } catch (e) {}
+  }
+  return false;
+}
+
+// ロゴを置く。縦横の比は画像そのものから測る（ロゴを差し替えても崩れない）。
+function aiPlaceLogo_(slide, blob, cover, pageW, pageH) {
+  var pos = cover ? AI_SLIDE_LOGO_COVER : AI_SLIDE_LOGO_PAGE;
+  var img = slide.insertImage(blob);
+  var ratio = img.getHeight() > 0 ? img.getWidth() / img.getHeight() : 3;
+  var h = pageH * pos.height;
+  var w = h * ratio;
+  img.setWidth(w).setHeight(h);
+  img.setLeft(cover ? pageW * pos.left : pageW - pageW * pos.right - w).setTop(pageH * pos.top);
+  try { img.setTitle('ロゴ'); } catch (e) {}
+}
+
+function createAiSlides_(data) {
+  var title = String(data.title || '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 80);
+  var specs = Array.isArray(data.slides) ? data.slides.slice(0, AI_SLIDE_MAX_SLIDES) : [];
+  if (!title || !specs.length) return { ok: false, reason: 'empty' };
+  var tpl = aiFindTemplate_({ id: data.templateId, name: data.template });
+  if (!tpl) return { ok: false, reason: 'template_not_found' };
+  var folder;
+  try { folder = aiOutputFolder_(); } catch (e) { return { ok: false, reason: 'folder_failed', detail: String(e).slice(0, 200) }; }
+
+  var stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+  var name = stamp + '_AI作成_' + title;
+  var copy;
+  try { copy = tpl.makeCopy(name, folder); } catch (e) { return { ok: false, reason: 'create_failed', detail: String(e).slice(0, 200) }; }
+
+  var warnings = [];
+  try {
+    var pres = SlidesApp.openById(copy.getId());
+    var orig = pres.getSlides();
+    var pageW = pres.getPageWidth();
+    var pageH = pres.getPageHeight();
+    var logoFile = null;
+    var logoBlob = null;
+    try {
+      logoFile = aiSlideLogo_();
+      if (logoFile) {
+        logoBlob = logoFile.getBlob();
+      }
+    } catch (e) { warnings.push('ロゴを読めませんでした'); }
+
+    for (var s = 0; s < specs.length; s++) {
+      var spec = specs[s] || {};
+      var from = Number(spec.from);
+      var src = orig[from];
+      if (!src) { warnings.push((s + 1) + '枚目：ひな形に ' + spec.from + ' 番のスライドがありません'); continue; }
+      var dup = src.duplicate();
+      dup.move(pres.getSlides().length - 1);
+      var done = {};
+      var texts = spec.texts || {};
+      for (var k in texts) {
+        if (!texts.hasOwnProperty(k)) continue;
+        var el = aiElementByKey_(dup, k);
+        if (!el || el.getPageElementType() !== SlidesApp.PageElementType.SHAPE) { warnings.push((s + 1) + '枚目：枠 ' + k + ' が見つかりません'); continue; }
+        try { el.asShape().getText().setText(String(texts[k] == null ? '' : texts[k])); done[k] = true; } catch (e) { warnings.push((s + 1) + '枚目：枠 ' + k + ' に書けません'); }
+      }
+      var tables = spec.tables || {};
+      for (var tk in tables) {
+        if (!tables.hasOwnProperty(tk)) continue;
+        var tel = aiElementByKey_(dup, tk);
+        if (!tel || tel.getPageElementType() !== SlidesApp.PageElementType.TABLE) { warnings.push((s + 1) + '枚目：表 ' + tk + ' が見つかりません'); continue; }
+        var tb = tel.asTable();
+        var rows = Array.isArray(tables[tk]) ? tables[tk].slice(0, 30) : [];
+        try {
+          while (tb.getNumRows() < rows.length) tb.appendRow();
+          while (tb.getNumRows() > Math.max(1, rows.length)) tb.getRow(tb.getNumRows() - 1).remove();
+        } catch (e) { warnings.push((s + 1) + '枚目：表 ' + tk + ' の行を増やせない・減らせない'); }
+        for (var r = 0; r < Math.min(rows.length, tb.getNumRows()); r++) {
+          var row = Array.isArray(rows[r]) ? rows[r] : [];
+          for (var c = 0; c < tb.getNumColumns(); c++) {
+            try { tb.getCell(r, c).getText().setText(String(row[c] == null ? '' : row[c])); } catch (e) {}
+          }
+        }
+        done[tk] = true;
+      }
+      // 書き換えなかった見本の文字が残っていないか（残っていれば知らせる）
+      var items = aiSlideItems_(dup);
+      for (var i = 0; i < items.length; i++) {
+        if (!done[items[i].key]) warnings.push((s + 1) + '枚目：見本の文字のまま「' + (items[i].type === 'text' ? items[i].text : '表').replace(/\s+/g, ' ').slice(0, 20) + '」');
+      }
+      if (spec.notes) {
+        try { dup.getNotesPage().getSpeakerNotesShape().getText().setText(String(spec.notes).slice(0, 3000)); } catch (e) {}
+      }
+      if (logoBlob && !aiSlideHasLogo_(src)) {
+        try { aiPlaceLogo_(dup, logoBlob, from === 0, pageW, pageH); } catch (e) { warnings.push((s + 1) + '枚目：ロゴを置けませんでした'); }
+      }
+    }
+    for (var o = 0; o < orig.length; o++) orig[o].remove();
+    pres.saveAndClose();
+  } catch (e) {
+    return { ok: false, reason: 'create_failed', detail: String(e).slice(0, 200) };
+  }
+  if (AI_OUTPUT_SHARING === 'view') copy.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  if (AI_OUTPUT_SHARING === 'edit') copy.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
+  return { ok: true, saved: 'aiSlides', name: name, url: 'https://docs.google.com/presentation/d/' + copy.getId() + '/edit', warnings: warnings.slice(0, 30) };
+}
+
+// 素朴な Markdown（# 見出し、- 箇条書き、1. 番号、| 表 |、段落、[改ページ]、[図:n]）を文書にする。**太字** の記号は外す。
+// [図:n] の行には、アプリが PNG にした n 番目の図（images[n-1] = { base64, width, height, caption }）を中央に入れる。
+function aiAppendMarkdown_(body, md, images) {
+  images = images || [];
+  var lines = md.replace(/\r\n/g, '\n').split('\n');
+  var table = [];
+  function clean(s) { return s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1'); }
+  function flushTable() {
+    if (!table.length) return;
+    var rows = table.filter(function (r) { return !/^\s*\|?\s*:?-{2,}/.test(r.join('|')); });
+    var cells = rows.map(function (r) { return r.map(function (c) { return clean(c.trim()); }); });
+    var width = 0;
+    cells.forEach(function (r) { width = Math.max(width, r.length); });
+    cells = cells.map(function (r) { while (r.length < width) r.push(''); return r; });
+    if (cells.length) {
+      var t = body.appendTable(cells);
+      try { for (var c = 0; c < width; c++) t.getRow(0).getCell(c).editAsText().setBold(true); } catch (e) {}
+    }
+    table = [];
+  }
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      table.push(line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|'));
+      continue;
+    }
+    flushTable();
+    var m;
+    if (!line.trim()) continue;
+    // [改ページ] だけの行で次のページへ（数学の教材で、問題と解答・解説を分けるときなど）
+    if (/^\s*[\[［]改ページ[\]］]\s*$/.test(line)) { body.appendPageBreak(); continue; }
+    // [図:n] の行に図の画像を入れる
+    var fm = /^\s*[\[［]図[:：](\d+)[\]］]\s*$/.exec(line);
+    if (fm) { aiAppendFigure_(body, images[Number(fm[1]) - 1], Number(fm[1])); continue; }
+    if ((m = /^(#{1,3})\s+(.*)$/.exec(line))) {
+      var h = [DocumentApp.ParagraphHeading.HEADING1, DocumentApp.ParagraphHeading.HEADING2, DocumentApp.ParagraphHeading.HEADING3][m[1].length - 1];
+      body.appendParagraph(clean(m[2])).setHeading(h);
+    } else if ((m = /^\s*[-*・]\s+(.*)$/.exec(line))) {
+      body.appendListItem(clean(m[1])).setGlyphType(DocumentApp.GlyphType.BULLET);
+    } else if ((m = /^\s*\d+[.)．]\s+(.*)$/.exec(line))) {
+      body.appendListItem(clean(m[1])).setGlyphType(DocumentApp.GlyphType.NUMBER);
+    } else {
+      body.appendParagraph(clean(line));
+    }
+  }
+  flushTable();
+}
+
+// 図の画像を中央に入れ、下に見出し（図1 など）を付ける。画像が無いときは〔図n〕の行だけ残す。
+function aiAppendFigure_(body, img, n) {
+  if (!img || !img.base64) {
+    body.appendParagraph('〔図' + n + '：画像を入れられませんでした〕').setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+    return;
+  }
+  try {
+    var blob = Utilities.newBlob(Utilities.base64Decode(img.base64), 'image/png', 'figure' + n + '.png');
+    var inline = body.appendImage(blob);
+    if (img.width > 0 && img.height > 0) inline.setWidth(img.width).setHeight(img.height);
+    inline.getParent().asParagraph().setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+    if (img.caption) {
+      var cap = body.appendParagraph(String(img.caption));
+      cap.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+      cap.editAsText().setFontSize(10);
+    }
+  } catch (e) {
+    body.appendParagraph('〔図' + n + '：画像を入れられませんでした〕').setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  }
+}
+
+// ---- 智翔館AI：Google ドライブのファイルを読む ---------------------------------
+// data.id のファイルを、AI_READ_FOLDER_IDS の中にあるときだけ文字にして返す。
+// Google ドキュメント・スプレッドシート・スライドは文字にする。
+// Word・Excel・PowerPoint・PDF は中身（base64）を返し、アプリ側で文字にする。
+function readDriveFile_(data) {
+  if (!AI_READ_FOLDER_IDS.length) return { ok: false, reason: 'not_configured' };
+  var id = String(data.id || '');
+  if (!/^[\w-]{10,}$/.test(id)) return { ok: false, reason: 'bad_id' };
+  var file;
+  try { file = DriveApp.getFileById(id); } catch (e) { return { ok: false, reason: 'not_found' }; }
+  var name = file.getName();
+  var lower = name.toLowerCase();
+  for (var w = 0; w < AI_READ_BLOCK_WORDS.length; w++) {
+    if (lower.indexOf(AI_READ_BLOCK_WORDS[w].toLowerCase()) !== -1) return { ok: false, reason: 'blocked_name', name: name };
+  }
+  if (!aiReadAllowed_(file)) return { ok: false, reason: 'not_allowed', name: name };
+
+  var mime = file.getMimeType();
+  try {
+    if (mime === MimeType.GOOGLE_DOCS) {
+      return { ok: true, name: name, kind: 'doc', text: aiCap_(DocumentApp.openById(id).getBody().getText()) };
+    }
+    if (mime === MimeType.GOOGLE_SHEETS) {
+      return { ok: true, name: name, kind: 'sheet', text: aiCap_(aiSheetText_(SpreadsheetApp.openById(id))) };
+    }
+    if (mime === MimeType.GOOGLE_SLIDES) {
+      return { ok: true, name: name, kind: 'slides', text: aiCap_(aiSlidesText_(SlidesApp.openById(id))) };
+    }
+    var office = {
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+      'application/pdf': 'pdf'
+    }[mime];
+    if (!office) return { ok: false, reason: 'unsupported', name: name, mime: mime };
+    if (file.getSize() > AI_READ_MAX_BYTES) return { ok: false, reason: 'too_large', name: name };
+    return { ok: true, name: name, kind: office, base64: Utilities.base64Encode(file.getBlob().getBytes()) };
+  } catch (err) {
+    return { ok: false, reason: 'read_failed', name: name };
+  }
+}
+
+// data.id のフォルダが AI_READ_FOLDER_IDS の中（またはそのもの）なら、中身の一覧を返す（60件まで）。
+// 名簿・成績などの語を含む名前と、_ で始まる名前（制作素材・制作メモなど）は一覧に出さない。
+function listDriveFolder_(data) {
+  if (!AI_READ_FOLDER_IDS.length) return { ok: false, reason: 'not_configured' };
+  var id = String(data.id || '');
+  if (!/^[\w-]{10,}$/.test(id)) return { ok: false, reason: 'bad_id' };
+  var folder;
+  try { folder = DriveApp.getFolderById(id); } catch (e) { return { ok: false, reason: 'not_found' }; }
+  var name = folder.getName();
+  if (AI_READ_FOLDER_IDS.indexOf(id) === -1 && !aiReadAllowed_(folder)) return { ok: false, reason: 'not_allowed', name: name };
+  var items = [];
+  var more = false;
+  function blocked(n) {
+    // 名前が _ で始まるもの（_制作素材・_制作メモ・_運用資料など）は、先生向けの一覧に出さない
+    if (n.charAt(0) === '_') return true;
+    var l = n.toLowerCase();
+    for (var w = 0; w < AI_READ_BLOCK_WORDS.length; w++) if (l.indexOf(AI_READ_BLOCK_WORDS[w].toLowerCase()) !== -1) return true;
+    return false;
+  }
+  function fmt(d) { return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd'); }
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    var f = subs.next();
+    if (blocked(f.getName())) continue;
+    if (items.length >= 60) { more = true; break; }
+    items.push({ id: f.getId(), name: f.getName(), kind: 'フォルダ', updated: fmt(f.getLastUpdated()), folder: true });
+  }
+  var labels = {};
+  labels[MimeType.GOOGLE_DOCS] = 'Googleドキュメント';
+  labels[MimeType.GOOGLE_SHEETS] = 'Googleスプレッドシート';
+  labels[MimeType.GOOGLE_SLIDES] = 'Googleスライド';
+  labels['application/pdf'] = 'PDF';
+  labels['application/vnd.openxmlformats-officedocument.wordprocessingml.document'] = 'Word';
+  labels['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] = 'Excel';
+  labels['application/vnd.openxmlformats-officedocument.presentationml.presentation'] = 'PowerPoint';
+  var files = folder.getFiles();
+  while (!more && files.hasNext()) {
+    var file = files.next();
+    if (blocked(file.getName())) continue;
+    if (items.length >= 60) { more = true; break; }
+    items.push({ id: file.getId(), name: file.getName(), kind: labels[file.getMimeType()] || 'その他（' + file.getMimeType() + '）', updated: fmt(file.getLastUpdated()), folder: false });
+  }
+  return { ok: true, name: name, items: items, more: more };
+}
+
+// ファイルの親フォルダをさかのぼり、許可したフォルダの下にあるかを調べる。
+function aiReadAllowed_(file) {
+  var queue = [];
+  var parents = file.getParents();
+  while (parents.hasNext()) queue.push(parents.next());
+  var seen = {};
+  for (var depth = 0; depth < 30 && queue.length; depth++) {
+    var next = [];
+    for (var i = 0; i < queue.length; i++) {
+      var f = queue[i];
+      var fid = f.getId();
+      if (seen[fid]) continue;
+      seen[fid] = true;
+      if (AI_READ_FOLDER_IDS.indexOf(fid) !== -1) return true;
+      var ps = f.getParents();
+      while (ps.hasNext()) next.push(ps.next());
+    }
+    queue = next;
+  }
+  return false;
+}
+
+function aiCap_(text) {
+  text = String(text || '');
+  return text.length <= AI_READ_MAX_CHARS ? text : text.slice(0, AI_READ_MAX_CHARS) + '\n\n（長いため ' + AI_READ_MAX_CHARS + ' 文字で切りました）';
+}
+
+// スプレッドシート：シートごとに、表示どおりの値をタブ区切りで（1シート300行・40列まで）。
+function aiSheetText_(ss) {
+  var out = [];
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var sh = sheets[i];
+    var rows = Math.min(sh.getLastRow(), 300);
+    var cols = Math.min(sh.getLastColumn(), 40);
+    var body = '（空）';
+    if (rows > 0 && cols > 0) {
+      var values = sh.getRange(1, 1, rows, cols).getDisplayValues();
+      var lines = [];
+      for (var r = 0; r < values.length; r++) {
+        var line = values[r].join('\t').replace(/\t+$/, '');
+        if (line) lines.push(line.replace(/\n/g, ' '));
+      }
+      body = lines.join('\n') + (sh.getLastRow() > 300 ? '\n（300行で切りました）' : '');
+    }
+    out.push('## シート「' + sh.getName() + '」\n' + body);
+  }
+  return out.join('\n\n');
+}
+
+// スライド：1枚ずつ、図形と表の文字、話す内容（ノート）を。
+function aiSlidesText_(pres) {
+  var out = [];
+  var slides = pres.getSlides();
+  for (var i = 0; i < slides.length; i++) {
+    var texts = [];
+    var els = slides[i].getPageElements();
+    for (var j = 0; j < els.length; j++) {
+      var el = els[j];
+      var t = el.getPageElementType();
+      if (t === SlidesApp.PageElementType.SHAPE) {
+        var s = el.asShape().getText().asString().trim();
+        if (s) texts.push(s);
+      } else if (t === SlidesApp.PageElementType.TABLE) {
+        var tb = el.asTable();
+        for (var r = 0; r < tb.getNumRows(); r++) {
+          var cells = [];
+          for (var c = 0; c < tb.getNumColumns(); c++) {
+            try { cells.push(tb.getCell(r, c).getText().asString().trim()); } catch (e) { cells.push(''); }
+          }
+          texts.push(cells.join(' | '));
+        }
+      }
+    }
+    var notes = '';
+    try { notes = slides[i].getNotesPage().getSpeakerNotesShape().getText().asString().trim(); } catch (e) {}
+    out.push('## スライド ' + (i + 1) + '\n' + (texts.join('\n') || '（文字なし）') + (notes ? '\n（ノート）' + notes : ''));
+  }
+  return out.join('\n\n');
 }
 
 function json_(obj) {
