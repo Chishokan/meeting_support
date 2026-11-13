@@ -9,7 +9,7 @@ import { canUseChishokanAi } from '@/lib/chishokanAi/access';
 
 export const metadata = {
   title: '智翔館AI',
-  description: '社内の資料（理念・方針・要項・チラシ制作ルール）を調べて答える相談窓口',
+  description: '社内の資料（理念・方針・要項・部門の計画・地域の情報・制作の型）をもとに答え、資料づくりを手伝う社内AI',
 };
 
 export default function ChishokanAiLayout({ children }: { children: ReactNode }) {

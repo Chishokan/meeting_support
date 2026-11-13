@@ -15,7 +15,8 @@ type Item = {
   repliedAt: string;
 };
 
-const CATEGORIES = ['不具合（バグ）', '改善要望', '使い方の質問', 'プロンプトの修正', 'その他'];
+// 「智翔館AIの不具合」は、智翔館AIの画面の「報告」ボタンから入る（lib/chishokanAi/report.ts）。
+const CATEGORIES = ['不具合（バグ）', '智翔館AIの不具合', '改善要望', '使い方の質問', 'プロンプトの修正', 'その他'];
 // この部門でログインした人だけ回答を入力できる（管理者）。
 const ADMIN_CAMPUS = '総務・人事・支援・管理';
 

@@ -100,13 +100,22 @@ async function readAllowed(root: string, rel: string): Promise<{ ok: true; raw: 
   return { ok: true, raw };
 }
 
-export async function readFile(root: string, input: unknown): Promise<string> {
+/** 1ファイルを読む。読めたときは ok と、正規化したパスを返す（読んだ資料の表示・会話の持ち越しに使う）。 */
+export async function readFileDetailed(root: string, input: unknown): Promise<{ ok: boolean; path: string; text: string }> {
   const rel = safeRelPath(input);
-  if (rel === null || rel === '') return 'そのパスは読めません（knowledge/ の中の、_ で始まらないファイルだけ読めます）。';
+  if (rel === null || rel === '') return { ok: false, path: '', text: 'そのパスは読めません（knowledge/ の中の、_ で始まらないファイルだけ読めます）。' };
   const r = await readAllowed(root, rel);
-  if (!r.ok) return r.why;
-  if (r.raw.length <= MAX_READ_CHARS) return r.raw;
-  return `${r.raw.slice(0, MAX_READ_CHARS)}\n\n（長いため ${MAX_READ_CHARS} 文字で切った。続きが必要なら grep_knowledge で語句を探す）`;
+  if (!r.ok) return { ok: false, path: rel, text: r.why };
+  if (r.raw.length <= MAX_READ_CHARS) return { ok: true, path: rel, text: r.raw };
+  return {
+    ok: true,
+    path: rel,
+    text: `${r.raw.slice(0, MAX_READ_CHARS)}\n\n（長いため ${MAX_READ_CHARS} 文字で切った。続きが必要なら grep_knowledge で語句を探す）`,
+  };
+}
+
+export async function readFile(root: string, input: unknown): Promise<string> {
+  return (await readFileDetailed(root, input)).text;
 }
 
 /** 読んでよい .md をすべて列挙する（knowledge/ からの相対パス、並び順は固定）。 */
@@ -164,14 +173,26 @@ export async function listDir(root: string, input: unknown): Promise<string> {
   return names.length ? names.join('\n') : '（空のフォルダ）';
 }
 
-/** AIが呼んだツールを実行し、結果の文字列を返す。知らないツール名でも例外にしない。 */
-export async function runKnowledgeTool(root: string, name: string, input: Record<string, unknown>): Promise<string> {
+/** AIが呼んだツールを実行し、結果の文字列と、read_file で読めたときはそのパスを返す。知らないツール名でも例外にしない。 */
+export async function runKnowledgeToolDetailed(
+  root: string,
+  name: string,
+  input: Record<string, unknown>,
+): Promise<{ text: string; readPath?: string }> {
   try {
-    if (name === 'read_file') return await readFile(root, input?.path);
-    if (name === 'grep_knowledge') return await grepKnowledge(root, input?.query);
-    if (name === 'list_dir') return await listDir(root, input?.path);
-    return `${name} というツールはありません。`;
+    if (name === 'read_file') {
+      const r = await readFileDetailed(root, input?.path);
+      return r.ok ? { text: r.text, readPath: r.path } : { text: r.text };
+    }
+    if (name === 'grep_knowledge') return { text: await grepKnowledge(root, input?.query) };
+    if (name === 'list_dir') return { text: await listDir(root, input?.path) };
+    return { text: `${name} というツールはありません。` };
   } catch {
-    return 'ツールの実行に失敗しました。';
+    return { text: 'ツールの実行に失敗しました。' };
   }
+}
+
+/** AIが呼んだツールを実行し、結果の文字列を返す。 */
+export async function runKnowledgeTool(root: string, name: string, input: Record<string, unknown>): Promise<string> {
+  return (await runKnowledgeToolDetailed(root, name, input)).text;
 }

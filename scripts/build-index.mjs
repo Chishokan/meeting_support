@@ -9,6 +9,7 @@
  *
  * 載せないもの：
  * - 00_index/ のファイル（索引・案内そのもの）
+ * - 05_作業/（作業の手順書。一覧は智翔館AIのシステムプロンプトと画面のボタンに別に出す）
  * - 名前が _ で始まるファイル・フォルダ（テンプレート、旧要項、統合前の原本）
  * - 90_archive/（参照はできるが、AIが最初に開く候補にはしない）
  * - status があって「確定」でないもの（要項の下書き。案の料金や日付をAIに拾わせない）
@@ -18,7 +19,7 @@ import { join, relative, sep } from 'node:path';
 
 const ROOT = 'knowledge';
 const OUT = join(ROOT, '00_index', 'INDEX.md');
-const SKIP_DIRS = new Set(['00_index', '90_archive']);
+const SKIP_DIRS = new Set(['00_index', '05_作業', '90_archive']);
 
 // lib/core/knowledgeDocs.ts と同じ素朴な読み方（「key: value   # コメント」）。
 function frontMatter(raw) {
@@ -74,7 +75,7 @@ const body = `# 索引
 直したいときは、そのファイルの front matter（dept・updated・summary・tags）を直してから \`npm run index\` を流す。
 
 AIはまずこの表を見て、開くべきファイルを判断する。本文は含めない。
-00_index/ のファイル、名前が _ で始まるもの、90_archive/、確定していない要項は載せていない。
+00_index/ のファイル、05_作業/（作業の手順書）、名前が _ で始まるもの、90_archive/、確定していない要項は載せていない。
 
 | パス | 部門 | 更新日 | 要約 | タグ |
 |---|---|---|---|---|

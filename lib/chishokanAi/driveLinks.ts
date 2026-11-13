@@ -1,6 +1,6 @@
 // 智翔館AI：Google ドライブのリンクの判定と、読めなかった理由の言い換え（ほかに依存しない部分）。
 
-/** 1回の質問で読むリンクの上限（読みすぎて 60 秒の制限を超えないように）。 */
+/** 1回の質問で貼られたリンクを先に読む上限（読みすぎて、答え始めるまでの待ち時間が長くならないように）。 */
 export const MAX_LINKS = 3;
 
 const PATTERNS = [
@@ -67,6 +67,8 @@ const REASONS: Record<string, string> = {
   not_deployed: 'Apps Script が古いままです（再デプロイが必要）',
   upstream_error: 'Apps Script との通信に失敗しました',
   network_error: 'Apps Script との通信に失敗しました',
+  timeout: 'Apps Script から時間内に返事がありませんでした',
+  aborted: '止めました',
 };
 
 /** 読めなかった理由を、AIと職員に伝わる言葉にする。 */

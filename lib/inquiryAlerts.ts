@@ -9,26 +9,30 @@
 // ★閾値（何日で「滞留」とみなすか等）はこのファイル冒頭の THRESHOLDS で調整する。
 
 import {
-  isOverdue, isUntouched, normalizeMark, parseIso, statusOf, ymOf,
+  isFollowing, isOverdue, isUntouched, normalizeMark, parseIso, statusOf, ymOf,
   type InquiryRecord,
 } from './inquiryRecords';
 import { goalsFor, sameCampus, type GoalRow, type GoalView } from './goals';
 
 export const THRESHOLDS = {
   untouchedDays: 2,      // 問い合わせから何日たっても連絡が無ければ「未着手」として警告するか
-  trialNoResultDays: 7,  // 体験実施から何日たっても結果が無ければ「体験後フォロー漏れ」とするか
-  meetingNoResultDays: 7,// 面談から何日たっても結果が無ければ「面談後フォロー漏れ」とするか
-  staleOpenDays: 30,     // 問い合わせから何日以上「追客中」のままなら「長期滞留」とするか
+  trialNoResultDays: 7,  // 体験実施から何日たっても結果が決まらなければ「体験後フォロー漏れ」とするか
+  meetingNoResultDays: 7,// 面談から何日たっても結果が決まらなければ「面談後フォロー漏れ」とするか
+  staleOpenDays: 30,     // 問い合わせから何日以上「追客中」「検討中」のままなら「長期滞留」とするか
   maxNames: 5,           // アラート1件に並べる人数の上限
 };
 
 export type AlertLevel = 'danger' | 'warn' | 'info' | 'good';
 
-/** 画面のチップ1つ。filter を持つものは押すと一覧をその区分で絞り込む。 */
+/**
+ * 画面のチップ1つ。ids を持つものは押すと一覧をその行だけに絞り込む（件数と一覧が必ず一致する）。
+ * label は絞り込み中の表示に使う短い名前。
+ */
 export type Alert = {
   level: AlertLevel;
   text: string;
-  filter?: 'untouched' | 'overdue' | 'open' | 'joined';
+  label?: string;
+  ids?: string[];
 };
 
 export type KpiLine = {
@@ -38,7 +42,7 @@ export type KpiLine = {
   source: string; // 実績の出所（台帳の入塾日／体験日 など）
 };
 
-type Ref = { campus: string; no: number; name: string; days: number };
+type Ref = { id: string; campus: string; no: number; name: string; days: number };
 
 /** ルールで数えた事実。AI にはこれをそのまま文章化して渡す。 */
 export type AlertFacts = {
@@ -51,13 +55,15 @@ export type AlertFacts = {
   /** 今月の問い合わせ（問い合わせ日が今月）のその後。問い合わせQAのカード「この月の問い合わせのその後」と同じ数え方 */
   monthOutcome: { joined: number; applied: number; declined: number; open: number; other: number };
   enrollByDate: number;     // 入塾日が今月の件数（参考。問い合わせQAが「入塾日から数えた入会（参考）」として渡すものと同じ）
-  open: number;
+  open: number;             // 追客中（結果が空）
+  considering: number;      // 検討中（結果が決まっていない。期限超過・滞留の対象に含める）
   untouched: Ref[];
   overdue: Ref[];
   trialNoResult: Ref[];
   meetingNoResult: Ref[];
   staleOpen: Ref[];
   enrollMissingDate: number; // 結果=入塾なのに入塾日が空
+  enrollMissingIds: string[];
 };
 
 function daysBetween(a: string, b: string): number {
@@ -75,7 +81,7 @@ function maskName(s: string): string {
 }
 
 function ref(r: InquiryRecord, sinceDate: string, today: string): Ref {
-  return { campus: r.campus, no: r.no, name: maskName(r.studentName), days: daysBetween(sinceDate, today) };
+  return { id: r.id, campus: r.campus, no: r.no, name: maskName(r.studentName), days: daysBetween(sinceDate, today) };
 }
 
 function prevYm(ym: string): string {
@@ -102,7 +108,8 @@ export function buildFacts(rows: InquiryRecord[], scope: string, today: string, 
   let enrollThisMonth = 0;
   let trialsThisMonth = 0;
   let open = 0;
-  let enrollMissingDate = 0;
+  let considering = 0;
+  const enrollMissingIds: string[] = [];
   const monthOutcome = { joined: 0, applied: 0, declined: 0, open: 0, other: 0 };
   const untouched: Ref[] = [];
   const overdue: Ref[] = [];
@@ -124,14 +131,16 @@ export function buildFacts(rows: InquiryRecord[], scope: string, today: string, 
 
     const st = statusOf(r.result);
     if (st === 'joined') {
-      if (!r.enrollDate) enrollMissingDate++;
+      if (!r.enrollDate) enrollMissingIds.push(r.id);
       else if (ymOf(r.enrollDate) === ym) enrollThisMonth++;
     }
     // 体験は「体験日が今月」の件数。問い合わせQA（trialsInMonth）と同じく、体験の〇✕では絞らない
     if (r.trialDate && ymOf(r.trialDate) === ym) trialsThisMonth++;
 
-    if (st !== 'open') continue;
-    open++;
+    // 結果が決まっていない行（追客中・検討中）だけが滞留の対象
+    if (!isFollowing(r.result)) continue;
+    if (st === 'open') open++;
+    else considering++;
     if (isOverdue(r, today)) overdue.push(ref(r, r.closeDate, today));
     if (isUntouched(r) && parseIso(r.date) && daysBetween(r.date, today) >= THRESHOLDS.untouchedDays) {
       untouched.push(ref(r, r.date, today));
@@ -170,8 +179,9 @@ export function buildFacts(rows: InquiryRecord[], scope: string, today: string, 
 
   return {
     scope, today, monthLabel: ymLabel(ym), kpis,
-    inquiriesThisMonth, inquiriesPrevMonth, monthOutcome, enrollByDate: enrollThisMonth, open,
-    untouched, overdue, trialNoResult, meetingNoResult, staleOpen, enrollMissingDate,
+    inquiriesThisMonth, inquiriesPrevMonth, monthOutcome, enrollByDate: enrollThisMonth, open, considering,
+    untouched, overdue, trialNoResult, meetingNoResult, staleOpen,
+    enrollMissingDate: enrollMissingIds.length, enrollMissingIds,
   };
 }
 
@@ -189,28 +199,30 @@ export function ruleAlerts(f: AlertFacts): Alert[] {
   const all = f.scope === 'すべて';
   const out: Alert[] = [];
 
+  const ids = (l: Ref[]) => l.map((x) => x.id);
   if (f.overdue.length) {
-    out.push({ level: 'danger', filter: 'overdue', text: `クローズ予定日を過ぎて結果が未記入：${f.overdue.length}件。${names(f.overdue, all)}` });
+    out.push({ level: 'danger', label: 'クローズ予定日超過', ids: ids(f.overdue), text: `クローズ予定日を過ぎて結果が決まっていない：${f.overdue.length}件。${names(f.overdue, all)}` });
   }
   if (f.untouched.length) {
-    out.push({ level: 'danger', filter: 'untouched', text: `問い合わせから${THRESHOLDS.untouchedDays}日以上、連絡が未記入：${f.untouched.length}件。${names(f.untouched, all)}` });
+    out.push({ level: 'danger', label: `未着手（${THRESHOLDS.untouchedDays}日以上）`, ids: ids(f.untouched), text: `問い合わせから${THRESHOLDS.untouchedDays}日以上、連絡が未記入：${f.untouched.length}件。${names(f.untouched, all)}` });
   }
   if (f.trialNoResult.length) {
-    out.push({ level: 'warn', filter: 'open', text: `体験から${THRESHOLDS.trialNoResultDays}日以上たって結果が未記入：${f.trialNoResult.length}件。${names(f.trialNoResult, all)}` });
+    out.push({ level: 'warn', label: `体験後${THRESHOLDS.trialNoResultDays}日以上 結果未決`, ids: ids(f.trialNoResult), text: `体験から${THRESHOLDS.trialNoResultDays}日以上たって結果が決まっていない：${f.trialNoResult.length}件。${names(f.trialNoResult, all)}` });
   }
   if (f.meetingNoResult.length) {
-    out.push({ level: 'warn', filter: 'open', text: `面談から${THRESHOLDS.meetingNoResultDays}日以上たって結果が未記入：${f.meetingNoResult.length}件。${names(f.meetingNoResult, all)}` });
+    out.push({ level: 'warn', label: `面談後${THRESHOLDS.meetingNoResultDays}日以上 結果未決`, ids: ids(f.meetingNoResult), text: `面談から${THRESHOLDS.meetingNoResultDays}日以上たって結果が決まっていない：${f.meetingNoResult.length}件。${names(f.meetingNoResult, all)}` });
   }
+  // KPI の実績は行動計画の入力値のことがあり、台帳の行と1対1にならないので絞り込みは付けない
   for (const k of f.kpis) {
     if (k.target == null || k.target <= 0) continue;
     if (k.actual >= k.target) out.push({ level: 'good', text: `${f.monthLabel}の${k.metric}は目標達成（${k.actual}/${k.target}）` });
-    else out.push({ level: 'warn', filter: k.metric === '今月入会' ? 'joined' : undefined, text: `${f.monthLabel}の${k.metric}：${k.actual}/${k.target}（あと${k.target - k.actual}）` });
+    else out.push({ level: 'warn', text: `${f.monthLabel}の${k.metric}：${k.actual}/${k.target}（あと${k.target - k.actual}）` });
   }
   if (f.staleOpen.length) {
-    out.push({ level: 'info', filter: 'open', text: `問い合わせから${THRESHOLDS.staleOpenDays}日以上「追客中」のまま：${f.staleOpen.length}件。結果を決めるか、クローズ予定日を入れる` });
+    out.push({ level: 'info', label: `${THRESHOLDS.staleOpenDays}日以上 追客中・検討中`, ids: ids(f.staleOpen), text: `問い合わせから${THRESHOLDS.staleOpenDays}日以上「追客中」「検討中」のまま：${f.staleOpen.length}件。結果を決めるか、クローズ予定日を入れる` });
   }
   if (f.enrollMissingDate) {
-    out.push({ level: 'info', filter: 'joined', text: `結果が入塾なのに入塾日が空：${f.enrollMissingDate}件。入れると「今月入会」に数えられる` });
+    out.push({ level: 'info', label: '入塾日が空', ids: f.enrollMissingIds, text: `結果が入塾なのに入塾日が空：${f.enrollMissingDate}件。入れると「今月入会」に数えられる` });
   }
   if (!out.length) {
     out.push({ level: 'good', text: `滞留・未着手はありません。${f.monthLabel}の問い合わせ ${f.inquiriesThisMonth}件（前月 ${f.inquiriesPrevMonth}件）` });
@@ -230,13 +242,13 @@ export function formatFactsForAi(f: AlertFacts): string {
     `問い合わせ件数: 今月${f.inquiriesThisMonth}件 ／ 前月${f.inquiriesPrevMonth}件`,
     `今月の問い合わせのその後（問い合わせ日が今月の行）: 入塾${f.monthOutcome.joined}・申込${f.monthOutcome.applied}・見送り${f.monthOutcome.declined}・追客中${f.monthOutcome.open}${f.monthOutcome.other ? `・その他${f.monthOutcome.other}` : ''}`,
     `入塾日から数えた入会（参考。上の「今月入会」とは別）: ${f.enrollByDate}件`,
-    `追客中（結果未記入）: ${f.open}件`,
+    `追客中（結果未記入）: ${f.open}件 ／ 検討中: ${f.considering}件`,
     '【滞留】',
     list(`クローズ予定日超過`, f.overdue),
     list(`未着手（${THRESHOLDS.untouchedDays}日以上連絡なし）`, f.untouched),
-    list(`体験後${THRESHOLDS.trialNoResultDays}日以上結果なし`, f.trialNoResult),
-    list(`面談後${THRESHOLDS.meetingNoResultDays}日以上結果なし`, f.meetingNoResult),
-    list(`${THRESHOLDS.staleOpenDays}日以上追客中`, f.staleOpen),
+    list(`体験後${THRESHOLDS.trialNoResultDays}日以上結果が決まっていない（追客中・検討中）`, f.trialNoResult),
+    list(`面談後${THRESHOLDS.meetingNoResultDays}日以上結果が決まっていない（追客中・検討中）`, f.meetingNoResult),
+    list(`${THRESHOLDS.staleOpenDays}日以上追客中・検討中`, f.staleOpen),
     `入塾なのに入塾日が空: ${f.enrollMissingDate}件`,
   ].join('\n');
 }
