@@ -18,12 +18,15 @@ export async function POST(req: Request) {
   if (!rating) return new Response('rating required', { status: 400 });
   const comment = cut(body?.comment, 500).trim();
   const question = cut(body?.question, 1000);
+  const conversationId = typeof body?.conversationId === 'string' && /^[\w-]{4,40}$/.test(body.conversationId) ? body.conversationId : '';
+  const turn = typeof body?.turn === 'number' && Number.isFinite(body.turn) ? Math.floor(body.turn) : 0;
+  const convoNote = conversationId ? `（会話: ${conversationId}${turn ? `・${turn}回目` : ''}）` : '';
   const sources = Array.isArray(body?.sources) ? body.sources.filter((s: unknown) => typeof s === 'string').slice(0, 20).join('、') : '';
   try {
     await logInteraction({
       user: session.name,
       campus: session.campus,
-      input: `[智翔館AI・評価] ${rating}${comment ? ` ${comment}` : ''}\n（質問）${question}${sources ? `\n（読んだ資料）${sources}` : ''}`,
+      input: `[智翔館AI・評価]${convoNote} ${rating}${comment ? ` ${comment}` : ''}\n（質問）${question}${sources ? `\n（読んだ資料）${sources}` : ''}`,
       output: cut(body?.answer, 4000),
     });
   } catch {}

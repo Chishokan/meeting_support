@@ -135,6 +135,9 @@ export async function POST(req: Request) {
   const attachments: Attach[] = Array.isArray(body?.attachments) ? body.attachments.slice(0, 5) : [];
   const carry = normalizeContext(body?.context);
   const continuation = body?.continuation === true;
+  // 会話の番号と何回目のやり取りか（会話ログで1つの会話を追えるように。不具合の報告にも同じ番号が入る）
+  const conversationId = typeof body?.conversationId === 'string' && /^[\w-]{4,40}$/.test(body.conversationId) ? body.conversationId : '';
+  const turn = typeof body?.turn === 'number' && Number.isFinite(body.turn) ? Math.max(0, Math.floor(body.turn)) : 0;
 
   const root = path.join(process.cwd(), KNOWLEDGE_ROOT);
   const [policy, index, tasks] = await Promise.all([
@@ -395,6 +398,7 @@ export async function POST(req: Request) {
         const driveNote = allReads.length
           ? `（ドライブ: ${allReads.map((r) => `${r.name}${r.ok ? '' : `＝読めず:${r.note}`}`).join('、')}）`
           : '';
+        const convoNote = conversationId ? `（会話: ${conversationId}${turn ? `・${turn}回目` : ''}）` : '';
         const taskNote = activeTask ? `（作業: ${activeTask.id}）` : '';
         const gapNote = gaps.length ? `（資料に無い: ${gaps.join('／')}）` : '';
         const docNote = createdDocs.length
@@ -404,7 +408,7 @@ export async function POST(req: Request) {
           await logInteraction({
             user: session.name,
             campus: session.campus,
-            input: `[智翔館AI]${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}\n（調べた資料: ${opened.join('、') || 'なし'}）`,
+            input: `[智翔館AI]${convoNote}${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}\n（調べた資料: ${opened.join('、') || 'なし'}）`,
             output: stripRoleBleed(full),
           });
         } catch {}

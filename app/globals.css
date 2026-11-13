@@ -788,6 +788,44 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .ai-task:hover { background: #f5f9fd; border-color: #b9cde0; }
 .ai-task b { display: block; font-size: 14px; color: var(--navy); margin-bottom: 3px; }
 .ai-task span { display: block; font-size: 12px; color: #667; line-height: 1.5; }
+/* 智翔館AI の不具合報告（components/AiReportDialog.tsx） */
+.ai-report-open {
+  margin-top: 8px; font-size: 12px; color: #8a3a2f; background: #fff; border: 1px solid #ecc8c2;
+  border-radius: 999px; padding: 3px 12px; cursor: pointer;
+}
+.ai-report-open:hover { background: #fff6f5; }
+.dm-modal.ai-report { width: min(640px, 100%); }
+.ai-report-form { display: flex; flex-direction: column; gap: 14px; }
+.ai-report-form fieldset { border: none; margin: 0; padding: 0; }
+.ai-report-form legend, .ai-report-field > span { display: block; font-size: 13px; font-weight: 700; color: #2a2f36; margin-bottom: 6px; }
+.ai-report-form .req { margin-left: 6px; font-size: 11px; font-weight: 600; color: #c0392b; }
+.ai-report-kinds { display: flex; flex-wrap: wrap; gap: 6px; }
+.ai-report-kinds label {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 5px 10px;
+  border: 1px solid #d8e0e8; border-radius: 8px; background: #fff; cursor: pointer;
+}
+.ai-report-kinds label.on { border-color: #9fbbd6; background: #eef3f8; }
+.ai-report-kinds input, .ai-report-check input { width: auto; flex: none; margin: 0; padding: 0; height: auto; }
+.ai-report-kinds label { line-height: 1.4; margin: 0; }
+.ai-report-field textarea { font-weight: 400; }
+.ai-report-field { display: block; }
+.ai-report-field textarea {
+  width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; line-height: 1.6; padding: 8px 10px;
+  border: 1px solid #cdd8e3; border-radius: 8px; resize: vertical;
+}
+.ai-report-image { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ai-report-auto { font-size: 12.5px; color: #4a5560; background: #f5f7fa; border: 1px solid #e3e6ea; border-radius: 8px; padding: 8px 12px; }
+.ai-report-auto-title { font-weight: 700; margin-bottom: 4px; }
+.ai-report-auto ul { margin: 0 0 4px; padding-left: 18px; }
+.ai-report-check { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; line-height: 1.5; }
+.ai-report-error { font-size: 13px; color: #c0392b; }
+.ai-report-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.ai-report-submit {
+  font-size: 14px; font-weight: 700; color: #fff; background: var(--navy); border: none; border-radius: 8px;
+  padding: 8px 18px; cursor: pointer;
+}
+.ai-report-submit:disabled { opacity: .6; cursor: default; }
+.ai-report-done { font-size: 14px; line-height: 1.7; }
 .ai-section-label { max-width: 760px; margin: 14px auto 0; padding: 0 16px; font-size: 12px; color: #8a94a0; }
 .ai-convo-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .ai-carry-note { font-size: 12px; color: #667; }
