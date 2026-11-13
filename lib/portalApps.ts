@@ -42,7 +42,7 @@ export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'chishokan-ai',
     name: '智翔館AI（試用版）',
-    desc: '社内の資料（理念・方針・要項・チラシ制作ルール）を調べて答える相談窓口。業務計画の相談や、資料が方針に沿っているかのチェック（PDF・画像を添付）に',
+    desc: '社内の資料（理念・方針・要項・部門の計画・地域の情報・チラシやスライドの作り方）をもとに答える社内AI。業務計画の相談、チラシの原稿づくり、資料が方針に沿っているかのチェック、文章の手直しに',
     href: '/ai',
     status: 'ready',
     canUse: (_campus, name) => canUseChishokanAi(name),

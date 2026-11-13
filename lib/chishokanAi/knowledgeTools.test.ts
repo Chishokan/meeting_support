@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { grepKnowledge, listAllowedFiles, listDir, readFile, runKnowledgeTool, safeRelPath } from './knowledgeTools.ts';
+import { grepKnowledge, listAllowedFiles, listDir, readFile, readFileDetailed, runKnowledgeTool, runKnowledgeToolDetailed, safeRelPath } from './knowledgeTools.ts';
 
 function fixture(): string {
   const root = mkdtempSync(path.join(tmpdir(), 'kb-'));
@@ -70,4 +70,17 @@ test('runKnowledgeTool：知らないツール名でも例外にしない', asyn
   const root = fixture();
   assert.match(await runKnowledgeTool(root, 'delete_all', {}), /ありません/);
   assert.match(await runKnowledgeTool(root, 'read_file', { path: '10_理念・方針/COMPANY.md' }), /報連想/);
+});
+
+test('readFileDetailed / runKnowledgeToolDetailed：読めたときだけパスを返す（持ち越し・読んだ資料の表示に使う）', async () => {
+  const root = fixture();
+  const ok = await readFileDetailed(root, 'knowledge/40_要項/2026/確定.md');
+  assert.equal(ok.ok, true);
+  assert.equal(ok.path, '40_要項/2026/確定.md');
+  const draft = await readFileDetailed(root, '40_要項/2026/下書き.md');
+  assert.equal(draft.ok, false);
+  assert.doesNotMatch(draft.text, /9,999円/);
+  assert.equal((await runKnowledgeToolDetailed(root, 'read_file', { path: '10_理念・方針/COMPANY.md' })).readPath, '10_理念・方針/COMPANY.md');
+  assert.equal((await runKnowledgeToolDetailed(root, 'read_file', { path: 'なし.md' })).readPath, undefined);
+  assert.equal((await runKnowledgeToolDetailed(root, 'grep_knowledge', { query: '報連想' })).readPath, undefined);
 });
