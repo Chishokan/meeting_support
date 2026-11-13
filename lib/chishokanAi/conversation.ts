@@ -173,6 +173,8 @@ export function statusFor(tool: string, input: Record<string, unknown>): string 
       return `🎨 スライドのひな形を見ています${s(input.template) ? `（${s(input.template).slice(0, 30)}）` : ''}`;
     case 'create_google_slides':
       return `🖼 Google スライドを作っています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
+    case 'create_math_quiz':
+      return `📝 小テストを Word にしています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
     case 'create_math_material':
       return `📐 数学の教材を Word にしています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
     case 'create_google_doc':

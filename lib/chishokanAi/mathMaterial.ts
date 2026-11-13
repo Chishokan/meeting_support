@@ -7,6 +7,8 @@ import { parseFigure, textsWithoutGlyph } from './figure';
 import { renderFigurePng } from './figurePng';
 import { buildAnswerDocx, buildProblemDocx, type FigureRenderer } from './mathDoc';
 import { checkMathMaterialInput } from './mathMaterialTool';
+import { buildQuizDocx } from './mathQuizDoc';
+import { checkMathQuizInput } from './mathQuizTool';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const NOT_DEPLOYED = 'Apps Script が古いままです（再デプロイが必要）';
@@ -20,6 +22,77 @@ const REASONS: Record<string, string> = {
   aborted: '途中で止めました',
 };
 
+/** 図の記述を PNG にする（文書の画像に出ない日本語の文字があれば notes に書く）。 */
+function figureRenderer(notes: string[]): FigureRenderer {
+  return async (fig) => {
+    const p = parseFigure(fig as Record<string, unknown>);
+    if (!p.ok) throw new Error(p.error);
+    const noGlyph = textsWithoutGlyph(p.spec);
+    if (noGlyph.length) notes.push(`図の「${noGlyph.slice(0, 3).join('」「')}」は、画像では文字が出ません（図の中は半角の文字・記号にする）`);
+    const png = await renderFigurePng(p.spec);
+    return { data: Buffer.from(png.base64, 'base64'), width: png.width, height: png.height, widthCm: png.widthCm };
+  };
+}
+
+/** create_math_quiz：小テストの Word（小テスト・答え入り）を作って保存し、AI に返す文と、ログ用の結果を返す。 */
+export async function runCreateMathQuiz(
+  input: Record<string, unknown>,
+  who: { campus: string; user: string },
+  signal?: AbortSignal,
+): Promise<{ toolResult: string; created: CreatedDoc[] }> {
+  const c = checkMathQuizInput(input);
+  if (!c.ok) return { toolResult: c.message, created: [{ ok: false, title: `小テスト：${String(input?.title ?? '')}`, note: c.message }] };
+  const q = c.value;
+  const notes: string[] = [];
+  const render = figureRenderer(notes);
+  let quiz: Buffer;
+  let answers: Buffer;
+  try {
+    const a = await buildQuizDocx(q, render);
+    const b = await buildQuizDocx(q, render, { withAnswers: true });
+    quiz = a.buffer;
+    answers = b.buffer;
+    notes.push(...a.notes);
+  } catch (e) {
+    const why = `Word を組み立てられませんでした（${String((e as Error)?.message ?? e).slice(0, 120)}）`;
+    return { toolResult: `${why}。職員にそのことを伝え、問題と答えを回答に書く。`, created: [{ ok: false, title: `小テスト：${q.title}`, note: why }] };
+  }
+  const j = await callGas(
+    {
+      action: 'saveAiFiles',
+      campus: who.campus,
+      user: who.user,
+      files: [
+        { name: `${q.title}.docx`, mime: DOCX_MIME, base64: quiz.toString('base64') },
+        { name: `${q.title}_答え入り.docx`, mime: DOCX_MIME, base64: answers.toString('base64') },
+      ],
+    },
+    signal,
+  );
+  const files = Array.isArray(j.files) ? (j.files as { name?: unknown; url?: unknown }[]) : [];
+  if (!j.ok || j.saved !== 'aiFiles' || files.length < 2 || files.some((f) => typeof f.url !== 'string')) {
+    const why = j.ok ? NOT_DEPLOYED : REASONS[String(j.reason)] ?? 'ファイルを保存できませんでした';
+    const detail = typeof j.detail === 'string' && j.detail ? `／詳細: ${j.detail}` : '';
+    return {
+      toolResult: `Word のファイルを保存できませんでした（${why}）。職員にそのことを伝え、問題と答えを回答に書く。`,
+      created: [{ ok: false, title: `小テスト：${q.title}`, note: `${why}${detail}` }],
+    };
+  }
+  const [qf, af] = files as { name: string; url: string }[];
+  const count = q.sheets.reduce((n, s) => n + s.sections.reduce((k, x) => k + x.items.length, 0), 0);
+  const range = q.sheets.length > 1 ? `No.${q.startNo}〜No.${q.startNo + q.sheets.length - 1}` : `No.${q.startNo}`;
+  const warn = notes.length ? `\n作るときに気になった点（回答の「確認してほしいこと」に書く）：\n${[...new Set(notes)].map((n) => `- ${n}`).join('\n')}` : '';
+  return {
+    toolResult:
+      `小テストの Word を2つ作りました（${q.sheets.length}枚・${range}・全${count}問）。\n小テスト：${qf.url}\n答え入り：${af.url}${warn}\n` +
+      '回答には、この2つのURLと、先生が解いて確かめる下書きであること、1枚に収まっているかを Word で確かめてほしいことを書く。',
+    created: [
+      { ok: true, title: `小テスト：${q.title}`, url: qf.url, note: `作成（${q.sheets.length}枚・${count}問）` },
+      { ok: true, title: `小テスト：${q.title}（答え入り）`, url: af.url, note: '作成' },
+    ],
+  };
+}
+
 /** create_math_material：Word を2つ作って保存し、AI に返す文と、ログ用の結果を返す。 */
 export async function runCreateMathMaterial(
   input: Record<string, unknown>,
@@ -30,14 +103,7 @@ export async function runCreateMathMaterial(
   if (!c.ok) return { toolResult: c.message, created: [{ ok: false, title: `数学の教材：${String(input?.title ?? '')}`, note: c.message }] };
   const m = c.value;
   const notes: string[] = [];
-  const render: FigureRenderer = async (fig) => {
-    const p = parseFigure(fig as Record<string, unknown>);
-    if (!p.ok) throw new Error(p.error);
-    const noGlyph = textsWithoutGlyph(p.spec);
-    if (noGlyph.length) notes.push(`図の「${noGlyph.slice(0, 3).join('」「')}」は、画像では文字が出ません（図の中は半角の文字・記号にする）`);
-    const png = await renderFigurePng(p.spec);
-    return { data: Buffer.from(png.base64, 'base64'), width: png.width, height: png.height, widthCm: png.widthCm };
-  };
+  const render = figureRenderer(notes);
   let problem: Buffer;
   let answer: Buffer;
   try {

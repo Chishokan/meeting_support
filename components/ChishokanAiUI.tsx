@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from 'react';
 import AiMarkdown, { CopyButton } from '@/components/AiMarkdown';
 import AiReportDialog from '@/components/AiReportDialog';
+import AiRequestDialog from '@/components/AiRequestDialog';
 import { imageToBase64 } from '@/lib/chishokanAi/clientImage';
 import type { ReportContext } from '@/lib/chishokanAi/report';
 import { toPlainText } from '@/lib/chishokanAi/markdown';
@@ -347,6 +348,13 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     setFeedbackDraft(null);
   }
 
+  // 要望の小窓を開く。会話の途中なら、会話の番号と選んでいた作業を添える。
+  const [request, setRequest] = useState<{ conversationId?: string; turn?: number; task?: string } | null>(null);
+  function openRequest() {
+    const last = [...messages].reverse().find((m) => m.role === 'assistant');
+    setRequest({ conversationId: convoIdRef.current || undefined, turn: last?.turn, task: last?.taskLabel ?? task?.button });
+  }
+
   // 不具合の報告の小窓を開く。index の回答（無ければいちばん新しい回答）の状況を添える。
   function openReport(index?: number, kind?: string) {
     let i = index ?? -1;
@@ -440,6 +448,9 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           </details>
           <button type="button" className="ai-report-open" onClick={() => openReport()}>
             ⚠ 不具合を報告
+          </button>
+          <button type="button" className="ai-report-open ai-request-open" onClick={openRequest}>
+            💡 要望を送る
           </button>
         </div>
       </div>
@@ -681,6 +692,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
         </div>
       </div>
       {report && <AiReportDialog context={report.context} initialKind={report.kind} onClose={() => setReport(null)} />}
+      {request && <AiRequestDialog context={request} onClose={() => setRequest(null)} />}
     </div>
   );
 }

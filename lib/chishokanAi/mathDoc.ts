@@ -44,15 +44,16 @@ const FONT_GOTHIC = { ascii: GOTHIC, hAnsi: GOTHIC, eastAsia: GOTHIC, cs: GOTHIC
 /** 図を PNG にする関数（figurePng.ts の renderFigurePng を、テストでは差し替える）。 */
 export type FigureRenderer = (figure: unknown) => Promise<{ data: Buffer; width: number; height: number; widthCm: number }>;
 
-type RunOpts = { bold?: boolean; size?: number; gothic?: boolean };
+export type RunOpts = { bold?: boolean; size?: number; gothic?: boolean; color?: string };
 
 // --- 文（数式を含む） ---------------------------------------------------------
 
-function textRun(text: string, o: RunOpts & { italics?: boolean; superScript?: boolean; subScript?: boolean } = {}): TextRun {
+export function textRun(text: string, o: RunOpts & { italics?: boolean; superScript?: boolean; subScript?: boolean; color?: string } = {}): TextRun {
   return new TextRun({
     text,
     font: o.gothic ? FONT_GOTHIC : FONT_MINCHO,
     size: o.size ?? SIZE,
+    color: o.color,
     bold: o.bold,
     italics: o.italics,
     superScript: o.superScript,
@@ -79,13 +80,13 @@ function mathList(ps: Piece[]): MathComponent[] {
 export function richRuns(src: string, o: RunOpts = {}): ParagraphChild[] {
   return parseMathText(src).map((p) => {
     if (p.t === 'text') {
-      return textRun(p.v, { ...o, bold: o.bold || p.bold, italics: p.italic, superScript: p.sup, subScript: p.sub });
+      return textRun(p.v, { ...o, bold: o.bold || p.bold, italics: p.italic, superScript: p.sup, subScript: p.sub, color: o.color });
     }
     return new OMath({ children: mathList([p]) });
   });
 }
 
-function para(children: ParagraphChild[], o: { indent?: { left: number; hanging?: number }; after?: number; before?: number; align?: (typeof AlignmentType)[keyof typeof AlignmentType]; tab?: number; pageBreakBefore?: boolean; single?: boolean } = {}): Paragraph {
+export function para(children: ParagraphChild[], o: { indent?: { left: number; hanging?: number }; after?: number; before?: number; align?: (typeof AlignmentType)[keyof typeof AlignmentType]; tab?: number; pageBreakBefore?: boolean; single?: boolean } = {}): Paragraph {
   return new Paragraph({
     children,
     indent: o.indent,
@@ -116,8 +117,8 @@ const KAKKO = { left: 1320, hanging: 1100 }; // （１）
 const TOI = { left: 1100, hanging: 880 }; // 問１
 const SUB = { left: 1540, hanging: 1100 }; // 問の中の（１）
 
-function boxedNumber(n: number): TextRun {
-  return new TextRun({ text: ` ${n} `, font: FONT_GOTHIC, size: 28, border: { style: BorderStyle.SINGLE, size: 8, color: '000000', space: 1 } });
+export function boxedNumber(n: number, size = 28): TextRun {
+  return new TextRun({ text: ` ${n} `, font: FONT_GOTHIC, size, border: { style: BorderStyle.SINGLE, size: 8, color: '000000', space: 1 } });
 }
 
 function itemParagraphs(it: MathItem, n: number, numbering: MathProblem['numbering']): Paragraph[] {
@@ -129,9 +130,9 @@ function itemParagraphs(it: MathItem, n: number, numbering: MathProblem['numberi
   return out;
 }
 
-function sideTable(rows: string[][]): Table {
+function sideTable(rows: string[][], sideW = SIDE_W): Table {
   const cols = Math.max(...rows.map((r) => r.length));
-  const w = Math.floor((SIDE_W - 200) / cols);
+  const w = Math.floor((sideW - 200) / cols);
   return new Table({
     width: { size: w * cols, type: WidthType.DXA },
     columnWidths: Array(cols).fill(w),
@@ -149,21 +150,22 @@ function sideTable(rows: string[][]): Table {
 }
 
 /** 右の列に置く図・表（ラベルを上に付ける）。 */
-async function sideBlocks(sides: Side[], render: FigureRenderer, figNo: { n: number }, notes: string[]): Promise<(Paragraph | Table)[]> {
+export async function sideBlocks(sides: Side[], render: FigureRenderer, figNo: { n: number }, notes: string[], sideW = SIDE_W): Promise<(Paragraph | Table)[]> {
   const out: (Paragraph | Table)[] = [];
   for (const s of sides) {
+    // label が空の文字（''）なら、見出しを付けない（小テストの図など）
     if (s.table) {
-      out.push(para([textRun(s.label || '表', { bold: true, gothic: true, size: 20 })], { after: 60 }));
-      out.push(sideTable(s.table));
+      if (s.label !== '') out.push(para([textRun(s.label || '表', { bold: true, gothic: true, size: 20 })], { after: 60 }));
+      out.push(sideTable(s.table, sideW));
       out.push(para([], { after: 240 }));
       continue;
     }
     figNo.n++;
     const label = s.label || `図${wideNum(figNo.n)}`;
-    out.push(para([textRun(label, { bold: true, gothic: true, size: 20 })], { after: 60 }));
+    if (s.label !== '') out.push(para([textRun(label, { bold: true, gothic: true, size: 20 })], { after: 60 }));
     try {
       const img = await render(s.figure);
-      const maxPx = (SIDE_W - 200) * PX_PER_TWIP;
+      const maxPx = (sideW - 200) * PX_PER_TWIP;
       const wantPx = (img.widthCm / 2.54) * 96;
       const w = Math.round(Math.min(maxPx, wantPx));
       const h = Math.round((w * img.height) / img.width);
