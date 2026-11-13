@@ -2,7 +2,7 @@
 title: AI利用のルール（考え方・入れてはいけない情報・人が確かめること）
 dept: 全社
 owner: 安藤純平（システム担当）
-updated: 2026-11-04
+updated: 2026-11-13
 source: drive:13oBD6a5C-tM3Xj7S4XPR3lRfdIqmY5Sd; drive:1EAuHKW--ejdIZCeAZLMeyfc15E99yOGH; drive:1rZ9npZuQhA-96MxjgmRlHxAEIUEUF6Te; drive:1ik4dZvtWDDYnjcHyDhIp8S-yH6wLv8bG
 source_type: doc
 tags: [AI利用, 生成AI, 個人情報, 業務改善, AI研修, ルール]
@@ -40,7 +40,7 @@ summary: 智翔館でAIを業務改善に使うときの考え方（分析・ア
 |---|---|
 | 生徒・保護者の個人情報（氏名、連絡先、成績の個票） | 生徒を区別するときは ID や匿名化した属性（学年・学校の区分など）だけ。文書では生徒名をイニシャルにする（`10_理念・方針/COMPANY.md`） |
 | パスワード、APIキー、アプリケーションパスワード、サーバーのログイン情報 | AIに渡さない・書かせない・チャットに貼らない。ログインは本人が行う（`35_広報・制作/Web制作/00_使い方.md`） |
-| 給与、人事評価、健康情報 | AIナレッジにも入れない（`00_index/README.md`） |
+| 個人の給与額、人事評価、健康情報 | AIナレッジにも入れない（`00_index/README.md`）。給与規程・就業規則など制度としての決まりは、ナレッジに入っている |
 | 売上・利益などの業績数値 | 目的外の資料に入れない（`35_広報・制作/スライド制作/00_使い方.md`） |
 
 - AI研修では、このルールを**最初に**示す。
