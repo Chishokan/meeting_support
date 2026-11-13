@@ -3,7 +3,7 @@
 
 import { checkDocInput } from './createDocTool';
 import { callGas } from './gas';
-import { extractFigures } from './figure';
+import { extractFigures, textsWithoutGlyph } from './figure';
 import { renderFigurePng } from './figurePng';
 
 /** 1つの文書に入れる図の数の上限（Apps Script に送る量を抑える）。 */
@@ -17,12 +17,14 @@ const REASONS: Record<string, string> = {
   create_failed: 'ドキュメントを作れませんでした（Apps Script の権限を確認してください）',
   too_long: '本文が長すぎます',
   empty: '題名か本文がありません',
+  timeout: 'Apps Script から時間内に返事がありませんでした。保存先のフォルダ（AI作成）にできているかもしれません',
+  aborted: '途中で止めました',
 };
 
 export type CreatedDoc = { ok: boolean; title: string; url?: string; note: string };
 
 /** ツールの入力から文書を作り、AIに返す文と、ログ用の結果を返す。 */
-export async function runCreateDoc(input: Record<string, unknown>, who: { campus: string; user: string }):
+export async function runCreateDoc(input: Record<string, unknown>, who: { campus: string; user: string }, signal?: AbortSignal):
   Promise<{ toolResult: string; created: CreatedDoc }> {
   const c = checkDocInput(input);
   if (!c.ok) return { toolResult: c.message, created: { ok: false, title: String(input?.title ?? ''), note: c.message } };
@@ -32,6 +34,8 @@ export async function runCreateDoc(input: Record<string, unknown>, who: { campus
   const images: { base64: string; width: number; height: number; caption: string }[] = [];
   for (let i = 0; i < fig.figures.length; i++) {
     if (i >= MAX_FIGURES) { notes.push(`図は1つの文書に${MAX_FIGURES}個まで（${i + 1}個目から入れていません）`); break; }
+    const noGlyph = textsWithoutGlyph(fig.figures[i]);
+    if (noGlyph.length) notes.push(`図${i + 1}の「${noGlyph.slice(0, 3).join('」「')}」は、文書の画像では文字が出ません（図の中は半角の文字・記号にする）`);
     try {
       const png = await renderFigurePng(fig.figures[i]);
       const w = Math.round(png.widthCm * PX_PER_CM);
@@ -41,7 +45,7 @@ export async function runCreateDoc(input: Record<string, unknown>, who: { campus
       images.push({ base64: '', width: 0, height: 0, caption: fig.figures[i].caption ?? '' });
     }
   }
-  const j = await callGas({ action: 'createAiDoc', title: c.title, markdown: fig.markdown, images, campus: who.campus, user: who.user });
+  const j = await callGas({ action: 'createAiDoc', title: c.title, markdown: fig.markdown, images, campus: who.campus, user: who.user }, signal);
   // 再デプロイ前の Apps Script は未知の action に ok だけ返すので、saved の印が無ければ未対応とみなす。
   if (!j.ok || j.saved !== 'aiDoc' || typeof j.url !== 'string') {
     const why = j.ok ? 'Apps Script が古いままです（再デプロイが必要）' : REASONS[String(j.reason)] ?? '文書を作れませんでした';

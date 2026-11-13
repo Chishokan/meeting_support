@@ -108,16 +108,12 @@ def write(fname: str, text: str):
 # --- 就業規則（正社員） ---------------------------------------------------
 src, body = load("修正1回目就業規則（智翔館・新）")
 body = tidy(body)
-# 第113条の表：原本で「種類」が空欄の行を、第114条・第115条の見出しから補う（補ったことを書く）
+# 第113条の表の「種類」（譴責・減給・出勤停止・諭旨退職・懲戒解雇）は、原本では Word の均等割り付け（EQ フィールド）で書かれていて、
+# LibreOffice で .docx にすると消える。原本にある語なので、注を付けずに戻す。
 fill = {"２": "譴責", "３": "減給", "４": "出勤停止", "８": "諭旨退職", "９": "懲戒解雇"}
 for no, name in fill.items():
-    body, n = re.subn(rf"^\| {no} \|  \| ", f"| {no} | {name}〔原本は空欄〕 | ", body, count=1, flags=re.M)
+    body, n = re.subn(rf"^\| {no} \|  \| ", f"| {no} | {name} | ", body, count=1, flags=re.M)
     assert n == 1, no
-note113 = (
-    "\n〔取り込み時の注：原本の表では2・3・4・8・9号の「種類」が空欄。"
-    "第114条・第115条の見出しと、契約社員就業規則・パートタイマー就業規則の同じ表から補った〕\n"
-)
-body = re.sub(r"(\| ９ \| 懲戒解雇〔原本は空欄〕 \|[^\n]*\n)", r"\1" + note113, body, count=1)
 
 p1, rest = split_chapters(body, 4)
 p2, rest = split_chapters(rest, 5)

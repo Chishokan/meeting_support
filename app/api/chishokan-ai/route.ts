@@ -224,7 +224,7 @@ export async function POST(req: Request) {
         if (extractDriveIds(lastUserText).length || extractDriveFolderIds(lastUserText).length) {
           send({ t: 'status', v: '🔗 リンクの資料を読んでいます' });
         }
-        const drive = await readDriveLinks(lastUserText);
+        const drive = await readDriveLinks(lastUserText, ac.signal);
         driveLinkReads = drive.reads;
         carryTexts.push(...drive.carry);
 
@@ -324,6 +324,8 @@ export async function POST(req: Request) {
           const results: Anthropic.ToolResultBlockParam[] = [];
           for (const block of msg.content) {
             if (block.type !== 'tool_use') continue;
+            // 停止・時間切れのあとは、残りの道具を動かさない（文書・スライドを作らない）
+            if (ac.signal.aborted) break;
             toolCalls++;
             const input = (block.input ?? {}) as Record<string, unknown>;
             send({ t: 'status', v: statusFor(block.name, input) });
@@ -335,7 +337,7 @@ export async function POST(req: Request) {
               if (driveToolReads.length >= MAX_DRIVE_READS) {
                 out = `ドライブの読み込みは1回の回答で${MAX_DRIVE_READS}回までです。ここまでにわかった範囲で答えてください。`;
               } else {
-                const r = await runDriveTool(block.name, input);
+                const r = await runDriveTool(block.name, input, ac.signal);
                 if (r.read) driveToolReads.push(r.read);
                 if (r.carry) carryTexts.push(r.carry);
                 out = r.text;
@@ -356,13 +358,13 @@ export async function POST(req: Request) {
               }
             } else if (block.name === SLIDES_TEMPLATES_TOOL.name) {
               // ひな形を見るのは1回の回答で3回まで（一覧 → 1つの詳しい形、で足りる）
-              out = templateReads >= 3 ? 'ひな形はもう見ています。見た枠の一覧で作ってください。' : await runSlideTemplates(input);
+              out = templateReads >= 3 ? 'ひな形はもう見ています。見た枠の一覧で作ってください。' : await runSlideTemplates(input, ac.signal);
               templateReads++;
             } else if (block.name === CREATE_SLIDES_TOOL.name) {
               if (slidesMade >= 1) {
                 out = 'スライドは1回の回答で1つまでです。作ったスライドのURLを伝えてください。';
               } else {
-                const r = await runCreateSlides(input, { campus: session.campus, user: session.name });
+                const r = await runCreateSlides(input, { campus: session.campus, user: session.name }, ac.signal);
                 createdDocs.push(r.created);
                 slidesMade++;
                 out = r.toolResult;
@@ -371,7 +373,7 @@ export async function POST(req: Request) {
               if (createdDocs.length >= 1) {
                 out = '文書は1回の回答で1つまでです。作った文書のURLを伝えてください。';
               } else {
-                const r = await runCreateDoc(input, { campus: session.campus, user: session.name });
+                const r = await runCreateDoc(input, { campus: session.campus, user: session.name }, ac.signal);
                 createdDocs.push(r.created);
                 out = r.toolResult;
               }
@@ -424,7 +426,8 @@ export async function POST(req: Request) {
           if (left.length) {
             send({ t: 'notice', v: `埋まっていない {{${left.slice(0, 5).join('}}・{{')}}} が残っています。貼る前・使う前に埋めてください。` });
           }
-          if (activeTask && !cut && !clientGone) {
+          // 持ち越しただけの作業（この回に選んだ・開いたのではない）では知らせない（別の話題の質問に出続けないように）
+          if (activeTask && tasksStarted > 0 && !cut && !clientGone) {
             const miss = missingSectionNotice(full, activeTask.mustInclude);
             if (miss) send({ t: 'notice', v: miss });
           }
@@ -467,7 +470,7 @@ export async function POST(req: Request) {
             campus: session.campus,
             input: `[智翔館AI]${convoNote}${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}\n（調べた資料: ${opened.join('、') || 'なし'}）`,
             output: stripRoleBleed(full),
-          });
+          }, { timeoutMs: Math.max(2_000, Math.min(15_000, LIMIT_MS - (Date.now() - requestStarted) - 2_000)) });
         } catch {}
         try {
           controller.close();

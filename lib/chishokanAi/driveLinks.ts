@@ -67,6 +67,8 @@ const REASONS: Record<string, string> = {
   not_deployed: 'Apps Script が古いままです（再デプロイが必要）',
   upstream_error: 'Apps Script との通信に失敗しました',
   network_error: 'Apps Script との通信に失敗しました',
+  timeout: 'Apps Script から時間内に返事がありませんでした',
+  aborted: '止めました',
 };
 
 /** 読めなかった理由を、AIと職員に伝わる言葉にする。 */

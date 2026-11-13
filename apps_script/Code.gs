@@ -416,7 +416,7 @@ function saveInquiry_(data) {
     }
   }
   var sh = inquirySheet_();
-  sh.appendRow([data.ts || nowIso_(), data.campus || '', data.user || '', data.category || '', data.content || '', imageUrl, '', '', '']);
+  sh.appendRow(asSheetText_([data.ts || nowIso_(), data.campus || '', data.user || '', data.category || '', data.content || '', imageUrl, '', '', '']));
   return { ok: true, imageUrl: imageUrl };
 }
 
@@ -486,7 +486,12 @@ function appendRow_(sheetName, headers, row) {
   var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
   if (sh.getLastRow() === 0) sh.appendRow(headers);
-  sh.appendRow(row);
+  sh.appendRow(asSheetText_(row));
+}
+
+// 画面やAIから来た文字が「=」「+」「-」「@」で始まると、シートが式として読んでしまう。先頭に ' を付けて文字のままにする（' は表示されない）。
+function asSheetText_(row) {
+  return row.map(function (v) { return typeof v === 'string' && /^[=+\-@]/.test(v) ? "'" + v : v; });
 }
 
 // 報告を Google ドキュメントへ「新しいセクション（見出し＋改ページ区切り）」として追記する。
@@ -1624,8 +1629,8 @@ function saveInquiryRecord_(data) {
       var conflicts = [];
       for (var k = 0; k < keys.length; k++) {
         var h = keys[k];
-        var now = dbCellStr_(cur[h]);
-        if (now !== dbCellStr_(expect[h]) && now !== dbCellStr_(data.patch[h])) conflicts.push(h);
+        var now = inquiryCmpVal_(h, cur[h]);
+        if (now !== inquiryCmpVal_(h, expect[h]) && now !== inquiryCmpVal_(h, data.patch[h])) conflicts.push(h);
       }
       if (conflicts.length) return { ok: false, reason: 'conflict', conflicts: conflicts, item: cur };
       if (!keys.length) return { ok: true, item: cur };
@@ -1652,6 +1657,20 @@ function saveInquiryRecord_(data) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// 衝突を調べるときの値。画面は校舎・No. を寄せた値で持っている（lib/inquiryStore.ts の fromSheetRow）ので、
+// シートの値も同じように寄せてから比べる（寄せないと、旧データの行で校舎を直すと必ず衝突になる）。
+function inquiryCmpVal_(h, v) {
+  var s = dbCellStr_(v);
+  if (h === '校舎') {
+    s = s.replace(/[\s　]/g, '');
+    if (s === '県中対策') s = '県中';
+    if (s === '佐世保駅前校') s = '駅前校';
+    if (!s) s = '未分類';
+  }
+  if (h === 'No.') s = String(Number(s) || 0);
+  return s;
 }
 
 // patch のうち、画面から直してよい項目（ID・作成/更新の記録・削除は除く）。
@@ -2596,6 +2615,15 @@ function aiPlaceLogo_(slide, blob, cover, pageW, pageH) {
   try { img.setTitle('ロゴ'); } catch (e) {}
 }
 
+// スライドをいちばん後ろへ動かす。Slide.move(i) の i は「動かす前の並び」での位置なので、後ろへは枚数そのものを渡す。
+// 念のため、動かしたあとに本当に最後か確かめ、違えば最後の位置へ置き直す。
+function aiMoveSlideToEnd_(pres, slide) {
+  var n = pres.getSlides().length;
+  try { slide.move(n); } catch (e) { slide.move(n - 1); }
+  var all = pres.getSlides();
+  if (all[all.length - 1].getObjectId() !== slide.getObjectId()) slide.move(all.length - 1);
+}
+
 function createAiSlides_(data) {
   var title = String(data.title || '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 80);
   var specs = Array.isArray(data.slides) ? data.slides.slice(0, AI_SLIDE_MAX_SLIDES) : [];
@@ -2631,7 +2659,7 @@ function createAiSlides_(data) {
       var src = orig[from];
       if (!src) { warnings.push((s + 1) + '枚目：ひな形に ' + spec.from + ' 番のスライドがありません'); continue; }
       var dup = src.duplicate();
-      dup.move(pres.getSlides().length - 1);
+      aiMoveSlideToEnd_(pres, dup);
       var done = {};
       var texts = spec.texts || {};
       for (var k in texts) {

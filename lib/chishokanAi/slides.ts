@@ -12,19 +12,21 @@ const REASONS: Record<string, string> = {
   folder_failed: '保存先のフォルダを開けませんでした',
   create_failed: 'スライドを作れませんでした（Apps Script の権限を確認してください）',
   empty: '題名かスライドがありません',
+  timeout: 'Apps Script から時間内に返事がありませんでした。保存先のフォルダ（AI作成）にできているかもしれません',
+  aborted: '途中で止めました',
 };
 const NOT_DEPLOYED = 'Apps Script が古いままです（再デプロイが必要）';
 
 /** get_slide_templates：ひな形の一覧、または1つのひな形の枠の一覧を、AI に渡す文にする。 */
-export async function runSlideTemplates(input: Record<string, unknown>): Promise<string> {
+export async function runSlideTemplates(input: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
   const name = typeof input?.template === 'string' ? input.template.trim() : '';
   if (!name) {
-    const j = await callGas({ action: 'listSlideTemplates' });
+    const j = await callGas({ action: 'listSlideTemplates' }, signal);
     if (j.ok && !Array.isArray(j.templates)) return `ひな形を読めませんでした（${NOT_DEPLOYED}）。職員にそのことを伝える。`;
     if (!j.ok) return `ひな形を読めませんでした（${REASONS[String(j.reason)] ?? '読み取りに失敗しました'}）。職員にそのことを伝える。`;
     return formatTemplateList(j.templates as TemplateSummary[]);
   }
-  const j = await callGas({ action: 'describeSlideTemplate', name });
+  const j = await callGas({ action: 'describeSlideTemplate', name }, signal);
   if (j.ok && !Array.isArray(j.slides)) return `ひな形を読めませんでした（${NOT_DEPLOYED}）。職員にそのことを伝える。`;
   if (!j.ok) {
     const why = REASONS[String(j.reason)] ?? '読み取りに失敗しました';
@@ -37,11 +39,12 @@ export async function runSlideTemplates(input: Record<string, unknown>): Promise
 export async function runCreateSlides(
   input: Record<string, unknown>,
   who: { campus: string; user: string },
+  signal?: AbortSignal,
 ): Promise<{ toolResult: string; created: CreatedDoc }> {
   const c = checkSlidesInput(input);
   if (!c.ok) return { toolResult: c.message, created: { ok: false, title: String(input?.title ?? ''), note: c.message } };
   const v = c.value;
-  const j = await callGas({ action: 'createAiSlides', template: v.template, title: v.title, slides: v.slides, campus: who.campus, user: who.user });
+  const j = await callGas({ action: 'createAiSlides', template: v.template, title: v.title, slides: v.slides, campus: who.campus, user: who.user }, signal);
   // 再デプロイ前の Apps Script は未知の action に ok だけ返すので、saved の印が無ければ未対応とみなす。
   if (!j.ok || j.saved !== 'aiSlides' || typeof j.url !== 'string') {
     const why = j.ok ? NOT_DEPLOYED : REASONS[String(j.reason)] ?? 'スライドを作れませんでした';

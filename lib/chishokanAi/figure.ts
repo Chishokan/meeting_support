@@ -157,7 +157,8 @@ export function parseFigure(raw: unknown): { ok: true; spec: FigureSpec } | { ok
   if (!Array.isArray(range) || range.length !== 4 || !range.every(isNum)) return { ok: false, error: 'range は [xの最小, yの最小, xの最大, yの最大] の4つの数' };
   const [x0, y0, x1, y1] = range as number[];
   if (!(x1 > x0) || !(y1 > y0)) return { ok: false, error: 'range の最大は最小より大きくする' };
-  const pts: Record<string, [number, number]> = {};
+  // 点の名前は職員・AIが自由に付けるので、「constructor」などが Object の持ち物と取り違えられないよう、親の無い入れ物にする
+  const pts: Record<string, [number, number]> = Object.create(null);
   const rawPts = (o.points && typeof o.points === 'object' ? o.points : {}) as Record<string, unknown>;
   const names = Object.keys(rawPts);
   if (names.length > MAX_POINTS) return { ok: false, error: `点は${MAX_POINTS}個まで` };
@@ -191,7 +192,7 @@ export function parseFigure(raw: unknown): { ok: true; spec: FigureSpec } | { ok
     else if ('text' in s) { if (!isXY(s.text) || typeof s.label !== 'string') return { ok: false, error: `${where}（text）は [x, y] と label` }; }
     else return { ok: false, error: `${where}の種類が分かりません（polygon / segment / line / circle / arc / curve / angle / right / equal / length / text）` };
   }
-  const labels: Record<string, Dir> = {};
+  const labels: Record<string, Dir> = Object.create(null);
   for (const [k, v] of Object.entries((o.labels && typeof o.labels === 'object' ? o.labels : {}) as Record<string, unknown>)) {
     if (typeof v === 'string' && DIRS.includes(v)) labels[k] = v as Dir;
   }
@@ -229,6 +230,9 @@ export function escapeXml(s: string): string {
 
 const f2 = (n: number) => (Math.round(n * 100) / 100).toString();
 
+/** 方眼の線の数の上限（縦と横の合計）。これより多い範囲では方眼を描かない。 */
+const MAX_GRID_LINES = 400;
+
 /** 図の記述から SVG の文字列と、画像の大きさ（px）を作る。 */
 export function renderFigureSvg(spec: FigureSpec): { svg: string; width: number; height: number } {
   const [x0, y0, x1, y1] = spec.range;
@@ -260,8 +264,10 @@ export function renderFigureSvg(spec: FigureSpec): { svg: string; width: number;
   };
 
   // 方眼と座標軸
-  if (spec.grid) {
-    const step = typeof spec.grid === 'number' ? spec.grid : 1;
+  // 方眼の線が多すぎる（範囲が広すぎる）ときは描かない（画面が固まらないように）
+  const gridStep = typeof spec.grid === 'number' ? spec.grid : 1;
+  if (spec.grid && (x1 - x0) / gridStep + (y1 - y0) / gridStep <= MAX_GRID_LINES) {
+    const step = gridStep;
     for (let gx = Math.ceil(x0 / step) * step; gx <= x1 + 1e-9; gx += step) back.push(`<line x1="${f2(tx(gx))}" y1="${f2(ty(y0))}" x2="${f2(tx(gx))}" y2="${f2(ty(y1))}" stroke="#c9d3dd" stroke-width="0.8"/>`);
     for (let gy = Math.ceil(y0 / step) * step; gy <= y1 + 1e-9; gy += step) back.push(`<line x1="${f2(tx(x0))}" y1="${f2(ty(gy))}" x2="${f2(tx(x1))}" y2="${f2(ty(gy))}" stroke="#c9d3dd" stroke-width="0.8"/>`);
   }
@@ -459,6 +465,20 @@ export function clipLine(a: [number, number], b: [number, number], [x0, y0, x1, 
 /** コード枠の種類が図か（```図 / ```figure）。 */
 export function isFigureLang(lang: string): boolean {
   return lang === '図' || lang.toLowerCase() === 'figure';
+}
+
+/** 日本語（かな・漢字・全角）の文字。文書に入れる PNG の書体（DejaVu Sans）には無いので、画像では出ない。 */
+const NO_GLYPH = /[\u3000-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/;
+
+/** 図の中の文字（点の名前・label）のうち、文書の画像では出ないもの。 */
+export function textsWithoutGlyph(spec: FigureSpec): string[] {
+  const out: string[] = [];
+  for (const name of Object.keys(spec.points ?? {})) if (NO_GLYPH.test(name)) out.push(name);
+  for (const sh of spec.shapes ?? []) {
+    const label = (sh as { label?: unknown }).label;
+    if (typeof label === 'string' && NO_GLYPH.test(label)) out.push(label);
+  }
+  return [...new Set(out)];
 }
 
 /**
