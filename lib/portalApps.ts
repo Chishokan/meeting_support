@@ -17,7 +17,7 @@ function interviewApp(dept: InterviewDept): PortalApp {
   return {
     id: `interview-${dept}`,
     name: `面談管理（${label}）`,
-    desc: `${label}の面談予約の確認・面談枠の設定・面談記録の入力（面談予約システムの管理画面）`,
+    desc: '面談予約の確認・面談枠の設定・面談記録',
     href: `${interviewAppUrl()}/${dept}/admin`,
     status: 'ready',
     external: true,
@@ -41,7 +41,7 @@ export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'chishokan-ai',
     name: '智翔館AI（試用版）',
-    desc: '社内の資料（理念・方針・要項・部門の計画・地域の情報・チラシやスライドの作り方）をもとに答える社内AI。業務計画の相談、チラシの原稿づくり、資料が方針に沿っているかのチェック、文章の手直しに',
+    desc: '社内の資料をもとに答えるAI。資料づくりや文章の手直しにも',
     href: '/ai',
     status: 'ready',
     canUse: (_campus, name) => canUseChishokanAi(name),
@@ -50,21 +50,21 @@ export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'meeting',
     name: '会議DX',
-    desc: '部門会議（事前共有 → 録音 → 議事録 → 次回の事前共有）と、全体会議の数値報告・事前報告・振り返り',
+    desc: '部門会議・全体会議の事前共有、議事録、数値報告',
     href: '/dashboard',
     status: 'ready',
   },
   {
     id: 'kenshu',
     name: '全体研修会アンケート',
-    desc: '10/31（土）全体研修会の事前アンケート。この1年で、仕事と人生・プライベートで達成したいこと・やってみたいことを書き出す',
+    desc: '10/31（土）全体研修会の事前アンケート',
     href: '/kenshu',
     status: 'ready',
   },
   {
     id: 'inquiry-board',
     name: '問合せ管理',
-    desc: '問い合わせを校舎ごとに登録し、体験・面談・入塾まで追いかける台帳。台帳の内容をAIに聞くこともできる',
+    desc: '問い合わせを入塾まで追いかける台帳',
     href: '/inquiry-board',
     status: 'ready',
     canUse: canUseInquiryBoard,
@@ -73,7 +73,7 @@ export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'monpai',
     name: '門配管理',
-    desc: '地区ごとの門配（校門前でのチラシ配布）の月間計画と実績報告',
+    desc: '門配の月間計画と実績報告',
     href: '/monpai',
     status: 'ready',
   },
@@ -82,7 +82,7 @@ export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'aptitude',
     name: '適性検査',
-    desc: '講師（学生パート）・事務スタッフ・社員の採用選考の適性検査。受検URLの発行・紙回答の入力・結果の確認',
+    desc: '採用選考の適性検査（受検URLの発行・結果の確認）',
     href: '/aptitude',
     status: 'ready',
     canUse: canUseAptitude,
@@ -91,7 +91,7 @@ export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'helpdesk',
     name: 'ヘルプデスク',
-    desc: '要項QA（申込方法・支払い・日程を要項から確認）、操作マニュアルのダウンロード、アプリへのご意見・不具合の報告',
+    desc: '要項の確認、操作マニュアル、ご意見・不具合の報告',
     href: '/helpdesk',
     status: 'ready',
   },

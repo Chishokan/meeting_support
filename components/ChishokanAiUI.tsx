@@ -427,24 +427,26 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     <div className="iqa-page">
       <div className="page-head">
         <h1>智翔館AI（試用版）</h1>
-        <p>
-          社内の資料（理念・方針・要項・部門の計画・地域の情報・チラシやスライドの作り方など）を調べて答えます（{campus} / {name} さん）。
-          社内のこと（日付・料金・数字・方針など）は社内の資料だけをもとに答え、出典の資料名を付けます。Web は見ません。
-          文章の手直し・要約・アイデア出しなど、ふだんのチャットAIと同じ使い方もできます。
-        </p>
-        <p className="yq-pending-note">
-          資料は、PDF・画像・Word・Excel・PowerPoint を添付するか、Google ドキュメント・スプレッドシート・スライドのリンクを貼ると読みます
-          （リンクは決められたフォルダの中のファイルだけ・1回に3件まで）。業績の数字（売上・利益）は持っていません。
-          会話はこの画面を閉じると消えます。
-        </p>
-        <button type="button" className="ai-report-open" onClick={() => openReport()}>
-          ⚠ うまく動かないときは、不具合を報告
-        </button>
+        <p>社内の資料をもとに答えます。資料づくりや文章の手直しにも使えます。</p>
+        <div className="ai-head-links">
+          <details className="ai-about">
+            <summary>使い方と注意</summary>
+            <ul>
+              <li>社内のこと（日付・料金・方針など）は社内の資料だけで答え、出典を付けます。Web は見ません</li>
+              <li>PDF・画像・Word・Excel・PowerPoint は添付、Google のファイルはリンクを貼ると読みます（決められたフォルダの中だけ・1回に3件まで）</li>
+              <li>業績の数字（売上・利益）は持っていません</li>
+              <li>会話は、この画面を閉じると消えます</li>
+            </ul>
+          </details>
+          <button type="button" className="ai-report-open" onClick={() => openReport()}>
+            ⚠ 不具合を報告
+          </button>
+        </div>
       </div>
 
       {messages.length === 0 && tasks.length > 0 && (
         <>
-          <div className="ai-section-label">よく使う作業（押すと、社内の型と資料を使って進めます）</div>
+          <div className="ai-section-label">よく使う作業</div>
           <div className="ai-tasks">
             {tasks.map((t) => (
               <button key={t.id} type="button" className="ai-task" onClick={() => chooseTask(t)} disabled={busy}>
