@@ -169,6 +169,10 @@ export function statusFor(tool: string, input: Record<string, unknown>): string 
       return '📄 ドライブのファイルを読んでいます';
     case 'start_task':
       return `🧭 作業の手順書を開いています${s(input.task) ? `（${s(input.task)}）` : ''}`;
+    case 'get_slide_templates':
+      return `🎨 スライドのひな形を見ています${s(input.template) ? `（${s(input.template).slice(0, 30)}）` : ''}`;
+    case 'create_google_slides':
+      return `🖼 Google スライドを作っています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
     case 'create_google_doc':
       return `📝 Google ドキュメントを作っています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
     default:

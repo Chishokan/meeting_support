@@ -121,6 +121,19 @@ var AI_OUTPUT_PARENT_ID = '16VRA3zstFpsKGKc2UsFXAuP75lNXlcCm'; // 00_進行中
 var AI_OUTPUT_FOLDER_NAME = 'AI作成';
 // 作った文書の共有：'view'＝リンクを知っている人が閲覧可（初期値）、'edit'＝リンクを知っている人が編集可、'none'＝共有しない
 var AI_OUTPUT_SHARING = 'view';
+// 智翔館AI が Google スライドを作るときのひな形のフォルダ（15_AIスライドテンプレート）。
+// ★この中の Google スライド形式のファイルが「ひな形」になる（.pptx は使わない。開いて「Google スライドとして保存」する）。
+//   見本の文字が入ったスライドをそのまま型にする：AI が枠ごとに文字を書き換え、使うスライドを並べ直す。
+//   ファイル名がそのまま、AI が選ぶときの名前になる（例：企画書・計画書（社内向け））。
+// ★フォルダの中の画像で、名前が「ロゴ」で始まるもの（例：ロゴ_智翔館.png）を、作ったスライドに自動で置く。
+//   ひな形に自分でロゴを置いたスライドは、その画像の代替テキストのタイトルか説明に「ロゴ」と書けば、重ねて置かない。
+var AI_SLIDE_TEMPLATE_FOLDER_ID = '1XXsYhEzB8rEEvt2xxD460OmYyRn7zMj_';
+var AI_SLIDE_LOGO_PREFIX = 'ロゴ';
+// ロゴを置く場所（ページの幅・高さに対する割合）。表紙＝ひな形の1枚目から作ったスライド、ほか＝それ以外。
+var AI_SLIDE_LOGO_COVER = { left: 0.08, top: 0.07, height: 0.09 };
+var AI_SLIDE_LOGO_PAGE = { right: 0.035, top: 0.045, height: 0.055 };
+var AI_SLIDE_MAX_SLIDES = 30;
+
 // 1ファイルで返す上限（文字数・Office/PDF の大きさ）
 var AI_READ_MAX_CHARS = 60000;
 var AI_READ_MAX_BYTES = 4 * 1024 * 1024;
@@ -232,6 +245,18 @@ function doPost(e) {
 
     if (action === 'readDriveFile') {
       return json_(readDriveFile_(data));
+    }
+
+    if (action === 'listSlideTemplates') {
+      return json_(listSlideTemplates_(data));
+    }
+
+    if (action === 'describeSlideTemplate') {
+      return json_(describeSlideTemplate_(data));
+    }
+
+    if (action === 'createAiSlides') {
+      return json_(createAiSlides_(data));
     }
 
     if (action === 'getTaskEvaluation') {
@@ -2339,8 +2364,287 @@ function testAiDrive() {
   } catch (e) { log.push('読めるフォルダ：設定が読めない（' + e + '）'); }
   var r = createAiDoc_({ title: '動作確認（削除してよい）', markdown: '# 動作確認\n- 智翔館AIの文書作成テスト', campus: '診断', user: 'testAiDrive' });
   log.push('文書の作成：' + JSON.stringify(r));
+  try {
+    var lt = listSlideTemplates_({});
+    log.push('スライドのひな形：' + (lt.ok ? lt.templates.map(function (t) { return t.name + '（' + t.slides + '枚）'; }).join('、') : lt.reason) +
+      '／ロゴ：' + (aiSlideLogo_() ? '見つかった' : '見つからない'));
+  } catch (e) { log.push('スライドのひな形：開けない（' + e + '）'); }
   Logger.log(log.join('\n'));
   return log.join('\n');
+}
+
+// ---- 智翔館AI：Google スライドを作る（ひな形の見本の文字を書き換える） ------------------
+// 1. listSlideTemplates_    … ひな形の一覧（名前・枚数・各スライドの見出しらしい文字）
+// 2. describeSlideTemplate_ … 1つのひな形の、スライドごとの文字の枠と表（key・見本の文字・目安の文字数）
+// 3. createAiSlides_        … ひな形をコピーし、使うスライドを並べて文字を書き換え、ノートとロゴを入れて URL を返す
+// key は「ページ要素の番号」。グループの中は「3.1」のように「.」でつなぐ（スライドを複製しても並びは変わらない）。
+
+function aiSlideTemplateFolder_() {
+  if (!AI_SLIDE_TEMPLATE_FOLDER_ID) return null;
+  return DriveApp.getFolderById(AI_SLIDE_TEMPLATE_FOLDER_ID);
+}
+
+// ひな形のフォルダの中のファイルか（ほかのファイルをひな形として開かせない）
+function aiIsSlideTemplate_(file) {
+  if (file.getMimeType() !== MimeType.GOOGLE_SLIDES) return false;
+  var ps = file.getParents();
+  while (ps.hasNext()) if (ps.next().getId() === AI_SLIDE_TEMPLATE_FOLDER_ID) return true;
+  return false;
+}
+
+function aiSlideLogo_() {
+  var folder = aiSlideTemplateFolder_();
+  if (!folder) return null;
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var f = files.next();
+    if (f.getName().indexOf(AI_SLIDE_LOGO_PREFIX) === 0 && String(f.getMimeType()).indexOf('image/') === 0) return f;
+  }
+  return null;
+}
+
+// スライドの中の、文字のある枠と表を集める（グループの中も）。
+function aiSlideItems_(slide) {
+  var items = [];
+  function walk(els, prefix) {
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var key = prefix ? prefix + '.' + i : String(i);
+      var t = el.getPageElementType();
+      try {
+        if (t === SlidesApp.PageElementType.GROUP) {
+          walk(el.asGroup().getChildren(), key);
+        } else if (t === SlidesApp.PageElementType.SHAPE) {
+          var text = el.asShape().getText().asString().replace(/\n$/, '');
+          if (text.replace(/\s/g, '')) items.push({ key: key, type: 'text', text: text, top: el.getTop(), left: el.getLeft() });
+        } else if (t === SlidesApp.PageElementType.TABLE) {
+          var tb = el.asTable();
+          var cells = [];
+          for (var r = 0; r < tb.getNumRows(); r++) {
+            var row = [];
+            for (var c = 0; c < tb.getNumColumns(); c++) {
+              try { row.push(tb.getCell(r, c).getText().asString().replace(/\n$/, '').slice(0, 120)); } catch (e) { row.push(''); }
+            }
+            cells.push(row);
+          }
+          items.push({ key: key, type: 'table', rows: tb.getNumRows(), cols: tb.getNumColumns(), cells: cells, top: el.getTop(), left: el.getLeft() });
+        }
+      } catch (e) {}
+    }
+  }
+  walk(slide.getPageElements(), '');
+  items.sort(function (a, b) { return Math.abs(a.top - b.top) > 8 ? a.top - b.top : a.left - b.left; });
+  return items;
+}
+
+// スライドの見出しらしい文字（いちばん上の、数字だけでない文字）
+function aiSlideLabel_(items) {
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type === 'text' && !/^[\s\d０-９]+$/.test(items[i].text)) return items[i].text.replace(/\s+/g, ' ').slice(0, 30);
+  }
+  return '';
+}
+
+function aiFindTemplate_(data) {
+  var folder = aiSlideTemplateFolder_();
+  if (!folder) return null;
+  if (data.id) {
+    try {
+      var f = DriveApp.getFileById(String(data.id));
+      return aiIsSlideTemplate_(f) ? f : null;
+    } catch (e) { return null; }
+  }
+  var want = String(data.name || '').trim();
+  var files = folder.getFiles();
+  var first = null;
+  while (files.hasNext()) {
+    var x = files.next();
+    if (x.getMimeType() !== MimeType.GOOGLE_SLIDES) continue;
+    if (!first) first = x;
+    if (want && (x.getName() === want || x.getName().indexOf(want) !== -1)) return x;
+  }
+  return want ? null : first;
+}
+
+function listSlideTemplates_(data) {
+  var folder;
+  try { folder = aiSlideTemplateFolder_(); } catch (e) { return { ok: false, reason: 'template_folder_failed', detail: String(e).slice(0, 200) }; }
+  if (!folder) return { ok: false, reason: 'not_configured' };
+  var out = [];
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var f = files.next();
+    if (f.getMimeType() !== MimeType.GOOGLE_SLIDES) continue;
+    try {
+      out.push(aiTemplateCache_(f, 'list', function () {
+        var slides = SlidesApp.openById(f.getId()).getSlides();
+        var labels = [];
+        for (var i = 0; i < slides.length && i < 40; i++) labels.push(aiSlideLabel_(aiSlideItems_(slides[i])));
+        return { id: f.getId(), name: f.getName(), slides: slides.length, labels: labels };
+      }));
+    } catch (e) {
+      out.push({ id: f.getId(), name: f.getName(), slides: 0, labels: [], error: String(e).slice(0, 120) });
+    }
+  }
+  return { ok: true, templates: out };
+}
+
+// ひな形の読み取り結果は、ファイルが更新されるまで6時間とっておく（大きいひな形を毎回開かない）。
+function aiTemplateCache_(f, kind, build) {
+  var key = 'slidetpl:' + kind + ':' + f.getId() + ':' + f.getLastUpdated().getTime();
+  var cache = CacheService.getScriptCache();
+  try { var hit = cache.get(key); if (hit) return JSON.parse(hit); } catch (e) {}
+  var v = build();
+  try { var j = JSON.stringify(v); if (j.length < 90000) cache.put(key, j, 21600); } catch (e) {}
+  return v;
+}
+
+function describeSlideTemplate_(data) {
+  var f = aiFindTemplate_(data);
+  if (!f) return { ok: false, reason: 'template_not_found' };
+  return aiTemplateCache_(f, 'describe', function () { return describeSlideTemplateUncached_(f); });
+}
+
+function describeSlideTemplateUncached_(f) {
+  var pres = SlidesApp.openById(f.getId());
+  var slides = pres.getSlides();
+  var out = [];
+  for (var i = 0; i < slides.length && i < 40; i++) {
+    var items = aiSlideItems_(slides[i]).slice(0, 40).map(function (it) {
+      if (it.type === 'text') return { key: it.key, type: 'text', text: it.text.slice(0, 300), max: Math.max(8, Math.round(it.text.length * 1.4)) };
+      return { key: it.key, type: 'table', rows: it.rows, cols: it.cols, cells: it.cells };
+    });
+    var notes = '';
+    try { notes = slides[i].getNotesPage().getSpeakerNotesShape().getText().asString().trim().slice(0, 200); } catch (e) {}
+    out.push({ index: i, label: aiSlideLabel_(items), items: items, notes: notes });
+  }
+  return { ok: true, id: f.getId(), name: f.getName(), slides: out };
+}
+
+// key（「3」「3.1」）からページ要素をたどる
+function aiElementByKey_(slide, key) {
+  var parts = String(key).split('.');
+  var els = slide.getPageElements();
+  var el = null;
+  for (var i = 0; i < parts.length; i++) {
+    var n = Number(parts[i]);
+    if (!(n >= 0) || n >= els.length) return null;
+    el = els[n];
+    if (i < parts.length - 1) {
+      if (el.getPageElementType() !== SlidesApp.PageElementType.GROUP) return null;
+      els = el.asGroup().getChildren();
+    }
+  }
+  return el;
+}
+
+// スライドに、自分で置いたロゴ（代替テキストに「ロゴ」）があるか
+function aiSlideHasLogo_(slide) {
+  var els = slide.getPageElements();
+  for (var i = 0; i < els.length; i++) {
+    try {
+      var t = (els[i].getTitle() || '') + ' ' + (els[i].getDescription() || '');
+      if (t.indexOf('ロゴ') !== -1) return true;
+    } catch (e) {}
+  }
+  return false;
+}
+
+// ロゴを置く。縦横の比は画像そのものから測る（ロゴを差し替えても崩れない）。
+function aiPlaceLogo_(slide, blob, cover, pageW, pageH) {
+  var pos = cover ? AI_SLIDE_LOGO_COVER : AI_SLIDE_LOGO_PAGE;
+  var img = slide.insertImage(blob);
+  var ratio = img.getHeight() > 0 ? img.getWidth() / img.getHeight() : 3;
+  var h = pageH * pos.height;
+  var w = h * ratio;
+  img.setWidth(w).setHeight(h);
+  img.setLeft(cover ? pageW * pos.left : pageW - pageW * pos.right - w).setTop(pageH * pos.top);
+  try { img.setTitle('ロゴ'); } catch (e) {}
+}
+
+function createAiSlides_(data) {
+  var title = String(data.title || '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 80);
+  var specs = Array.isArray(data.slides) ? data.slides.slice(0, AI_SLIDE_MAX_SLIDES) : [];
+  if (!title || !specs.length) return { ok: false, reason: 'empty' };
+  var tpl = aiFindTemplate_({ id: data.templateId, name: data.template });
+  if (!tpl) return { ok: false, reason: 'template_not_found' };
+  var folder;
+  try { folder = aiOutputFolder_(); } catch (e) { return { ok: false, reason: 'folder_failed', detail: String(e).slice(0, 200) }; }
+
+  var stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+  var name = stamp + '_AI作成_' + title;
+  var copy;
+  try { copy = tpl.makeCopy(name, folder); } catch (e) { return { ok: false, reason: 'create_failed', detail: String(e).slice(0, 200) }; }
+
+  var warnings = [];
+  try {
+    var pres = SlidesApp.openById(copy.getId());
+    var orig = pres.getSlides();
+    var pageW = pres.getPageWidth();
+    var pageH = pres.getPageHeight();
+    var logoFile = null;
+    var logoBlob = null;
+    try {
+      logoFile = aiSlideLogo_();
+      if (logoFile) {
+        logoBlob = logoFile.getBlob();
+      }
+    } catch (e) { warnings.push('ロゴを読めませんでした'); }
+
+    for (var s = 0; s < specs.length; s++) {
+      var spec = specs[s] || {};
+      var from = Number(spec.from);
+      var src = orig[from];
+      if (!src) { warnings.push((s + 1) + '枚目：ひな形に ' + spec.from + ' 番のスライドがありません'); continue; }
+      var dup = src.duplicate();
+      dup.move(pres.getSlides().length - 1);
+      var done = {};
+      var texts = spec.texts || {};
+      for (var k in texts) {
+        if (!texts.hasOwnProperty(k)) continue;
+        var el = aiElementByKey_(dup, k);
+        if (!el || el.getPageElementType() !== SlidesApp.PageElementType.SHAPE) { warnings.push((s + 1) + '枚目：枠 ' + k + ' が見つかりません'); continue; }
+        try { el.asShape().getText().setText(String(texts[k] == null ? '' : texts[k])); done[k] = true; } catch (e) { warnings.push((s + 1) + '枚目：枠 ' + k + ' に書けません'); }
+      }
+      var tables = spec.tables || {};
+      for (var tk in tables) {
+        if (!tables.hasOwnProperty(tk)) continue;
+        var tel = aiElementByKey_(dup, tk);
+        if (!tel || tel.getPageElementType() !== SlidesApp.PageElementType.TABLE) { warnings.push((s + 1) + '枚目：表 ' + tk + ' が見つかりません'); continue; }
+        var tb = tel.asTable();
+        var rows = Array.isArray(tables[tk]) ? tables[tk].slice(0, 30) : [];
+        try {
+          while (tb.getNumRows() < rows.length) tb.appendRow();
+          while (tb.getNumRows() > Math.max(1, rows.length)) tb.getRow(tb.getNumRows() - 1).remove();
+        } catch (e) { warnings.push((s + 1) + '枚目：表 ' + tk + ' の行を増やせない・減らせない'); }
+        for (var r = 0; r < Math.min(rows.length, tb.getNumRows()); r++) {
+          var row = Array.isArray(rows[r]) ? rows[r] : [];
+          for (var c = 0; c < tb.getNumColumns(); c++) {
+            try { tb.getCell(r, c).getText().setText(String(row[c] == null ? '' : row[c])); } catch (e) {}
+          }
+        }
+        done[tk] = true;
+      }
+      // 書き換えなかった見本の文字が残っていないか（残っていれば知らせる）
+      var items = aiSlideItems_(dup);
+      for (var i = 0; i < items.length; i++) {
+        if (!done[items[i].key]) warnings.push((s + 1) + '枚目：見本の文字のまま「' + (items[i].type === 'text' ? items[i].text : '表').replace(/\s+/g, ' ').slice(0, 20) + '」');
+      }
+      if (spec.notes) {
+        try { dup.getNotesPage().getSpeakerNotesShape().getText().setText(String(spec.notes).slice(0, 3000)); } catch (e) {}
+      }
+      if (logoBlob && !aiSlideHasLogo_(src)) {
+        try { aiPlaceLogo_(dup, logoBlob, from === 0, pageW, pageH); } catch (e) { warnings.push((s + 1) + '枚目：ロゴを置けませんでした'); }
+      }
+    }
+    for (var o = 0; o < orig.length; o++) orig[o].remove();
+    pres.saveAndClose();
+  } catch (e) {
+    return { ok: false, reason: 'create_failed', detail: String(e).slice(0, 200) };
+  }
+  if (AI_OUTPUT_SHARING === 'view') copy.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  if (AI_OUTPUT_SHARING === 'edit') copy.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
+  return { ok: true, saved: 'aiSlides', name: name, url: 'https://docs.google.com/presentation/d/' + copy.getId() + '/edit', warnings: warnings.slice(0, 30) };
 }
 
 // 素朴な Markdown（# 見出し、- 箇条書き、1. 番号、| 表 |、段落）を文書にする。**太字** の記号は外す。

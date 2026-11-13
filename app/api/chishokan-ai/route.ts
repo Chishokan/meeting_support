@@ -36,6 +36,8 @@ import { extractDriveFolderIds, extractDriveIds } from '@/lib/chishokanAi/driveL
 import { DRIVE_TOOLS } from '@/lib/chishokanAi/driveTools';
 import { CREATE_DOC_TOOL } from '@/lib/chishokanAi/createDocTool';
 import { runCreateDoc, type CreatedDoc } from '@/lib/chishokanAi/createDoc';
+import { CREATE_SLIDES_TOOL, SLIDES_TEMPLATES_TOOL } from '@/lib/chishokanAi/slidesTool';
+import { runCreateSlides, runSlideTemplates } from '@/lib/chishokanAi/slides';
 import {
   buildCarryBlock,
   citationWarnings,
@@ -158,10 +160,19 @@ export async function POST(req: Request) {
       cache_control: { type: 'ephemeral' },
     },
   ];
-  // 資料を読む3つの道具、ドライブを読む道具、作業の手順書を開く道具、頼まれたときに Google ドキュメントの下書きを作る道具。
+  // 資料を読む3つの道具、ドライブを読む道具、作業の手順書を開く道具、頼まれたときに Google ドキュメント・スライドの下書きを作る道具。
   const START_TASK = taskTool(tasks);
-  const tools = [...KNOWLEDGE_TOOLS, ...DRIVE_TOOLS, START_TASK, CREATE_DOC_TOOL] as unknown as Anthropic.Tool[];
+  const tools = [
+    ...KNOWLEDGE_TOOLS,
+    ...DRIVE_TOOLS,
+    START_TASK,
+    CREATE_DOC_TOOL,
+    SLIDES_TEMPLATES_TOOL,
+    CREATE_SLIDES_TOOL,
+  ] as unknown as Anthropic.Tool[];
   let tasksStarted = 0;
+  let templateReads = 0;
+  let slidesMade = 0;
   const lastUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 
   const encoder = new TextEncoder();
@@ -312,6 +323,19 @@ export async function POST(req: Request) {
                 activeTask = t;
                 out = b.text;
               }
+            } else if (block.name === SLIDES_TEMPLATES_TOOL.name) {
+              // ひな形を見るのは1回の回答で3回まで（一覧 → 1つの詳しい形、で足りる）
+              out = templateReads >= 3 ? 'ひな形はもう見ています。見た枠の一覧で作ってください。' : await runSlideTemplates(input);
+              templateReads++;
+            } else if (block.name === CREATE_SLIDES_TOOL.name) {
+              if (slidesMade >= 1) {
+                out = 'スライドは1回の回答で1つまでです。作ったスライドのURLを伝えてください。';
+              } else {
+                const r = await runCreateSlides(input, { campus: session.campus, user: session.name });
+                createdDocs.push(r.created);
+                slidesMade++;
+                out = r.toolResult;
+              }
             } else if (block.name === CREATE_DOC_TOOL.name) {
               if (createdDocs.length >= 1) {
                 out = '文書は1回の回答で1つまでです。作った文書のURLを伝えてください。';
@@ -326,9 +350,9 @@ export async function POST(req: Request) {
               out = r.text;
             }
             opened.push(
-              block.name === CREATE_DOC_TOOL.name
-                ? `create_google_doc:${String(input.title ?? '')}`
-                : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? input.task ?? '')}`,
+              block.name === CREATE_DOC_TOOL.name || block.name === CREATE_SLIDES_TOOL.name
+                ? `${block.name}:${String(input.title ?? '')}`
+                : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? input.task ?? input.template ?? '')}`,
             );
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           }
