@@ -241,6 +241,10 @@ function doPost(e) {
       return json_(createAiDoc_(data));
     }
 
+    if (action === 'saveAiFiles') {
+      return json_(saveAiFiles_(data));
+    }
+
     if (action === 'listDriveFolder') {
       return json_(listDriveFolder_(data));
     }
@@ -2348,6 +2352,34 @@ function nowIso_() {
 
 // ---- 智翔館AI：Google ドキュメントを作る ------------------------------------
 // data.title と data.markdown（見出し・箇条書き・表・段落）から文書を作り、00_進行中/AI作成 に置いてURLを返す。
+// 智翔館AI が作ったファイル（数学の教材の Word など）を、そのまま「AI作成」フォルダに保存する。
+// files = [{ name, mime, base64 }]（最大4つ・合わせて 20MB まで）。Google ドキュメントには変換しない（書体・配置を崩さないため）。
+function saveAiFiles_(data) {
+  var files = Array.isArray(data.files) ? data.files.slice(0, 4) : [];
+  if (!files.length) return { ok: false, reason: 'empty' };
+  var total = 0;
+  for (var i = 0; i < files.length; i++) total += String(files[i].base64 || '').length;
+  if (total > 27000000) return { ok: false, reason: 'too_large' };
+  var folder;
+  try { folder = aiOutputFolder_(); } catch (e) { return { ok: false, reason: 'folder_failed', detail: String(e).slice(0, 200) }; }
+  var stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+  var out = [];
+  try {
+    for (var k = 0; k < files.length; k++) {
+      var f = files[k] || {};
+      var name = stamp + '_AI作成_' + String(f.name || 'ファイル').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 100);
+      var blob = Utilities.newBlob(Utilities.base64Decode(String(f.base64 || '')), String(f.mime || 'application/octet-stream'), name);
+      var file = folder.createFile(blob);
+      if (AI_OUTPUT_SHARING === 'view') file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      if (AI_OUTPUT_SHARING === 'edit') file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
+      out.push({ name: name, url: file.getUrl() });
+    }
+  } catch (e) {
+    return { ok: false, reason: 'create_failed', detail: String(e).slice(0, 200) };
+  }
+  return { ok: true, saved: 'aiFiles', files: out };
+}
+
 function createAiDoc_(data) {
   var title = String(data.title || '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 80);
   var md = String(data.markdown || '');
