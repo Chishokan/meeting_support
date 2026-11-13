@@ -493,7 +493,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
                 <div>
                   <div className={`bubble md-bubble${m.error ? ' ai-error' : ''}`}>
                     {m.content ? (
-                      <AiMarkdown text={m.content} onChoose={isLast && !busy ? (c) => ask(c) : undefined} />
+                      <AiMarkdown text={m.content} onChoose={isLast && !busy ? (c) => ask(c) : undefined} streaming={streaming} />
                     ) : (
                       <span className="ai-status">{m.status || '考えています…'}</span>
                     )}

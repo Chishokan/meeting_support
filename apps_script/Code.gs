@@ -2313,7 +2313,7 @@ function createAiDoc_(data) {
   body.appendParagraph('智翔館AIが作った下書きです（依頼：' + String(data.campus || '') + '／' + String(data.user || '') + '、' +
     Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm') + '）。数字・日付・方針は担当者が確認してから使ってください。')
     .setItalic(true);
-  aiAppendMarkdown_(body, md);
+  aiAppendMarkdown_(body, md, Array.isArray(data.images) ? data.images : []);
   // DocumentApp.create の最初の空段落を消す
   try { if (body.getNumChildren() > 1 && body.getChild(0).asText().getText() === '') body.removeChild(body.getChild(0)); } catch (e) {}
   doc.saveAndClose();
@@ -2647,8 +2647,10 @@ function createAiSlides_(data) {
   return { ok: true, saved: 'aiSlides', name: name, url: 'https://docs.google.com/presentation/d/' + copy.getId() + '/edit', warnings: warnings.slice(0, 30) };
 }
 
-// 素朴な Markdown（# 見出し、- 箇条書き、1. 番号、| 表 |、段落、[改ページ]）を文書にする。**太字** の記号は外す。
-function aiAppendMarkdown_(body, md) {
+// 素朴な Markdown（# 見出し、- 箇条書き、1. 番号、| 表 |、段落、[改ページ]、[図:n]）を文書にする。**太字** の記号は外す。
+// [図:n] の行には、アプリが PNG にした n 番目の図（images[n-1] = { base64, width, height, caption }）を中央に入れる。
+function aiAppendMarkdown_(body, md, images) {
+  images = images || [];
   var lines = md.replace(/\r\n/g, '\n').split('\n');
   var table = [];
   function clean(s) { return s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1'); }
@@ -2676,6 +2678,9 @@ function aiAppendMarkdown_(body, md) {
     if (!line.trim()) continue;
     // [改ページ] だけの行で次のページへ（数学の教材で、問題と解答・解説を分けるときなど）
     if (/^\s*[\[［]改ページ[\]］]\s*$/.test(line)) { body.appendPageBreak(); continue; }
+    // [図:n] の行に図の画像を入れる
+    var fm = /^\s*[\[［]図[:：](\d+)[\]］]\s*$/.exec(line);
+    if (fm) { aiAppendFigure_(body, images[Number(fm[1]) - 1], Number(fm[1])); continue; }
     if ((m = /^(#{1,3})\s+(.*)$/.exec(line))) {
       var h = [DocumentApp.ParagraphHeading.HEADING1, DocumentApp.ParagraphHeading.HEADING2, DocumentApp.ParagraphHeading.HEADING3][m[1].length - 1];
       body.appendParagraph(clean(m[2])).setHeading(h);
@@ -2688,6 +2693,27 @@ function aiAppendMarkdown_(body, md) {
     }
   }
   flushTable();
+}
+
+// 図の画像を中央に入れ、下に見出し（図1 など）を付ける。画像が無いときは〔図n〕の行だけ残す。
+function aiAppendFigure_(body, img, n) {
+  if (!img || !img.base64) {
+    body.appendParagraph('〔図' + n + '：画像を入れられませんでした〕').setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+    return;
+  }
+  try {
+    var blob = Utilities.newBlob(Utilities.base64Decode(img.base64), 'image/png', 'figure' + n + '.png');
+    var inline = body.appendImage(blob);
+    if (img.width > 0 && img.height > 0) inline.setWidth(img.width).setHeight(img.height);
+    inline.getParent().asParagraph().setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+    if (img.caption) {
+      var cap = body.appendParagraph(String(img.caption));
+      cap.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+      cap.editAsText().setFontSize(10);
+    }
+  } catch (e) {
+    body.appendParagraph('〔図' + n + '：画像を入れられませんでした〕').setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  }
 }
 
 // ---- 智翔館AI：Google ドライブのファイルを読む ---------------------------------

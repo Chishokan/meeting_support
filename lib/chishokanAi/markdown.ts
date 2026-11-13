@@ -290,6 +290,12 @@ export function toPlainText(md: string): string {
     } else if (b.t === 'code') {
       // 選択肢の枠は、押すボタンなのでコピーには入れない
       if (b.lang === '選択肢' || b.lang.toLowerCase() === 'choices') continue;
+      // 図の枠は、中身（JSON）ではなく〔図〕とだけ書く（画像は「画像を保存」で別に保存する）
+      if (b.lang === '図' || b.lang.toLowerCase() === 'figure') {
+        const cap = /"caption"\s*:\s*"([^"]{0,40})"/.exec(b.v)?.[1];
+        out.push(`〔図${cap ? `：${cap}` : ''}〕`);
+        continue;
+      }
       out.push(b.v);
     }
     else if (b.t === 'hr') out.push('――――――――');

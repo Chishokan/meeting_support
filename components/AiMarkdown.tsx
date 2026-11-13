@@ -6,6 +6,69 @@
 
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { parseMarkdown, type Block, type Inline } from '@/lib/chishokanAi/markdown';
+import { isFigureLang, parseFigure, renderFigureSvg } from '@/lib/chishokanAi/figure';
+
+/** SVG の図を PNG（2倍の解像度）にして保存する。先生が自分のプリントに貼れるように。 */
+async function saveFigurePng(svg: string, width: number, height: number, name: string) {
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+  try {
+    const img = new Image();
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res();
+      img.onerror = () => rej(new Error('load'));
+      img.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = width * 2;
+    canvas.height = height * 2;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const png = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
+    if (!png) return;
+    const href = URL.createObjectURL(png);
+    const a = document.createElement('a');
+    a.href = href;
+    // 日本語のファイル名は、ブラウザによって使われないことがあるので英数字にする（図1 → figure1.png）
+    a.download = `${(name || '図').replace(/図/g, 'figure').replace(/[^\w.-]+/g, '') || 'figure'}.png`;
+    // ページに置いてから押さないと、ブラウザによってはファイル名が使われない
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// 数学の図（```図 の枠）。中身は座標と短い文字だけの JSON で、SVG はこちらで作る（AI の SVG や HTML は使わない）。
+function FigureBlock({ source, final }: { source: string; final: boolean }) {
+  const r = useMemo(() => {
+    const p = parseFigure(source);
+    return p.ok ? { ok: true as const, caption: p.spec.caption ?? '', ...renderFigureSvg(p.spec) } : { ok: false as const, error: p.error };
+  }, [source]);
+  if (!r.ok) {
+    return final ? (
+      <div className="md-figure md-figure-error">図を描けませんでした（{r.error}）</div>
+    ) : (
+      <div className="md-figure md-figure-wait">図を描いています…</div>
+    );
+  }
+  return (
+    <figure className="md-figure">
+      {/* renderFigureSvg は数値と、エスケープした文字だけで SVG を作る */}
+      <div className="md-figure-svg" style={{ maxWidth: r.width }} dangerouslySetInnerHTML={{ __html: r.svg }} />
+      <figcaption>
+        {r.caption && <span>{r.caption}</span>}
+        <button type="button" className="md-copy" onClick={() => saveFigurePng(r.svg, r.width, r.height, r.caption)}>
+          画像を保存
+        </button>
+      </figcaption>
+    </figure>
+  );
+}
 
 /** クリップボードに文字を写す。https でない画面や古いブラウザでは、選択してコピーする方法に切り替える。 */
 export async function copyText(text: string): Promise<boolean> {
@@ -97,7 +160,8 @@ export function choiceItems(v: string): string[] {
     .slice(0, 6);
 }
 
-function renderBlock(b: Block, i: number, onChoose?: (text: string) => void): ReactNode {
+function renderBlock(b: Block, i: number, onChoose?: (text: string) => void, final = true): ReactNode {
+  if (b.t === 'code' && isFigureLang(b.lang)) return <FigureBlock key={i} source={b.v} final={final} />;
   if (b.t === 'code' && isChoices(b)) {
     return (
       <div key={i} className="md-choices">
@@ -161,9 +225,10 @@ function renderBlock(b: Block, i: number, onChoose?: (text: string) => void): Re
 
 // 会話が長くなっても、変わっていない回答は描き直さない。
 // onChoose を渡したときだけ、選択肢のボタンが押せる（いちばん新しい回答だけに渡す）。
-function AiMarkdown({ text, onChoose }: { text: string; onChoose?: (text: string) => void }) {
+// streaming のあいだは、書きかけの図を「描いています」と出す（JSON が閉じるまで読めないため）。
+function AiMarkdown({ text, onChoose, streaming = false }: { text: string; onChoose?: (text: string) => void; streaming?: boolean }) {
   const blocks = useMemo(() => parseMarkdown(text), [text]);
-  return <div className="md">{blocks.map((b, i) => renderBlock(b, i, onChoose))}</div>;
+  return <div className="md">{blocks.map((b, i) => renderBlock(b, i, onChoose, !streaming || i < blocks.length - 1))}</div>;
 }
 
 export default memo(AiMarkdown);

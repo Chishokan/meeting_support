@@ -83,3 +83,7 @@ test('toPlainText: 記号を外し、表はタブ区切り、コード枠は中�
 test('toPlainText：選択肢の枠はコピーに入れない', () => {
   assert.equal(toPlainText('どれにしますか。\n\n```選択肢\n中1・2\n中3\n```'), 'どれにしますか。');
 });
+
+test('toPlainText：図の枠は〔図：見出し〕とだけ書く', () => {
+  assert.equal(toPlainText('問題です。\n\n```図\n{"caption":"図1","range":[0,0,1,1]}\n```'), '問題です。\n\n〔図：図1〕');
+});
