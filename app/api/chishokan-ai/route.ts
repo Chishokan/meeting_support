@@ -10,7 +10,7 @@
 //   文章の断片、作業中の表示（📄 …を読んでいます）、読んだ資料、次の質問に持ち越す資料、出典の注意、途中で切れた知らせ。
 // 会話の持ち越し：画面が覚えている「前に読んだナレッジのパス」と「文字にした資料」を受け取り、ナレッジは読み直して
 // （確定していない要項などは読まない関門を通す）、今回の質問と一緒に AI に渡す。
-// 停止：画面が通信を切ったら、AI への問い合わせも止める。時間切れ：60秒の制限の手前で止め、「途中で切れました」を送る。
+// 停止：画面が通信を切ったら、AI への問い合わせも止める。時間切れ：300秒の制限の手前で止め、「途中で切れました」を送る。
 
 import Anthropic from '@anthropic-ai/sdk';
 import { promises as fs } from 'node:fs';
@@ -47,20 +47,24 @@ import {
 const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
 
 export const runtime = 'nodejs';
-// ★実行時間の上限（秒）。Vercel のプランで延ばせるなら、ここと下の LIMIT_MS を一緒に上げる。
-export const maxDuration = 60;
-const LIMIT_MS = 60_000;
+// ★実行時間の上限（秒）。Vercel の Fluid compute が有効なら、Hobby は 300 秒まで、Pro は 800 秒まで延ばせる
+//   （Fluid compute が無効だと Hobby は 60 秒まで。超える値にするとデプロイが失敗する）。
+//   変えるときは、ここと下の LIMIT_MS を一緒に変える。
+export const maxDuration = 300;
+const LIMIT_MS = 300_000;
 
 const client = new Anthropic();
 
 // ツールを使う往復の上限。
-const MAX_ROUNDS = 6;
-const MAX_TOOL_CALLS = 10;
+const MAX_ROUNDS = 10;
+const MAX_TOOL_CALLS = 20;
+const MAX_DRIVE_READS = 12;
 // これを過ぎたら道具を使わせず、わかった範囲で書かせる（書く時間を残す）。
-const TOOL_BUDGET_MS = 35_000;
+const TOOL_BUDGET_MS = 150_000;
 // 制限の手前で止めて「途中で切れました」を送る（Vercel に打ち切られると、画面には何も届かない）。
-const HARD_STOP_MS = LIMIT_MS - 6_000;
-const MAX_TOKENS = 8000;
+// 止めたあとの後片付け（会話ログの保存）の時間を残す。
+const HARD_STOP_MS = LIMIT_MS - 10_000;
+const MAX_TOKENS = 16_000;
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };
@@ -247,9 +251,9 @@ export async function POST(req: Request) {
             if (toolCalls > MAX_TOOL_CALLS) {
               out = 'ツールの上限に達しました。ここまでにわかった範囲で答えてください。';
             } else if (block.name === 'list_drive_folder' || block.name === 'read_drive_file') {
-              // ドライブを読むのは1回の回答で合わせて6回まで（60秒の制限に収めるため）
-              if (driveToolReads.length >= 6) {
-                out = 'ドライブの読み込みは1回の回答で6回までです。ここまでにわかった範囲で答えてください。';
+              // ドライブを読むのは1回の回答で合わせて MAX_DRIVE_READS 回まで（1回に数秒かかるため）
+              if (driveToolReads.length >= MAX_DRIVE_READS) {
+                out = `ドライブの読み込みは1回の回答で${MAX_DRIVE_READS}回までです。ここまでにわかった範囲で答えてください。`;
               } else {
                 const r = await runDriveTool(block.name, input);
                 if (r.read) driveToolReads.push(r.read);
