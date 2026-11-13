@@ -26,6 +26,16 @@ export const MANUALS: ManualDoc[] = [
     meta: 'v1.0.0｜PDF・A4・11ページ｜約1.2MB',
   },
   {
+    id: 'login-video',
+    title: '動画：共通ログインの使い方',
+    desc: 'パスワードの決め方、メールアドレスでのログイン、給与アプリとの行き来、困ったときを、画面と音声で説明します',
+    kind: 'video',
+    href: '/manual/login.mp4',
+    downloadName: '共通ログインの使い方_動画マニュアル.mp4',
+    meta: '約3分｜MP4｜約7MB',
+    poster: '/manual/login-poster.jpg',
+  },
+  {
     id: 'meeting-dx',
     title: '会議DX 操作マニュアル',
     desc: '会議DXのメニュー画面・部門会議と、ヘルプデスク（要項QA・ご意見・不具合の報告・マニュアル）の使い方。画面の写真つき',
