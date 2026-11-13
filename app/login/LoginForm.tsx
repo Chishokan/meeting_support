@@ -80,7 +80,7 @@ export default function LoginForm({ hubReady, legacy, forgotUrl }: { hubReady: b
       <div className="wrap">
         <form className="card" onSubmit={submitHub}>
           <h1>智翔館アプリ</h1>
-          <p className="sub">給与アプリと同じメールアドレス・パスワードでログインします</p>
+          <p className="sub">メールアドレスとパスワードでログインします</p>
           {notice && <div className="err">{notice}</div>}
 
           {depts.length === 0 ? (

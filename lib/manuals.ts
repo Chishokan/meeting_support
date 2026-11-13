@@ -17,9 +17,18 @@ export type ManualDoc = {
 
 export const MANUALS: ManualDoc[] = [
   {
+    id: 'login-basic',
+    title: 'ログイン 利用マニュアル',
+    desc: 'メールアドレスとパスワードでのログインと、はじめにパスワードを決める手順、困ったときの対処（社員全員向け）',
+    kind: 'pdf',
+    href: '/manual/login-basic-manual-v1.0.0.pdf',
+    downloadName: 'ログイン利用マニュアル_v1.0.0.pdf',
+    meta: 'v1.0.0｜PDF・A4・9ページ｜約1.1MB',
+  },
+  {
     id: 'login',
-    title: '共通ログイン 利用マニュアル',
-    desc: 'メールアドレスとパスワードでのログイン、はじめにパスワードを決める手順、給与アプリとの行き来、困ったときの対処',
+    title: '共通ログイン 利用マニュアル（給与アプリを使う方）',
+    desc: '上の内容に加えて、給与アプリ（給与・シフト、講師育成）との行き来。給与アプリも使う管理者などの方向け',
     kind: 'pdf',
     href: '/manual/login-manual-v1.0.0.pdf',
     downloadName: '共通ログイン利用マニュアル_v1.0.0.pdf',
@@ -28,7 +37,7 @@ export const MANUALS: ManualDoc[] = [
   {
     id: 'login-video',
     title: '動画：共通ログインの使い方',
-    desc: 'パスワードの決め方、メールアドレスでのログイン、給与アプリとの行き来、困ったときを、画面と音声で説明します',
+    desc: 'パスワードの決め方、メールアドレスでのログイン、給与アプリとの行き来（給与アプリを使う方）、困ったときを、画面と音声で説明します',
     kind: 'video',
     href: '/manual/login.mp4',
     downloadName: '共通ログインの使い方_動画マニュアル.mp4',

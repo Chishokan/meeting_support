@@ -9,6 +9,8 @@ import { canUseInterview, interviewAppUrl, INTERVIEW_DEPTS, type InterviewDept }
 import { APTITUDE_DEPTS, canUseAptitude } from './aptitude/access';
 import { canUseChishokanAi } from './chishokanAi/access';
 import { hubConfigured } from './core/hub';
+import { canUseColor } from './colorAccess';
+import type { HubRole } from './core/auth';
 
 // 面談管理は別アプリ（面談予約システム）の管理画面。部門ごとに URL が分かれている。
 // 管理画面にはログインの仕組みが無く、カードは管理画面の URL をそのまま開く。
@@ -33,8 +35,9 @@ export type PortalApp = {
   desc: string;
   href: string;
   status: 'ready' | 'soon';
-  canUse?: (campus: string, name: string) => boolean;
+  canUse?: (campus: string, name: string, role?: HubRole) => boolean;
   deniedNote?: string; // canUse で弾かれた人に出す一言
+  hideIfDenied?: boolean; // canUse で弾かれた人にはカードそのものを出さない
   external?: boolean;
 };
 
@@ -97,6 +100,7 @@ export const PORTAL_APPS: PortalApp[] = [
     status: 'ready',
   },
   // 給与アプリ（Color HRM）へ、ログインしたまま移る（統合計画 第3段階）。
+// 給与アプリを使う人（管理者と COLOR_APP_MEMBERS。lib/colorAccess.ts）にだけ出す。
   // /api/auth/to-color が一回限りのリンクを発行して移す。従来の入り方でログインした人は、ログインし直しになる。
   {
     id: 'color-pay',
@@ -105,6 +109,8 @@ export const PORTAL_APPS: PortalApp[] = [
     href: '/api/auth/to-color?next=pay',
     status: hubConfigured() ? 'ready' : 'soon',
     external: true,
+    canUse: (_campus, name, role) => canUseColor(name, role),
+    hideIfDenied: true,
   },
   {
     id: 'color-hrm',
@@ -113,5 +119,7 @@ export const PORTAL_APPS: PortalApp[] = [
     href: '/api/auth/to-color?next=hrm',
     status: hubConfigured() ? 'ready' : 'soon',
     external: true,
+    canUse: (_campus, name, role) => canUseColor(name, role),
+    hideIfDenied: true,
   },
 ];
