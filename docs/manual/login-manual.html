@@ -1,0 +1,419 @@
+<title>智翔館アプリ 共通ログイン 利用マニュアル</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+/* 縦1段の手引き。画面の写真に付けた赤い番号と、本文の赤い番号を対応させて読む。 */
+:root {
+  --bg: #f4f6f8;
+  --paper: #ffffff;
+  --ink: #1c2430;
+  --muted: #5b6573;
+  --navy: #1f4e78;
+  --navy-soft: #e8f0f8;
+  --line: #dde2e8;
+  --mark: #e0262f;
+  --warn-bg: #fff5e6;
+  --warn-line: #d98a1c;
+  --shot-frame: #cfd6de;
+  --font: 'BIZ UDPGothic', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+    --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+    --shot-frame: #3a4553; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+  --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+  --shot-frame: #3a4553; color-scheme: dark;
+}
+
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font); font-size: 15.5px; line-height: 1.85;
+  font-variant-numeric: tabular-nums;
+}
+.page {
+  max-width: 880px; margin: 0 auto;
+  padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px;
+}
+.sheet {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+  padding: clamp(20px, 4vw, 40px); min-width: 0;
+}
+
+/* 表紙 */
+.cover { display: grid; gap: 18px; }
+.cover .org { font-size: 13px; letter-spacing: .12em; color: var(--muted); }
+.cover h1 { margin: 0; font-size: clamp(28px, 5vw, 40px); line-height: 1.3; text-wrap: balance; color: var(--navy); }
+.cover .lead { margin: 0; max-width: 40em; }
+.cover dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 18px; font-size: 14px; }
+.cover dt { color: var(--muted); }
+.cover dd { margin: 0; }
+.note-sample { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; margin: 0; }
+
+/* 目次 */
+.toc h2 { font-size: 18px; margin: 0 0 10px; }
+.toc ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 14px; }
+.toc > ol > li > a { font-weight: 700; }
+.toc ol ol { display: grid; gap: 2px; margin-top: 4px; padding-left: 1.2em; font-size: 14px; }
+.toc a { color: var(--ink); text-decoration: none; }
+.toc a:hover, .toc a:focus-visible { color: var(--navy); text-decoration: underline; }
+
+/* 見出し */
+.chapter { display: grid; gap: 22px; }
+.chapter > header { display: grid; gap: 6px; border-bottom: 3px solid var(--navy); padding-bottom: 12px; }
+.eyebrow { font-size: 13px; letter-spacing: .14em; color: var(--navy); font-weight: 700; }
+.chapter h2 { margin: 0; font-size: clamp(22px, 3.6vw, 28px); line-height: 1.35; text-wrap: balance; }
+.chapter > header p { margin: 0; color: var(--muted); }
+section.sec { display: grid; gap: 14px; min-width: 0; }
+section.sec + section.sec { border-top: 1px solid var(--line); padding-top: 24px; }
+h3 { margin: 0; font-size: 19px; line-height: 1.45; text-wrap: balance; display: flex; gap: 10px; align-items: baseline; }
+h3 .no { color: var(--navy); font-size: 15px; flex: none; }
+h4 { margin: 6px 0 0; font-size: 16px; }
+p { margin: 0; }
+a { color: var(--navy); }
+
+/* 画面写真の赤い番号と同じ形 */
+.n {
+  display: inline-grid; place-items: center; flex: none;
+  width: 1.6em; height: 1.6em; border-radius: 50%;
+  background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 1;
+  vertical-align: .05em;
+}
+.btn {
+  display: inline-block; padding: 0 .5em; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--navy-soft); color: var(--navy); font-weight: 700; font-size: .92em; line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* 写真 */
+figure { margin: 0; display: grid; gap: 8px; break-inside: avoid; min-width: 0; }
+figure img {
+  display: block; width: 100%; max-width: 100%; height: auto;
+  border: 1px solid var(--shot-frame); border-radius: 10px; background: #fff;
+}
+figcaption { font-size: 13px; color: var(--muted); }
+.video video { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--shot-frame); background: #0e1520; }
+.print-only { display: none; }
+.fig-narrow img { max-width: 520px; }
+.fig-card img { max-width: 480px; }
+.side-by-side { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px; align-items: start; }
+.w-sidebar { width: 238px; }
+.w-side { width: 340px; }
+.phones { display: flex; flex-wrap: wrap; gap: 20px; }
+.phones figure { width: min(240px, 100%); }
+
+/* 番号の説明 */
+.legend { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.legend li { display: grid; grid-template-columns: 1.6em 1fr; gap: 10px; align-items: start; }
+.legend .n { margin-top: .2em; font-size: 13px; }
+.legend b { font-weight: 700; }
+
+/* 手順 */
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: st; display: grid; gap: 10px; }
+.steps > li { counter-increment: st; display: grid; grid-template-columns: 2em 1fr; gap: 8px; }
+.steps > li::before {
+  content: counter(st); width: 1.75em; height: 1.75em; border-radius: 6px; margin-top: .15em;
+  display: grid; place-items: center; background: var(--navy); color: var(--paper); font-weight: 700; font-size: 14px;
+}
+ul.plain { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
+
+/* 補足 */
+.box { border-radius: 10px; padding: 14px 18px; display: grid; gap: 6px; border: 1px solid var(--line); }
+.box > .box-title { font-weight: 700; font-size: 14px; letter-spacing: .04em; }
+.box.tip { background: var(--navy-soft); border-color: transparent; }
+.box.tip > .box-title { color: var(--navy); }
+.box.warn { background: var(--warn-bg); border-color: transparent; border-left: 4px solid var(--warn-line); }
+.box.warn > .box-title { color: var(--warn-line); }
+.box.recommend { border: 2px solid var(--navy); }
+.box.recommend > .box-title { color: var(--navy); font-size: 15px; }
+
+/* 流れ図 */
+.loop { display: grid; gap: 10px; }
+.loop ol { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.loop li {
+  position: relative; border: 1.5px solid var(--navy); border-radius: 10px; padding: 10px 12px;
+  display: grid; gap: 2px; background: var(--paper);
+}
+.loop li .k { font-size: 12px; color: var(--navy); font-weight: 700; letter-spacing: .08em; }
+.loop li .t { font-weight: 700; line-height: 1.4; }
+.loop li .d { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.loop li:not(:last-child)::after {
+  content: "→"; position: absolute; right: -10px; top: 50%; transform: translate(50%, -50%);
+  color: var(--navy); font-weight: 700; background: var(--paper); line-height: 1;
+}
+.loop .back {
+  border: 1.5px dashed var(--navy); border-radius: 10px; padding: 6px 12px; text-align: center;
+  color: var(--navy); font-weight: 700; font-size: 14px;
+}
+
+/* 表 */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+th { background: var(--navy-soft); color: var(--ink); font-weight: 700; }
+td.num { white-space: nowrap; font-weight: 700; }
+
+footer.end { text-align: center; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 680px) {
+  .side-by-side { grid-template-columns: minmax(0, 1fr); }
+  .w-sidebar, .w-side { width: auto; max-width: min(340px, 100%); }
+  .loop ol { grid-template-columns: 1fr 1fr; }
+  .loop li:nth-child(2)::after { content: none; }
+}
+@media (max-width: 420px) {
+  .loop ol { grid-template-columns: 1fr; }
+  .loop li::after { content: none !important; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+@media print {
+  :root { --bg: #fff; }
+  body { font-size: 10.5pt; line-height: 1.75; }
+  .page { max-width: none; padding: 0; gap: 0; }
+  .sheet { border: 0; border-radius: 0; padding: 0; }
+  .cover { min-height: 240mm; align-content: center; }
+  .toc, .chapter { break-before: page; }
+  section.sec { break-before: auto; }
+  .page, .cover, .chapter, section.sec, figure { display: block; }
+  .chapter > * + *, section.sec > * + * { margin-top: 12px; }
+  .chapter > header + * { margin-top: 18px; }
+  section.sec + section.sec { margin-top: 22px; }
+  .cover > * + * { margin-top: 14px; }
+  figcaption { margin-top: 4px; }
+  h3, h4 { break-after: avoid; }
+  figure, .box, .loop, table, .legend li { break-inside: avoid; }
+  figure img { max-height: 200mm; width: auto; max-width: 100%; }
+  .side-by-side { display: flow-root; }
+  .side-by-side > figure { float: left; margin: 0 8mm 4mm 0; }
+  .side-by-side > figure img { width: 100%; max-height: none; }
+  .w-sidebar { width: 60mm; }
+  .w-side { width: 78mm; }
+  a { color: var(--ink); text-decoration: none; }
+  footer.end { display: none; }
+  .video { display: none; }
+  .print-only { display: block; color: var(--muted); }
+}
+.fig-login img { max-width: 560px; }
+.fig-color img { max-width: 420px; }
+.fig-bar img { max-width: 520px; }
+.mail { font-family: var(--font); white-space: pre-wrap; background: var(--paper); border: 1px dashed var(--shot-frame); border-radius: 10px; padding: 14px 18px; font-size: 14px; line-height: 1.75; margin: 0; }
+@media print { .fig-login img { width: 120mm; } .fig-color img { width: 85mm; } .fig-bar img { width: 110mm; } }
+</style>
+
+<div class="page">
+
+<header class="sheet cover" id="top">
+  <div class="org">株式会社智翔館　社内向け</div>
+  <h1>智翔館アプリ<br>共通ログイン 利用マニュアル</h1>
+  <p class="lead">智翔館アプリに、<b>給与アプリ（Color）と同じメールアドレスとパスワード</b>でログインできるようになりました。このマニュアルでは、はじめにパスワードを決める手順、ログインのしかた、給与アプリとの行き来、困ったときの対処をまとめています。</p>
+  <dl>
+    <dt>対象</dt><dd>社員（管理者・社員（教室担当者）・社員（授業担当者））</dd>
+    <dt>アプリ</dt><dd>智翔館アプリ v1.0.0／給与アプリ（Color HRM・給与・シフト）</dd>
+    <dt>最新版</dt><dd>智翔館アプリのヘルプデスク「マニュアル」タブからダウンロードできます</dd>
+    <dt>作成</dt><dd>2026年11月</dd>
+  </dl>
+  <p class="note-sample">※ 写真に写っている氏名・メールアドレスは、説明のために用意した架空の例です。</p>
+</header>
+
+<nav class="sheet toc" aria-label="目次">
+  <h2>目次</h2>
+  <ol>
+    <li><a href="#ch1">第1章　何が変わるのか</a></li>
+    <li><a href="#ch2">第2章　はじめにパスワードを決める</a>
+      <ol>
+        <li><a href="#s2-1">2-1　給与アプリのパスワードを知っている人</a></li>
+        <li><a href="#s2-2">2-2　「パスワードの設定のお願い」のメールが届いた人</a></li>
+        <li><a href="#s2-3">2-3　メールが届いていない・リンクの期限が切れた人</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch3">第3章　ログインのしかた</a>
+      <ol>
+        <li><a href="#s3-1">3-1　メールアドレスとパスワードでログインする</a></li>
+        <li><a href="#s3-2">3-2　兼務の人は部門を選ぶ</a></li>
+        <li><a href="#s3-3">3-3　メニュー画面</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch4">第4章　給与アプリとの行き来</a></li>
+    <li><a href="#ch5">第5章　困ったとき</a></li>
+  </ol>
+</nav>
+
+<article class="sheet chapter" id="ch1">
+  <header>
+    <div class="eyebrow">第1章</div>
+    <h2>何が変わるのか</h2>
+  </header>
+  <ul class="plain">
+    <li><b>ログインのしかたが変わります。</b>これまでの「事業部とお名前を選ぶ」入り方から、<b>メールアドレスとパスワード</b>で入る形になります。</li>
+    <li><b>給与アプリ（Color）と同じアカウントです。</b>メールアドレスもパスワードも、給与アプリ（採用・育成、給与・シフト）と同じものを使います。パスワードを変えると、両方のアプリで変わります。</li>
+    <li><b>アプリの行き来でログインし直す必要がなくなります。</b>智翔館アプリのメニューから給与アプリを開くと、ログインしたまま開きます。給与アプリから智翔館アプリへ戻るときも同じです。</li>
+    <li><b>智翔館アプリに入れるのは社員だけです。</b>スタッフ（講師・アルバイト）の方は、これまでどおり給与アプリに直接ログインしてください。</li>
+  </ul>
+  <div class="box warn">
+    <div class="box-title">移行期間について</div>
+    <p>切り替えてから約2週間は、ログイン画面の下の「<b>メールアドレスでのログインがまだの方（従来の入り方）</b>」から、これまでどおり事業部とお名前を選んで入ることもできます。移行期間が終わる日はあらためてお知らせします。それまでに、メールアドレスでログインできることを確かめておいてください。</p>
+  </div>
+</article>
+
+<article class="sheet chapter" id="ch2">
+  <header>
+    <div class="eyebrow">第2章</div>
+    <h2>はじめにパスワードを決める</h2>
+    <p>パスワードは、管理者が決めてお伝えするのではなく、ご自身で決めます。メールにパスワードが書かれることはありません。</p>
+  </header>
+
+  <section class="sec" id="s2-1">
+    <h3><span class="no">2-1</span>給与アプリのパスワードを知っている人</h3>
+    <p>給与アプリ（Color）にいつもログインしている人は、<b>その同じメールアドレスとパスワード</b>で智翔館アプリにもログインできます。新しく決める必要はありません。<a href="#ch3">第3章</a>へ進んでください。</p>
+  </section>
+
+  <section class="sec" id="s2-2">
+    <h3><span class="no">2-2</span>「パスワードの設定のお願い」のメールが届いた人</h3>
+    <p>給与アプリを使っていなかった人や、パスワードが分からない人には、管理者から次のようなメールが届きます。</p>
+    <pre class="mail">件名：【智翔館】ログイン用パスワードの設定のお願い
+
+智翔 太郎 様
+
+智翔館アプリと給与アプリ（給与・シフト／講師育成）は、同じメールアドレスとパスワードでログインできるようになりました。
+下のリンクを開いて、ご自身でパスワードを決めてください。
+
+パスワードを決める: https://chishokan.co.jp/colorhrm/password_setup.php?token=……
+（このリンクは7日有効で、一度だけ使えます）
+
+ログインID（メールアドレス）: taro@example.com</pre>
+    <ol class="steps">
+      <li><div>メールの「<b>パスワードを決める</b>」のリンクを開きます。</div></li>
+      <li><div>「新しいパスワード」と「もう一度入力」に、同じパスワードを入れます。<b>8文字以上で、英字と数字を両方</b>含めてください。メールアドレスと同じものは使えません。</div></li>
+      <li><div><span class="btn">このパスワードにする</span>を押します。「パスワードを設定しました」と出たら完了です。<span class="btn">智翔館アプリへ</span>から、そのままログイン画面へ進めます。</div></li>
+    </ol>
+    <div class="side-by-side">
+      <figure class="fig-color"><img src="images/login/04_pw_setup.png" alt="パスワードを決める画面"><figcaption>図1　パスワードを決める画面</figcaption></figure>
+      <figure class="fig-color"><img src="images/login/05_pw_done.png" alt="パスワードを設定しましたの画面"><figcaption>図2　設定が済んだ画面</figcaption></figure>
+    </div>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <p>リンクは<b>7日間・一度だけ</b>使えます。期限が切れたときや、もう一度決め直したいときは、2-3 の手順で再設定のメールを頼めます。</p>
+    </div>
+  </section>
+
+  <section class="sec" id="s2-3">
+    <h3><span class="no">2-3</span>メールが届いていない・リンクの期限が切れた人</h3>
+    <p>自分で再設定のメールを頼めます。パスワードを忘れたときも同じ手順です。</p>
+    <ol class="steps">
+      <li><div>智翔館アプリのログイン画面で「<b>パスワードを忘れた方・まだ決めていない方</b>」を押します（給与アプリのログイン画面では「パスワードを忘れた方」）。</div></li>
+      <li><div>ログインに使うメールアドレスを入れて<span class="btn">再設定のメールを送る</span>を押します。</div></li>
+      <li><div>届いたメールのリンクを開き、2-2 と同じ手順でパスワードを決めます。このリンクは<b>2時間</b>有効です。</div></li>
+    </ol>
+    <figure class="fig-color"><img src="images/login/06_forgot.png" alt="パスワードを忘れた方の画面"><figcaption>図3　パスワードを忘れた方の画面</figcaption></figure>
+    <div class="box warn">
+      <div class="box-title">メールが届かないとき</div>
+      <p>数分たっても届かないときは、迷惑メールのフォルダを確かめてください。それでも届かないときは、登録されているメールアドレスが違う可能性があります。管理者にお問い合わせください（画面には、登録されているかどうかは表示されません）。</p>
+    </div>
+  </section>
+</article>
+
+<article class="sheet chapter" id="ch3">
+  <header>
+    <div class="eyebrow">第3章</div>
+    <h2>ログインのしかた</h2>
+  </header>
+
+  <section class="sec" id="s3-1">
+    <h3><span class="no">3-1</span>メールアドレスとパスワードでログインする</h3>
+    <ol class="steps">
+      <li><div>智翔館アプリ（<b>https://meeting-support.vercel.app</b>）を開きます。ログイン画面が出ます。</div></li>
+      <li><div><b>メールアドレス</b>と<b>パスワード</b>を入れて、<span class="btn">ログイン</span>を押します。</div></li>
+    </ol>
+    <figure class="fig-login"><img src="images/login/01_login.png" alt="智翔館アプリのログイン画面"><figcaption>図4　智翔館アプリのログイン画面</figcaption></figure>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <p>一度ログインすると、同じ端末・同じブラウザでは<b>12時間</b>ログインしたままになります。共用のパソコンでは、使い終わったら右上の<span class="btn">ログアウト</span>を押してください。</p>
+    </div>
+  </section>
+
+  <section class="sec" id="s3-2">
+    <h3><span class="no">3-2</span>兼務の人は部門を選ぶ</h3>
+    <p>複数の部門を兼務している人は、ログインのあとに「<b>どの部門で使いますか</b>」と出ます。使う部門を選んで<span class="btn">この部門ではじめる</span>を押してください。会議DXなどは、ここで選んだ部門の内容になります。別の部門で使うときは、いったんログアウトして選び直します。</p>
+    <figure class="fig-login"><img src="images/login/02_choose_dept.png" alt="部門を選ぶ画面"><figcaption>図5　兼務の人が部門を選ぶ画面</figcaption></figure>
+  </section>
+
+  <section class="sec" id="s3-3">
+    <h3><span class="no">3-3</span>メニュー画面</h3>
+    <p>ログインすると、使うアプリを選ぶメニューが開きます。これまでのアプリに加えて、<b>給与・シフト</b>と<b>講師育成（キャリアパス）</b>のカードが増えました（第4章）。右上には、選んだ部門とお名前が出ます。</p>
+    <figure><img src="images/login/03_portal.png" alt="メニュー画面"><figcaption>図6　メニュー画面（下の段に「給与・シフト」「講師育成（キャリアパス）」）</figcaption></figure>
+  </section>
+</article>
+
+<article class="sheet chapter" id="ch4">
+  <header>
+    <div class="eyebrow">第4章</div>
+    <h2>給与アプリとの行き来</h2>
+    <p>どちらのアプリからも、ログインしたまま相手のアプリを開けます。</p>
+  </header>
+  <section class="sec">
+    <h3><span class="no">4-1</span>智翔館アプリ → 給与アプリ</h3>
+    <p>メニュー画面の<b>給与・シフト</b>または<b>講師育成（キャリアパス）</b>のカードを押します。新しいタブで給与アプリが開き、ログインした状態になっています。</p>
+  </section>
+  <section class="sec">
+    <h3><span class="no">4-2</span>給与アプリ → 智翔館アプリ</h3>
+    <p>給与アプリの画面の上の帯にある<span class="btn">智翔館アプリへ</span>を押します。智翔館アプリがログインした状態で開きます。</p>
+    <figure class="fig-bar"><img src="images/login/11_color_header.png" alt="給与アプリの上の帯"><figcaption>図7　給与アプリの上の帯（採用・育成の画面）</figcaption></figure>
+  </section>
+  <div class="box tip">
+    <div class="box-title">ポイント</div>
+    <p>移るときに使うリンクは<b>1分間・一度だけ</b>使えます。アドレスをコピーして後で開いたり、ほかの人に送ったりしても使えません。うまく開けないときは、もう一度ボタンを押してください。</p>
+  </div>
+  <div class="box warn">
+    <div class="box-title">従来の入り方でログインしているとき</div>
+    <p>「事業部とお名前を選ぶ」入り方でログインしているときに給与・シフトのカードを押すと、メールアドレスでログインし直すよう案内が出ます。メールアドレスとパスワードでログインしてから、もう一度押してください。</p>
+  </div>
+</article>
+
+<article class="sheet chapter" id="ch5">
+  <header>
+    <div class="eyebrow">第5章</div>
+    <h2>困ったとき</h2>
+  </header>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>画面に出る表示・状況</th><th>どうすればよいか</th></tr></thead>
+      <tbody>
+        <tr><td>メールアドレスまたはパスワードが違います。</td><td>入力を確かめてください（全角・半角、大文字・小文字、前後の空白）。分からなければ「パスワードを忘れた方・まだ決めていない方」から決め直します（2-3）。</td></tr>
+        <tr><td>ログインの失敗が続いたため、しばらくログインできません。</td><td>15分の間に10回まちがえると、しばらく止まります。15分ほど待つか、パスワードを決め直すとすぐに入れます。</td></tr>
+        <tr><td>智翔館アプリは社員の方のみ利用できます。</td><td>スタッフ（講師・アルバイト）のアカウントです。給与アプリ（Color）に直接ログインしてください。社員なのにこの表示が出るときは、管理者にお問い合わせください。</td></tr>
+        <tr><td>所属部門が登録されていません。</td><td>名簿に部門が入っていません。管理者にお問い合わせください。</td></tr>
+        <tr><td>このアカウントは無効になっています。</td><td>管理者にお問い合わせください。</td></tr>
+        <tr><td>このリンクは使えません（パスワード設定）</td><td>期限切れか、すでに使ったリンクです。2-3 の手順で再設定のメールを頼み直してください。</td></tr>
+        <tr><td>ログインを引き継げませんでした</td><td>アプリを移るリンクの期限（1分）が切れました。表示されたログイン画面からログインするか、もう一度ボタンを押してください。</td></tr>
+        <tr><td>再設定のメールが届かない</td><td>迷惑メールのフォルダを確かめてください。届かなければ、登録のメールアドレスが違う可能性があります。管理者にお問い合わせください。</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="side-by-side">
+    <figure class="fig-color"><img src="images/login/08_wrong_pw.png" alt="パスワードが違うときの表示"><figcaption>図8　パスワードが違うとき</figcaption></figure>
+    <figure class="fig-color"><img src="images/login/09_staff_denied.png" alt="スタッフのアカウントでログインしたときの表示"><figcaption>図9　スタッフのアカウントのとき</figcaption></figure>
+  </div>
+  <div class="box tip">
+    <div class="box-title">パスワードを安全に使うために</div>
+    <ul class="plain">
+      <li>パスワードは誰にも教えないでください。管理者がパスワードをお尋ねすることはありません。</li>
+      <li>メモやメールに書き残さないでください。ブラウザに保存するのは、自分だけが使う端末にしてください。</li>
+      <li>ほかのサービスと同じパスワードは使わないでください。</li>
+    </ul>
+  </div>
+  <p>ご不明な点や不具合は、ヘルプデスクの「ご意見・不具合の報告」からお知らせください。</p>
+</article>
+
+<footer class="end"><a href="#top">↑ 表紙へ戻る</a></footer>
+
+</div>

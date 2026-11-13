@@ -17,6 +17,15 @@ export type ManualDoc = {
 
 export const MANUALS: ManualDoc[] = [
   {
+    id: 'login',
+    title: '共通ログイン 利用マニュアル',
+    desc: 'メールアドレスとパスワードでのログイン、はじめにパスワードを決める手順、給与アプリとの行き来、困ったときの対処',
+    kind: 'pdf',
+    href: '/manual/login-manual-v1.0.0.pdf',
+    downloadName: '共通ログイン利用マニュアル_v1.0.0.pdf',
+    meta: 'v1.0.0｜PDF・A4・11ページ｜約1.2MB',
+  },
+  {
     id: 'meeting-dx',
     title: '会議DX 操作マニュアル',
     desc: '会議DXのメニュー画面・部門会議と、ヘルプデスク（要項QA・ご意見・不具合の報告・マニュアル）の使い方。画面の写真つき',
