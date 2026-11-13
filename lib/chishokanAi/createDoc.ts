@@ -3,7 +3,7 @@
 
 import { checkDocInput } from './createDocTool';
 import { callGas } from './gas';
-import { extractFigures } from './figure';
+import { extractFigures, textsWithoutGlyph } from './figure';
 import { renderFigurePng } from './figurePng';
 
 /** 1つの文書に入れる図の数の上限（Apps Script に送る量を抑える）。 */
@@ -34,6 +34,8 @@ export async function runCreateDoc(input: Record<string, unknown>, who: { campus
   const images: { base64: string; width: number; height: number; caption: string }[] = [];
   for (let i = 0; i < fig.figures.length; i++) {
     if (i >= MAX_FIGURES) { notes.push(`図は1つの文書に${MAX_FIGURES}個まで（${i + 1}個目から入れていません）`); break; }
+    const noGlyph = textsWithoutGlyph(fig.figures[i]);
+    if (noGlyph.length) notes.push(`図${i + 1}の「${noGlyph.slice(0, 3).join('」「')}」は、文書の画像では文字が出ません（図の中は半角の文字・記号にする）`);
     try {
       const png = await renderFigurePng(fig.figures[i]);
       const w = Math.round(png.widthCm * PX_PER_CM);

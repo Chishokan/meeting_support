@@ -54,7 +54,7 @@ function newConversationId(): string {
   const rand = Math.random().toString(36).slice(2, 6);
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}-${rand}`;
 }
-type TaskButton = { id: string; button: string; starter: string; useWhen: string };
+type TaskButton = { id: string; button: string; starter: string; useWhen: string; path?: string };
 type Attach = { name: string; mime: string; kind: 'pdf' | 'image' | 'text'; data: string };
 
 const MAX_TOTAL_BYTES = 3_500_000; // 送信全体の目安（Vercel のリクエスト上限に対する余裕分）
@@ -416,6 +416,12 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   }
 
   const carried = context.reads.length + context.texts.length;
+  // 前の回に開いた作業の手順書（持ち越しに入っていると、次の質問もその作業として進む）
+  const carriedTaskPath = [...context.reads].reverse().find((p) => p.startsWith('05_作業/'));
+  const carriedTask = !task && carriedTaskPath ? tasks.find((t) => t.path === carriedTaskPath) : undefined;
+  function endCarriedTask() {
+    updateContext({ ...contextRef.current, reads: contextRef.current.reads.filter((p) => !p.startsWith('05_作業/')) });
+  }
 
   return (
     <div className="iqa-page">
@@ -632,6 +638,12 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
                 <option key={t.id} value={t.id}>{t.button}</option>
               ))}
             </select>
+          )}
+          {carriedTask && (
+            <span className="attach-chip task-chip" title="次の質問も、この作業の手順書に沿って進めます。別の話題に移るときは × で作業を終えます">
+              🧭 作業の続き：{carriedTask.button}
+              <button onClick={endCarriedTask} disabled={busy} aria-label="作業を終える">×</button>
+            </span>
           )}
           {task && (
             <span className="attach-chip task-chip" title={task.useWhen}>

@@ -59,7 +59,7 @@ export type TaskDef = {
 };
 
 /** 画面に渡す形（読む資料の一覧などは渡さない）。 */
-export type TaskButton = { id: string; button: string; starter: string; useWhen: string };
+export type TaskButton = { id: string; button: string; starter: string; useWhen: string; path: string };
 
 /** front matter の「[a, b, c]」を配列にする。 */
 export function inlineList(v: string | undefined): string[] {
@@ -114,7 +114,7 @@ export async function listTasks(root: string, read: ReadFn): Promise<TaskDef[]> 
 }
 
 export function taskButtons(tasks: TaskDef[]): TaskButton[] {
-  return tasks.map((t) => ({ id: t.id, button: t.button, starter: t.starter, useWhen: t.useWhen }));
+  return tasks.map((t) => ({ id: t.id, button: t.button, starter: t.starter, useWhen: t.useWhen, path: t.path }));
 }
 
 /** システムプロンプトに載せる作業の一覧。 */

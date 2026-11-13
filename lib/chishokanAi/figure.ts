@@ -467,6 +467,20 @@ export function isFigureLang(lang: string): boolean {
   return lang === '図' || lang.toLowerCase() === 'figure';
 }
 
+/** 日本語（かな・漢字・全角）の文字。文書に入れる PNG の書体（DejaVu Sans）には無いので、画像では出ない。 */
+const NO_GLYPH = /[\u3000-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/;
+
+/** 図の中の文字（点の名前・label）のうち、文書の画像では出ないもの。 */
+export function textsWithoutGlyph(spec: FigureSpec): string[] {
+  const out: string[] = [];
+  for (const name of Object.keys(spec.points ?? {})) if (NO_GLYPH.test(name)) out.push(name);
+  for (const sh of spec.shapes ?? []) {
+    const label = (sh as { label?: unknown }).label;
+    if (typeof label === 'string' && NO_GLYPH.test(label)) out.push(label);
+  }
+  return [...new Set(out)];
+}
+
 /**
  * Markdown の中の ```図 枠を取り出し、[図:n] の行に置きかえる（Google ドキュメントにするとき）。
  * 読めない図は、そのことを書いた行に置きかえ、errors に理由を入れる。

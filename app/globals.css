@@ -81,6 +81,9 @@ button.primary:disabled { opacity: .5; cursor: default; }
   background: #1f4e78; border: none; border-radius: 8px; cursor: pointer;
 }
 .composer button:disabled { opacity: .5; cursor: default; }
+/* 入力欄の中の chip（添付・作業）の × は、送信ボタンの見た目にしない */
+.composer .attach-chip button { background: transparent; color: #7a848f; border: none; border-radius: 0; padding: 0 4px; font-size: 14px; font-weight: normal; line-height: 1; min-width: 0; height: auto; }
+.composer .attach-chip button:hover { color: #c0392b; }
 .copybtn {
   display: inline-block; margin-top: 8px; font-size: 12px; color: #1f4e78;
   background: #eef3f8; border: 1px solid #cfe0ee; border-radius: 6px;

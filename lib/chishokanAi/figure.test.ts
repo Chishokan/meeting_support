@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clipLine, compileExpr, escapeXml, extractFigures, parseFigure, renderFigureSvg } from './figure.ts';
+import { clipLine, compileExpr, escapeXml, extractFigures, parseFigure, renderFigureSvg, textsWithoutGlyph } from './figure.ts';
 
 test('compileExpr：式を計算する（掛け算の省略・累乗・根号・全角）', () => {
   assert.equal(compileExpr('x^2/4')(2), 1);
@@ -100,4 +100,12 @@ test('parseFigure・renderFigureSvg：点の名前が Object の持ち物の名�
   const huge = parseFigure('{"range":[0,0,200000,200000],"grid":true}');
   assert.ok(huge.ok);
   if (huge.ok) assert.ok(renderFigureSvg(huge.spec).svg.length < 20_000);
+});
+
+test('textsWithoutGlyph：文書の画像に出ない日本語の文字を拾う', () => {
+  const p = parseFigure('{"range":[0,0,5,5],"points":{"A":[0,0],"点P":[1,1]},"shapes":[{"text":[2,2],"label":"x軸"},{"length":["A","点P"],"label":"5cm"}]}');
+  assert.ok(p.ok);
+  if (p.ok) assert.deepEqual(textsWithoutGlyph(p.spec), ['点P', 'x軸']);
+  const q = parseFigure('{"range":[0,0,5,5],"points":{"A":[0,0],"B":[1,1]},"shapes":[{"length":["A","B"],"label":"√2"}]}');
+  if (q.ok) assert.deepEqual(textsWithoutGlyph(q.spec), []);
 });

@@ -426,7 +426,8 @@ export async function POST(req: Request) {
           if (left.length) {
             send({ t: 'notice', v: `埋まっていない {{${left.slice(0, 5).join('}}・{{')}}} が残っています。貼る前・使う前に埋めてください。` });
           }
-          if (activeTask && !cut && !clientGone) {
+          // 持ち越しただけの作業（この回に選んだ・開いたのではない）では知らせない（別の話題の質問に出続けないように）
+          if (activeTask && tasksStarted > 0 && !cut && !clientGone) {
             const miss = missingSectionNotice(full, activeTask.mustInclude);
             if (miss) send({ t: 'notice', v: miss });
           }
