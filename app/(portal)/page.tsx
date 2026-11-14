@@ -13,7 +13,8 @@ export default function PortalPage() {
       <h1 className="portal-title">使うアプリを選んでください</h1>
       <div className="portal-grid">
         {PORTAL_APPS.map((a) => {
-          const allowed = !a.canUse || a.canUse(campus, name);
+          const allowed = !a.canUse || a.canUse(campus, name, s?.role);
+          if (!allowed && a.hideIfDenied) return null;
           const open = a.status === 'ready' && allowed;
           const body = (
             <>

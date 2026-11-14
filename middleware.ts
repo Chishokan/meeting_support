@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { SESSION_COOKIE } from '@/lib/core/auth';
+import { SESSION_COOKIE } from '@/lib/core/sessionCookie';
 
 // public/manual/ のマニュアル（PDF・動画）は、ログインしている人だけが開けるようにする。
 // 静的ファイルは画面のレイアウト（ログインの確認）を通らないので、ここで見張る。
