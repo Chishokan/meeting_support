@@ -766,7 +766,7 @@ button.primary:disabled { opacity: .5; cursor: default; }
   border-radius: 999px; padding: 2px 10px; cursor: pointer; white-space: nowrap;
 }
 .md-copy:hover, .msg-action:hover { background: #eef3f8; }
-.msg-actions { margin: 4px 2px 0; display: flex; gap: 6px; }
+.msg-actions { margin: 4px 2px 0; display: flex; flex-wrap: wrap; gap: 6px; } /* スマホで右にはみ出さない（はみ出すと画面ごと縮んで、上の帯が隠れる） */
 .md-figure { margin: 4px 0 .9em; }
 .md-figure-svg { width: 100%; border: 1px solid #e3e6ea; border-radius: 8px; overflow: hidden; background: #fff; }
 .md-figure-svg svg { display: block; width: 100%; height: auto; }
@@ -847,6 +847,19 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .ai-report-done { font-size: 14px; line-height: 1.7; }
 .ai-section-label { max-width: 760px; margin: 14px auto 0; padding: 0 16px; font-size: 12px; color: #8a94a0; }
 .ai-convo-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* 会話の帯は、アプリの帯（.board-head）のすぐ下に固定する（会話が長くなっても、新しい相談・不具合・要望を押せるように） */
+.iqa-page .ai-convo-bar {
+  position: sticky; top: 48px; z-index: 10; margin: 0; padding: 8px 24px;
+  background: #f5f6f8; border-bottom: 1px solid #e3e6ea;
+}
+.ai-convo-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.ai-convo-actions .ai-report-open { margin-top: 0; }
+@media (max-width: 600px) {
+  /* スマホではアプリの帯が低い（上下の余白 8px）ので、帯の位置も上げる（1px 重ねて隙間を作らない） */
+  .iqa-page .ai-convo-bar { padding: 6px 12px; gap: 6px; top: 46px; }
+  .iqa-page .ai-convo-bar .ai-carry-note { display: none; }
+  .ai-convo-actions { margin-left: 0; }
+}
 .ai-carry-note { font-size: 12px; color: #667; }
 .ai-status { color: #667; font-size: 13.5px; }
 .ai-status-line { margin: 4px 2px 0; }
