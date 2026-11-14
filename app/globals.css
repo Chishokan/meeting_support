@@ -869,6 +869,12 @@ button.primary:disabled { opacity: .5; cursor: default; }
   padding: 14px 16px 24px; display: flex; flex-direction: column; gap: 10px;
 }
 .ai-panel-bg { display: none; }
+/* 狭い画面で右の欄を開くボタン（不具合・要望のボタンと並ぶ） */
+.ai-panel-toggle {
+  font-size: 12px; color: var(--navy); background: #f5f9fd; border: 1px solid #b9cde0;
+  border-radius: 999px; padding: 3px 12px; cursor: pointer; white-space: nowrap;
+}
+.ai-panel-toggle:hover { background: #eaf1f8; }
 .ai-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .ai-panel-head h2 { font-size: 15px; margin: 0; color: var(--navy); }
 .ai-panel-head h2 span, .ai-panel-sub span { font-size: 12px; color: #8a94a0; font-weight: 600; margin-left: 4px; }

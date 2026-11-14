@@ -28,6 +28,8 @@ crop('ai_02_top', 0, 1180)
 crop('ai_03_answer', 0, 800)
 crop('ai_05_ask', 0, 600)
 stitch('ai_06_made', [(0, 1210), (1735, 1815)])
+# 見比べる小窓だけを切り出す
+b = boxes['ai_11_diff']['marks']; crop('ai_11_diff', max(0, min(m['y'] for m in b) - 120), max(m['y'] + m['h'] for m in b) + 30)
 for name in ('ai_07_report', 'ai_08_request'):
     b = boxes[name]['marks']; bottom = max(m['y'] + m['h'] for m in b) + 40; top = max(0, min(m['y'] for m in b) - 110)
     crop(name, top, bottom)

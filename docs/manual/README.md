@@ -25,14 +25,14 @@
 
 # 智翔館AI（試用版）利用マニュアル
 
-全職員向けの智翔館AIの手引き（開き方・画面の見方、質問と回答、資料の渡し方、よく使う作業、ファイルの保存先、不具合の報告・要望の送り方、よくある質問）。v0.25 の画面で作成（2026年11月）。
+全職員向けの智翔館AIの手引き（開き方・画面の見方、質問と回答、資料の渡し方、コンテキスト（右の欄）と会話の書き出し、よく使う作業、ファイルの保存先、不具合の報告・要望の送り方、よくある質問）。v0.26 の画面で作成（2026年11月）。
 
 | ファイル | 中身 |
 |---|---|
-| `../../public/manual/chishokan-ai-manual-v0.25.2.pdf` | 配布用の PDF（A4・18ページ）。ダウンロード時の名前は `智翔館AI利用マニュアル_v0.25.2.pdf` |
+| `../../public/manual/chishokan-ai-manual-v0.26.0.pdf` | 配布用の PDF（A4・21ページ）。ダウンロード時の名前は `智翔館AI利用マニュアル_v0.26.0.pdf` |
 | `chishokan-ai-manual.html` | 原稿（会議DX のマニュアルと同じ書式。PDF はここから作る） |
 | `images/ai_*.png` | 画面の写真（赤枠・番号つき） |
-| `chishokan-ai/shots.js` | 写真を撮るスクリプト。アプリを手元で起動し（`CHISHOKAN_AI_MEMBERS='*' npx next start -p 3124`）、AI の回答は架空の例に差し替えて撮る |
+| `chishokan-ai/shots.js` | 写真を撮るスクリプト。アプリを手元で起動し（`CHISHOKAN_AI_MEMBERS='*' npx next start -p 3124`）、AI の回答は架空の例に差し替えて撮る。右の欄（コンテキスト）は横に広い画面（1366px）で撮る |
 | `chishokan-ai/annotate.py` | 撮った写真に赤枠と番号を付け、余白を切る（`python3 annotate.py 撮った写真のフォルダ docs/manual/images`） |
 | `chishokan-ai/pdf.js` | 原稿の HTML を A4 の PDF にする（`node pdf.js 原稿の絶対パス 出力.pdf`） |
 

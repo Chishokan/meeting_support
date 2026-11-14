@@ -210,10 +210,10 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
 <header class="sheet cover" id="top">
   <div class="org">株式会社智翔館　社内向け</div>
   <h1>智翔館AI（試用版）利用マニュアル</h1>
-  <p class="lead">社内の資料をもとに答える<b>智翔館AI</b>の使い方をまとめた手引きです。質問のしかた、チラシ・スライド・計画書・数学の教材などの<b>よく使う作業</b>、試用期間中の<b>不具合の報告と要望の送り方</b>を説明します。画面の写真に付けた赤い番号（<span class="n">1</span>）は、本文の同じ番号の説明に対応しています。</p>
+  <p class="lead">社内の資料をもとに答える<b>智翔館AI</b>の使い方をまとめた手引きです。質問のしかた、会話の前提を置く<b>コンテキスト</b>、チラシ・スライド・計画書・数学の教材などの<b>よく使う作業</b>、試用期間中の<b>不具合の報告と要望の送り方</b>を説明します。画面の写真に付けた赤い番号（<span class="n">1</span>）は、本文の同じ番号の説明に対応しています。</p>
   <dl>
     <dt>対象</dt><dd>全職員</dd>
-    <dt>アプリ</dt><dd>智翔館アプリ › 智翔館AI（バージョン v0.25 時点）</dd>
+    <dt>アプリ</dt><dd>智翔館アプリ › 智翔館AI（バージョン v0.26 時点）</dd>
     <dt>試用期間</dt><dd>いまは試用期間です。使い方の傾向・不具合・要望を集めて改善します</dd>
     <dt>最新版</dt><dd>ヘルプデスクの「マニュアル」タブからダウンロードできます</dd>
     <dt>作成</dt><dd>2026年11月</dd>
@@ -239,6 +239,9 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
         <li><a href="#s2-3">2-3　続けて聞く・新しい相談を始める</a></li>
         <li><a href="#s2-4">2-4　資料を渡して聞く</a></li>
         <li><a href="#s2-5">2-5　止める・途中で切れたとき</a></li>
+        <li><a href="#s2-6">2-6　会話の前提を置く（コンテキスト）</a></li>
+        <li><a href="#s2-7">2-7　AIにコンテキストを直してもらう</a></li>
+        <li><a href="#s2-8">2-8　会話をファイルに残す・続きから使う</a></li>
       </ol>
     </li>
     <li><a href="#ch3">第3章　よく使う作業</a>
@@ -319,6 +322,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
       <li><span class="n">6</span><span><b>資料を添付</b>：PDF・画像・Word・Excel・PowerPoint を渡します（2-4）</span></li>
       <li><span class="n">7</span><span><b>作業を選ぶ</b>：最初の画面のボタンと同じ作業を、会話の途中でも選べます</span></li>
       <li><span class="n">8</span><span><b>入力欄</b>：質問や頼みごとを書きます。<b>Enter で送信</b>、Shift＋Enter で改行です（スマートフォンは［送信］ボタン）</span></li>
+      <li><span class="n">9</span><span><b>📌 コンテキスト</b>：右の欄（会話の前提・読んだ資料・ファイルへの書き出し）を開きます。横に広い画面では、このボタンは出ず、右の欄がいつも出ています（2-6）</span></li>
     </ul>
   </section>
 
@@ -332,6 +336,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
       <div>
         <p>パソコンと同じ画面を、縦に並べて表示します。入力欄で Enter を押すと改行になるので、送るときは<b>［送信］</b>を押してください。</p>
         <p style="margin-top:10px">チラシやスライド、Word の教材など、長い資料づくりは時間がかかります（数分）。作っているあいだに画面を閉じると止まるので、パソコンで使うのがおすすめです。</p>
+        <p style="margin-top:10px">右の欄（コンテキスト）は、<span class="btn">📌 コンテキスト</span> を押すと右から出てきます。閉じるときは右上の × を押します。</p>
       </div>
     </div>
   </section>
@@ -373,7 +378,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
       <li><span class="n">2</span><span><b>回答</b>：最後に<b>出典</b>（読んだ資料の名前と更新日）が付きます。社内のことは、出典の資料で確かめてから使ってください</span></li>
       <li><span class="n">3</span><span><b>読んだ資料</b>：AIが実際に開いた資料です</span></li>
       <li><span class="n">4</span><span><b>回答のボタン</b>：<span class="btn">回答をコピー</span>（記号を外した文字。表はスプレッドシートに貼ると列に分かれます）、<span class="btn">👍</span><span class="btn">👎</span>（評価。4-3）、<span class="btn">⚠ 報告</span>（この回答の不具合を報告。4-1）、<span class="btn">もう一度答えさせる</span></span></li>
-      <li><span class="n">5</span><span><b>新しい相談を始める</b>：会話を消して、最初の画面に戻ります（2-3）</span></li>
+      <li><span class="n">5</span><span><b>新しい相談を始める</b>：会話を消して、最初の画面に戻ります。コンテキストがあるときは、残すか消すかを選べます（2-3）</span></li>
       <li><span class="n">6</span><span><b>持ち越しの表示</b>：この会話で読んだ資料を、次の質問でもAIに渡していることを示します</span></li>
     </ul>
     <p>表やプロンプトなど、そのまま貼って使うものは枠（コード枠）に入り、枠ごとに <span class="btn">コピー</span> が付きます。数学の図は回答の中に図で表示され、<span class="btn">画像を保存</span> で PNG として保存できます。</p>
@@ -384,7 +389,8 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
     <ul class="plain">
       <li>同じ話題なら、そのまま続けて聞けます（例：「パートタイマーの場合は？」）。前の回で読んだ資料や添付した資料も、続けてAIに渡されます</li>
       <li><b>話題を変えるときは</b> <span class="btn">新しい相談を始める（会話を消す）</span> を押してください。前の話題の資料が混ざらず、答えが速く・正確になります</li>
-      <li>会話は、画面を閉じると画面からは消えます。改善のため、質問と回答は社内の記録（会話ログ）に残しています</li>
+      <li>右の欄にコンテキストがあるときは、<span class="btn">残して始める</span>（前提はそのまま、会話だけ新しく）か <span class="btn">消して始める</span> かを選べます</li>
+      <li>会話は、画面を閉じると画面からは消えます。残したいときは、右の欄の <span class="btn">💾 ファイルに書き出す</span> で書き出してください（2-8）。改善のため、質問と回答は社内の記録（会話ログ）に残しています</li>
     </ul>
   </section>
 
@@ -412,6 +418,63 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
       <li>送信中は <span class="btn">送信</span> が <span class="btn">停止</span> に変わります。押すと、そこで止まります（途中までの回答は残ります）</li>
       <li>1回の回答は最長で約5分です。長い資料づくりで時間が足りないと「回答が途中で切れました」と出るので、<span class="btn">続きを書く</span> を押してください</li>
       <li>エラーが出たときは <span class="btn">もう一度送る</span> を押します。何度も続くときは、不具合を報告してください（4-1）</li>
+    </ul>
+  </section>
+
+  <section class="sec" id="s2-6">
+    <h3><span class="no">2-6</span>会話の前提を置く（コンテキスト）</h3>
+    <p>担当学年、資料の決まり、前の回答（計画の表など）のように、<b>会話のあいだずっと前提にしてほしいこと</b>を、右の欄の「コンテキスト」に置けます。置いた文は、質問のたびにAIに渡されます。毎回同じことを書かなくてよくなります。</p>
+    <figure>
+      <img src="images/ai_10_panel.png" alt="右の欄にコンテキストが2つある画面。赤枠1〜7">
+      <figcaption>右の欄（コンテキスト・読んだ資料・この会話）</figcaption>
+    </figure>
+    <ul class="legend">
+      <li><span class="n">1</span><span><b>コンテキスト</b>：置いている数（1つの会話に10個まで、合わせて3万字まで）</span></li>
+      <li><span class="n">2</span><span><b>コンテキストの項目</b>：名前と番号（c1, c2 …）。文を押すと全文が開きます。<span class="btn">書き換える</span> で自分で直せます。<span class="btn">消す</span> で外します</span></li>
+      <li><span class="n">3</span><span><b>＋ 追加</b>：名前と文を書いて <span class="btn">追加する</span> を押します（文は貼り付けでも大丈夫です）</span></li>
+      <li><span class="n">4</span><span><b>読んだ資料</b>：この会話でAIが読んだ資料・添付した文字の資料。次の質問にも自動で渡します。<span class="btn">×</span> で外せます。添付した資料は <span class="btn">📌</span> でコンテキストに固定できます</span></li>
+      <li><span class="n">5</span><span><b>この会話</b>：会話をファイルに書き出す・ファイルから再開する（2-8）</span></li>
+      <li><span class="n">6</span><span><b>📌 コンテキストに入れる</b>：その回答を、右の欄に置きます（名前と文を直してから <span class="btn">追加する</span>）</span></li>
+      <li><span class="n">7</span><span><b>直し案の札</b>：AIがコンテキストの直し案を出すと、回答の下と右の欄に出ます（2-7）</span></li>
+    </ul>
+    <div class="box tip">
+      <div class="box-title">コンテキストに向いているもの</div>
+      <ul class="plain">
+        <li>前提：「担当は中3の数学」「対象は外部生」「冬期講習（中3）の要項の日程で」</li>
+        <li>決まり：「回答は箇条書きで、300字以内」「保護者向けの文は敬体で」</li>
+        <li>途中の成果：計画の表、チラシの原稿、決まった方針（回答の <span class="btn">📌 コンテキストに入れる</span>）</li>
+      </ul>
+    </div>
+    <p>書き換えるたびに、前の文は「前の版」として5つ前まで残ります。<span class="btn">前の版</span> を押し、<span class="btn">この版に戻す</span> で戻せます（戻す前の文も前の版に残ります）。横に広いパソコンの画面では右の欄がいつも出ていて、ノートパソコンやスマートフォンでは <span class="btn">📌 コンテキスト</span> を押すと出てきます。</p>
+  </section>
+
+  <section class="sec" id="s2-7">
+    <h3><span class="no">2-7</span>AIにコンテキストを直してもらう</h3>
+    <ol class="steps">
+      <li><div>「<b>c1 の定員を25名にして、中2も対象に入れて</b>」のように、番号か名前で頼みます。「この内容をコンテキストに入れて」と頼むと、新しい項目の案を作ります</div></li>
+      <li><div>AIは<b>直し案</b>を出すだけです。この時点では、コンテキストはまだ変わっていません。回答の下の <span class="btn">見比べて置き換える</span>（右の欄では <span class="btn">見比べる</span>）を押します</div></li>
+      <li><div>変更前と変更後を見比べて、よければ <span class="n">3</span> <span class="btn">置き換える</span>（新しい項目なら <span class="btn">追加する</span>）を押します</div></li>
+    </ol>
+    <figure>
+      <img src="images/ai_11_diff.png" alt="直し案を見比べる小窓。赤枠1〜4">
+      <figcaption>直し案を見比べる</figcaption>
+    </figure>
+    <ul class="legend">
+      <li><span class="n">1</span><span><b>変更前</b>：消える文字に赤の色が付きます</span></li>
+      <li><span class="n">2</span><span><b>変更後</b>：増える文字に緑の色が付きます</span></li>
+      <li><span class="n">3</span><span><b>置き換える</b>：押したときだけ入れ替わります。前の文は「前の版」に残るので、あとで戻せます</span></li>
+      <li><span class="n">4</span><span><b>案を捨てる</b>：使わないとき。<span class="btn">あとで</span> は、案を残したまま閉じます</span></li>
+    </ul>
+    <p>AIが頼まれずにコンテキストを変えることはありません。</p>
+  </section>
+
+  <section class="sec" id="s2-8">
+    <h3><span class="no">2-8</span>会話をファイルに残す・続きから使う</h3>
+    <ul class="plain">
+      <li>右の欄の <span class="btn">💾 ファイルに書き出す</span> を押すと、会話・コンテキスト（前の版も）・読んだ資料の文字が、1つのファイル（.json）としてダウンロードされます。添付した PDF・画像は入りません</li>
+      <li>続きを使うときは、<span class="btn">📂 ファイルから再開</span> でそのファイルを選びます。同じ会話の続きとして質問できます</li>
+      <li>ファイルは各自で管理してください。共有のフォルダには置かないでください</li>
+      <li>会話が長くなると（約6万字）、毎回すべてをAIに送るため、回答が遅くなり、費用も増えます。そのときは会話の下に <span class="btn">📌 要点をまとめる</span> が出ます。押すと、AIが要点をコンテキストの案にまとめるので、<span class="btn">追加する</span> を押してから <span class="btn">新しい相談を始める</span> → <span class="btn">残して始める</span> で続けてください</li>
     </ul>
   </section>
 </article>
@@ -554,6 +617,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
         <li>社内のこと（日付・料金・数字・方針）は、回答の出典で確かめてから使ってください</li>
         <li>AIが作ったものは下書きです。生徒・保護者に渡す前に、担当者が確かめてください</li>
         <li>作ったファイルのリンクは、社外の人に送らないでください</li>
+        <li>会話を書き出したファイルには、会話の全文が入ります。共有のフォルダに置いたり、社外の人に送ったりしないでください</li>
       </ul>
     </div>
   </section>
@@ -575,6 +639,8 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
         <tr><td>途中で切れた</td><td><span class="btn">続きを書く</span> を押してください</td></tr>
         <tr><td>リンクのファイルが読めない</td><td>決められたフォルダの外のファイルは読めません。ファイルを添付するか、読めるようにしてほしいフォルダを要望で送ってください</td></tr>
         <tr><td>作ったファイルが見つからない</td><td>回答のリンクから開けます。ドライブの「AI作成」フォルダにも「日付_AI作成_題名」で保存されています</td></tr>
+        <tr><td>毎回同じ前提を書くのが面倒</td><td>右の欄の「コンテキスト」に置いてください。質問のたびにAIに渡されます（2-6）</td></tr>
+        <tr><td>会話を残して、あとで続けたい</td><td>右の欄の <span class="btn">💾 ファイルに書き出す</span> で書き出し、続けるときに <span class="btn">📂 ファイルから再開</span> で読み込みます（2-8）</td></tr>
         <tr><td>Web の情報を調べてほしい</td><td>智翔館AIは Web を見ません。必要な情報は資料として渡してください</td></tr>
       </tbody>
     </table>

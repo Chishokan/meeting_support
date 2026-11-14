@@ -63,6 +63,7 @@ async function shot(page, name, marks, opts = {}) {
   await shot(page, 'ai_02_top', [
     [1, '.ai-about summary', 4], [2, '.ai-report-open:not(.ai-request-open)', 3], [3, '.ai-request-open', 3],
     [4, '.ai-tasks', 6], [5, '.iqa-examples', 6], [6, '.attach-btn', 4], [7, '.ai-task-picker', 4], [8, '.composer textarea', 4],
+    [9, '.ai-head-links .ai-panel-toggle', 3],
   ]);
   // 3. 質問と回答
   await page.setViewportSize({ width: 1100, height: 1500 });
@@ -115,7 +116,50 @@ async function shot(page, name, marks, opts = {}) {
   await shot(page, 'ai_08_request', [[1, '.ai-report-kinds', 4], [2, '.ai-report textarea >> nth=0', 4], [3, '.ai-report textarea >> nth=2', 4], [4, '.ai-report-submit', 4]]);
   await ctx.close();
 
-  // 6. スマートフォン
+  // 6. 右の欄（コンテキスト）と、AIの直し案（広い画面では右に常に出る）
+  ctx = await mk(1366, 1240);
+  page = await ctx.newPage();
+  queue = [];
+  await page.route('**/api/chishokan-ai', (r) => (r.request().method() === 'POST' ? r.fulfill({ status: 200, contentType: 'application/x-ndjson; charset=utf-8', body: queue.shift() || nd([{ t: 'text', v: 'はい' }]) }) : r.continue()));
+  await page.goto(BASE + '/ai', { waitUntil: 'networkidle' });
+  await page.click('.ai-pin-add');
+  await page.fill('.ai-pin-form input', '冬期講習（中3）の前提');
+  await page.fill('.ai-pin-form textarea', '対象：中学3年生（外部生）\n日程：12月26日〜1月7日\n定員：各校舎20名\nねらい：講習から入会につなげる');
+  await page.click('.ai-pin-form button:has-text("追加する")');
+  queue.push(nd([
+    { t: 'status', v: '📄 冬期講習の要項を読んでいます' },
+    { t: 'text', v: '## 外部生募集の計画（冬期講習・中3）\n\nコンテキストの前提（中3・各校舎20名・入会につなげる）で立てました。\n\n| 時期 | やること |\n|---|---|\n| 11月第3週 | チラシ・サイネージを掲示、在籍生の紹介を案内 |\n| 12月第1週 | 中学校前での門配、体験授業の案内 |\n| 12月第2週 | 申込の締切、席の調整 |\n\n入会の面談は、講習の最終日の前の週に入れます。' },
+    { t: 'sources', items: [{ kind: 'knowledge', path: '40_要項/2026/2026-12_冬期_中等部_中3.md' }] },
+    { t: 'context', reads: ['40_要項/2026/2026-12_冬期_中等部_中3.md'], texts: [] },
+  ]));
+  await page.fill('.composer textarea', 'この前提で、外部生募集の計画を立てて');
+  await page.press('.composer textarea', 'Enter');
+  await page.waitForSelector('.ai-sources');
+  await page.waitForTimeout(300);
+  await page.click('.msg.assistant .msg-actions button:has-text("コンテキストに入れる")');
+  await page.click('.ai-pin-form button:has-text("追加する")');
+  queue.push(nd([
+    { t: 'status', v: '📌 コンテキストの直し案を作っています（冬期講習（中3）の前提）' },
+    { t: 'pin', id: 'c1', name: '冬期講習（中3）の前提', text: '対象：中学2・3年生（外部生）\n日程：12月26日〜1月7日\n定員：各校舎25名\nねらい：講習から入会につなげる', summary: '対象に中2を足し、定員を各校舎25名にしました。' },
+    { t: 'text', v: 'c1「冬期講習（中3）の前提」の直し案を、右の欄に出しました。対象に中2を足し、定員を各校舎25名にしています。見比べて、よければ「置き換える」を押してください。' },
+  ]));
+  await page.fill('.composer textarea', 'c1 の定員を25名にして、中2も対象に入れて');
+  await page.press('.composer textarea', 'Enter');
+  await page.waitForSelector('.ai-pin-card');
+  await page.waitForTimeout(300);
+  await shot(page, 'ai_10_panel', [
+    [1, '.ai-panel-head', 4], [2, '.ai-pin >> nth=0', 3], [3, '.ai-pin-add', 3], [4, '.ai-carry-list', 4], [5, '.ai-panel-file', 4],
+    [6, '.msg.assistant .msg-actions >> nth=0', 3], [7, '.ai-pin-card', 3],
+  ]);
+  await page.click('.ai-pin-card button');
+  await page.waitForSelector('.ai-diff');
+  await page.waitForTimeout(300);
+  await shot(page, 'ai_11_diff', [
+    [1, '.ai-diff-cols section >> nth=0', 4], [2, '.ai-diff-cols section >> nth=1', 4], [3, '.ai-diff-actions .ai-report-submit', 4], [4, '.ai-diff-actions button:has-text("案を捨てる")', 4],
+  ]);
+  await ctx.close();
+
+  // 7. スマートフォン
   ctx = await mk(390, 844, true);
   page = await ctx.newPage();
   await page.goto(BASE + '/ai', { waitUntil: 'networkidle' });

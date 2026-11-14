@@ -905,7 +905,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
               <li>試用期間中です。うまく動かないときは「不具合を報告」、こうしてほしいときは「要望を送る」から送ってください</li>
             </ul>
           </details>
-          <button type="button" className="ai-report-open ai-panel-toggle" onClick={() => setPanelOpen(true)}>
+          <button type="button" className="ai-panel-toggle" onClick={() => setPanelOpen(true)}>
             {panelLabel}{pendingCount ? '・直し案あり' : ''}
           </button>
           <button type="button" className="ai-report-open" onClick={() => openReport()}>
@@ -963,7 +963,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           )}
           {/* 会話が長くなって画面の上の説明が見えなくなっても押せるように、この帯（上に固定）にも置く */}
           <span className="ai-convo-actions">
-            <button type="button" className="ai-report-open ai-panel-toggle" onClick={() => setPanelOpen(true)}>
+            <button type="button" className="ai-panel-toggle" onClick={() => setPanelOpen(true)}>
               {panelLabel}{pendingCount ? '・直し案あり' : ''}
             </button>
             <button type="button" className="ai-report-open" onClick={() => openReport()}>⚠ 不具合を報告</button>
