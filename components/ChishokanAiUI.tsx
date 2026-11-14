@@ -443,7 +443,9 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
               <li>社内のこと（日付・料金・方針など）は社内の資料だけで答え、出典を付けます。Web は見ません</li>
               <li>PDF・画像・Word・Excel・PowerPoint は添付、Google のファイルはリンクを貼ると読みます（決められたフォルダの中だけ・1回に3件まで）</li>
               <li>業績の数字（売上・利益）は持っていません</li>
-              <li>会話は、この画面を閉じると消えます</li>
+              <li>会話は、この画面を閉じると消えます。改善のため、質問と回答は社内の記録（会話ログ）に残しています</li>
+              <li>生徒・保護者の名前や成績は入れないでください</li>
+              <li>試用期間中です。うまく動かないときは「不具合を報告」、こうしてほしいときは「要望を送る」から送ってください</li>
             </ul>
           </details>
           <button type="button" className="ai-report-open" onClick={() => openReport()}>
