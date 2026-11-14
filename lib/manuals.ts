@@ -17,6 +17,15 @@ export type ManualDoc = {
 
 export const MANUALS: ManualDoc[] = [
   {
+    id: 'chishokan-ai',
+    title: '智翔館AI（試用版）利用マニュアル',
+    desc: '智翔館AIの開き方・画面の見方、質問のしかたと回答の見方、資料の渡し方、よく使う作業（チラシ・スライド・計画書・数学の教材と小テスト）、不具合の報告と要望の送り方。画面の写真つき',
+    kind: 'pdf',
+    href: '/manual/chishokan-ai-manual-v0.25.2.pdf',
+    downloadName: '智翔館AI利用マニュアル_v0.25.2.pdf',
+    meta: 'v0.25.2｜PDF・A4・18ページ｜約3MB',
+  },
+  {
     id: 'meeting-dx',
     title: '会議DX 操作マニュアル',
     desc: '会議DXのメニュー画面・部門会議と、ヘルプデスク（要項QA・ご意見・不具合の報告・マニュアル）の使い方。画面の写真つき',
