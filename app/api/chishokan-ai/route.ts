@@ -38,6 +38,9 @@ import { CREATE_DOC_TOOL } from '@/lib/chishokanAi/createDocTool';
 import { runCreateDoc, type CreatedDoc } from '@/lib/chishokanAi/createDoc';
 import { CREATE_SLIDES_TOOL, SLIDES_TEMPLATES_TOOL } from '@/lib/chishokanAi/slidesTool';
 import { runCreateSlides, runSlideTemplates } from '@/lib/chishokanAi/slides';
+import { MATH_MATERIAL_TOOL } from '@/lib/chishokanAi/mathMaterialTool';
+import { runCreateMathMaterial, runCreateMathQuiz } from '@/lib/chishokanAi/mathMaterial';
+import { MATH_QUIZ_TOOL } from '@/lib/chishokanAi/mathQuizTool';
 import {
   buildCarryBlock,
   citationWarnings,
@@ -175,6 +178,8 @@ export async function POST(req: Request) {
     CREATE_DOC_TOOL,
     SLIDES_TEMPLATES_TOOL,
     CREATE_SLIDES_TOOL,
+    MATH_MATERIAL_TOOL,
+    MATH_QUIZ_TOOL,
   ] as unknown as Anthropic.Tool[];
   let tasksStarted = 0;
   // 計算の道具は、作業の手順書が使うときだけ足す（回答の途中で手順書を開いたら、次の往復から足す）。
@@ -182,6 +187,7 @@ export async function POST(req: Request) {
   let codeRuns = 0;
   let templateReads = 0;
   let slidesMade = 0;
+  let mathMade = 0;
   const lastUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 
   const encoder = new TextEncoder();
@@ -369,6 +375,16 @@ export async function POST(req: Request) {
                 slidesMade++;
                 out = r.toolResult;
               }
+            } else if (block.name === MATH_MATERIAL_TOOL.name || block.name === MATH_QUIZ_TOOL.name) {
+              if (mathMade >= 1) {
+                out = '数学の教材のファイルは1回の回答で1組までです。作ったファイルのURLを伝えてください。';
+              } else {
+                const run = block.name === MATH_QUIZ_TOOL.name ? runCreateMathQuiz : runCreateMathMaterial;
+                const r = await run(input, { campus: session.campus, user: session.name }, ac.signal);
+                createdDocs.push(...r.created);
+                mathMade++;
+                out = r.toolResult;
+              }
             } else if (block.name === CREATE_DOC_TOOL.name) {
               if (createdDocs.length >= 1) {
                 out = '文書は1回の回答で1つまでです。作った文書のURLを伝えてください。';
@@ -383,7 +399,7 @@ export async function POST(req: Request) {
               out = r.text;
             }
             opened.push(
-              block.name === CREATE_DOC_TOOL.name || block.name === CREATE_SLIDES_TOOL.name
+              block.name === CREATE_DOC_TOOL.name || block.name === CREATE_SLIDES_TOOL.name || block.name === MATH_MATERIAL_TOOL.name || block.name === MATH_QUIZ_TOOL.name
                 ? `${block.name}:${String(input.title ?? '')}`
                 : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? input.task ?? input.template ?? '')}`,
             );
