@@ -2861,6 +2861,11 @@ function listDriveFolder_(data) {
   if (!/^[\w-]{10,}$/.test(id)) return { ok: false, reason: 'bad_id' };
   var folder;
   try { folder = DriveApp.getFolderById(id); } catch (e) { return { ok: false, reason: 'not_found' }; }
+  // getFolderById はファイルの ID でも失敗せず「中身0件のフォルダ」を返すので、本当にフォルダかを確かめる
+  try {
+    var asFile = DriveApp.getFileById(id);
+    if (asFile.getMimeType() !== MimeType.FOLDER) return { ok: false, reason: 'not_folder', name: asFile.getName() };
+  } catch (e) {}
   var name = folder.getName();
   if (AI_READ_FOLDER_IDS.indexOf(id) === -1 && !aiReadAllowed_(folder)) return { ok: false, reason: 'not_allowed', name: name };
   var items = [];
