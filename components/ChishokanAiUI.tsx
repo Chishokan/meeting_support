@@ -492,6 +492,11 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
               この会話で読んだ資料 {carried} 件を、次の質問でもAIに渡します
             </span>
           )}
+          {/* 会話が長くなって画面の上の説明が見えなくなっても押せるように、この帯（上に固定）にも置く */}
+          <span className="ai-convo-actions">
+            <button type="button" className="ai-report-open" onClick={() => openReport()}>⚠ 不具合を報告</button>
+            <button type="button" className="ai-report-open ai-request-open" onClick={openRequest}>💡 要望を送る</button>
+          </span>
         </div>
       )}
 
