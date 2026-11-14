@@ -17,6 +17,8 @@ export type AiEvent =
   | { t: 'context'; reads: string[]; texts: CarryText[] }
   | { t: 'notice'; v: string }
   | { t: 'cut'; reason: 'time' | 'length' }
+  /** コンテキスト欄の直し案（id が空なら新しい項目の案）。職員が押すまで変わらない（lib/chishokanAi/pinnedContext.ts） */
+  | { t: 'pin'; id: string; name: string; text: string; summary: string }
   | { t: 'error'; v: string };
 
 export function encodeEvent(ev: AiEvent): string {
@@ -179,6 +181,8 @@ export function statusFor(tool: string, input: Record<string, unknown>): string 
       return `📐 数学の教材を Word にしています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
     case 'create_google_doc':
       return `📝 Google ドキュメントを作っています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
+    case 'propose_context_edit':
+      return `📌 コンテキストの直し案を作っています${s(input.name) ? `（${s(input.name).slice(0, 40)}）` : ''}`;
     default:
       return '⏳ 作業しています';
   }

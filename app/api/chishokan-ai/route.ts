@@ -12,6 +12,8 @@
 // （確定していない要項などは読まない関門を通す）、今回の質問と一緒に AI に渡す。
 // 作業の手順書（knowledge/05_作業/、lib/chishokanAi/tasks.ts）：画面の作業ボタンで選ばれたら手順書と資料を先に渡し、
 // 文章で頼まれたときは AI が start_task で開く。資料づくりの回答は、埋め残しの {{ }} と「確認してほしいこと」の有無を確かめる。
+// コンテキスト欄（lib/chishokanAi/pinnedContext.ts）：職員が画面の右の欄に置いた前提を、質問のたびに渡す。
+// AI は頼まれたときだけ propose_context_edit で直し案を出し、画面に送る（職員が押すまで変わらない）。
 // GET は画面の作業ボタンの一覧を返す。
 // 停止：画面が通信を切ったら、AI への問い合わせも止める。時間切れ：300秒の制限の手前で止め、「途中で切れました」を送る。
 
@@ -54,6 +56,14 @@ import {
   type AiEvent,
   type Source,
 } from '@/lib/chishokanAi/conversation';
+import {
+  buildPinnedBlock,
+  checkProposal,
+  normalizePinnedForApi,
+  PIN_MAX_PROPOSALS,
+  PROPOSE_CONTEXT_TOOL,
+  proposalToolResult,
+} from '@/lib/chishokanAi/pinnedContext';
 import { TASKS_DIR, listTasks, loadTaskBundle, taskButtons, taskListForPrompt, taskTool, type TaskDef } from '@/lib/chishokanAi/tasks';
 
 const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
@@ -143,6 +153,8 @@ export async function POST(req: Request) {
   if (messages.length === 0) return new Response('messages required', { status: 400 });
   const attachments: Attach[] = Array.isArray(body?.attachments) ? body.attachments.slice(0, 5) : [];
   const carry = normalizeContext(body?.context);
+  // コンテキスト欄の項目（質問のたびに全部渡す）
+  const pinned = normalizePinnedForApi(body?.pinned);
   const continuation = body?.continuation === true;
   // 会話の番号と何回目のやり取りか（会話ログで1つの会話を追えるように。不具合の報告にも同じ番号が入る）
   const conversationId = typeof body?.conversationId === 'string' && /^[\w-]{4,40}$/.test(body.conversationId) ? body.conversationId : '';
@@ -180,6 +192,7 @@ export async function POST(req: Request) {
     CREATE_SLIDES_TOOL,
     MATH_MATERIAL_TOOL,
     MATH_QUIZ_TOOL,
+    PROPOSE_CONTEXT_TOOL,
   ] as unknown as Anthropic.Tool[];
   let tasksStarted = 0;
   // 計算の道具は、作業の手順書が使うときだけ足す（回答の途中で手順書を開いたら、次の往復から足す）。
@@ -188,6 +201,7 @@ export async function POST(req: Request) {
   let templateReads = 0;
   let slidesMade = 0;
   let mathMade = 0;
+  const proposals: string[] = [];
   const lastUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 
   const encoder = new TextEncoder();
@@ -245,6 +259,7 @@ export async function POST(req: Request) {
           if (r.ok) carriedKnowledge.push({ path: r.path, text: r.text });
         }
         const carryBlock = buildCarryBlock(carriedKnowledge, carry.texts);
+        const pinnedBlock = buildPinnedBlock(pinned);
 
         // 作業ボタンで選ばれていれば、手順書と資料を先に渡す（AI が1本ずつ探さない）。
         let taskBlock = '';
@@ -262,6 +277,7 @@ export async function POST(req: Request) {
             ? {
                 role: m.role,
                 content: [
+                  ...(pinnedBlock ? [{ type: 'text' as const, text: pinnedBlock }] : []),
                   ...(carryBlock ? [{ type: 'text' as const, text: carryBlock }] : []),
                   ...(taskBlock ? [{ type: 'text' as const, text: taskBlock }] : []),
                   ...drive.blocks,
@@ -392,6 +408,18 @@ export async function POST(req: Request) {
                 mathMade++;
                 out = r.toolResult;
               }
+            } else if (block.name === PROPOSE_CONTEXT_TOOL.name) {
+              // 直し案は画面に送るだけ（職員が「置き換える」「追加する」を押すまで変わらない）
+              const c = checkProposal(input, pinned);
+              if (proposals.length >= PIN_MAX_PROPOSALS) {
+                out = `直し案は1回の回答で${PIN_MAX_PROPOSALS}つまでです。出した案を職員に見てもらってください。`;
+              } else if (!c.ok) {
+                out = c.message;
+              } else {
+                send({ t: 'pin', ...c.proposal });
+                proposals.push(c.proposal.id ? `${c.proposal.id}「${c.proposal.name}」` : `新「${c.proposal.name}」`);
+                out = proposalToolResult(c.proposal);
+              }
             } else if (block.name === CREATE_DOC_TOOL.name) {
               if (createdDocs.length >= 1) {
                 out = '文書は1回の回答で1つまでです。作った文書のURLを伝えてください。';
@@ -408,7 +436,9 @@ export async function POST(req: Request) {
             opened.push(
               block.name === CREATE_DOC_TOOL.name || block.name === CREATE_SLIDES_TOOL.name || block.name === MATH_MATERIAL_TOOL.name || block.name === MATH_QUIZ_TOOL.name
                 ? `${block.name}:${String(input.title ?? '')}`
-                : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? input.task ?? input.template ?? '')}`,
+                : block.name === PROPOSE_CONTEXT_TOOL.name
+                  ? `${block.name}:${String(input.id || input.name || '')}`
+                  : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? input.task ?? input.template ?? '')}`,
             );
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           }
@@ -470,6 +500,7 @@ export async function POST(req: Request) {
             usage.join(' | '),
             `tools=${opened.join(',')}`,
             `carry=${carry.reads.length}+${carry.texts.length}`,
+            pinned.length ? `pinned=${pinned.length}` : '',
             flags ? `flags=${flags}` : '',
             activeTask ? `task=${activeTask.id}` : '',
             deep ? 'thinking=adaptive' : '',
@@ -487,6 +518,9 @@ export async function POST(req: Request) {
         const gapNote = gaps.length ? `（資料に無い: ${gaps.join('／')}）` : '';
         const k = (n: number) => (n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n));
         const statNote = `（${Math.round((Date.now() - requestStarted) / 1000)}秒・往復${usage.length}・トークン 入力${k(tokens.input)}/キャッシュ読${k(tokens.cacheRead)}/キャッシュ書${k(tokens.cacheWrite)}/出力${k(tokens.output)}${deep ? '・じっくり考える' : ''}${codeRuns ? `・計算${codeRuns}回` : ''}）`;
+        // コンテキスト欄の項目（名前と字数だけ。全文は追加・置き換えのときに context-log で1回だけ残す）
+        const pinNote = pinned.length ? `（コンテキスト: ${pinned.map((p) => `${p.id}「${p.name}」${p.text.length}字`).join('、')}）` : '';
+        const proposalNote = proposals.length ? `（コンテキストの直し案: ${proposals.join('、')}）` : '';
         const docNote = createdDocs.length
           ? `（作成した文書: ${createdDocs.map((d) => (d.ok ? `${d.title} ${d.url}` : `${d.title}＝作れず:${d.note}`)).join('、')}）`
           : '';
@@ -494,7 +528,7 @@ export async function POST(req: Request) {
           await logInteraction({
             user: session.name,
             campus: session.campus,
-            input: `[智翔館AI]${convoNote}${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}\n（調べた資料: ${opened.join('、') || 'なし'}）${statNote}`,
+            input: `[智翔館AI]${convoNote}${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}${pinNote}${proposalNote}\n（調べた資料: ${opened.join('、') || 'なし'}）${statNote}`,
             output: stripRoleBleed(full),
           }, { timeoutMs: Math.max(2_000, Math.min(15_000, LIMIT_MS - (Date.now() - requestStarted) - 2_000)) });
         } catch {}
