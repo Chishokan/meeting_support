@@ -54,6 +54,16 @@ export const MANUALS: ManualDoc[] = [
     meta: 'v0.25.2｜PDF・A4・18ページ｜約3MB',
   },
   {
+    id: 'chishokan-ai-video',
+    title: '動画：智翔館AIの使い方',
+    desc: '開き方・画面の見方、質問のしかたと回答の見方、資料の渡し方、よく使う作業、不具合の報告と要望の送り方を、画面と音声で説明します',
+    kind: 'video',
+    href: '/manual/chishokan-ai.mp4',
+    downloadName: '智翔館AIの使い方_動画マニュアル.mp4',
+    meta: '約5分半｜MP4｜約15MB',
+    poster: '/manual/chishokan-ai-poster.jpg',
+  },
+  {
     id: 'meeting-dx',
     title: '会議DX 操作マニュアル',
     desc: '会議DXのメニュー画面・部門会議と、ヘルプデスク（要項QA・ご意見・不具合の報告・マニュアル）の使い方。画面の写真つき',
