@@ -26,9 +26,15 @@ type FolderItem = { id: string; name: string; kind: string; updated: string; fol
 type FolderGasResult = GasResult & { name?: string; items?: FolderItem[]; more?: boolean };
 
 /** ファイル1件を読み、AIに渡すブロックと結果を返す。pdfAsDocument=false のときは PDF を文字にできないので案内だけ返す。 */
-async function readOne(id: string, pdfAsDocument = true, signal?: AbortSignal): Promise<{ blocks: Anthropic.ContentBlockParam[]; read: DriveRead; carry?: DriveText }> {
+/** ドライブのファイル・フォルダを開くリンク（ファイルでもフォルダでも開ける形）。 */
+export function driveOpenUrl(id: string): string {
+  return `https://drive.google.com/open?id=${id}`;
+}
+
+async function readOne(id: string, pdfAsDocument = true, signal?: AbortSignal): Promise<{ blocks: Anthropic.ContentBlockParam[]; read: DriveRead; carry?: DriveText; reason?: string }> {
   const j = (await callGas({ action: 'readDriveFile', id }, signal)) as DriveGasResult;
   const name = j.name || 'ファイル';
+  const url = driveOpenUrl(id);
   // 再デプロイ前の Apps Script は未知の action に ok だけ返すので、kind が無ければ未対応とみなす。
   if (j.ok && !j.kind) j.reason = 'not_deployed';
   if (!j.ok || !j.kind) {
@@ -36,6 +42,8 @@ async function readOne(id: string, pdfAsDocument = true, signal?: AbortSignal): 
     return {
       blocks: [{ type: 'text', text: `【リンクのファイル：${name}】読めませんでした（${why}）。職員にそのことを伝え、必要ならファイルを添付してもらう。` }],
       read: { id, name, ok: false, note: why },
+      // フォルダの ID だったときは、Apps Script は「対応していない種類（mime がフォルダ）」を返す
+      reason: j.reason === 'unsupported' && (j as { mime?: unknown }).mime === 'application/vnd.google-apps.folder' ? 'folder' : String(j.reason ?? ''),
     };
   }
   const label = KIND_LABEL[j.kind] ?? j.kind;
@@ -44,22 +52,23 @@ async function readOne(id: string, pdfAsDocument = true, signal?: AbortSignal): 
       if (pdfAsDocument && j.base64) {
         return {
           blocks: [
-            { type: 'text', text: `【リンクのファイル：${name}（${label}）】` },
+            { type: 'text', text: `【リンクのファイル：${name}（${label}）】リンク：${url}` },
             { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: j.base64 } },
           ],
           read: { id, name, ok: true, note: label },
         };
       }
       return {
-        blocks: [{ type: 'text', text: `【リンクのファイル：${name}（PDF）】この道具では PDF の中身を読めません。PDF のリンクを質問に貼るか、添付してもらう。` }],
+        blocks: [{ type: 'text', text: `【ファイル：${name}（PDF）】リンク：${url}\nPDF のファイルはある（フォルダではない）。この道具では PDF の中身を読めない。リンクは職員にそのまま出してよい。中身が要るときは、職員にこのリンクを質問に貼ってもらう（質問に貼られた PDF は読める）か、PDF を添付してもらう。` }],
         read: { id, name, ok: false, note: 'PDF（道具では読めない）' },
+        reason: 'pdf',
       };
     }
     const body = j.base64 && (j.kind === 'docx' || j.kind === 'xlsx' || j.kind === 'pptx')
       ? await officeToText(j.kind as OfficeKind, Buffer.from(j.base64, 'base64'))
       : j.text ?? '';
     return {
-      blocks: [{ type: 'text', text: `【リンクのファイル：${name}（${label}）】\n${body || '（文字が見つかりませんでした）'}` }],
+      blocks: [{ type: 'text', text: `【リンクのファイル：${name}（${label}）】リンク：${url}\n${body || '（文字が見つかりませんでした）'}` }],
       read: { id, name, ok: true, note: label },
       carry: body ? { name: `${name}（${label}）`, text: body } : undefined,
     };
@@ -73,14 +82,22 @@ async function listOne(id: string, signal?: AbortSignal): Promise<{ text: string
   const j = (await callGas({ action: 'listDriveFolder', id }, signal)) as FolderGasResult;
   const name = j.name || 'フォルダ';
   if (j.ok && !Array.isArray(j.items)) j.reason = 'not_deployed';
+  // ファイルの ID だった（Apps Script が not_folder を返した、または古い Apps Script が「中身0件」で返し、名前がファイルの形）
+  const looksFile = j.ok && Array.isArray(j.items) && j.items.length === 0 && /\.(pdf|docx?|xlsx?|pptx?|png|jpe?g|gif|zip|mp4|mov)$/i.test(name);
+  if (j.reason === 'not_folder' || looksFile) {
+    return {
+      text: `【ファイル：${name}】リンク：${driveOpenUrl(id)}\nこれはフォルダではなくファイル。中身は read_drive_file で開く（PDF は道具では読めないので、リンクを出すか、添付してもらう）。リンクは職員にそのまま出してよい。`,
+      read: { id, name, ok: true, note: 'ファイル' },
+    };
+  }
   if (!j.ok || !Array.isArray(j.items)) {
     const why = reasonText(j.reason);
     return { text: `【リンクのフォルダ：${name}】開けませんでした（${why}）。職員にそのことを伝える。`, read: { id, name, ok: false, note: why } };
   }
-  const lines = j.items.map((it) => `- ${it.folder ? '📁 ' : ''}${it.name}｜${it.kind}｜更新 ${it.updated}｜id: ${it.id}`);
+  const lines = j.items.map((it) => `- ${it.folder ? '📁 ' : ''}${it.name}｜${it.kind}｜更新 ${it.updated}｜id: ${it.id}｜リンク: ${driveOpenUrl(it.id)}`);
   const more = j.more ? '\n（多いため途中までです）' : '';
   return {
-    text: `【リンクのフォルダ：${name}】中身（${j.items.length}件）。必要なファイルは read_drive_file に id を渡して読む。中のフォルダは list_drive_folder で開く。\n${lines.join('\n') || '（空）'}${more}`,
+    text: `【リンクのフォルダ：${name}】（${driveOpenUrl(id)}）中身（${j.items.length}件）。必要なファイルは read_drive_file に id を渡して読む。中のフォルダは list_drive_folder で開く。リンクは職員にそのまま出してよい。\n${lines.join('\n') || '（空）'}${more}`,
     read: { id, name, ok: true, note: 'フォルダ一覧' },
   };
 }
@@ -109,10 +126,11 @@ export async function runDriveTool(name: string, input: Record<string, unknown>,
     return { text: r.text, read: r.read };
   }
   const r = await readOne(id, false, signal);
-  // フォルダのIDを read_drive_file に渡すと「見つからない」になる。その場合はフォルダとして一覧を返す。
-  if (!r.read.ok) {
+  // フォルダのIDを read_drive_file に渡すと「見つからない」になる。その場合だけフォルダとして一覧を返す
+  // （PDF など、ファイルはあるが中身を読めないときに開き直すと、空のフォルダに見えてしまう）。
+  if (!r.read.ok && (r.reason === 'not_found' || r.reason === 'folder')) {
     const asFolder = await listOne(id, signal);
-    if (asFolder.read.ok) return { text: `（これはフォルダでした。中身の一覧です）\n${asFolder.text}`, read: asFolder.read };
+    if (asFolder.read.ok && asFolder.read.note === 'フォルダ一覧') return { text: `（これはフォルダでした。中身の一覧です）\n${asFolder.text}`, read: asFolder.read };
   }
   const text = r.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('\n');
   return { text, read: r.read, carry: r.carry };
