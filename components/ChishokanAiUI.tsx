@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import AiMarkdown, { CopyButton } from '@/components/AiMarkdown';
-import AiContextPanel, { type PinDraft, type PinProposalView } from '@/components/AiContextPanel';
+import AiContextPanel, { type PinDraft, type PinProposalView, type SavedView } from '@/components/AiContextPanel';
 import AiContextDiffDialog from '@/components/AiContextDiffDialog';
 import AiReportDialog from '@/components/AiReportDialog';
 import AiRequestDialog from '@/components/AiRequestDialog';
@@ -24,6 +24,8 @@ import { toPlainText } from '@/lib/chishokanAi/markdown';
 import {
   CONTINUE_PROMPT,
   EMPTY_CONTEXT,
+  LONG_CONVERSATION_CHARS,
+  SUMMARY_PROMPT,
   mergeContext,
   normalizeContext,
   parseEvents,
@@ -44,7 +46,8 @@ import {
   type Pinned,
   type PinLogAction,
 } from '@/lib/chishokanAi/pinnedContext';
-import { buildSaved, parseSaved, SAVE_MAX_BYTES, savedFileName } from '@/lib/chishokanAi/savedConversation';
+import { buildSaved, conversationTitle, parseSaved, SAVE_MAX_BYTES, savedFileName, type SavedConversation } from '@/lib/chishokanAi/savedConversation';
+import type { ConvoRow, Preset } from '@/lib/chishokanAi/savedRules';
 
 type Msg = {
   role: 'user' | 'assistant';
@@ -188,6 +191,15 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   const [panelOpen, setPanelOpen] = useState(false);
   const [diffKey, setDiffKey] = useState<string | null>(null);
   const [panelNote, setPanelNote] = useState('');
+  // サーバーへの保存（メールアドレスでログインしたときだけ使える）。履歴は質問のたびに自動で保存する
+  const [saved, setSaved] = useState<SavedView | null>(null);
+  const savedRef = useRef<SavedView | null>(null);
+  const messagesRef = useRef<Msg[]>([]);
+  const busyRef = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [tooLarge, setTooLarge] = useState(false);
+  // 「新しい相談を始める」で、コンテキストを残すか聞いているところ
+  const [resetAsk, setResetAsk] = useState(false);
   useEffect(() => {
     fetch('/api/chishokan-ai', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
@@ -204,6 +216,95 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   useEffect(() => {
     if (messages.length) endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
+
+  function updateSaved(next: SavedView | null) {
+    savedRef.current = next;
+    setSaved(next);
+  }
+
+  // 保存した会話・履歴・いつものコンテキストを読む（使えないときは何も出さない。保存先の設定が無いときだけ理由を出す）
+  useEffect(() => {
+    fetch('/api/chishokan-ai/conversations', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j?.enabled) {
+          const v: SavedView = { enabled: true, history: j.history ?? [], saved: j.saved ?? [], presets: j.presets ?? [] };
+          updateSaved(v);
+          addAutoPresets(v.presets);
+        } else if (j?.reason === 'db') {
+          updateSaved({ enabled: false, message: j.message, history: [], saved: [], presets: [] });
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 自動保存：回答が終わったとき・コンテキストを変えたとき（少し待ってまとめて）
+  useEffect(() => {
+    if (!busy && messages.some((m) => m.role === 'user')) scheduleSave(300);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
+  useEffect(() => {
+    if (messagesRef.current.some((m) => m.role === 'user')) scheduleSave(1500);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinned, context]);
+
+  function scheduleSave(ms: number) {
+    if (!savedRef.current?.enabled) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { saveTimer.current = null; void saveNow(); }, ms);
+  }
+
+  function currentSaved(id: string): SavedConversation {
+    return buildSaved({
+      conversationId: id,
+      messages: messagesRef.current.filter((m) => !(m.role === 'assistant' && !m.content)),
+      pinned: pinnedRef.current,
+      pinUsed: pinUsedRef.current,
+      carry: contextRef.current,
+      savedAt: new Date().toISOString(),
+    });
+  }
+
+  /** いまの会話をサーバーに保存する（履歴）。保存できたら一覧も直す。 */
+  async function saveNow(): Promise<boolean> {
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+    const sv = savedRef.current;
+    if (!sv?.enabled || busyRef.current || !messagesRef.current.some((m) => m.role === 'user')) return false;
+    const id = ensureConvoId();
+    const data = currentSaved(id);
+    const res = await fetch('/api/chishokan-ai/conversations', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, data }),
+    }).catch(() => null);
+    if (!res) return false;
+    if (res.status === 413) { setTooLarge(true); return false; }
+    const j = await res.json().catch(() => null);
+    if (!j?.ok) return false;
+    const now = new Date().toISOString();
+    const cur = savedRef.current;
+    if (!cur) return true;
+    const old = [...cur.saved, ...cur.history].find((r) => r.id === id);
+    const row: ConvoRow = {
+      id, kind: j.kind === '保存' ? '保存' : '履歴', title: j.kind === '保存' && old ? old.title : data.title,
+      turns: data.messages.filter((m) => m.role === 'user').length, chars: 0, createdAt: old?.createdAt ?? now, updatedAt: now,
+    };
+    const others = (xs: ConvoRow[]) => xs.filter((r) => r.id !== id);
+    updateSaved({
+      ...cur,
+      saved: row.kind === '保存' ? [row, ...others(cur.saved)] : others(cur.saved),
+      history: row.kind === '履歴' ? [row, ...others(cur.history)] : others(cur.history),
+    });
+    return true;
+  }
 
   function updateContext(next: CarryContext) {
     contextRef.current = next;
@@ -230,7 +331,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   }
 
   /** コンテキストに足す。足せないときは理由を欄に出して false。 */
-  function addPin(name: string, text: string, by: 'added' | 'ai' = 'added'): boolean {
+  function addPin(name: string, text: string, by: 'added' | 'ai' = 'added', silent = false): boolean {
     const cur = pinnedRef.current;
     const t = text.trim();
     if (!t) return false;
@@ -243,8 +344,10 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     pinUsedRef.current = used;
     const p = newPinned(id, name || guessPinName(t), t, by, new Date().toISOString());
     updatePinned([...cur, p]);
-    logPin('追加', p);
-    setPanelNote('');
+    if (!silent) {
+      logPin('追加', p);
+      setPanelNote('');
+    }
     return true;
   }
 
@@ -354,8 +457,14 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     const r = parseSaved(raw);
     if (!r.ok) { setPanelNote(r.message); return; }
     if ((messages.length || pinnedRef.current.length) && !window.confirm('いまの会話とコンテキストは消えて、ファイルの会話に入れ替わります。よろしいですか。')) return;
-    const v = r.value;
+    await saveNow();
+    applySaved(r.value, `「${r.value.title}」を読み込みました。続きから質問できます。`);
+  }
+
+  /** 書き出したファイル・保存した会話の中身を画面に戻す（同じ会話番号の続きになる）。 */
+  function applySaved(v: SavedConversation, note: string) {
     const pins = normalizePinnedList(v.pinned);
+    messagesRef.current = v.messages as Msg[];
     setMessages(v.messages as Msg[]);
     convoIdRef.current = v.conversationId || newConversationId();
     updateContext(normalizeContext(v.carry));
@@ -365,8 +474,121 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     setPinDraft(null);
     setTask(null);
     setFeedbackDraft(null);
+    setTooLarge(false);
+    setResetAsk(false);
     setPanelOpen(false);
-    setPanelNote(`「${v.title}」を読み込みました。続きから質問できます。`);
+    setPanelNote(note);
+  }
+
+  // --- 保存した会話・履歴（ログインしたときだけ） ---
+  async function openSaved(id: string) {
+    if (busy || id === convoIdRef.current) return;
+    if (!messages.some((m) => m.role === 'user') && pinnedRef.current.length && !window.confirm('いまのコンテキストは消えて、選んだ会話に入れ替わります。よろしいですか。')) return;
+    const res = await fetch(`/api/chishokan-ai/conversations?id=${encodeURIComponent(id)}`, { cache: 'no-store' }).catch(() => null);
+    const j = res ? await res.json().catch(() => null) : null;
+    if (!j?.ok) { setPanelNote(j?.message ?? '会話を開けませんでした。もう一度お試しください。'); return; }
+    const r = parseSaved(j.data);
+    if (!r.ok) { setPanelNote(r.message); return; }
+    await saveNow();
+    applySaved({ ...r.value, conversationId: id }, `「${j.title || r.value.title}」を開きました。続きから質問できます。`);
+  }
+
+  async function saveConvo(title: string) {
+    const ok = await saveNow();
+    const id = convoIdRef.current;
+    if (!ok || !id) { setPanelNote('まだ保存できません。質問を1つ送ってから、もう一度押してください。'); return; }
+    const res = await fetch('/api/chishokan-ai/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save', id, title }),
+    }).catch(() => null);
+    const j = res ? await res.json().catch(() => null) : null;
+    if (!j?.ok) { setPanelNote(j?.message ?? '保存できませんでした。もう一度お試しください。'); return; }
+    const cur = savedRef.current;
+    if (cur) {
+      const row = cur.history.find((r) => r.id === id) ?? cur.saved.find((r) => r.id === id);
+      if (row) {
+        const next: ConvoRow = { ...row, kind: '保存', title: title || row.title, updatedAt: new Date().toISOString() };
+        updateSaved({ ...cur, saved: [next, ...cur.saved.filter((r) => r.id !== id)], history: cur.history.filter((r) => r.id !== id) });
+      }
+    }
+    setPanelNote(`「${title || 'この会話'}」を保存しました。`);
+  }
+
+  async function unsaveConvo(id: string) {
+    const res = await fetch('/api/chishokan-ai/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'unsave', id }),
+    }).catch(() => null);
+    if (!res?.ok) { setPanelNote('外せませんでした。もう一度お試しください。'); return; }
+    const cur = savedRef.current;
+    const row = cur?.saved.find((r) => r.id === id);
+    if (cur && row) updateSaved({ ...cur, saved: cur.saved.filter((r) => r.id !== id), history: [{ ...row, kind: '履歴' }, ...cur.history] });
+  }
+
+  async function deleteConvo(id: string) {
+    const cur = savedRef.current;
+    const row = cur && [...cur.saved, ...cur.history].find((r) => r.id === id);
+    if (!row || !window.confirm(`「${row.title || 'この会話'}」を消しますか（元に戻せません。会話ログは消えません）。`)) return;
+    const res = await fetch(`/api/chishokan-ai/conversations?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+    if (!res?.ok) { setPanelNote('消せませんでした。もう一度お試しください。'); return; }
+    const now = savedRef.current;
+    if (now) updateSaved({ ...now, saved: now.saved.filter((r) => r.id !== id), history: now.history.filter((r) => r.id !== id) });
+    // 開いている会話を消したら、画面も新しい相談にする（続けて質問すると、また履歴に入ってしまうため）
+    if (id === convoIdRef.current) clearConversation(false, true);
+  }
+
+  // --- いつものコンテキスト ---
+  function addAutoPresets(presets: Preset[]) {
+    for (const x of presets) {
+      // 自動で入れた分は会話ログに1行ずつ残さない（質問のたびの記録に、入っているコンテキストの名前が出る）
+      if (x.auto && !pinnedRef.current.some((q) => q.text === x.text)) addPin(x.name, x.text, 'added', true);
+    }
+  }
+
+  async function putPresetReq(body: Record<string, unknown>): Promise<Preset | null> {
+    const res = await fetch('/api/chishokan-ai/presets', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
+    const j = res ? await res.json().catch(() => null) : null;
+    if (!j?.ok) { setPanelNote(j?.message ?? '登録できませんでした。もう一度お試しください。'); return null; }
+    return j.item as Preset;
+  }
+
+  async function presetFromPin(pin: Pinned) {
+    const cur = savedRef.current;
+    if (cur?.presets.some((x) => x.text === pin.text)) { setPanelNote(`「${pin.name}」は、もういつものコンテキストに入っています。`); return; }
+    const item = await putPresetReq({ name: pin.name, text: pin.text });
+    if (!item) return;
+    const now = savedRef.current;
+    if (now) updateSaved({ ...now, presets: [...now.presets, item] });
+    setPanelNote(`「${pin.name}」を、いつものコンテキストに登録しました。ほかの会話でも「この会話に入れる」で使えます。`);
+  }
+
+  function presetUse(id: string) {
+    const x = savedRef.current?.presets.find((p) => p.id === id);
+    if (x) addPin(x.name, x.text);
+  }
+
+  async function presetAuto(id: string, auto: boolean) {
+    const cur = savedRef.current;
+    const x = cur?.presets.find((p) => p.id === id);
+    if (!cur || !x) return;
+    // 先に画面を変え、保存できなかったら戻す
+    const set = (v: boolean) => {
+      const now = savedRef.current;
+      if (now) updateSaved({ ...now, presets: now.presets.map((p) => (p.id === id ? { ...p, auto: v } : p)) });
+    };
+    set(auto);
+    if (!(await putPresetReq({ id, name: x.name, text: x.text, auto }))) set(!auto);
+  }
+
+  async function presetDelete(id: string) {
+    const x = savedRef.current?.presets.find((p) => p.id === id);
+    if (!x || !window.confirm(`いつものコンテキスト「${x.name}」を消しますか（いまの会話に入っている分は残ります）。`)) return;
+    const res = await fetch(`/api/chishokan-ai/presets?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+    if (!res?.ok) { setPanelNote('消せませんでした。もう一度お試しください。'); return; }
+    const now = savedRef.current;
+    if (now) updateSaved({ ...now, presets: now.presets.filter((p) => p.id !== id) });
   }
 
   async function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
@@ -540,19 +762,42 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     abortRef.current?.abort();
   }
 
+  // 新しい相談：コンテキストがあれば、残すか消すかを聞く
   function reset() {
-    const n = pinnedRef.current.length;
-    if (n && !window.confirm(`新しい相談を始めると、いまの会話とコンテキスト（${n}件）が消えます。残したいときは、先に右の欄の「ファイルに書き出す」で書き出してください。始めますか。`)) return;
+    if (pinnedRef.current.length) { setResetAsk(true); return; }
+    clearConversation(false);
+  }
+
+  /** 画面を新しい相談にする。keepPins ならコンテキストは残す。前の会話は（ログインしていれば）履歴に残る。 */
+  async function clearConversation(keepPins: boolean, skipSave = false) {
+    if (!skipSave) await saveNow();
+    messagesRef.current = [];
     setMessages([]);
     convoIdRef.current = '';
     updateContext(EMPTY_CONTEXT);
-    updatePinned([]);
-    pinUsedRef.current = 0;
+    if (!keepPins) {
+      updatePinned([]);
+      pinUsedRef.current = 0;
+    }
     setProposals([]);
     setPinDraft(null);
     setPanelNote('');
     setTask(null);
     setFeedbackDraft(null);
+    setTooLarge(false);
+    setResetAsk(false);
+    if (savedRef.current?.enabled) addAutoPresets(savedRef.current.presets);
+  }
+
+  // 会話が長くなったとき：要点をコンテキストの新しい項目の案にまとめてもらう（押すまで変わらない）
+  async function summarize() {
+    if (busy) return;
+    ensureConvoId();
+    const base: Msg[] = [...messages, { role: 'user', content: '📌 この会話の要点を、コンテキストにまとめて', api: SUMMARY_PROMPT }];
+    const turn = base.filter((m) => m.role === 'user').length;
+    const start: Msg = { role: 'assistant', content: '', turn };
+    setMessages([...base, start]);
+    await run(toApi(base), base.length, { start });
   }
 
   // 要望の小窓を開く。会話の途中なら、会話の番号と選んでいた作業を添える。
@@ -699,9 +944,18 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
 
       {messages.length > 0 && (
         <div className="yq-list ai-convo-bar">
-          <button className="yq-toggle" onClick={reset} disabled={busy}>
-            新しい相談を始める（会話を消す）
-          </button>
+          {resetAsk ? (
+            <span className="ai-reset-ask">
+              コンテキスト（{pinned.length}件）は？
+              <button type="button" className="msg-action" onClick={() => clearConversation(true)}>残して始める</button>
+              <button type="button" className="msg-action ai-pin-del" onClick={() => clearConversation(false)}>消して始める</button>
+              <button type="button" className="msg-action" onClick={() => setResetAsk(false)}>やめる</button>
+            </span>
+          ) : (
+            <button className="yq-toggle" onClick={reset} disabled={busy}>
+              新しい相談を始める{saved?.enabled ? '' : '（会話を消す）'}
+            </button>
+          )}
           {carried > 0 && (
             <span className="ai-carry-note" title={[...context.reads, ...context.texts.map((t) => t.name)].join('\n')}>
               この会話で読んだ資料 {carried} 件を、次の質問でもAIに渡します
@@ -864,6 +1118,15 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
               </div>
             );
           })}
+          {(tooLarge || messages.reduce((n, m) => n + m.content.length, 0) >= LONG_CONVERSATION_CHARS) && !busy && (
+            <div className="ai-long-note">
+              <span>
+                {tooLarge ? '会話が長くなりすぎて、これ以上は保存できません。' : '会話が長くなりました。毎回すべてをAIに送るため、回答が遅くなり、費用も増えます。'}
+                要点をコンテキストにまとめて、新しい相談で続けるのがおすすめです。
+              </span>
+              <button type="button" className="msg-action" onClick={summarize}>📌 要点をまとめる</button>
+            </div>
+          )}
           <div ref={endRef} />
         </div>
       </div>
@@ -954,6 +1217,21 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
         note={panelNote}
         open={panelOpen}
         onClose={() => setPanelOpen(false)}
+        saved={saved}
+        savedActions={{
+          currentId: convoIdRef.current,
+          canSave: !busy && messages.some((m) => m.role === 'user'),
+          onOpen: openSaved,
+          onSave: saveConvo,
+          onUnsave: unsaveConvo,
+          onDelete: deleteConvo,
+          onPresetFromPin: presetFromPin,
+          onPresetUse: presetUse,
+          onPresetAuto: presetAuto,
+          onPresetDelete: presetDelete,
+          defaultTitle: conversationTitle(messages).replace(/…$/, ''),
+          busy,
+        }}
       />
       {diffProposal && (
         <AiContextDiffDialog

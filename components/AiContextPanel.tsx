@@ -5,10 +5,12 @@
 //   AI の直し案があれば、ここから見比べて置き換える（components/AiContextDiffDialog.tsx）。
 // - 読んだ資料：この会話で AI が読んだ資料（次の質問にも自動で渡している）。外したり、コンテキストに固定したりできる。
 // - この会話：ファイルに書き出す・書き出したファイルから再開する。
+// - 保存した会話・履歴・いつものコンテキスト：メールアドレスでログインしたときだけ出す（サーバーに本人の分だけ保存。lib/chishokanAi/savedRules.ts）。
 // 画面が広いときは右に常に出し、狭いとき（スマホなど）は「📌 コンテキスト」で引き出す。
 
 import { useEffect, useRef, useState } from 'react';
 import type { CarryContext } from '@/lib/chishokanAi/conversation';
+import { HISTORY_DAYS, HISTORY_MAX, PRESET_MAX, SAVED_DAYS, SAVED_MAX, type ConvoRow, type Preset } from '@/lib/chishokanAi/savedRules';
 import {
   PIN_BY_LABEL,
   PIN_MAX_HISTORY,
@@ -34,6 +36,24 @@ export type PinProposalView = {
 
 export type PinDraft = { name: string; text: string };
 
+/** サーバーへの保存（ログインしたときだけ）。enabled が false なら、message を出すだけ。 */
+export type SavedView = { enabled: boolean; message?: string; history: ConvoRow[]; saved: ConvoRow[]; presets: Preset[] };
+
+export type SavedActions = {
+  currentId: string;
+  canSave: boolean;
+  onOpen: (id: string) => void;
+  onSave: (title: string) => void;
+  onUnsave: (id: string) => void;
+  onDelete: (id: string) => void;
+  onPresetFromPin: (pin: Pinned) => void;
+  onPresetUse: (id: string) => void;
+  onPresetAuto: (id: string, auto: boolean) => void;
+  onPresetDelete: (id: string) => void;
+  defaultTitle: string;
+  busy: boolean;
+};
+
 type Props = {
   pinned: Pinned[];
   proposals: PinProposalView[];
@@ -55,7 +75,26 @@ type Props = {
   note: string;
   open: boolean;
   onClose: () => void;
+  saved: SavedView | null;
+  savedActions: SavedActions;
 };
+
+/** 保存した会話・履歴の1行。 */
+function ConvoItem({ r, current, a, saved }: { r: ConvoRow; current: boolean; a: SavedActions; saved: boolean }) {
+  return (
+    <li className={current ? 'current' : ''}>
+      <div className="ai-convo-item-title" title={r.title}>{current ? '▶ ' : ''}{r.title || '（名前なし）'}</div>
+      <div className="ai-convo-item-meta">
+        <span>{shortTime(r.updatedAt)}・{r.turns}問</span>
+        {!current && <button type="button" className="msg-action" onClick={() => a.onOpen(r.id)} disabled={a.busy}>開く</button>}
+        {saved ? (
+          <button type="button" className="msg-action" onClick={() => a.onUnsave(r.id)} disabled={a.busy} title="保存した会話から外し、履歴に戻す">外す</button>
+        ) : null}
+        <button type="button" className="msg-action ai-pin-del" onClick={() => a.onDelete(r.id)} disabled={a.busy}>消す</button>
+      </div>
+    </li>
+  );
+}
 
 export function shortTime(at: string): string {
   const d = new Date(at);
@@ -92,6 +131,28 @@ function PinForm({
       <div className="ai-pin-form-actions">
         <button type="button" className="msg-action" onClick={onCancel}>やめる</button>
         <button type="submit" className="ai-pin-submit" disabled={!len || !!over}>{submitLabel}</button>
+      </div>
+    </form>
+  );
+}
+
+/** 「この会話を保存」（名前を付ける）。 */
+function SaveForm({ defaultTitle, onSave, busy }: { defaultTitle: string; onSave: (title: string) => void; busy: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState('');
+  if (!open) {
+    return (
+      <button type="button" className="ai-pin-add" onClick={() => { setTitle(defaultTitle); setOpen(true); }} disabled={busy}>
+        💾 この会話を保存
+      </button>
+    );
+  }
+  return (
+    <form className="ai-pin-form" onSubmit={(e) => { e.preventDefault(); onSave(title.trim()); setOpen(false); }}>
+      <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} placeholder="名前（例：冬期講習の計画）" aria-label="会話の名前" />
+      <div className="ai-pin-form-actions">
+        <button type="button" className="msg-action" onClick={() => setOpen(false)}>やめる</button>
+        <button type="submit" className="ai-pin-submit" disabled={busy}>保存する</button>
       </div>
     </form>
   );
@@ -176,6 +237,9 @@ export default function AiContextPanel(p: Props) {
                       前の版（{it.history.length}）
                     </button>
                   )}
+                  {p.saved?.enabled && (
+                    <button type="button" className="msg-action" onClick={() => p.savedActions.onPresetFromPin(it)} title="ほかの会話でも使えるように、いつものコンテキストに登録する">☆ いつもの</button>
+                  )}
                   <button type="button" className="msg-action ai-pin-del" onClick={() => p.onDelete(it.id)}>消す</button>
                 </div>
               )}
@@ -233,6 +297,60 @@ export default function AiContextPanel(p: Props) {
             ))}
           </ul>
         )}
+
+        {p.saved?.enabled && (() => {
+          const sv = p.saved;
+          const a = p.savedActions;
+          const curRow = [...sv.saved, ...sv.history].find((r) => r.id === a.currentId);
+          return (
+            <>
+              <h3 className="ai-panel-sub">いつものコンテキスト <span>{sv.presets.length}/{PRESET_MAX}</span></h3>
+              {sv.presets.length === 0 ? (
+                <p className="ai-panel-empty">会話をまたいで使う前提（担当学年・教材の決まりなど）。上の項目の「☆ いつもの」で登録すると、どの会話でも入れられます。</p>
+              ) : (
+                <ul className="ai-preset-list">
+                  {sv.presets.map((x) => (
+                    <li key={x.id}>
+                      <div className="ai-convo-item-title" title={x.text}>{x.name}</div>
+                      <div className="ai-convo-item-meta">
+                        <label className="ai-preset-auto" title="新しい相談を始めたとき、自動で入れる">
+                          <input type="checkbox" checked={x.auto} onChange={(e) => a.onPresetAuto(x.id, e.target.checked)} />
+                          新しい会話に入れる
+                        </label>
+                        <button type="button" className="msg-action" onClick={() => a.onPresetUse(x.id)} disabled={p.pinned.some((q) => q.text === x.text)}>
+                          {p.pinned.some((q) => q.text === x.text) ? '入っています' : 'この会話に入れる'}
+                        </button>
+                        <button type="button" className="msg-action ai-pin-del" onClick={() => a.onPresetDelete(x.id)}>消す</button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <h3 className="ai-panel-sub">保存した会話 <span>{sv.saved.length}/{SAVED_MAX}</span></h3>
+              {a.canSave && curRow?.kind !== '保存' && <SaveForm defaultTitle={a.defaultTitle} onSave={a.onSave} busy={a.busy} />}
+              {sv.saved.length > 0 && (
+                <ul className="ai-convo-list">
+                  {sv.saved.map((r) => <ConvoItem key={r.id} r={r} current={r.id === a.currentId} a={a} saved />)}
+                </ul>
+              )}
+              <details className="ai-history" open={sv.saved.length === 0 && sv.history.length > 0 && sv.history.length <= 5}>
+                <summary>履歴（最近の会話）<span>{sv.history.length}</span></summary>
+                {sv.history.length === 0 ? (
+                  <p className="ai-panel-empty">質問すると、ここに自動で残ります。</p>
+                ) : (
+                  <ul className="ai-convo-list">
+                    {sv.history.map((r) => <ConvoItem key={r.id} r={r} current={r.id === a.currentId} a={a} saved={false} />)}
+                  </ul>
+                )}
+              </details>
+              <p className="ai-panel-empty">
+                会話は自動で履歴に残ります（最後に使ってから{HISTORY_DAYS}日・{HISTORY_MAX}件まで）。ずっと残したい会話は「保存」（{SAVED_DAYS === 365 ? '1年' : `${SAVED_DAYS}日`}・{SAVED_MAX}件まで）。見られるのは本人だけです。
+              </p>
+            </>
+          );
+        })()}
+        {p.saved && !p.saved.enabled && p.saved.message && <p className="ai-panel-empty">{p.saved.message}</p>}
 
         <h3 className="ai-panel-sub">この会話</h3>
         <div className="ai-panel-file">

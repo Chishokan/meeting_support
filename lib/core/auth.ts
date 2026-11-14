@@ -18,3 +18,14 @@ export function getSession(): Session | null {
     return null;
   }
 }
+
+/**
+ * ログインで本人を確かめたメールアドレス（小文字）。確かめていなければ null。
+ *
+ * ★今のログイン（名前と校舎を選ぶだけ・署名なし）では本人を確かめられないので、いつも null を返す。
+ *   メールアドレスでのログインを入れたら、署名を確かめたセッションのメールアドレスを返すようにする。
+ *   これが null の間は、本人だけが見られることを前提にした機能（智翔館AIの会話の保存・いつものコンテキスト）は使えない。
+ */
+export function verifiedEmail(): string | null {
+  return null;
+}
