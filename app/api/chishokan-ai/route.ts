@@ -202,6 +202,9 @@ export async function POST(req: Request) {
 
   let full = '';
   const usage: string[] = [];
+  // 使い方の傾向・費用の目安として会話ログに残す（往復の合計）
+  const tokens = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
+  let failed = false;
   const opened: string[] = [];
   const createdDocs: CreatedDoc[] = [];
   const driveToolReads: DriveRead[] = [];
@@ -315,6 +318,10 @@ export async function POST(req: Request) {
           }
           const msg = await stream.finalMessage();
           const u = msg.usage;
+          tokens.input += u.input_tokens ?? 0;
+          tokens.cacheRead += u.cache_read_input_tokens ?? 0;
+          tokens.cacheWrite += u.cache_creation_input_tokens ?? 0;
+          tokens.output += u.output_tokens ?? 0;
           usage.push(
             `in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`,
           );
@@ -410,6 +417,7 @@ export async function POST(req: Request) {
       } catch (e) {
         if (!ac.signal.aborted) {
           console.error('[chishokan-ai] error', e);
+          failed = true;
           send({ t: 'error', v: 'エラーが発生しました。もう一度お試しください。' });
         }
       } finally {
@@ -452,7 +460,7 @@ export async function POST(req: Request) {
         // 「資料に無い：…」は、ナレッジに足す資料の手がかりとして会話ログに残す。
         const gaps = findGaps(full);
 
-        const flags = [continuation ? '続き' : '', clientGone ? '停止' : '', cut === 'time' ? '時間切れ' : cut === 'length' ? '長さで切れた' : '']
+        const flags = [continuation ? '続き' : '', failed ? 'エラー' : '', clientGone ? '停止' : '', cut === 'time' ? '時間切れ' : cut === 'length' ? '長さで切れた' : '']
           .filter(Boolean)
           .join('・');
         try {
@@ -477,6 +485,8 @@ export async function POST(req: Request) {
         const convoNote = conversationId ? `（会話: ${conversationId}${turn ? `・${turn}回目` : ''}）` : '';
         const taskNote = activeTask ? `（作業: ${activeTask.id}）` : '';
         const gapNote = gaps.length ? `（資料に無い: ${gaps.join('／')}）` : '';
+        const k = (n: number) => (n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n));
+        const statNote = `（${Math.round((Date.now() - requestStarted) / 1000)}秒・往復${usage.length}・トークン 入力${k(tokens.input)}/キャッシュ読${k(tokens.cacheRead)}/キャッシュ書${k(tokens.cacheWrite)}/出力${k(tokens.output)}${deep ? '・じっくり考える' : ''}${codeRuns ? `・計算${codeRuns}回` : ''}）`;
         const docNote = createdDocs.length
           ? `（作成した文書: ${createdDocs.map((d) => (d.ok ? `${d.title} ${d.url}` : `${d.title}＝作れず:${d.note}`)).join('、')}）`
           : '';
@@ -484,7 +494,7 @@ export async function POST(req: Request) {
           await logInteraction({
             user: session.name,
             campus: session.campus,
-            input: `[智翔館AI]${convoNote}${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}\n（調べた資料: ${opened.join('、') || 'なし'}）`,
+            input: `[智翔館AI]${convoNote}${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}\n（調べた資料: ${opened.join('、') || 'なし'}）${statNote}`,
             output: stripRoleBleed(full),
           }, { timeoutMs: Math.max(2_000, Math.min(15_000, LIMIT_MS - (Date.now() - requestStarted) - 2_000)) });
         } catch {}
