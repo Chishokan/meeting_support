@@ -1,0 +1,585 @@
+<title>智翔館AI 利用マニュアル</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+/* 縦1段の手引き。画面の写真に付けた赤い番号と、本文の赤い番号を対応させて読む。 */
+:root {
+  --bg: #f4f6f8;
+  --paper: #ffffff;
+  --ink: #1c2430;
+  --muted: #5b6573;
+  --navy: #1f4e78;
+  --navy-soft: #e8f0f8;
+  --line: #dde2e8;
+  --mark: #e0262f;
+  --warn-bg: #fff5e6;
+  --warn-line: #d98a1c;
+  --shot-frame: #cfd6de;
+  --font: 'BIZ UDPGothic', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+    --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+    --shot-frame: #3a4553; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+  --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+  --shot-frame: #3a4553; color-scheme: dark;
+}
+
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font); font-size: 15.5px; line-height: 1.85;
+  font-variant-numeric: tabular-nums;
+}
+.page {
+  max-width: 880px; margin: 0 auto;
+  padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px;
+}
+.sheet {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+  padding: clamp(20px, 4vw, 40px); min-width: 0;
+}
+
+/* 表紙 */
+.cover { display: grid; gap: 18px; }
+.cover .org { font-size: 13px; letter-spacing: .12em; color: var(--muted); }
+.cover h1 { margin: 0; font-size: clamp(28px, 5vw, 40px); line-height: 1.3; text-wrap: balance; color: var(--navy); }
+.cover .lead { margin: 0; max-width: 40em; }
+.cover dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 18px; font-size: 14px; }
+.cover dt { color: var(--muted); }
+.cover dd { margin: 0; }
+.note-sample { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; margin: 0; }
+
+/* 目次 */
+.toc h2 { font-size: 18px; margin: 0 0 10px; }
+.toc ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 14px; }
+.toc > ol > li > a { font-weight: 700; }
+.toc ol ol { display: grid; gap: 2px; margin-top: 4px; padding-left: 1.2em; font-size: 14px; }
+.toc a { color: var(--ink); text-decoration: none; }
+.toc a:hover, .toc a:focus-visible { color: var(--navy); text-decoration: underline; }
+
+/* 見出し */
+.chapter { display: grid; gap: 22px; }
+.chapter > header { display: grid; gap: 6px; border-bottom: 3px solid var(--navy); padding-bottom: 12px; }
+.eyebrow { font-size: 13px; letter-spacing: .14em; color: var(--navy); font-weight: 700; }
+.chapter h2 { margin: 0; font-size: clamp(22px, 3.6vw, 28px); line-height: 1.35; text-wrap: balance; }
+.chapter > header p { margin: 0; color: var(--muted); }
+section.sec { display: grid; gap: 14px; min-width: 0; }
+section.sec + section.sec { border-top: 1px solid var(--line); padding-top: 24px; }
+h3 { margin: 0; font-size: 19px; line-height: 1.45; text-wrap: balance; display: flex; gap: 10px; align-items: baseline; }
+h3 .no { color: var(--navy); font-size: 15px; flex: none; }
+h4 { margin: 6px 0 0; font-size: 16px; }
+p { margin: 0; }
+a { color: var(--navy); }
+
+/* 画面写真の赤い番号と同じ形 */
+.n {
+  display: inline-grid; place-items: center; flex: none;
+  width: 1.6em; height: 1.6em; border-radius: 50%;
+  background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 1;
+  vertical-align: .05em;
+}
+.btn {
+  display: inline-block; padding: 0 .5em; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--navy-soft); color: var(--navy); font-weight: 700; font-size: .92em; line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* 写真 */
+figure { margin: 0; display: grid; gap: 8px; break-inside: avoid; min-width: 0; }
+figure img {
+  display: block; width: 100%; max-width: 100%; height: auto;
+  border: 1px solid var(--shot-frame); border-radius: 10px; background: #fff;
+}
+figcaption { font-size: 13px; color: var(--muted); }
+.video video { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--shot-frame); background: #0e1520; }
+.print-only { display: none; }
+.fig-narrow img { max-width: 520px; }
+.fig-card img { max-width: 480px; }
+.side-by-side { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px; align-items: start; }
+.w-sidebar { width: 238px; }
+.w-side { width: 340px; }
+.phones { display: flex; flex-wrap: wrap; gap: 20px; }
+.phones figure { width: min(240px, 100%); }
+
+/* 番号の説明 */
+.legend { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.legend li { display: grid; grid-template-columns: 1.6em 1fr; gap: 10px; align-items: start; }
+.legend .n { margin-top: .2em; font-size: 13px; }
+.legend b { font-weight: 700; }
+
+/* 手順 */
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: st; display: grid; gap: 10px; }
+.steps > li { counter-increment: st; display: grid; grid-template-columns: 2em 1fr; gap: 8px; }
+.steps > li::before {
+  content: counter(st); width: 1.75em; height: 1.75em; border-radius: 6px; margin-top: .15em;
+  display: grid; place-items: center; background: var(--navy); color: var(--paper); font-weight: 700; font-size: 14px;
+}
+ul.plain { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
+
+/* 補足 */
+.box { border-radius: 10px; padding: 14px 18px; display: grid; gap: 6px; border: 1px solid var(--line); }
+.box > .box-title { font-weight: 700; font-size: 14px; letter-spacing: .04em; }
+.box.tip { background: var(--navy-soft); border-color: transparent; }
+.box.tip > .box-title { color: var(--navy); }
+.box.warn { background: var(--warn-bg); border-color: transparent; border-left: 4px solid var(--warn-line); }
+.box.warn > .box-title { color: var(--warn-line); }
+.box.recommend { border: 2px solid var(--navy); }
+.box.recommend > .box-title { color: var(--navy); font-size: 15px; }
+
+/* 流れ図 */
+.loop { display: grid; gap: 10px; }
+.loop ol { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.loop li {
+  position: relative; border: 1.5px solid var(--navy); border-radius: 10px; padding: 10px 12px;
+  display: grid; gap: 2px; background: var(--paper);
+}
+.loop li .k { font-size: 12px; color: var(--navy); font-weight: 700; letter-spacing: .08em; }
+.loop li .t { font-weight: 700; line-height: 1.4; }
+.loop li .d { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.loop li:not(:last-child)::after {
+  content: "→"; position: absolute; right: -10px; top: 50%; transform: translate(50%, -50%);
+  color: var(--navy); font-weight: 700; background: var(--paper); line-height: 1;
+}
+.loop .back {
+  border: 1.5px dashed var(--navy); border-radius: 10px; padding: 6px 12px; text-align: center;
+  color: var(--navy); font-weight: 700; font-size: 14px;
+}
+
+/* 表 */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+th { background: var(--navy-soft); color: var(--ink); font-weight: 700; }
+td.num { white-space: nowrap; font-weight: 700; }
+
+footer.end { text-align: center; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 680px) {
+  .side-by-side { grid-template-columns: minmax(0, 1fr); }
+  .w-sidebar, .w-side { width: auto; max-width: min(340px, 100%); }
+  .loop ol { grid-template-columns: 1fr 1fr; }
+  .loop li:nth-child(2)::after { content: none; }
+}
+@media (max-width: 420px) {
+  .loop ol { grid-template-columns: 1fr; }
+  .loop li::after { content: none !important; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+@media print {
+  :root { --bg: #fff; }
+  body { font-size: 10.5pt; line-height: 1.75; }
+  .page { max-width: none; padding: 0; gap: 0; }
+  .sheet { border: 0; border-radius: 0; padding: 0; }
+  .cover { min-height: 240mm; align-content: center; }
+  .toc, .chapter { break-before: page; }
+  section.sec { break-before: auto; }
+  .page, .cover, .chapter, section.sec, figure { display: block; }
+  .chapter > * + *, section.sec > * + * { margin-top: 12px; }
+  .chapter > header + * { margin-top: 18px; }
+  section.sec + section.sec { margin-top: 22px; }
+  .cover > * + * { margin-top: 14px; }
+  figcaption { margin-top: 4px; }
+  h3, h4 { break-after: avoid; }
+  figure, .box, .loop, table, .legend li { break-inside: avoid; }
+  figure img { max-height: 200mm; width: auto; max-width: 100%; }
+  .side-by-side { display: flow-root; }
+  .side-by-side > figure { float: left; margin: 0 8mm 4mm 0; }
+  .side-by-side > figure img { width: 100%; max-height: none; }
+  .w-sidebar { width: 60mm; }
+  .w-side { width: 78mm; }
+  a { color: var(--ink); text-decoration: none; }
+  footer.end { display: none; }
+  .video { display: none; }
+  .print-only { display: block; color: var(--muted); }
+}
+</style>
+
+<div class="page">
+
+<header class="sheet cover" id="top">
+  <div class="org">株式会社智翔館　社内向け</div>
+  <h1>智翔館AI（試用版）利用マニュアル</h1>
+  <p class="lead">社内の資料をもとに答える<b>智翔館AI</b>の使い方をまとめた手引きです。質問のしかた、チラシ・スライド・計画書・数学の教材などの<b>よく使う作業</b>、試用期間中の<b>不具合の報告と要望の送り方</b>を説明します。画面の写真に付けた赤い番号（<span class="n">1</span>）は、本文の同じ番号の説明に対応しています。</p>
+  <dl>
+    <dt>対象</dt><dd>全職員</dd>
+    <dt>アプリ</dt><dd>智翔館アプリ › 智翔館AI（バージョン v0.25 時点）</dd>
+    <dt>試用期間</dt><dd>いまは試用期間です。使い方の傾向・不具合・要望を集めて改善します</dd>
+    <dt>最新版</dt><dd>ヘルプデスクの「マニュアル」タブからダウンロードできます</dd>
+    <dt>作成</dt><dd>2026年11月</dd>
+  </dl>
+  <p class="note-sample">※ 写真に写っている名前・会話・リンクは、説明のために用意した架空の例です。AIの回答の文面も例で、実際の文面は質問の内容や資料によって変わります。</p>
+</header>
+
+<nav class="sheet toc" aria-label="目次">
+  <h2>目次</h2>
+  <ol>
+    <li><a href="#ch1">第1章　智翔館AIでできること</a>
+      <ol>
+        <li><a href="#s1-1">1-1　できること・できないこと</a></li>
+        <li><a href="#s1-2">1-2　開き方</a></li>
+        <li><a href="#s1-3">1-3　画面の見方</a></li>
+        <li><a href="#s1-4">1-4　スマートフォンで使うとき</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch2">第2章　質問する</a>
+      <ol>
+        <li><a href="#s2-1">2-1　質問のしかた</a></li>
+        <li><a href="#s2-2">2-2　回答の見方</a></li>
+        <li><a href="#s2-3">2-3　続けて聞く・新しい相談を始める</a></li>
+        <li><a href="#s2-4">2-4　資料を渡して聞く</a></li>
+        <li><a href="#s2-5">2-5　止める・途中で切れたとき</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch3">第3章　よく使う作業</a>
+      <ol>
+        <li><a href="#s3-1">3-1　作業の始め方</a></li>
+        <li><a href="#s3-2">3-2　作業の一覧</a></li>
+        <li><a href="#s3-3">3-3　聞き返しと選択肢のボタン</a></li>
+        <li><a href="#s3-4">3-4　ファイルができたら</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch4">第4章　試用期間のお願い</a>
+      <ol>
+        <li><a href="#s4-1">4-1　不具合を報告する</a></li>
+        <li><a href="#s4-2">4-2　要望を送る</a></li>
+        <li><a href="#s4-3">4-3　回答を評価する（👍👎）</a></li>
+        <li><a href="#s4-4">4-4　使うときに守ること</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch5">付録　よくある質問</a></li>
+  </ol>
+</nav>
+
+<!-- ============================== 第1章 ============================== -->
+<article class="sheet chapter" id="ch1">
+  <header>
+    <div class="eyebrow">第1章</div>
+    <h2>智翔館AIでできること</h2>
+    <p>社内の資料を読んで答える、社内専用のAIです。ふだんのチャットAIのように、文章の手直しや下書きにも使えます。</p>
+  </header>
+
+  <section class="sec" id="s1-1">
+    <h3><span class="no">1-1</span>できること・できないこと</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>種類</th><th>できること</th><th>例</th></tr></thead>
+        <tbody>
+          <tr><td class="num">社内のことを聞く</td><td>理念・方針、講習の要項、部門の計画、地域の学校・入試、就業規則・給与規程、チラシやスライドの作り方などの資料を読んで答えます。答えには<b>出典（資料の名前）</b>が付きます</td><td>冬期講習（中3）の日程は？／有給休暇は何日？</td></tr>
+          <tr><td class="num">資料をつくる</td><td>チラシの原稿、Google スライド、計画書、数学の教材・小テストなどを、社内の型に沿って作ります（3章）</td><td>冬期講習（中3）のチラシを作って</td></tr>
+          <tr><td class="num">ふだんの作業</td><td>要約、言い換え、校正、敬語の直し、メールや案内文の下書き、アイデア出し</td><td>（文章を貼って）やわらかい表現に直して</td></tr>
+          <tr><td class="num">渡した資料を読む</td><td>PDF・画像・Word・Excel・PowerPoint の添付や、ドライブのリンクを読んで答えます（2-4）</td><td>この計画書が方針に沿っているかチェックして</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="box warn">
+      <div class="box-title">できないこと</div>
+      <ul class="plain">
+        <li><b>Web は見ません。</b>社内のこと（日付・料金・数字・方針）は、社内の資料にあるものだけで答えます。資料に無いことは「資料に無い」と答えます</li>
+        <li>業績の数字（売上・利益）、個人の給与額・評価・健康のことは持っていません。就業規則に書いてある決まりは答えますが、ご自身の有給の残りなどは総務に確認してください</li>
+        <li>AIが作ったものは<b>下書き</b>です。生徒・保護者に渡す前に、必ず担当者が確かめてください</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec" id="s1-2">
+    <h3><span class="no">1-2</span>開き方</h3>
+    <figure class="fig-narrow">
+      <img src="images/ai_01_menu.png" alt="メニュー画面。智翔館AI（試用版）のカードに赤枠1">
+      <figcaption>メニュー画面</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><div>智翔館アプリにログインし、メニュー画面の <span class="n">1</span> <b>智翔館AI（試用版）</b>のカードを押します</div></li>
+      <li><div>智翔館AIの画面が開きます。メニューに戻るときは、左上の「← メニュー」を押します</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s1-3">
+    <h3><span class="no">1-3</span>画面の見方</h3>
+    <figure>
+      <img src="images/ai_02_top.png" alt="智翔館AIの最初の画面。赤枠1〜8">
+      <figcaption>智翔館AIの最初の画面</figcaption>
+    </figure>
+    <ul class="legend">
+      <li><span class="n">1</span><span><b>使い方と注意</b>：押すと、Web を見ないこと、読めるファイル、会話の記録などの注意が開きます</span></li>
+      <li><span class="n">2</span><span><b>不具合を報告</b>：うまく動かないときに、状況を送ります（4-1）</span></li>
+      <li><span class="n">3</span><span><b>要望を送る</b>：こういう使い方をしたい、この資料を入れてほしい、などを送ります（4-2）</span></li>
+      <li><span class="n">4</span><span><b>よく使う作業</b>：チラシ・スライド・計画書・数学の教材などのボタン。押すと、社内の型と資料を使って進めます（3章）</span></li>
+      <li><span class="n">5</span><span><b>ほかの使い方の例</b>：押すと、例の文が入力欄に入ります</span></li>
+      <li><span class="n">6</span><span><b>資料を添付</b>：PDF・画像・Word・Excel・PowerPoint を渡します（2-4）</span></li>
+      <li><span class="n">7</span><span><b>作業を選ぶ</b>：最初の画面のボタンと同じ作業を、会話の途中でも選べます</span></li>
+      <li><span class="n">8</span><span><b>入力欄</b>：質問や頼みごとを書きます。<b>Enter で送信</b>、Shift＋Enter で改行です（スマートフォンは［送信］ボタン）</span></li>
+    </ul>
+  </section>
+
+  <section class="sec" id="s1-4">
+    <h3><span class="no">1-4</span>スマートフォンで使うとき</h3>
+    <div class="side-by-side">
+      <figure class="w-side">
+        <img src="images/ai_09_phone.png" alt="スマートフォンでの智翔館AIの画面">
+        <figcaption>スマートフォンの画面</figcaption>
+      </figure>
+      <div>
+        <p>パソコンと同じ画面を、縦に並べて表示します。入力欄で Enter を押すと改行になるので、送るときは<b>［送信］</b>を押してください。</p>
+        <p style="margin-top:10px">チラシやスライド、Word の教材など、長い資料づくりは時間がかかります（数分）。作っているあいだに画面を閉じると止まるので、パソコンで使うのがおすすめです。</p>
+      </div>
+    </div>
+  </section>
+</article>
+
+<!-- ============================== 第2章 ============================== -->
+<article class="sheet chapter" id="ch2">
+  <header>
+    <div class="eyebrow">第2章</div>
+    <h2>質問する</h2>
+    <p>短い文で聞いて大丈夫です。プロンプトの書き方を覚える必要はありません。</p>
+  </header>
+
+  <section class="sec" id="s2-1">
+    <h3><span class="no">2-1</span>質問のしかた</h3>
+    <ol class="steps">
+      <li><div>入力欄に、聞きたいことをそのまま書きます（例：<b>有給休暇は入社何か月後から何日もらえますか？</b>）</div></li>
+      <li><div>Enter を押して送ります。作業中は「📄 …を読んでいます」のように、AIがいまやっていることが出ます</div></li>
+      <li><div>回答が少しずつ表示されます。表や見出しは整えて表示されます</div></li>
+    </ol>
+    <div class="box tip">
+      <div class="box-title">うまく聞くコツ</div>
+      <ul class="plain">
+        <li>だれ向けか・何に使うかを一言そえると、合った答えになります（例：「中3の保護者向けに」「校舎の掲示用に」）</li>
+        <li>講座名・学年・校舎は、要項の名前で書くと探しやすくなります（例：「冬期講習会（中3）」）</li>
+        <li>答えが違うと思ったら、そのまま「〇〇の資料で確かめて」と続けて聞けます</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec" id="s2-2">
+    <h3><span class="no">2-2</span>回答の見方</h3>
+    <figure>
+      <img src="images/ai_03_answer.png" alt="質問と回答の画面。赤枠1〜6">
+      <figcaption>質問と回答（就業規則の質問の例）</figcaption>
+    </figure>
+    <ul class="legend">
+      <li><span class="n">1</span><span><b>質問</b>：送った文です</span></li>
+      <li><span class="n">2</span><span><b>回答</b>：最後に<b>出典</b>（読んだ資料の名前と更新日）が付きます。社内のことは、出典の資料で確かめてから使ってください</span></li>
+      <li><span class="n">3</span><span><b>読んだ資料</b>：AIが実際に開いた資料です</span></li>
+      <li><span class="n">4</span><span><b>回答のボタン</b>：<span class="btn">回答をコピー</span>（記号を外した文字。表はスプレッドシートに貼ると列に分かれます）、<span class="btn">👍</span><span class="btn">👎</span>（評価。4-3）、<span class="btn">⚠ 報告</span>（この回答の不具合を報告。4-1）、<span class="btn">もう一度答えさせる</span></span></li>
+      <li><span class="n">5</span><span><b>新しい相談を始める</b>：会話を消して、最初の画面に戻ります（2-3）</span></li>
+      <li><span class="n">6</span><span><b>持ち越しの表示</b>：この会話で読んだ資料を、次の質問でもAIに渡していることを示します</span></li>
+    </ul>
+    <p>表やプロンプトなど、そのまま貼って使うものは枠（コード枠）に入り、枠ごとに <span class="btn">コピー</span> が付きます。数学の図は回答の中に図で表示され、<span class="btn">画像を保存</span> で PNG として保存できます。</p>
+  </section>
+
+  <section class="sec" id="s2-3">
+    <h3><span class="no">2-3</span>続けて聞く・新しい相談を始める</h3>
+    <ul class="plain">
+      <li>同じ話題なら、そのまま続けて聞けます（例：「パートタイマーの場合は？」）。前の回で読んだ資料や添付した資料も、続けてAIに渡されます</li>
+      <li><b>話題を変えるときは</b> <span class="btn">新しい相談を始める（会話を消す）</span> を押してください。前の話題の資料が混ざらず、答えが速く・正確になります</li>
+      <li>会話は、画面を閉じると画面からは消えます。改善のため、質問と回答は社内の記録（会話ログ）に残しています</li>
+    </ul>
+  </section>
+
+  <section class="sec" id="s2-4">
+    <h3><span class="no">2-4</span>資料を渡して聞く</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>渡し方</th><th>読めるもの</th><th>やり方</th></tr></thead>
+        <tbody>
+          <tr><td class="num">添付</td><td>PDF・画像・Word・Excel・PowerPoint・テキスト</td><td><span class="btn">📎 資料を添付</span> を押してファイルを選び、質問と一緒に送ります（1回に5つまで）</td></tr>
+          <tr><td class="num">ドライブのリンク</td><td>Google ドキュメント・スプレッドシート・スライド、PDF、Word・Excel・PowerPoint のファイル、フォルダ</td><td>質問の文にリンクを貼ります（1回に3件まで）。<b>決められたフォルダの中のファイルだけ</b>読めます</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ul class="plain">
+      <li>Word・Excel・PowerPoint は、文字と表だけを読みます（図・画像・色は見ていません）</li>
+      <li>読めないリンクがあるときは、理由が出ます。そのときはファイルを添付してください</li>
+      <li>「このフォルダも読めるようにしてほしい」ときは、<span class="btn">💡 要望を送る</span> から送ってください（4-2）</li>
+    </ul>
+  </section>
+
+  <section class="sec" id="s2-5">
+    <h3><span class="no">2-5</span>止める・途中で切れたとき</h3>
+    <ul class="plain">
+      <li>送信中は <span class="btn">送信</span> が <span class="btn">停止</span> に変わります。押すと、そこで止まります（途中までの回答は残ります）</li>
+      <li>1回の回答は最長で約5分です。長い資料づくりで時間が足りないと「回答が途中で切れました」と出るので、<span class="btn">続きを書く</span> を押してください</li>
+      <li>エラーが出たときは <span class="btn">もう一度送る</span> を押します。何度も続くときは、不具合を報告してください（4-1）</li>
+    </ul>
+  </section>
+</article>
+
+<!-- ============================== 第3章 ============================== -->
+<article class="sheet chapter" id="ch3">
+  <header>
+    <div class="eyebrow">第3章</div>
+    <h2>よく使う作業</h2>
+    <p>チラシ・スライド・計画書・数学の教材などは、社内の型と資料を使って進める「作業」になっています。短く頼むだけで、必要な資料をAIが読みます。</p>
+  </header>
+
+  <section class="sec" id="s3-1">
+    <h3><span class="no">3-1</span>作業の始め方</h3>
+    <figure>
+      <img src="images/ai_04_task.png" alt="作業を選んだときの入力欄。赤枠1〜2">
+      <figcaption>「数学の小テストを作る」を押したところ</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><div>最初の画面の<b>よく使う作業</b>のボタン（または <span class="btn">作業を選ぶ</span>）を押します</div></li>
+      <li><div><span class="n">1</span> 入力欄の横に、選んだ作業が出ます。<span class="n">2</span> 入力欄には文の例が入るので、学年・講座名などを書きかえて送ります</div></li>
+      <li><div>ボタンを押さずに「冬期講習のチラシを作って」と文で頼んでも、AIが作業を選んで進めます</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s3-2">
+    <h3><span class="no">3-2</span>作業の一覧</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>作業</th><th>使うとき</th><th>できあがるもの</th></tr></thead>
+        <tbody>
+          <tr><td class="num">チラシを作る</td><td>チラシ・ポスター・サイネージを新しく作るとき</td><td>確定した要項からの原稿と、ChatGPT に貼る画像生成のプロンプト</td></tr>
+          <tr><td class="num">チラシを直す</td><td>画像生成AIで作ったチラシの一部を直す、写真・文字の差し替え、16:9 のサイネージ版</td><td>修正用のプロンプト</td></tr>
+          <tr><td class="num">スライドを作る</td><td>社内会議・研修・保護者セミナーなどのスライド</td><td>先に流れの表 →「この流れで作る」で、社内のひな形の Google スライド（ロゴ入り）</td></tr>
+          <tr><td class="num">計画書を作る</td><td>講習・募集・校舎運営などの計画書、実施報告書</td><td>方針と部門の計画に沿った下書き（頼めば Google ドキュメント）</td></tr>
+          <tr><td class="num">方針チェック</td><td>スライド・計画書・チラシが会社の方針に沿っているか確かめるとき（資料を添付）</td><td>良い点・直す点のアドバイス</td></tr>
+          <tr><td class="num">チラシのデータを探す</td><td>配布・掲示する確定版のチラシ・ポスターのデータを探すとき</td><td>ドライブの確定版のリンク</td></tr>
+          <tr><td class="num">数学の教材を作る</td><td>入試対策・定期テスト対策の大問（思考力の問題・模試）</td><td>問題・解答・解説（答えは計算で確かめ済み）。頼めば Word（問題と解答・解説の2つ）</td></tr>
+          <tr><td class="num">数学の小テストを作る</td><td>1枚に5〜10問が並ぶ小テスト（計算練習・大問1対策）</td><td>B5の Word（小テストと答え入りの2つ）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="box tip">
+      <div class="box-title">資料づくりの回答の最後には「確認してほしいこと」が付きます</div>
+      <p>AIが聞かずに決めたこと（対象・枚数など）、要項に無くて空けた項目（〔要確認〕）、AIが作った言い回しなどです。使う前に、ここを必ず確かめてください。</p>
+    </div>
+  </section>
+
+  <section class="sec" id="s3-3">
+    <h3><span class="no">3-3</span>聞き返しと選択肢のボタン</h3>
+    <figure>
+      <img src="images/ai_05_ask.png" alt="AIが作る前に聞き返している画面。赤枠1〜2">
+      <figcaption>数学の小テストを頼んだときの聞き返し</figcaption>
+    </figure>
+    <ul class="legend">
+      <li><span class="n">1</span><span>作るのに時間がかかる作業（数学の教材・小テストなど）は、作り直しを減らすため、<b>最初に決まっていないことを聞きます</b>。答えたいところだけ文で答えても大丈夫です</span></li>
+      <li><span class="n">2</span><span><b>選択肢のボタン</b>：押すと、その文がそのまま次の質問として送られます。そのままでよければ <span class="btn">この前提で作る</span> を押します</span></li>
+    </ul>
+    <p>最初の頼みごとに条件を全部書いたときや、「おまかせで」「すぐ作って」と書いたときは、聞かずに作ります。</p>
+  </section>
+
+  <section class="sec" id="s3-4">
+    <h3><span class="no">3-4</span>ファイルができたら</h3>
+    <figure>
+      <img src="images/ai_06_made.png" alt="小テストの Word ができた画面。赤枠1〜2">
+      <figcaption>小テストの Word ができたところ</figcaption>
+    </figure>
+    <ul class="legend">
+      <li><span class="n">1</span><span>できたファイルのリンクが出ます。ファイルは、ドライブの<b>「AI作成」フォルダ</b>に「日付_AI作成_題名」の名前で保存されています</span></li>
+      <li><span class="n">2</span><span><b>作業の続き</b>：作業が続いていることを示します。続けて「もう1枚作って」などと頼めます。<b>別の話題に移るときは <span class="btn">×</span> で作業を終えてください</b>（終えないと、次の質問も作業として時間をかけて考えます）</span></li>
+    </ul>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ファイル</th><th>頼み方</th><th>形式</th></tr></thead>
+        <tbody>
+          <tr><td class="num">Google ドキュメント</td><td>「文書にして」「ドキュメントで」</td><td>計画書・案内文など</td></tr>
+          <tr><td class="num">Google スライド</td><td>流れの表のあとで「この流れで作る」</td><td>社内のひな形（ロゴ入り）。文字のはみ出しを確かめてください</td></tr>
+          <tr><td class="num">数学の教材（Word）</td><td>「Word にして」「データで出力して」。表紙が要るときは「模試の形で」</td><td>B4・数学科の仕上がりの書式。問題と解答・解説の2つ</td></tr>
+          <tr><td class="num">数学の小テスト（Word）</td><td>「数学の小テストを作る」の作業で作ると、そのまま Word になります</td><td>B5。小テストと答え入りの2つ</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="box warn">
+      <div class="box-title">作ったものは下書きです</div>
+      <p>数字・日付・料金は確定した要項から取っていますが、使う前に担当者が必ず確かめてください。数学の教材は、数学科の先生が解いて確かめてから配ってください。Word は図の位置と改ページも確かめてください。</p>
+    </div>
+  </section>
+</article>
+
+<!-- ============================== 第4章 ============================== -->
+<article class="sheet chapter" id="ch4">
+  <header>
+    <div class="eyebrow">第4章</div>
+    <h2>試用期間のお願い</h2>
+    <p>試用期間は、職員のみなさんの使い方の傾向をつかみ、不具合を直し、要望を集めて改善するための期間です。気づいたことを、画面の上のボタンから送ってください。</p>
+  </header>
+
+  <section class="sec" id="s4-1">
+    <h3><span class="no">4-1</span>不具合を報告する</h3>
+    <figure>
+      <img src="images/ai_07_report.png" alt="不具合の報告の小窓。赤枠1〜4">
+      <figcaption>不具合の報告</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><div>画面の上の <span class="btn">⚠ 不具合を報告</span>（または回答の下の <span class="btn">⚠ 報告</span>）を押します</div></li>
+      <li><div><span class="n">1</span> 何が起きたかを選びます（答えが間違っている、資料を読まない、エラー、時間がかかりすぎる など）</div></li>
+      <li><div><span class="n">2</span> 詳しい状況を書きます。<b>何をしようとして、どう頼み、何が起きたか</b>が分かると直しやすくなります。画面の写真も付けられます</div></li>
+      <li><div><span class="n">3</span> 会話の番号・読んだ資料などは、画面が自動で添えます。質問と回答の先頭を添えるかも選べます</div></li>
+      <li><div><span class="n">4</span> <span class="btn">報告を送る</span> を押します。報告はヘルプデスクの「ご意見・不具合」に入り、システム担当が回答します</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s4-2">
+    <h3><span class="no">4-2</span>要望を送る</h3>
+    <figure>
+      <img src="images/ai_08_request.png" alt="要望の小窓。赤枠1〜4">
+      <figcaption>要望を送る</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><div>画面の上の <span class="btn">💡 要望を送る</span> を押します</div></li>
+      <li><div><span class="n">1</span> 要望の種類を選びます：こういう使い方をしたい／いまの作業・答え方を変えてほしい／ナレッジに入れてほしい資料・情報／ドライブのリンクで読めるようにしてほしいフォルダ・ファイル／画面・ボタンの使い勝手</div></li>
+      <li><div><span class="n">2</span> 要望の内容と、使う場面（いつ・誰が・何のために、いまはどうしているか）を書きます</div></li>
+      <li><div><span class="n">3</span> 入れてほしい資料やフォルダがあれば、ドライブのリンクを貼ります。見本の画像も付けられます</div></li>
+      <li><div><span class="n">4</span> <span class="btn">要望を送る</span> を押します。要望はヘルプデスクの「ご意見・不具合」（種別：智翔館AIへの要望）に入ります</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s4-3">
+    <h3><span class="no">4-3</span>回答を評価する（👍👎）</h3>
+    <p>回答の下の <span class="btn">👍</span> <span class="btn">👎</span> で、役に立ったかを教えてください。👎 のときは、どこが良くなかったかを一言書けます。どの資料が足りないか、どの答え方を直すかの手がかりにします。</p>
+  </section>
+
+  <section class="sec" id="s4-4">
+    <h3><span class="no">4-4</span>使うときに守ること</h3>
+    <div class="box warn">
+      <div class="box-title">必ず守ってください</div>
+      <ul class="plain">
+        <li><b>生徒・保護者の名前、成績、連絡先は入れないでください。</b>添付する資料からも外してください</li>
+        <li>質問と回答は、改善のため社内の記録（会話ログ）に残ります</li>
+        <li>社内のこと（日付・料金・数字・方針）は、回答の出典で確かめてから使ってください</li>
+        <li>AIが作ったものは下書きです。生徒・保護者に渡す前に、担当者が確かめてください</li>
+        <li>作ったファイルのリンクは、社外の人に送らないでください</li>
+      </ul>
+    </div>
+  </section>
+</article>
+
+<!-- ============================== 付録 ============================== -->
+<article class="sheet chapter" id="ch5">
+  <header>
+    <div class="eyebrow">付録</div>
+    <h2>よくある質問</h2>
+  </header>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>こんなとき</th><th>こうしてください</th></tr></thead>
+      <tbody>
+        <tr><td>「資料に無い」と言われた</td><td>智翔館AIの資料（ナレッジ）に、まだその情報がありません。資料をお持ちなら添付するかリンクを貼って聞いてください。ナレッジに入れてほしいときは <span class="btn">💡 要望を送る</span> から</td></tr>
+        <tr><td>答えが間違っている・古い</td><td>出典の資料を確かめ、<span class="btn">⚠ 報告</span> から報告してください。どの資料のどこが正しいかを書いてもらえると助かります</td></tr>
+        <tr><td>答えに時間がかかる</td><td>資料を何本も読んだり、ファイルを作ったりするときは数分かかります。話題が変わったら <span class="btn">新しい相談を始める</span> を押し、作業の続きは <span class="btn">×</span> で終えると速くなります</td></tr>
+        <tr><td>途中で切れた</td><td><span class="btn">続きを書く</span> を押してください</td></tr>
+        <tr><td>リンクのファイルが読めない</td><td>決められたフォルダの外のファイルは読めません。ファイルを添付するか、読めるようにしてほしいフォルダを要望で送ってください</td></tr>
+        <tr><td>作ったファイルが見つからない</td><td>回答のリンクから開けます。ドライブの「AI作成」フォルダにも「日付_AI作成_題名」で保存されています</td></tr>
+        <tr><td>Web の情報を調べてほしい</td><td>智翔館AIは Web を見ません。必要な情報は資料として渡してください</td></tr>
+      </tbody>
+    </table>
+  </div>
+</article>
+
+<footer class="end"><a href="#top">↑ 表紙へ戻る</a></footer>
+</div>
