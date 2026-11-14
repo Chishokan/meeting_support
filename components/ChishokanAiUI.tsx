@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from 'react';
 import AiMarkdown, { CopyButton } from '@/components/AiMarkdown';
 import AiReportDialog from '@/components/AiReportDialog';
+import AiRequestDialog from '@/components/AiRequestDialog';
 import { imageToBase64 } from '@/lib/chishokanAi/clientImage';
 import type { ReportContext } from '@/lib/chishokanAi/report';
 import { toPlainText } from '@/lib/chishokanAi/markdown';
@@ -347,6 +348,13 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     setFeedbackDraft(null);
   }
 
+  // 要望の小窓を開く。会話の途中なら、会話の番号と選んでいた作業を添える。
+  const [request, setRequest] = useState<{ conversationId?: string; turn?: number; task?: string } | null>(null);
+  function openRequest() {
+    const last = [...messages].reverse().find((m) => m.role === 'assistant');
+    setRequest({ conversationId: convoIdRef.current || undefined, turn: last?.turn, task: last?.taskLabel ?? task?.button });
+  }
+
   // 不具合の報告の小窓を開く。index の回答（無ければいちばん新しい回答）の状況を添える。
   function openReport(index?: number, kind?: string) {
     let i = index ?? -1;
@@ -427,24 +435,31 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     <div className="iqa-page">
       <div className="page-head">
         <h1>智翔館AI（試用版）</h1>
-        <p>
-          社内の資料（理念・方針・要項・部門の計画・地域の情報・チラシやスライドの作り方など）を調べて答えます（{campus} / {name} さん）。
-          社内のこと（日付・料金・数字・方針など）は社内の資料だけをもとに答え、出典の資料名を付けます。Web は見ません。
-          文章の手直し・要約・アイデア出しなど、ふだんのチャットAIと同じ使い方もできます。
-        </p>
-        <p className="yq-pending-note">
-          資料は、PDF・画像・Word・Excel・PowerPoint を添付するか、Google ドキュメント・スプレッドシート・スライドのリンクを貼ると読みます
-          （リンクは決められたフォルダの中のファイルだけ・1回に3件まで）。業績の数字（売上・利益）は持っていません。
-          会話はこの画面を閉じると消えます。
-        </p>
-        <button type="button" className="ai-report-open" onClick={() => openReport()}>
-          ⚠ うまく動かないときは、不具合を報告
-        </button>
+        <p>社内の資料をもとに答えます。資料づくりや文章の手直しにも使えます。</p>
+        <div className="ai-head-links">
+          <details className="ai-about">
+            <summary>使い方と注意</summary>
+            <ul>
+              <li>社内のこと（日付・料金・方針など）は社内の資料だけで答え、出典を付けます。Web は見ません</li>
+              <li>PDF・画像・Word・Excel・PowerPoint は添付、Google のファイルはリンクを貼ると読みます（決められたフォルダの中だけ・1回に3件まで）</li>
+              <li>業績の数字（売上・利益）は持っていません</li>
+              <li>会話は、この画面を閉じると消えます。改善のため、質問と回答は社内の記録（会話ログ）に残しています</li>
+              <li>生徒・保護者の名前や成績は入れないでください</li>
+              <li>試用期間中です。うまく動かないときは「不具合を報告」、こうしてほしいときは「要望を送る」から送ってください</li>
+            </ul>
+          </details>
+          <button type="button" className="ai-report-open" onClick={() => openReport()}>
+            ⚠ 不具合を報告
+          </button>
+          <button type="button" className="ai-report-open ai-request-open" onClick={openRequest}>
+            💡 要望を送る
+          </button>
+        </div>
       </div>
 
       {messages.length === 0 && tasks.length > 0 && (
         <>
-          <div className="ai-section-label">よく使う作業（押すと、社内の型と資料を使って進めます）</div>
+          <div className="ai-section-label">よく使う作業</div>
           <div className="ai-tasks">
             {tasks.map((t) => (
               <button key={t.id} type="button" className="ai-task" onClick={() => chooseTask(t)} disabled={busy}>
@@ -679,6 +694,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
         </div>
       </div>
       {report && <AiReportDialog context={report.context} initialKind={report.kind} onClose={() => setReport(null)} />}
+      {request && <AiRequestDialog context={request} onClose={() => setRequest(null)} />}
     </div>
   );
 }

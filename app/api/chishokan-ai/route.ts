@@ -38,6 +38,9 @@ import { CREATE_DOC_TOOL } from '@/lib/chishokanAi/createDocTool';
 import { runCreateDoc, type CreatedDoc } from '@/lib/chishokanAi/createDoc';
 import { CREATE_SLIDES_TOOL, SLIDES_TEMPLATES_TOOL } from '@/lib/chishokanAi/slidesTool';
 import { runCreateSlides, runSlideTemplates } from '@/lib/chishokanAi/slides';
+import { MATH_MATERIAL_TOOL } from '@/lib/chishokanAi/mathMaterialTool';
+import { runCreateMathMaterial, runCreateMathQuiz } from '@/lib/chishokanAi/mathMaterial';
+import { MATH_QUIZ_TOOL } from '@/lib/chishokanAi/mathQuizTool';
 import {
   buildCarryBlock,
   citationWarnings,
@@ -175,6 +178,8 @@ export async function POST(req: Request) {
     CREATE_DOC_TOOL,
     SLIDES_TEMPLATES_TOOL,
     CREATE_SLIDES_TOOL,
+    MATH_MATERIAL_TOOL,
+    MATH_QUIZ_TOOL,
   ] as unknown as Anthropic.Tool[];
   let tasksStarted = 0;
   // 計算の道具は、作業の手順書が使うときだけ足す（回答の途中で手順書を開いたら、次の往復から足す）。
@@ -182,6 +187,7 @@ export async function POST(req: Request) {
   let codeRuns = 0;
   let templateReads = 0;
   let slidesMade = 0;
+  let mathMade = 0;
   const lastUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 
   const encoder = new TextEncoder();
@@ -196,6 +202,9 @@ export async function POST(req: Request) {
 
   let full = '';
   const usage: string[] = [];
+  // 使い方の傾向・費用の目安として会話ログに残す（往復の合計）
+  const tokens = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
+  let failed = false;
   const opened: string[] = [];
   const createdDocs: CreatedDoc[] = [];
   const driveToolReads: DriveRead[] = [];
@@ -309,6 +318,10 @@ export async function POST(req: Request) {
           }
           const msg = await stream.finalMessage();
           const u = msg.usage;
+          tokens.input += u.input_tokens ?? 0;
+          tokens.cacheRead += u.cache_read_input_tokens ?? 0;
+          tokens.cacheWrite += u.cache_creation_input_tokens ?? 0;
+          tokens.output += u.output_tokens ?? 0;
           usage.push(
             `in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`,
           );
@@ -369,6 +382,16 @@ export async function POST(req: Request) {
                 slidesMade++;
                 out = r.toolResult;
               }
+            } else if (block.name === MATH_MATERIAL_TOOL.name || block.name === MATH_QUIZ_TOOL.name) {
+              if (mathMade >= 1) {
+                out = '数学の教材のファイルは1回の回答で1組までです。作ったファイルのURLを伝えてください。';
+              } else {
+                const run = block.name === MATH_QUIZ_TOOL.name ? runCreateMathQuiz : runCreateMathMaterial;
+                const r = await run(input, { campus: session.campus, user: session.name }, ac.signal);
+                createdDocs.push(...r.created);
+                mathMade++;
+                out = r.toolResult;
+              }
             } else if (block.name === CREATE_DOC_TOOL.name) {
               if (createdDocs.length >= 1) {
                 out = '文書は1回の回答で1つまでです。作った文書のURLを伝えてください。';
@@ -383,7 +406,7 @@ export async function POST(req: Request) {
               out = r.text;
             }
             opened.push(
-              block.name === CREATE_DOC_TOOL.name || block.name === CREATE_SLIDES_TOOL.name
+              block.name === CREATE_DOC_TOOL.name || block.name === CREATE_SLIDES_TOOL.name || block.name === MATH_MATERIAL_TOOL.name || block.name === MATH_QUIZ_TOOL.name
                 ? `${block.name}:${String(input.title ?? '')}`
                 : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? input.task ?? input.template ?? '')}`,
             );
@@ -394,6 +417,7 @@ export async function POST(req: Request) {
       } catch (e) {
         if (!ac.signal.aborted) {
           console.error('[chishokan-ai] error', e);
+          failed = true;
           send({ t: 'error', v: 'エラーが発生しました。もう一度お試しください。' });
         }
       } finally {
@@ -436,7 +460,7 @@ export async function POST(req: Request) {
         // 「資料に無い：…」は、ナレッジに足す資料の手がかりとして会話ログに残す。
         const gaps = findGaps(full);
 
-        const flags = [continuation ? '続き' : '', clientGone ? '停止' : '', cut === 'time' ? '時間切れ' : cut === 'length' ? '長さで切れた' : '']
+        const flags = [continuation ? '続き' : '', failed ? 'エラー' : '', clientGone ? '停止' : '', cut === 'time' ? '時間切れ' : cut === 'length' ? '長さで切れた' : '']
           .filter(Boolean)
           .join('・');
         try {
@@ -461,6 +485,8 @@ export async function POST(req: Request) {
         const convoNote = conversationId ? `（会話: ${conversationId}${turn ? `・${turn}回目` : ''}）` : '';
         const taskNote = activeTask ? `（作業: ${activeTask.id}）` : '';
         const gapNote = gaps.length ? `（資料に無い: ${gaps.join('／')}）` : '';
+        const k = (n: number) => (n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n));
+        const statNote = `（${Math.round((Date.now() - requestStarted) / 1000)}秒・往復${usage.length}・トークン 入力${k(tokens.input)}/キャッシュ読${k(tokens.cacheRead)}/キャッシュ書${k(tokens.cacheWrite)}/出力${k(tokens.output)}${deep ? '・じっくり考える' : ''}${codeRuns ? `・計算${codeRuns}回` : ''}）`;
         const docNote = createdDocs.length
           ? `（作成した文書: ${createdDocs.map((d) => (d.ok ? `${d.title} ${d.url}` : `${d.title}＝作れず:${d.note}`)).join('、')}）`
           : '';
@@ -468,7 +494,7 @@ export async function POST(req: Request) {
           await logInteraction({
             user: session.name,
             campus: session.campus,
-            input: `[智翔館AI]${convoNote}${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}\n（調べた資料: ${opened.join('、') || 'なし'}）`,
+            input: `[智翔館AI]${convoNote}${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}\n（調べた資料: ${opened.join('、') || 'なし'}）${statNote}`,
             output: stripRoleBleed(full),
           }, { timeoutMs: Math.max(2_000, Math.min(15_000, LIMIT_MS - (Date.now() - requestStarted) - 2_000)) });
         } catch {}

@@ -4,7 +4,7 @@ export type GasResult = Record<string, unknown> & { ok?: boolean; reason?: strin
 
 /** Apps Script を待つ長さ（ms）。文書・スライドを作る処理は長めに待つ。 */
 const DEFAULT_TIMEOUT_MS = 60_000;
-const TIMEOUT_MS: Record<string, number> = { createAiDoc: 120_000, createAiSlides: 150_000 };
+const TIMEOUT_MS: Record<string, number> = { createAiDoc: 120_000, createAiSlides: 150_000, saveAiFiles: 120_000 };
 
 /**
  * Apps Script を呼ぶ。待ちすぎたら timeout、signal で止められたら aborted を返す
