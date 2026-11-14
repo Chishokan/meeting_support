@@ -109,7 +109,8 @@ var PLAN_LOG_SHEET = 'AI壁打ち書き込み';
 var AI_READ_FOLDER_IDS = [
   '1rDTV-Lg3YJmZHMSTfHs-ErDnpR3lhR_x', // 05_広告制作
   '1b7qfB8Ey-fkFxm7XMFtbkoARyuiKmzoz', // 10_研修会議
-  '1x3qb8GA-rBxV3DoTmH00s4efJHn3GBKD'  // 04_講習
+  '1x3qb8GA-rBxV3DoTmH00s4efJHn3GBKD', // 04_講習
+  '1blYbdrl24BF3HXMdNnC-D4SDW9X-Su8Y'  // 15_AI利用データ（数学教材の見本・AIスライドテンプレート・AI作成・中等部議事録。2026-11-14 追加）
 ];
 // 入れていないフォルダ（2026-11-04 確認）：00_進行中（要対応生徒リスト・成果配分案がある）、03_模試テスト（模試の入力シート・
 // 生徒ランキング・受検票・進学希望者一覧がある）、07_名簿成績出席、11_総務、総会（目標シート・プライベートのやりたいこと一覧がある）

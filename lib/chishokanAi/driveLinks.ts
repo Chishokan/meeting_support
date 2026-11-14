@@ -27,6 +27,7 @@ export const DRIVE_ROOTS: Record<string, string> = {
   '05_広告制作': '1rDTV-Lg3YJmZHMSTfHs-ErDnpR3lhR_x',
   '10_研修会議': '1b7qfB8Ey-fkFxm7XMFtbkoARyuiKmzoz',
   '04_講習': '1x3qb8GA-rBxV3DoTmH00s4efJHn3GBKD',
+  '15_AI利用データ': '1blYbdrl24BF3HXMdNnC-D4SDW9X-Su8Y',
 };
 
 /** ツールに渡された「URL か ID か、読めるフォルダの名前」から ID を取り出す。取り出せなければ null。 */
