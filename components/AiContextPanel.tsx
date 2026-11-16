@@ -345,7 +345,7 @@ export default function AiContextPanel(p: Props) {
                 )}
               </details>
               <p className="ai-panel-empty">
-                会話は自動で履歴に残ります（最後に使ってから{HISTORY_DAYS}日・{HISTORY_MAX}件まで）。ずっと残したい会話は「保存」（{SAVED_DAYS === 365 ? '1年' : `${SAVED_DAYS}日`}・{SAVED_MAX}件まで）。見られるのは本人だけです。
+                会話は自動で履歴に残ります（最後に使ってから{HISTORY_DAYS}日・{HISTORY_MAX}件まで）。ずっと残したい会話は「保存」（{SAVED_DAYS === 365 ? '1年' : `${SAVED_DAYS}日`}・{SAVED_MAX}件まで）。画面に出るのは本人の分だけです（記録は会話ログと同じく、社内のスプレッドシートに残ります）。
               </p>
             </>
           );

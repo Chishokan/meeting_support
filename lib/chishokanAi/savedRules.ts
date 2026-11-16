@@ -4,8 +4,8 @@
 // - 履歴：質問のたびに自動で保存。最後に使ってから HISTORY_DAYS 日・HISTORY_MAX 件まで（超えたら古いものから消える）
 // - 保存した会話：「この会話を保存」で名前を付けて残す。最後に使ってから SAVED_DAYS 日・SAVED_MAX 件まで（超えるときは保存できない）
 // - いつものコンテキスト：会話をまたいで使う前提。1人 PRESET_MAX 個まで。「新しい会話に入れる」にしたものは、新しい会話に自動で入る
-// - 職員一覧から外れた人の分は、REMOVED_DAYS 日後に消す
-// 置き場所は Supabase（supabase/migrations/0004_chishokan_ai.sql）。読み書きは lib/chishokanAi/savedStore.ts。
+// - 職員一覧から外れた人の分は、REMOVED_DAYS 日後に消す（スプレッドシートで、持ち主の行を消す）
+// 置き場所はスプレッドシート「智翔館AI 会話ログ」の _会話の保存・_いつものコンテキスト。読み書きは lib/chishokanAi/savedStore.ts。
 
 export const HISTORY_MAX = 50;
 export const HISTORY_DAYS = 30;

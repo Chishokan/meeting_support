@@ -10,6 +10,7 @@
 import { normalizeContext } from '@/lib/chishokanAi/conversation';
 import { normalizePinnedList } from '@/lib/chishokanAi/pinnedContext';
 import { buildSaved, conversationTitle, parseSaved } from '@/lib/chishokanAi/savedConversation';
+import { getSession } from '@/lib/core/auth';
 import { gateResponse, savedGate } from '@/lib/chishokanAi/savedGate';
 import { checkSave, cleanTitle, CONVO_MAX_CHARS, isConvoId } from '@/lib/chishokanAi/savedRules';
 import {
@@ -66,7 +67,7 @@ export async function PUT(req: Request) {
     );
   }
   const turns = clean.messages.filter((m) => m.role === 'user').length;
-  const r = await putConversation(g.owner, body.id, { data: clean, autoTitle: conversationTitle(clean.messages), turns, chars });
+  const r = await putConversation(g.owner, body.id, { data: clean, autoTitle: conversationTitle(clean.messages), turns, chars, user: getSession()?.name ?? '' });
   if (!r.ok) return failed(r.detail);
   return Response.json({ ok: true, kind: r.kind });
 }
