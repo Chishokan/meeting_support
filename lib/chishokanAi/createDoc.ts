@@ -51,12 +51,15 @@ export async function runCreateDoc(input: Record<string, unknown>, who: { campus
     const why = j.ok ? 'Apps Script が古いままです（再デプロイが必要）' : REASONS[String(j.reason)] ?? '文書を作れませんでした';
     // 詳しい理由（Apps Script のエラー文）は会話ログにだけ残す。職員と AI には分かりやすい言葉だけを伝える。
     const detail = typeof j.detail === 'string' && j.detail ? `／詳細: ${j.detail}` : '';
-    return { toolResult: `文書を作れませんでした（${why}）。職員にそのことを伝え、本文を回答に書いてコピーしてもらう。`, created: { ok: false, title: c.title, note: `${why}${detail}` } };
+    return { toolResult: `文書を作れませんでした（${why}）。この回答では呼び直さない。職員にそのことを伝え、本文を回答に書いてコピーしてもらう。`, created: { ok: false, title: c.title, note: `${why}${detail}` } };
   }
   const figNote = images.length ? `（図${images.filter((x) => x.base64).length}個を画像で入れました）` : '';
   const warn = notes.length ? `\n図について気になった点（回答の「確認してほしいこと」に書く）：\n${notes.map((n) => `- ${n}`).join('\n')}` : '';
   return {
-    toolResult: `文書を作りました${figNote}。題名：${j.name ?? c.title}／URL：${j.url}${warn}\n回答の最後に、このURLと「担当者が確認してから使う下書き」であることを書く。`,
+    toolResult:
+      `文書を作りました${figNote}。題名：${j.name ?? c.title}／URL：${j.url}${warn}` +
+      (typeof j.shareError === 'string' && j.shareError ? '\nリンクの共有を設定できませんでした。開けないときは、ドライブの「AI作成」フォルダから開いてもらう。' : '') +
+      '\n回答の最後に、このURLと「担当者が確認してから使う下書き」であることを書く。',
     created: { ok: true, title: c.title, url: j.url, note: `作成${images.length ? `（図${images.length}）` : ''}` },
   };
 }

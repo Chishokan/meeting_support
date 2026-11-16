@@ -94,3 +94,15 @@ export const SESSION_COOKIE_OPTIONS = {
   path: '/',
   maxAge: SESSION_MAX_AGE,
 };
+
+/**
+ * ログインで本人を確かめたメールアドレス（小文字）。確かめていなければ null。
+ *
+ * 共通ログイン（メール＋パスワード）で入り、署名を確かめたセッションだけが email を持つ（decodeSession）。
+ * 従来の入り方（部門とお名前を選ぶ・署名なし）では null。
+ * これが null の間は、本人だけが見られることを前提にした機能（智翔館AIの会話の保存・いつものコンテキスト）は使えない。
+ */
+export function verifiedEmail(): string | null {
+  const e = getSession()?.email?.trim().toLowerCase() ?? '';
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : null;
+}

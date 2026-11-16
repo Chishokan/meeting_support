@@ -101,3 +101,41 @@ test('leftoverPlaceholders / findGaps / missingSectionNotice：資料づくり�
   assert.equal(missingSectionNotice(`${long}\n\`\`\`選択肢\nA\nB\n\`\`\``, '確認してほしいこと'), null);
   assert.equal(missingSectionNotice(long, ''), null);
 });
+
+// --- 作り話のリンク・聞き返し（2026-11-14 の会話ログで、道具を呼ばずに URL を書いた回答があった） ---
+import { closedChoicesEnd, FAKE_LINK_LABEL, redactLinks, unknownGoogleLinks } from './conversation.ts';
+
+test('道具で作っていないファイルの URL を見つける', () => {
+  const known = '小テスト：https://docs.google.com/document/d/13jjLcs_GMM6GKr-s-gboXOLAigWVDTI4/edit?usp=drivesdk\n15_AI利用データ 1FT_XG-elky7Pk0VIIo0x0LXWvfVM2HAh';
+  const answer = [
+    '作った Word：',
+    '- 小テスト：https://docs.google.com/document/d/1KxBvQWnJGm0Yt4r8Nq2mJ5LhXeYwPz3f/',
+    '- 答え入り：https://docs.google.com/document/d/1QnZm7LsEoYp9XTvWgJdK3hRcBfN6ytAq/。',
+    '- 前回の：https://docs.google.com/document/d/13jjLcs_GMM6GKr-s-gboXOLAigWVDTI4/edit',
+    '- 見本：[数学教材](https://drive.google.com/drive/folders/1FT_XG-elky7Pk0VIIo0x0LXWvfVM2HAh)',
+    '- 開く：https://drive.google.com/open?id=1ZZZZZZZZZZZZZZZZZZZZZZZZZZ）',
+    '- ドライブ：https://drive.google.com/drive/my-drive',
+  ].join('\n');
+  assert.deepEqual(unknownGoogleLinks(answer, known), [
+    'https://docs.google.com/document/d/1KxBvQWnJGm0Yt4r8Nq2mJ5LhXeYwPz3f/',
+    'https://docs.google.com/document/d/1QnZm7LsEoYp9XTvWgJdK3hRcBfN6ytAq/',
+    'https://drive.google.com/open?id=1ZZZZZZZZZZZZZZZZZZZZZZZZZZ',
+  ]);
+  assert.deepEqual(unknownGoogleLinks('リンクはありません', known), []);
+});
+
+test('作り話のリンクを消す（Markdown のリンクは文字を残す）', () => {
+  const u = 'https://docs.google.com/document/d/1KxBvQWnJGm0Yt4r8Nq2mJ5LhXeYwPz3f/';
+  assert.equal(redactLinks(`- 小テスト：${u}\n- もう一度：${u}`, [u]), `- 小テスト：${FAKE_LINK_LABEL}\n- もう一度：${FAKE_LINK_LABEL}`);
+  assert.equal(redactLinks(`[小テスト](${u})を開く`, [u]), `小テスト${FAKE_LINK_LABEL}を開く`);
+  assert.equal(redactLinks('そのまま', [u]), 'そのまま');
+});
+
+test('選択肢のブロックが閉じた位置', () => {
+  const head = '作る前に確認させてください。\n\n```選択肢\nこの前提で作る\n入試レベルも混ぜる\n```';
+  assert.equal(closedChoicesEnd(head), head.length);
+  assert.equal(closedChoicesEnd(`${head}\n\nこのまま作成を進めます。`), head.length);
+  assert.equal(closedChoicesEnd('```選択肢\nこの前提で作る\n'), -1);
+  assert.equal(closedChoicesEnd('```図\n{}\n```'), -1);
+  assert.equal(closedChoicesEnd('普通の回答'), -1);
+});
