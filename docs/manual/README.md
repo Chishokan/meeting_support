@@ -22,17 +22,33 @@
   - 第2章の「かかる時間の目安」は、文字起こしの区間の長さ（`lib/audioChunk.ts` の `SEGMENT_SECONDS`）と
     送信間隔（環境変数 `GEMINI_RPM`・APIキーの本数）から出している。これらを変えたら表も見直す
 
+# ログイン 利用マニュアル・共通ログイン 利用マニュアル（v1.0.0）
 
-# 智翔館AI（試用版）利用マニュアル
-
-全職員向けの智翔館AIの手引き（開き方・画面の見方、質問と回答、資料の渡し方、よく使う作業、ファイルの保存先、不具合の報告・要望の送り方、よくある質問）。v0.25 の画面で作成（2026年11月）。
+- `login-basic-manual.html` → `public/manual/login-basic-manual-v1.0.0.pdf`（9ページ）：社員全員向け。ログインのしかたとパスワードの決め方だけ
+- `login-manual.html` → `public/manual/login-manual-v1.0.0.pdf`（11ページ）：給与アプリも使う方向け。メールアドレスとパスワードでのログイン、はじめにパスワードを決める手順（初回設定・再設定）、給与アプリとの行き来、困ったときの対処。
 
 | ファイル | 中身 |
 |---|---|
-| `../../public/manual/chishokan-ai-manual-v0.25.2.pdf` | 配布用の PDF（A4・18ページ）。ダウンロード時の名前は `智翔館AI利用マニュアル_v0.25.2.pdf` |
+| `../../public/manual/login-manual-v1.0.0.pdf` | 配布用の PDF（A4・11ページ）。ダウンロード時の名前は `共通ログイン利用マニュアル_v1.0.0.pdf` |
+| `login-manual.html` | 原稿（会議DX のマニュアルと同じ見た目。PDF はここから Chromium の印刷で作る） |
+| `images/login/` | 画面の写真 |
+
+- 写真は、智翔館アプリと給与アプリ（Color）を手元で起動し、手元の試験用DBに架空の職員（智翔 太郎・taro@example.com）を作って撮った
+- 給与アプリ側の写真のロゴは、手元では本物のロゴ画像を読めないため、画面の写真から切り出した画像で代用した
+- 画面の文言を変えたら（ログイン画面・パスワード設定・エラーの文言）、第2章・第5章の表も直す
+- 動画「共通ログインの使い方」（約3分。配布は `public/manual/login.mp4`・`login-poster.jpg`）の台本・画面写真・作り方は `video/login/`（ナレーションは音読さんで作った mp3 を `video/login/audio/` に置いている）
+
+
+# 智翔館AI（試用版）利用マニュアル
+
+全職員向けの智翔館AIの手引き（開き方・画面の見方、質問と回答、資料の渡し方、コンテキスト（右の欄）と会話の書き出し、よく使う作業、ファイルの保存先、不具合の報告・要望の送り方、よくある質問）。v1.1 の画面で作成（2026年11月）。
+
+| ファイル | 中身 |
+|---|---|
+| `../../public/manual/chishokan-ai-manual-v1.1.0.pdf` | 配布用の PDF（A4・21ページ）。ダウンロード時の名前は `智翔館AI利用マニュアル_v1.1.0.pdf` |
 | `chishokan-ai-manual.html` | 原稿（会議DX のマニュアルと同じ書式。PDF はここから作る） |
 | `images/ai_*.png` | 画面の写真（赤枠・番号つき） |
-| `chishokan-ai/shots.js` | 写真を撮るスクリプト。アプリを手元で起動し（`CHISHOKAN_AI_MEMBERS='*' npx next start -p 3124`）、AI の回答は架空の例に差し替えて撮る |
+| `chishokan-ai/shots.js` | 写真を撮るスクリプト。アプリを手元で起動し（`CHISHOKAN_AI_MEMBERS='*' npx next start -p 3124`）、AI の回答は架空の例に差し替えて撮る。右の欄（コンテキスト）は横に広い画面（1366px）で撮る |
 | `chishokan-ai/annotate.py` | 撮った写真に赤枠と番号を付け、余白を切る（`python3 annotate.py 撮った写真のフォルダ docs/manual/images`） |
 | `chishokan-ai/pdf.js` | 原稿の HTML を A4 の PDF にする（`node pdf.js 原稿の絶対パス 出力.pdf`） |
 
