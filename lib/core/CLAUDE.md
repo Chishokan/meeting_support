@@ -5,7 +5,9 @@
 
 | ファイル | 役割 |
 |---|---|
-| `auth.ts` | ログインのセッション（Cookie）。全アプリ共通の1回ログイン |
+| `auth.ts` | ログインのセッション（署名付き Cookie）。全アプリ共通の1回ログイン |
+| `sessionCookie.ts` | セッション Cookie の名前と有効期間（middleware からも読むため分けている） |
+| `hub.ts` | 給与アプリの認証・ユーザー API（共通ログイン・給与アプリとの行き来）。サーバ専用 |
 | `staff.ts` | 職員マスタ（部門と担当者）・管理部門の定義 |
 | `companyKnowledge.ts` | 会社の前提知識をAIへ差し込む。本文は `knowledge/10_理念・方針/COMPANY.md`。日付・期の計算もここ |
 | `knowledgeDocs.ts` | `knowledge/` 配下の Markdown（確定した要項など）を読む |
