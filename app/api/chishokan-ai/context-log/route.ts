@@ -2,7 +2,7 @@
 // 全文は質問のたびには記録しない（スプレッドシートが大きくなりすぎないように）。決まりは lib/chishokanAi/pinnedContext.ts。
 
 import { getSession } from '@/lib/core/auth';
-import { logInteraction } from '@/lib/core/log';
+import { logAi } from '@/lib/chishokanAi/aiLog';
 import { canUseChishokanAi } from '@/lib/chishokanAi/access';
 import { checkPinLog, pinLogEntry } from '@/lib/chishokanAi/pinnedContext';
 
@@ -14,8 +14,20 @@ export async function POST(req: Request) {
   if (!canUseChishokanAi(session.name)) return new Response('forbidden', { status: 403 });
   const entry = checkPinLog(await req.json().catch(() => null));
   if (!entry) return new Response('bad request', { status: 400 });
+  const e = pinLogEntry(entry);
   try {
-    await logInteraction({ user: session.name, campus: session.campus, ...pinLogEntry(entry) });
+    await logAi(
+      {
+        user: session.name,
+        campus: session.campus,
+        email: session.email,
+        kind: 'コンテキスト',
+        conversationId: entry.conversationId,
+        question: e.input.replace(/^\[[^\]]*\](（会話: [^）]*）)?\s*/, ''),
+        answer: e.output,
+      },
+      e,
+    );
   } catch {}
   return Response.json({ ok: true });
 }

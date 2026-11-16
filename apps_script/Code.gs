@@ -246,6 +246,17 @@ function doPost(e) {
       return json_(saveAiFiles_(data));
     }
 
+    // 智翔館AI：アカウント別の会話ログ・会話の保存・いつものコンテキスト（スプレッドシート「智翔館AI 会話ログ」）
+    if (action === 'aiLog') return json_(aiLog_(data));
+    if (action === 'aiConvoList') return json_(aiConvoList_(data));
+    if (action === 'aiConvoGet') return json_(aiConvoGet_(data));
+    if (action === 'aiConvoPut') return json_(aiConvoPut_(data));
+    if (action === 'aiConvoKind') return json_(aiConvoKind_(data));
+    if (action === 'aiConvoDelete') return json_(aiConvoDelete_(data));
+    if (action === 'aiPresetList') return json_(aiPresetList_(data));
+    if (action === 'aiPresetPut') return json_(aiPresetPut_(data));
+    if (action === 'aiPresetDelete') return json_(aiPresetDelete_(data));
+
     if (action === 'listDriveFolder') {
       return json_(listDriveFolder_(data));
     }
@@ -3015,4 +3026,284 @@ function aiSlidesText_(pres) {
 
 function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// ============================================================================
+// 智翔館AI：アカウント別の会話ログ・会話の保存（2026-11-16〜）
+// ----------------------------------------------------------------------------
+// 置き場所はスプレッドシート「智翔館AI 会話ログ」（会議サポートアプリログとは別のファイル）。
+//   AI_LOG_SPREADSHEET_ID を空にしておくと、初めて使うときに作り、ID をスクリプトのプロパティに覚える
+//   （会議サポートアプリログと同じフォルダに置く。共有は持ち主だけ。見せる人は、このファイルの共有で決める）。
+// シート：
+//   氏名ごとのシート … その人の会話ログ（1行＝1回のやり取り・評価・コンテキストの操作）
+//   一覧              … 全員の会話ログを時間順に短く
+//   _会話の保存       … 会話の履歴と保存した会話（1行＝1つの会話。中身は JSON を4万5千字ずつ右のセルに分けて入れる）
+//   _いつものコンテキスト … 1行＝1つ
+// 会話の保存・いつものコンテキストは、共通ログインで本人を確かめたメールアドレス（owner）の分だけを読み書きする。
+// 残す期間・件数の決まりはアプリ側（lib/chishokanAi/savedRules.ts）。ここは言われたとおりに読み書きする。
+// ============================================================================
+var AI_LOG_SPREADSHEET_ID = ''; // 例 '1AbcDEfGhIJkLmNoPqRsTuVwXyZ'。空なら自動で作る
+var AI_LOG_HEADERS = ['日時', '種類', '会話番号', '回', '部門', '作業', '質問・内容', '回答', '読んだ資料', '作ったファイル', 'コンテキスト', '印', '時間・トークン', 'メール'];
+var AI_LIST_HEADERS = ['日時', '名前', '部門', '種類', '会話番号', '回', '質問・内容（先頭）', '印'];
+var AI_CONVO_SHEET = '_会話の保存';
+var AI_CONVO_HEADERS = ['持ち主', '会話番号', '種類', '題名', '質問の数', '文字数', '作った日時', '最後に使った日時', '名前', '中身（JSON。右のセルに続く）'];
+var AI_PRESET_SHEET = '_いつものコンテキスト';
+var AI_PRESET_HEADERS = ['持ち主', '番号', '名前', '本文', '新しい会話に入れる', '並び', '最後に直した日時'];
+var AI_CELL_MAX = 45000; // 1つのセルに入れる文字数（上限は5万字）
+
+function aiLogBook_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = AI_LOG_SPREADSHEET_ID || props.getProperty('AI_LOG_SPREADSHEET_ID');
+  if (id) return SpreadsheetApp.openById(id);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    id = props.getProperty('AI_LOG_SPREADSHEET_ID');
+    if (id) return SpreadsheetApp.openById(id);
+    var ss = SpreadsheetApp.create('智翔館AI 会話ログ');
+    props.setProperty('AI_LOG_SPREADSHEET_ID', ss.getId());
+    try {
+      var main = SPREADSHEET_ID ? DriveApp.getFileById(SPREADSHEET_ID) : DriveApp.getFileById(SpreadsheetApp.getActiveSpreadsheet().getId());
+      var parents = main.getParents();
+      if (parents.hasNext()) DriveApp.getFileById(ss.getId()).moveTo(parents.next());
+    } catch (e) {}
+    var first = ss.getSheets()[0];
+    first.setName('一覧');
+    first.appendRow(AI_LIST_HEADERS);
+    first.setFrozenRows(1);
+    return ss;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** シートを開く（無ければ見出しを付けて作る）。 */
+function aiSheet_(ss, name, headers) {
+  var sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    sh.appendRow(headers);
+    sh.setFrozenRows(1);
+  } else if (sh.getLastRow() === 0) {
+    sh.appendRow(headers);
+  }
+  return sh;
+}
+
+/** 氏名からシートの名前を作る（シート名に使えない文字を外す）。 */
+function aiPersonSheetName_(name) {
+  var n = String(name || '').replace(/[\[\]\*\?:\/\\]/g, ' ').trim().slice(0, 60);
+  if (!n || n === '一覧' || n.charAt(0) === '_') n = '（名前なし）' + n;
+  return n;
+}
+
+function aiClip_(v, n) {
+  var t = String(v == null ? '' : v);
+  return t.length > n ? t.slice(0, n) + '…（以下略）' : t;
+}
+
+/** 会話ログを1行書く（その人のシートと「一覧」）。 */
+function aiLog_(data) {
+  var ss = aiLogBook_();
+  var ts = data.ts || nowIso_();
+  var kind = String(data.kind || '質問');
+  var sh = aiSheet_(ss, aiPersonSheetName_(data.user), AI_LOG_HEADERS);
+  sh.appendRow(asSheetText_([
+    ts, kind, String(data.conversationId || ''), data.turn ? Number(data.turn) : '', String(data.campus || ''), String(data.task || ''),
+    aiClip_(data.question, AI_CELL_MAX), aiClip_(data.answer, AI_CELL_MAX), aiClip_(data.sources, 5000), aiClip_(data.files, 5000),
+    aiClip_(data.context, 5000), aiClip_(data.flags, 2000), aiClip_(data.stats, 1000), String(data.email || ''),
+  ]));
+  var list = aiSheet_(ss, '一覧', AI_LIST_HEADERS);
+  list.appendRow(asSheetText_([
+    ts, String(data.user || ''), String(data.campus || ''), kind, String(data.conversationId || ''), data.turn ? Number(data.turn) : '',
+    aiClip_(String(data.question || '').replace(/\s+/g, ' '), 100), aiClip_(data.flags, 300),
+  ]));
+  return { ok: true, saved: 'aiLog' };
+}
+
+// --- 会話の保存 ----------------------------------------------------------------
+
+function aiConvoSheet_() {
+  return aiSheet_(aiLogBook_(), AI_CONVO_SHEET, AI_CONVO_HEADERS);
+}
+
+/** 持ち主の行（2行目からの行番号と値）。 */
+function aiConvoRows_(sh, owner) {
+  var last = sh.getLastRow();
+  if (last < 2) return [];
+  var vals = sh.getRange(2, 1, last - 1, 9).getValues();
+  var out = [];
+  for (var i = 0; i < vals.length; i++) {
+    if (String(vals[i][0]) === owner) out.push({ row: i + 2, v: vals[i] });
+  }
+  return out;
+}
+
+function aiIso_(v) {
+  return v instanceof Date ? v.toISOString() : String(v || '');
+}
+
+function aiConvoMeta_(r) {
+  return { id: String(r.v[1]), kind: String(r.v[2]) === '保存' ? '保存' : '履歴', title: String(r.v[3]), turns: Number(r.v[4]) || 0,
+    chars: Number(r.v[5]) || 0, createdAt: aiIso_(r.v[6]), updatedAt: aiIso_(r.v[7]) };
+}
+
+function aiConvoList_(data) {
+  var owner = String(data.owner || '');
+  if (!owner) return { ok: false, reason: 'bad_owner' };
+  var rows = aiConvoRows_(aiConvoSheet_(), owner);
+  return { ok: true, saved: 'aiConvo', rows: rows.map(aiConvoMeta_) };
+}
+
+function aiConvoGet_(data) {
+  var owner = String(data.owner || '');
+  var id = String(data.id || '');
+  var sh = aiConvoSheet_();
+  var rows = aiConvoRows_(sh, owner).filter(function (r) { return String(r.v[1]) === id; });
+  if (!owner || !rows.length) return { ok: true, saved: 'aiConvo', found: false };
+  var r = rows[0];
+  var lastCol = sh.getLastColumn();
+  var chunks = lastCol >= 10 ? sh.getRange(r.row, 10, 1, lastCol - 9).getValues()[0] : [];
+  var json = chunks.map(function (c) { return String(c == null ? '' : c); }).join('');
+  var meta = aiConvoMeta_(r);
+  meta.found = true;
+  meta.ok = true;
+  meta.saved = 'aiConvo';
+  meta.data = json;
+  return meta;
+}
+
+/** 会話を書く（無ければ履歴として足す。保存した会話の種類と題名はそのまま）。 */
+function aiConvoPut_(data) {
+  var owner = String(data.owner || '');
+  var id = String(data.id || '');
+  var json = String(data.data || '');
+  if (!owner || !id || !json) return { ok: false, reason: 'bad_input' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = aiConvoSheet_();
+    var now = new Date().toISOString();
+    var cur = aiConvoRows_(sh, owner).filter(function (r) { return String(r.v[1]) === id; })[0];
+    var kind = cur && String(cur.v[2]) === '保存' ? '保存' : '履歴';
+    var title = kind === '保存' ? String(cur.v[3]) : String(data.autoTitle || '');
+    var chunks = [];
+    for (var i = 0; i < json.length; i += AI_CELL_MAX) chunks.push(json.slice(i, i + AI_CELL_MAX));
+    var row = [owner, id, kind, title, Number(data.turns) || 0, json.length, cur ? cur.v[6] : now, now, String(data.user || '')].concat(chunks);
+    var width = Math.max(row.length, sh.getLastColumn());
+    if (sh.getMaxColumns() < width) sh.insertColumnsAfter(sh.getMaxColumns(), width - sh.getMaxColumns());
+    while (row.length < width) row.push('');
+    var at = cur ? cur.row : sh.getLastRow() + 1;
+    sh.getRange(at, 1, 1, width).setValues([asSheetText_(row)]);
+    return { ok: true, saved: 'aiConvo', kind: kind };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function aiConvoKind_(data) {
+  var owner = String(data.owner || '');
+  var id = String(data.id || '');
+  var kind = data.kind === '保存' ? '保存' : '履歴';
+  var sh = aiConvoSheet_();
+  var cur = aiConvoRows_(sh, owner).filter(function (r) { return String(r.v[1]) === id; })[0];
+  if (!owner || !cur) return { ok: true, saved: 'aiConvo', found: false };
+  sh.getRange(cur.row, 3).setValue(kind);
+  if (data.title) sh.getRange(cur.row, 4).setValue(String(data.title).slice(0, 60));
+  sh.getRange(cur.row, 8).setValue(new Date().toISOString());
+  return { ok: true, saved: 'aiConvo', found: true };
+}
+
+function aiConvoDelete_(data) {
+  var owner = String(data.owner || '');
+  var ids = Array.isArray(data.ids) ? data.ids.map(String) : [];
+  if (!owner || !ids.length) return { ok: true, saved: 'aiConvo', deleted: 0 };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = aiConvoSheet_();
+    var rows = aiConvoRows_(sh, owner).filter(function (r) { return ids.indexOf(String(r.v[1])) >= 0; });
+    rows.sort(function (a, b) { return b.row - a.row; }).forEach(function (r) { sh.deleteRow(r.row); });
+    return { ok: true, saved: 'aiConvo', deleted: rows.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// --- いつものコンテキスト ------------------------------------------------------
+
+function aiPresetSheet_() {
+  return aiSheet_(aiLogBook_(), AI_PRESET_SHEET, AI_PRESET_HEADERS);
+}
+
+function aiPresetRows_(sh, owner) {
+  var last = sh.getLastRow();
+  if (last < 2) return [];
+  var vals = sh.getRange(2, 1, last - 1, 7).getValues();
+  var out = [];
+  for (var i = 0; i < vals.length; i++) if (String(vals[i][0]) === owner) out.push({ row: i + 2, v: vals[i] });
+  return out;
+}
+
+function aiPresetList_(data) {
+  var owner = String(data.owner || '');
+  if (!owner) return { ok: false, reason: 'bad_owner' };
+  var items = aiPresetRows_(aiPresetSheet_(), owner).map(function (r) {
+    return { id: String(r.v[1]), name: String(r.v[2]), text: String(r.v[3]), auto: r.v[4] === true || String(r.v[4]) === 'TRUE',
+      sortOrder: Number(r.v[5]) || 0, updatedAt: aiIso_(r.v[6]) };
+  });
+  return { ok: true, saved: 'aiPreset', items: items };
+}
+
+function aiPresetPut_(data) {
+  var owner = String(data.owner || '');
+  var p = data.preset || {};
+  if (!owner || !p.id) return { ok: false, reason: 'bad_input' };
+  var sh = aiPresetSheet_();
+  var cur = aiPresetRows_(sh, owner).filter(function (r) { return String(r.v[1]) === String(p.id); })[0];
+  var row = asSheetText_([owner, String(p.id), String(p.name || '').slice(0, 60), aiClip_(p.text, AI_CELL_MAX), p.auto === true, Number(p.sortOrder) || 0, new Date().toISOString()]);
+  if (cur) sh.getRange(cur.row, 1, 1, 7).setValues([row]);
+  else sh.appendRow(row);
+  return { ok: true, saved: 'aiPreset' };
+}
+
+function aiPresetDelete_(data) {
+  var owner = String(data.owner || '');
+  var sh = aiPresetSheet_();
+  var rows = aiPresetRows_(sh, owner).filter(function (r) { return String(r.v[1]) === String(data.id || ''); });
+  rows.sort(function (a, b) { return b.row - a.row; }).forEach(function (r) { sh.deleteRow(r.row); });
+  return { ok: true, saved: 'aiPreset', deleted: rows.length };
+}
+
+// --- これまでの会話ログを写す（1回だけ、エディタから実行する）--------------------
+// 会議サポートアプリログの「会話ログ」から、智翔館AIの行（[智翔館AI] で始まる）を、アカウント別のシートに写す。
+// 元の行は消さない。2回実行すると2重になるので、1回だけ実行する。
+function copyOldAiLogs() {
+  var src = (SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet()).getSheetByName('会話ログ');
+  if (!src || src.getLastRow() < 2) { Logger.log('会話ログがありません'); return; }
+  var vals = src.getRange(2, 1, src.getLastRow() - 1, 5).getValues();
+  var n = 0;
+  for (var i = 0; i < vals.length; i++) {
+    var input = String(vals[i][3] || '');
+    var m = /^\[智翔館AI(?:・(評価|コンテキスト))?\]/.exec(input);
+    if (!m) continue;
+    var convo = /（会話: ([\w-]+)(?:・(\d+)回目)?）/.exec(input);
+    var task = /（作業: ([^）]+)）/.exec(input);
+    var stats = /（(\d+秒・往復[^）]*)）\s*$/.exec(input);
+    var sources = /（調べた資料: ([^）]*)）/.exec(input);
+    var files = /（作成した文書: ([^）]*(?:）[^（\n]*)?)）/.exec(input);
+    aiLog_({
+      ts: vals[i][0] instanceof Date ? vals[i][0].toISOString() : String(vals[i][0]),
+      user: String(vals[i][2] || ''), campus: String(vals[i][1] || ''),
+      kind: m[1] || '質問', conversationId: convo ? convo[1] : '', turn: convo && convo[2] ? Number(convo[2]) : '',
+      // 質問：先頭の（会話: …）（作業: …）などの注記と、最後の（調べた資料: …）以降を外す（別の列に入れたため）
+      task: task ? task[1] : '',
+      question: input.replace(/^\[[^\]]*\]/, '').replace(/^(\s*（[^）]*）)+/, '').replace(/\n（調べた資料:[\s\S]*$/, '').trim(),
+      answer: String(vals[i][4] || ''),
+      sources: sources ? sources[1] : '', files: files ? files[1] : '', stats: stats ? stats[1] : '', flags: '（以前の会話ログから写した行）',
+    });
+    n++;
+  }
+  Logger.log(n + '行を写しました');
 }
