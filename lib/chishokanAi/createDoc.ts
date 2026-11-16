@@ -37,7 +37,7 @@ export async function runCreateDoc(input: Record<string, unknown>, who: { campus
     const noGlyph = textsWithoutGlyph(fig.figures[i]);
     if (noGlyph.length) notes.push(`図${i + 1}の「${noGlyph.slice(0, 3).join('」「')}」は、文書の画像では文字が出ません（図の中は半角の文字・記号にする）`);
     try {
-      const png = await renderFigurePng(fig.figures[i]);
+      const png = await renderFigurePng(fig.figures[i], { printMm: (fig.figures[i].size ?? 8) * 10 });
       const w = Math.round(png.widthCm * PX_PER_CM);
       images.push({ base64: png.base64, width: w, height: Math.round((w * png.height) / png.width), caption: png.caption });
     } catch (e) {

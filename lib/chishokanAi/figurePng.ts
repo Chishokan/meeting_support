@@ -35,12 +35,15 @@ function prepare(): Promise<Uint8Array> {
 
 export type FigurePng = { base64: string; width: number; height: number; caption: string; widthCm: number };
 
-/** 図の記述を PNG（2倍の解像度）にする。ドキュメントに入れるときの幅（cm）も返す。 */
-export async function renderFigurePng(spec: FigureSpec): Promise<FigurePng> {
+/**
+ * 図の記述を PNG にする。ドキュメントに入れるときの幅（cm）も返す。
+ * printMm（文書に入れる幅 mm）を渡すと、紙の上で文字が約9ポイントになるように描き、印刷向けに3倍の解像度にする。
+ */
+export async function renderFigurePng(spec: FigureSpec, opts: { printMm?: number } = {}): Promise<FigurePng> {
   const font = await prepare();
-  const { svg, width, height } = renderFigureSvg(spec);
+  const { svg, width, height } = renderFigureSvg(spec, opts);
   const r = new Resvg(svg, {
-    fitTo: { mode: 'width', value: width * 2 },
+    fitTo: { mode: 'width', value: width * (opts.printMm ? 3 : 2) },
     font: { fontBuffers: [font], loadSystemFonts: false, defaultFontFamily: 'DejaVu Sans' },
     background: '#ffffff',
   });

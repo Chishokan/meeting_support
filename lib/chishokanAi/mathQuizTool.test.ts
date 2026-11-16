@@ -41,3 +41,40 @@ test('checkMathQuizInput：題名・No.・見出し・図と表・よく出る',
 test('MATH_QUIZ_TOOL：$ref を使わない', () => {
   assert.equal(JSON.stringify(MATH_QUIZ_TOOL.input_schema).includes('$ref'), false);
 });
+
+// --- 図のある角の問題（2026-11-16 の小テストで、図に角の印が無く求める角が分からなかった） ---
+import { checkAngleFigure } from './mathQuizTool.ts';
+
+const PARALLEL = {
+  range: [0, 0, 10, 8],
+  points: { P: [0, 6], Q: [10, 6], R: [0, 2], S: [10, 2], A: [3, 6], B: [7, 2], T: [1, 8], U: [9, 0] },
+};
+
+test('checkAngleFigure：角の印が無い・名前を出した角に印が無い・分かっている角が無い', () => {
+  // 実際にできた図（角の印が無く、a を文字で置いただけ）
+  const bad = { ...PARALLEL, shapes: [{ line: ['P', 'Q'] }, { line: ['R', 'S'] }, { line: ['T', 'U'] }, { text: [5, 7], label: 'a' }] };
+  assert.match(checkAngleFigure('右の図で、$\\ell \\parallel m$ のとき、$\\angle a$ の同位角の大きさを求めよ。', bad) ?? '', /角の印がありません/);
+  // ∠x と書いたのに、印の label が a
+  const wrong = { ...PARALLEL, shapes: [{ line: ['P', 'Q'] }, { angle: ['Q', 'A', 'T'], label: '70°' }, { angle: ['S', 'B', 'A'], label: 'a' }] };
+  assert.match(checkAngleFigure('右の図で、∠x の大きさを求めよ。', wrong) ?? '', /∠x が、図のどの角か/);
+  // 分かっている角が無い
+  const noValue = { ...PARALLEL, shapes: [{ angle: ['Q', 'A', 'T'], label: 'a' }, { angle: ['S', 'B', 'A'], label: 'x' }] };
+  assert.match(checkAngleFigure('右の図で、∠x の大きさを求めよ。', noValue) ?? '', /分かっている角の大きさ/);
+  // よい図：70° と x に印
+  const good = { ...PARALLEL, shapes: [{ line: ['P', 'Q'], label: 'ℓ' }, { angle: ['Q', 'A', 'T'], label: '70°' }, { angle: ['S', 'B', 'A'], label: 'x' }] };
+  assert.equal(checkAngleFigure('右の図で、$\\ell \\parallel m$ のとき、$\\angle x$ の大きさを求めよ。', good), null);
+  // 問題文に角の大きさがあればよい・和を求める問題・角の問題でないもの
+  assert.equal(checkAngleFigure('右の図で、∠ABC＝$40^\\circ$ のとき、∠x を求めよ。', { shapes: [{ angle: ['A', 'B', 'C'], label: 'x' }] }), null);
+  assert.equal(checkAngleFigure('右の図の、印を付けた5つの角の和を求めよ。', { shapes: [{ angle: ['A', 'B', 'C'] }] }), null);
+  assert.equal(checkAngleFigure('右の図の三角形の面積を求めよ。', { shapes: [] }), null);
+  assert.equal(checkAngleFigure('右の図の六角形の内角の和を求めよ。', { shapes: [] }), null);
+  assert.match(checkAngleFigure('右の図で、印をつけた角の大きさを求めよ。', { shapes: [] }) ?? '', /角の印がありません/);
+});
+
+test('checkMathQuizInput：角の問題の図に印が無ければ、直してもらう', () => {
+  const r = checkMathQuizInput({
+    title: '中2 角', sheets: [{ sections: [{ items: [item('$-3+8$'), { text: '右の図で、∠x の大きさを求めよ。', answer: '70°', side: { figure: { range: [0, 0, 1, 1], shapes: [] } } }] }] }],
+  });
+  assert.equal(r.ok, false);
+  assert.match((r as { message: string }).message, /1枚目の\(2\)：図に角の印がありません/);
+});

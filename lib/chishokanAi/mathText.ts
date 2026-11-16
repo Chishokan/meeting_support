@@ -14,7 +14,7 @@ export type Piece =
 const SYMBOLS: Record<string, string> = {
   times: '×', div: '÷', pi: 'π', angle: '∠', triangle: '△', circ: '°', degree: '°', pm: '±', mp: '∓',
   leqq: '≦', geqq: '≧', leq: '≦', geq: '≧', le: '≦', ge: '≧', neq: '≠', ne: '≠', fallingdotseq: '≒', approx: '≒',
-  parallel: '∥', perp: '⊥', equiv: '≡', sim: '∽', backsim: '∽', cdots: '…', ldots: '…', cdot: '・',
+  parallel: '∥', perp: '⊥', ell: 'ℓ', equiv: '≡', sim: '∽', backsim: '∽', cdots: '…', ldots: '…', cdot: '・',
   infty: '∞', therefore: '∴', because: '∵', square: '□', alpha: 'α', beta: 'β', theta: 'θ',
   // 空白
   ',': ' ', ' ': ' ', quad: '　', qquad: '　　',

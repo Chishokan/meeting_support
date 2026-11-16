@@ -41,8 +41,14 @@ const CELL_BORDERS = { top: LINE, bottom: LINE, left: LINE, right: LINE };
 const FONT_MINCHO = { ascii: LATIN, hAnsi: LATIN, eastAsia: MINCHO, cs: LATIN };
 const FONT_GOTHIC = { ascii: GOTHIC, hAnsi: GOTHIC, eastAsia: GOTHIC, cs: GOTHIC };
 
-/** 図を PNG にする関数（figurePng.ts の renderFigurePng を、テストでは差し替える）。 */
-export type FigureRenderer = (figure: unknown) => Promise<{ data: Buffer; width: number; height: number; widthCm: number }>;
+/** 図を PNG にする関数（figurePng.ts の renderFigurePng を、テストでは差し替える）。printMm は文書に入れる幅（文字の大きさを合わせる）。 */
+export type FigureRenderer = (figure: unknown, opts?: { printMm?: number }) => Promise<{ data: Buffer; width: number; height: number; widthCm: number }>;
+
+/** 図の記述の size（cm、既定 8）。 */
+export function figureSizeCm(figure: unknown): number {
+  const v = (figure as { size?: unknown } | null)?.size;
+  return typeof v === 'number' && Number.isFinite(v) ? Math.min(16, Math.max(3, v)) : 8;
+}
 
 export type RunOpts = { bold?: boolean; size?: number; gothic?: boolean; color?: string };
 
@@ -164,7 +170,9 @@ export async function sideBlocks(sides: Side[], render: FigureRenderer, figNo: {
     const label = s.label || `図${wideNum(figNo.n)}`;
     if (s.label !== '') out.push(para([textRun(label, { bold: true, gothic: true, size: 20 })], { after: 60 }));
     try {
-      const img = await render(s.figure);
+      // 入れる幅（mm）を先に決め、その幅で文字が小さくなりすぎないように描く
+      const printMm = Math.min(((sideW - 200) / 1440) * 25.4, figureSizeCm(s.figure) * 10);
+      const img = await render(s.figure, { printMm });
       const maxPx = (sideW - 200) * PX_PER_TWIP;
       const wantPx = (img.widthCm / 2.54) * 96;
       const w = Math.round(Math.min(maxPx, wantPx));

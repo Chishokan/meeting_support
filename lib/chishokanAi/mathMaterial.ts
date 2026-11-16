@@ -7,7 +7,7 @@ import { parseFigure, textsWithoutGlyph } from './figure';
 import { renderFigurePng } from './figurePng';
 import { buildAnswerDocx, buildProblemDocx, type FigureRenderer } from './mathDoc';
 import { checkMathMaterialInput } from './mathMaterialTool';
-import { buildQuizDocx } from './mathQuizDoc';
+import { buildQuizDocx, QuizOverflowError } from './mathQuizDoc';
 import { checkMathQuizInput } from './mathQuizTool';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -71,12 +71,12 @@ export type MathRunResult = { toolResult: string; created: CreatedDoc[]; inputEr
 
 /** 図の記述を PNG にする（文書の画像に出ない日本語の文字があれば notes に書く）。 */
 function figureRenderer(notes: string[]): FigureRenderer {
-  return async (fig) => {
+  return async (fig, opts) => {
     const p = parseFigure(fig as Record<string, unknown>);
     if (!p.ok) throw new Error(p.error);
     const noGlyph = textsWithoutGlyph(p.spec);
     if (noGlyph.length) notes.push(`図の「${noGlyph.slice(0, 3).join('」「')}」は、画像では文字が出ません（図の中は半角の文字・記号にする）`);
-    const png = await renderFigurePng(p.spec);
+    const png = await renderFigurePng(p.spec, opts);
     return { data: Buffer.from(png.base64, 'base64'), width: png.width, height: png.height, widthCm: png.widthCm };
   };
 }
@@ -101,6 +101,10 @@ export async function runCreateMathQuiz(
     answers = b.buffer;
     notes.push(...a.notes);
   } catch (e) {
+    // 1枚に収まらない：問題を減らすか枚を分けて、呼び直してもらう（入力の誤りとして扱い、「1回に1組」に数えない）
+    if (e instanceof QuizOverflowError) {
+      return { toolResult: e.message, created: [{ ok: false, title: `小テスト：${q.title}`, note: `1枚に収まらず作り直し（${e.message.slice(0, 60)}）` }], inputError: true };
+    }
     const why = `Word を組み立てられませんでした（${String((e as Error)?.message ?? e).slice(0, 120)}）`;
     return { toolResult: `${why}。職員にそのことを伝え、問題と答えを回答に書く。`, created: [{ ok: false, title: `小テスト：${q.title}`, note: why }] };
   }
