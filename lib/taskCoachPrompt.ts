@@ -5,7 +5,8 @@
 import { withCompanyKnowledge, todayText } from './core/companyKnowledge';
 import type { DateOption } from './taskCoach';
 
-const RULES = `
+// 智翔館AI の作業「行動計画を作る（AI評価つき）」でも、同じ基準で行動計画を見直す（lib/chishokanAi/taskEval.ts）。
+export const EVALUATION_RULES = `
 【評価の段階（校舎の動きの見方）】
 0 動いていない／1 動いているが精度が低い／2 動いているが自分ができる範囲のみ（対象・数・結果が記録に残っている）／
 3 チームで動くための相談や共有をしている／4 チームで動きを作っている／5 他部門と連携して動きを作っている
@@ -43,7 +44,7 @@ const COACH = `
 - 評価に書かれていない事実や数字をつくらない。分からないことは相手に聞く。
 - 見出し記号（#）や太字（**）は使わない。箇条書きは「・」を使う。
 
-${RULES}
+${EVALUATION_RULES}
 
 【評価の内容（重要タスク評価シート）】
 {{評価}}
