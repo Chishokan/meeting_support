@@ -628,6 +628,7 @@ export function parsePaste(text: string, exam: MoshiExam): PasteResult {
         const sc = {} as Scores;
         let p = 0;
         let bad = '';
+        let shifted = '';
         SUBJECT_KEYS.forEach((k, si) => {
           const qs = subjectOf(exam, k).questions;
           sc[k] = [];
@@ -635,11 +636,20 @@ export function parsePaste(text: string, exam: MoshiExam): PasteResult {
             const v = parseScore(cols[p++], qs[i].max);
             if (!v.ok) { bad ||= `${SUBJECT_NAMES[k]}${i + 1}`; sc[k].push(null); } else sc[k].push(v.value);
           }
-          p++; // 「計」の列
+          // 「計」の列。数字が入っていて大問の合計と合わなければ、列の並び（大問の数）が今回の回と違う
+          //（例：数学の大問が6つの前の回の形の行を、大問5つの回に貼った）。ずれたまま読まない
+          const total = toHalf(String(cols[p++] ?? '')).trim();
+          const sum = sc[k].reduce<number>((a, v) => a + (v ?? 0), 0);
+          if (/^\d+$/.test(total) && Number(total) !== sum && sc[k].some((v) => v != null)) shifted ||= SUBJECT_NAMES[k];
         });
-        if (bad) warnings.push(`${lineNo}行目：${bad} の得点が読めないか配点を超えているので、空欄にしました`);
-        // 入力シートの式（計＝0）だけで中身が無い行は、得点なしとして扱う
-        scores = SUBJECT_KEYS.some((k) => sc[k].some((v) => v != null)) ? sc : null;
+        if (shifted) {
+          warnings.push(`${lineNo}行目：${shifted}の「計」が大問の合計と合いません。大問の数が今回の回と違う形の行のようなので、得点は読まずに名簿だけ読みました`);
+          scores = null;
+        } else {
+          if (bad) warnings.push(`${lineNo}行目：${bad} の得点が読めないか配点を超えているので、空欄にしました`);
+          // 入力シートの式（計＝0）だけで中身が無い行は、得点なしとして扱う
+          scores = SUBJECT_KEYS.some((k) => sc[k].some((v) => v != null)) ? sc : null;
+        }
       }
     }
     if (!name && !scores) continue;

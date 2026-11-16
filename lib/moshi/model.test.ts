@@ -183,6 +183,20 @@ test('貼り付け：入力シートの行（A列から・非表示の列あり�
   assert.deepEqual(row.scores!.sc, [12, 9, 12, 18, 18, 12]);
 });
 
+test('貼り付け：大問の数が違う回の形の行（計が合わない）は、得点を読まずに名簿だけ読む', () => {
+  const e = exam();
+  // 前の回の形：数学の大問が6つ（30,14,12,19,13,12）
+  const old = [[29, 15, 32, 18], [27, 21, 5, 13], [30, 12, 9, 0, 6, 10], [16, 17, 14, 8, 14], [12, 9, 12, 18, 18, 12]];
+  const cells: (number | string)[] = [];
+  for (const s of old) cells.push(...s, s.reduce((a, b) => a + b, 0));
+  const line = ['514001', '山田 太郎', '0', '40200', '', '', '', '', '', '', '', '佐世保北', '', '', '', ...cells, 380].join('\t');
+  const r = parsePaste(line, e);
+  assert.equal(r.rows.length, 1);
+  assert.equal(r.rows[0].scores, null);
+  assert.equal(r.rows[0].name, '山田　太郎');
+  assert.match(r.warnings[0], /数学の「計」が大問の合計と合いません/);
+});
+
 test('貼り付け：入力シートの空き番号の行（式の 0 だけ）は飛ばす', () => {
   const e = exam();
   const zeros: string[] = [];
