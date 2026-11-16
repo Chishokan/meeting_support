@@ -13,8 +13,8 @@ type Dir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw' | 'none';
 
 export type Shape =
   | { polygon: Pt[]; fill?: boolean; dash?: boolean }
-  | { segment: [Pt, Pt]; dash?: boolean }
-  | { line: [Pt, Pt]; dash?: boolean }
+  | { segment: [Pt, Pt]; dash?: boolean; label?: string }
+  | { line: [Pt, Pt]; dash?: boolean; label?: string }
   | { circle: Pt; r?: number; through?: Pt; dash?: boolean; fill?: boolean }
   | { arc: Pt; r: number; from: number; to: number; dash?: boolean; fill?: boolean }
   | { curve: string; x?: [number, number]; dash?: boolean }
@@ -35,7 +35,10 @@ export type FigureSpec = {
   points?: Record<string, [number, number]>;
   /** 黒い点を打つ点の名前（辺の上の点など） */
   dots?: string[];
-  /** 点の名前を書く向き（省略すると図の中心から外向き）。none で名前を書かない */
+  /**
+   * 点の名前を書く向き（省略すると図の中心から外向き）。none で名前を書かない。
+   * 1文字（＋′）でない名前（X1、_a など、図を作るための点）は、向きを書かない限り名前を書かない。
+   */
   labels?: Record<string, Dir>;
   shapes?: Shape[];
 };
@@ -176,7 +179,10 @@ export function parseFigure(raw: unknown): { ok: true; spec: FigureSpec } | { ok
     if (!s || typeof s !== 'object') return { ok: false, error: `${where}の形が正しくありません` };
     const listOk = (v: unknown, min: number, max: number) => Array.isArray(v) && v.length >= min && v.length <= max && v.every(ptOk);
     if ('polygon' in s) { if (!listOk(s.polygon, 2, 40)) return { ok: false, error: `${where}（polygon）の点が正しくありません（定義した点の名前か [x, y]）` }; }
-    else if ('segment' in s || 'line' in s) { if (!listOk(s.segment ?? s.line, 2, 2)) return { ok: false, error: `${where}（segment / line）は2点` }; }
+    else if ('segment' in s || 'line' in s) {
+      if (!listOk(s.segment ?? s.line, 2, 2)) return { ok: false, error: `${where}（segment / line）は2点` };
+      if (s.label !== undefined && typeof s.label !== 'string') return { ok: false, error: `${where}（segment / line）の label は短い文字（直線の名前 ℓ・m など）` };
+    }
     else if ('circle' in s) {
       if (!ptOk(s.circle)) return { ok: false, error: `${where}（circle）の中心が正しくありません` };
       if (!(isNum(s.r) && s.r > 0) && !ptOk(s.through)) return { ok: false, error: `${where}（circle）は r か through が要ります` };
@@ -222,7 +228,7 @@ const FONT = "'DejaVu Sans', 'Helvetica Neue', Arial, sans-serif";
 const FS = 15;
 const W_MAX = 480;
 const H_MAX = 420;
-const M = 40;
+const M_SCREEN = 40;
 
 export function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
@@ -233,12 +239,23 @@ const f2 = (n: number) => (Math.round(n * 100) / 100).toString();
 /** 方眼の線の数の上限（縦と横の合計）。これより多い範囲では方眼を描かない。 */
 const MAX_GRID_LINES = 400;
 
-/** 図の記述から SVG の文字列と、画像の大きさ（px）を作る。 */
-export function renderFigureSvg(spec: FigureSpec): { svg: string; width: number; height: number } {
+/** 印刷したときの文字の高さ（mm）。点の名前・角の大きさが、紙の上で約9ポイントになるようにする。 */
+const PRINT_TEXT_MM = 3.3;
+
+/**
+ * 図の記述から SVG の文字列と、画像の大きさ（px）を作る。
+ * printMm（文書に入れるときの幅 mm）を渡すと、紙の上で文字が小さくなりすぎないよう、
+ * 描く範囲を狭くして（文字・線・印の大きさはそのまま）、文字が約 PRINT_TEXT_MM になるようにする。
+ * 渡さなければ画面（チャット）向けの大きさ。
+ */
+export function renderFigureSvg(spec: FigureSpec, opts: { printMm?: number } = {}): { svg: string; width: number; height: number } {
   const [x0, y0, x1, y1] = spec.range;
   const aspect = (y1 - y0) / (x1 - x0);
-  let inner = W_MAX - 2 * M;
-  if (inner * aspect > H_MAX - 2 * M) inner = (H_MAX - 2 * M) / aspect;
+  const wMax = opts.printMm ? Math.min(W_MAX, Math.max(160, (opts.printMm / PRINT_TEXT_MM) * FS)) : W_MAX;
+  const hMax = (wMax * H_MAX) / W_MAX;
+  const M = opts.printMm ? 24 : M_SCREEN;
+  let inner = wMax - 2 * M;
+  if (inner * aspect > hMax - 2 * M) inner = (hMax - 2 * M) / aspect;
   const s = inner / (x1 - x0);
   const width = Math.round(inner + 2 * M);
   const height = Math.round(inner * aspect + 2 * M);
@@ -285,6 +302,14 @@ export function renderFigureSvg(spec: FigureSpec): { svg: string; width: number;
     if (x0 <= 0 && 0 <= x1 && y0 <= 0 && 0 <= y1 && !('O' in pts)) text(tx(0) - 10, ty(0) + 13, 'O');
   }
 
+  // 直線・線分の名前（ℓ・m など）：右の端（縦の線は上の端）の少し外に書く。「l」は ℓ にする
+  const lineName = (a: [number, number], b: [number, number], label: string) => {
+    const [p, q] = a[0] > b[0] + 1e-6 || (Math.abs(a[0] - b[0]) <= 1e-6 && a[1] < b[1]) ? [a, b] : [b, a]; // p が名前を書く端
+    const u = unit(p[0] - q[0], p[1] - q[1]);
+    const name = label === 'l' ? 'ℓ' : label;
+    text(p[0] + u[0] * 10 + (Math.abs(u[1]) > 0.9 ? 10 : 0), p[1] + u[1] * 10 - (Math.abs(u[1]) > 0.9 ? 0 : 10), name, Math.abs(u[1]) > 0.9 ? 'start' : 'middle');
+  };
+
   // 図の中心（点の名前と長さの書き込みを外向きにするため）
   const all = Object.values(pts);
   const cx = all.length ? all.reduce((a, p) => a + p[0], 0) / all.length : (x0 + x1) / 2;
@@ -299,10 +324,16 @@ export function renderFigureSvg(spec: FigureSpec): { svg: string; width: number;
     } else if ('segment' in o) {
       const [a, b] = (o.segment as Pt[]).map(SP);
       strokes.push(`<line x1="${f2(a[0])}" y1="${f2(a[1])}" x2="${f2(b[0])}" y2="${f2(b[1])}" stroke="${STROKE}" stroke-width="1.6"${dash(o.dash as boolean)}/>`);
+      if (typeof o.label === 'string' && o.label) lineName(a, b, o.label);
     } else if ('line' in o) {
       const [a, b] = (o.line as Pt[]).map(P);
       const seg = clipLine(a, b, [x0, y0, x1, y1]);
-      if (seg) strokes.push(`<line x1="${f2(tx(seg[0][0]))}" y1="${f2(ty(seg[0][1]))}" x2="${f2(tx(seg[1][0]))}" y2="${f2(ty(seg[1][1]))}" stroke="${STROKE}" stroke-width="1.6"${dash(o.dash as boolean)}/>`);
+      if (seg) {
+        const A: [number, number] = [tx(seg[0][0]), ty(seg[0][1])];
+        const B: [number, number] = [tx(seg[1][0]), ty(seg[1][1])];
+        strokes.push(`<line x1="${f2(A[0])}" y1="${f2(A[1])}" x2="${f2(B[0])}" y2="${f2(B[1])}" stroke="${STROKE}" stroke-width="1.6"${dash(o.dash as boolean)}/>`);
+        if (typeof o.label === 'string' && o.label) lineName(A, B, o.label);
+      }
     } else if ('circle' in o) {
       const c = P(o.circle as Pt);
       const r = typeof o.r === 'number' ? o.r : Math.hypot(P(o.through as Pt)[0] - c[0], P(o.through as Pt)[1] - c[1]);
@@ -351,8 +382,20 @@ export function renderFigureSvg(spec: FigureSpec): { svg: string; width: number;
         marks.push(`<path d="M${f2(sx)},${f2(sy)} A${r},${r} 0 0 ${diff > 0 ? 1 : 0} ${f2(ex)},${f2(ey)}" fill="none" stroke="${STROKE}" stroke-width="1.2"/>`);
       }
       if (typeof o.label === 'string' && o.label) {
+        // 角の大きさ・名前は、弧のすぐ外の、角を二等分する向きに書く（離れすぎると、どの角か分からなくなる）。
+        // 細い角は、文字が2本の辺の間に入る距離まで離す。
         const mid = a1 + diff / 2;
-        text(B[0] + 34 * Math.cos(mid), B[1] + 34 * Math.sin(mid), o.label, 'middle', 13);
+        const ux = Math.cos(mid), uy = Math.sin(mid);
+        const size = 13;
+        const w = textWidth(o.label.slice(0, MAX_LABEL), size);
+        const h = size;
+        const along = (Math.abs(ux) * w) / 2 + (Math.abs(uy) * h) / 2;
+        const across = (Math.abs(uy) * w) / 2 + (Math.abs(ux) * h) / 2;
+        const half = Math.abs(diff) / 2;
+        const fit = half > 0.05 ? across / Math.tan(Math.min(half, 1.4)) + 2 : 60;
+        const r = 16 + (arcs - 1) * 4;
+        const d = Math.min(64, Math.max(r + 3 + along, fit));
+        text(B[0] + d * ux, B[1] + d * uy, o.label, 'middle', size);
       }
     } else if ('right' in o) {
       const [A, B, C] = (o.right as Pt[]).map(SP);
@@ -389,7 +432,7 @@ export function renderFigureSvg(spec: FigureSpec): { svg: string; width: number;
       text(mx + nrm[0] * 12, my + nrm[1] * 12, String(o.label), anchorFor(nrm[0]), 13);
     } else if ('text' in o) {
       const [x, y] = o.text as [number, number];
-      text(tx(x), ty(y), String(o.label));
+      text(tx(x), ty(y), String(o.label) === 'l' ? 'ℓ' : String(o.label));
     }
   }
 
@@ -398,6 +441,8 @@ export function renderFigureSvg(spec: FigureSpec): { svg: string; width: number;
   for (const [name, [x, y]] of Object.entries(pts)) {
     const dir = spec.labels?.[name];
     if (dir === 'none') continue;
+    // 図を作るための点（X1、_a など1文字でない名前）は、向きを書かない限り名前を書かない
+    if (!dir && !/^[A-Za-z][′']?$/.test(name)) continue;
     let d: [number, number];
     if (dir) d = OFF[dir];
     else {
