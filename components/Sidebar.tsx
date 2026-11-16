@@ -47,6 +47,7 @@ const NAV: NavGroup[] = [
       { href: '/moshi/report', label: '成績表・順位表', desc: '個人成績表の印刷・順位表・平均点', depts: MOSHI_DEPTS },
       { href: '/moshi/ticket', label: '受験票', desc: '受験票の印刷（1枚に2人／4人）', depts: MOSHI_DEPTS },
       { href: '/moshi/interview', label: '面談（個人成績）', desc: '面談で見せる生徒ごとの成績と推移', depts: MOSHI_DEPTS },
+      { href: '/moshi/import', label: '県一斉模試の取り込み', desc: '県一斉模試の成績と名簿（受験番号）を別々に取り込む', depts: MOSHI_DEPTS },
       { href: '/moshi/settings', label: '模試の設定', desc: '回の追加・配点と分野・受験票の時間割', depts: MOSHI_DEPTS },
     ],
   },

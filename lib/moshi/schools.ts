@@ -1,8 +1,13 @@
-// 志望校コード表（2026本番レベル模試11月入力シートの「志望校リスト」タブを写したもの）。
-// 入力シートでは志望校の欄にこの5桁のコードを入れ、コードが分からないときは学校名をそのまま書いていた。
-// ★コードが増えたら、下の SOURCE の該当する地域に「コード 学校名」の行を足す（1行1校・コードは5桁）。
+// 志望校コード表。志望校コードは県一斉模試と同じ「518-01」の形（学校＋学科・コース）。
+// 学校の一覧は県一斉模試の「志望校別判定基準得点一覧」（lib/moshi/reference.ts の REFERENCES）から作る。
+// ★学校が増えたら reference.ts の資料に足す（判定基準と同じ一覧を使う）。
+//
+// 下の LEGACY は、前の入力シート（2026本番レベル模試11月入力シートの「志望校リスト」タブ）の5桁のコード（40200 など）。
+// 前の入力シートの行を貼り付けたときに、県一斉模試のコードへ読み替えるためだけに残している（reference.ts の TO_REF）。
 
-const SOURCE = `
+import { REFERENCES, TO_REF } from './reference';
+
+const LEGACY = `
 #公立県南
 10100 長崎東
 10200 長崎西
@@ -719,59 +724,63 @@ const SOURCE = `
 
 export type School = { code: string; name: string; area: string };
 
-function parse(): School[] {
+function parseLegacy(): School[] {
   const out: School[] = [];
   let area = '';
-  for (const line of SOURCE.split('\n')) {
-    const s = line.trim();
-    if (!s) continue;
-    if (s.startsWith('#')) { area = s.slice(1); continue; }
-    const code = s.slice(0, 5);
-    const name = s.slice(6).trim();
+  for (const line of LEGACY.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    if (t.startsWith('#')) { area = t.slice(1); continue; }
+    const code = t.slice(0, 5);
+    const name = t.slice(6).trim();
     if (/^\d{5}$/.test(code) && name) out.push({ code, name, area });
   }
   return out;
 }
 
-export const SCHOOLS: School[] = parse();
+function areaOf(name: string): string {
+  if (/高専|高等専門/.test(name)) return '高専';
+  if (/^(県立|市立)/.test(name)) return '公立';
+  return '私立・県外';
+}
 
+/** 県一斉模試の志望校コード（新しい資料を先に。同じコードは新しい資料の名前を使う）。 */
+export const SCHOOLS: School[] = (() => {
+  const seen = new Map<string, School>();
+  for (const ref of REFERENCES) {
+    for (const s of ref.schools) if (!seen.has(s.ref)) seen.set(s.ref, { code: s.ref, name: s.name, area: areaOf(s.name) });
+  }
+  return [...seen.values()].sort((a, b) => a.code.localeCompare(b.code));
+})();
+
+const LEGACY_SCHOOLS = parseLegacy();
 const BY_CODE = new Map(SCHOOLS.map((s) => [s.code, s]));
+const LEGACY_BY_CODE = new Map(LEGACY_SCHOOLS.map((s) => [s.code, s]));
 
-/** 志望校の欄の値 → 画面に出す学校名。コードなら学校名、表に無いコードは「コード 40999（表に無い）」、学校名はそのまま。 */
+/**
+ * 5桁の数字 → 県一斉模試のコード。前の入力シートのコード（40200）は対応表で読み替え、
+ * 県一斉のコードを「-」を抜いて打ったもの（51801）は 518-01 にする。どちらでもなければ ''。
+ */
+export function toKenCode(v: string): string {
+  const s = String(v ?? '').trim();
+  if (TO_REF[s]) return TO_REF[s];
+  const k = /^(\d{3})(\d{2})$/.exec(s);
+  if (k && BY_CODE.has(`${k[1]}-${k[2]}`) && !LEGACY_BY_CODE.has(s)) return `${k[1]}-${k[2]}`;
+  return '';
+}
+
+/** 志望校の欄の値 → 画面に出す学校名。県一斉のコードなら学校名、読み替えられなかった前の5桁のコードは「（前のコード）」を付ける。 */
 export function schoolName(v: string): string {
   const s = String(v ?? '').trim();
   if (!s) return '';
-  if (/^\d{5}$/.test(s)) return BY_CODE.get(s)?.name ?? `${s}（表に無いコード）`;
+  if (/^\d{3}-\d{2}$/.test(s)) return BY_CODE.get(s)?.name ?? `${s}（一覧に無いコード）`;
+  if (/^\d{5}$/.test(s)) {
+    const l = LEGACY_BY_CODE.get(s);
+    return l ? `${l.name}（前のコード ${s}）` : `${s}（一覧に無いコード）`;
+  }
   return s;
 }
 
 export function isKnownCode(v: string): boolean {
   return BY_CODE.has(String(v ?? '').trim());
-}
-
-// 佐世保の生徒が選ぶことの多い地域を先に出す
-const AREA_ORDER = ['公立県北', '高専', '私立', '公立県南', '公立県央', '公立島原', '公立五島', '公立壱岐', '公立対馬', '佐賀', '福岡'];
-
-function areaRank(a: string): number {
-  const i = AREA_ORDER.indexOf(a);
-  return i === -1 ? AREA_ORDER.length : i;
-}
-
-function fold(s: string): string {
-  // 半角カナ・全角英数の違いと空白を気にせず探せるようにする
-  return s.normalize('NFKC').replace(/[\s　]/g, '').toLowerCase();
-}
-
-/** 学校名・コードの一部で探す（佐世保の近くの学校を先に）。 */
-export function searchSchools(q: string, limit = 12): School[] {
-  const k = fold(q);
-  if (!k) return [];
-  const hits = SCHOOLS.filter((s) => s.code.startsWith(k) || fold(s.name).includes(k));
-  return hits
-    .sort((a, b) => {
-      const ap = fold(a.name).startsWith(k) ? 0 : 1;
-      const bp = fold(b.name).startsWith(k) ? 0 : 1;
-      return ap - bp || areaRank(a.area) - areaRank(b.area) || a.code.localeCompare(b.code);
-    })
-    .slice(0, limit);
 }

@@ -18,15 +18,17 @@
 export type MoshiCampus = {
   name: string;   // 記録に使う名前（入力シートのタブ名と同じ）
   label: string;  // 受験票・成績表に出す名前
-  prefix: string; // 受験番号の頭4桁
+  prefix: string; // 前の入力シートの受験番号（514410 など）の頭4桁。古い番号を読み替えるときだけ使う
+  venue: string;  // 県一斉模試の会場名称に入っている言葉（例「智翔館　佐世保駅前校」→「佐世保駅前」）
 };
 
-// ★校舎を増やすときはここに足す（受験番号の頭4桁は、入力シートの番号に合わせる）。
+// ★校舎を増やすときはここに足す。
+// 受験番号は県一斉模試と同じ、校舎（会場）ごとの4桁（0001〜）。校舎が違えば同じ番号があるので、生徒は「校舎＋受験番号」で見分ける。
 export const MOSHI_CAMPUSES: MoshiCampus[] = [
-  { name: '日野校', label: '日野校', prefix: '5140' },
-  { name: '大野校', label: '大野校', prefix: '5142' },
-  { name: '日宇校', label: '日宇校', prefix: '5144' },
-  { name: '駅前校', label: '佐世保駅前校', prefix: '5145' },
+  { name: '日野校', label: '日野校', prefix: '5140', venue: '日野' },
+  { name: '大野校', label: '大野校', prefix: '5142', venue: '大野' },
+  { name: '日宇校', label: '日宇校', prefix: '5144', venue: '日宇' },
+  { name: '駅前校', label: '佐世保駅前校', prefix: '5145', venue: '駅前' },
 ];
 
 export const CAMPUS_NAMES = MOSHI_CAMPUSES.map((c) => c.name);
@@ -35,10 +37,28 @@ export function campusInfo(name: string): MoshiCampus | undefined {
   return MOSHI_CAMPUSES.find((c) => c.name === name);
 }
 
-/** 受験番号の頭4桁から校舎を当てる（貼り付けで校舎の列が無いとき）。 */
+/** 前の入力シートの6桁の受験番号（514410 など）から校舎を当てる。4桁の番号（県一斉模試）は校舎が分からないので ''。 */
 export function campusOfExamNo(no: string): string {
-  const c = MOSHI_CAMPUSES.find((x) => no.length >= 6 && no.startsWith(x.prefix));
+  const c = MOSHI_CAMPUSES.find((x) => /^\d{6}$/.test(no) && no.startsWith(x.prefix));
   return c?.name ?? '';
+}
+
+/** 県一斉模試の会場名称（「智翔館　佐世保駅前校」など）→ 校舎。智翔館の中等部の会場でなければ ''（RED・ネクスタの教室は入れない）。 */
+export function campusOfVenue(venue: string): string {
+  const v = String(venue ?? '').replace(/[\s　]/g, '');
+  if (!v.includes('智翔館')) return '';
+  return MOSHI_CAMPUSES.find((c) => v.includes(c.venue))?.name ?? '';
+}
+
+/**
+ * 受験番号をそろえる：数字だけにして、4桁より短ければ前に 0 を足す（「10」→「0010」）。
+ * 前の入力シートの6桁（514410）は、県一斉模試の番号（下2桁 → 0010）に読み替える。
+ */
+export function normalizeExamNo(v: unknown): string {
+  const s = toHalf(String(v ?? '')).replace(/\D/g, '');
+  if (!s) return '';
+  if (/^514[0245]\d{2}$/.test(s)) return `00${s.slice(4)}`;
+  return s.length < 4 ? s.padStart(4, '0') : s.slice(0, 10);
 }
 
 // ---- 教科 -----------------------------------------------------------------
@@ -290,11 +310,18 @@ export function normalizeGender(v: unknown): Gender {
   return '';
 }
 
-/** 志望校の欄：5桁の数字ならコード、それ以外は学校名として前後の空白だけ落とす。 */
-export function normalizeChoice(v: unknown): string {
+/**
+ * 志望校の欄：県一斉模試の志望校コード（518-01）にそろえる。「51801」「518ー01」も 518-01 にする。
+ * 前の入力シートの5桁のコード（40200）は、mapLegacy（lib/moshi/schools.ts の toKenCode）があれば県一斉のコードに読み替える
+ * （読み替えられなければ5桁のまま残す）。それ以外は学校名として前後の空白だけ落とす。
+ */
+export function normalizeChoice(v: unknown, mapLegacy?: (code: string) => string): string {
   const raw = String(v ?? '').trim();
   const half = toHalf(raw).replace(/\s/g, '');
-  if (/^\d{5}$/.test(half)) return half;
+  const ken = /^(\d{3})[-‐ー−]?(\d{2})$/.exec(half);
+  if (ken && !/^\d{5}$/.test(half)) return `${ken[1]}-${ken[2]}`;
+  // 5桁は、前の入力シートのコード（40200）か、県一斉のコードを「-」を抜いて打ったもの（51801）。どちらかは mapLegacy が決める
+  if (/^\d{5}$/.test(half)) return mapLegacy?.(half) || half;
   return raw.slice(0, MAX_CHOICE);
 }
 
@@ -353,8 +380,9 @@ export function cleanResult(raw: unknown, exam: MoshiExam): CleanResult {
   if (!/^[A-Za-z0-9-]{8,64}$/.test(id)) return { ok: false, reason: 'bad_id' };
   const campus = String(r.campus ?? '').trim();
   if (!CAMPUS_NAMES.includes(campus)) return { ok: false, reason: 'bad_campus' };
-  const examNo = toHalf(String(r.examNo ?? '')).replace(/\s/g, '');
-  if (examNo && !/^\d{4,10}$/.test(examNo)) return { ok: false, reason: 'bad_exam_no', detail: examNo };
+  const rawNo = toHalf(String(r.examNo ?? '')).replace(/\s/g, '');
+  if (rawNo && !/^\d{1,10}$/.test(rawNo)) return { ok: false, reason: 'bad_exam_no', detail: rawNo };
+  const examNo = normalizeExamNo(rawNo);
   const name = normalizeName(String(r.name ?? ''));
   const choicesRaw = Array.isArray(r.choices) ? r.choices : [];
   const choices = [0, 1, 2, 3].map((i) => normalizeChoice(choicesRaw[i]));
@@ -476,17 +504,16 @@ function cleanOutside(raw: unknown): OutsideStats | null {
 
 // ---- 受験番号 -------------------------------------------------------------
 
-/** その校舎の次の受験番号（頭4桁＋校舎内の番号の最大＋1。2桁にそろえる）。 */
+/** その校舎の次の受験番号（校舎の中の4桁の番号の最大＋1）。used はその校舎の受験番号だけを渡す。 */
 export function nextExamNo(campus: string, used: string[]): string {
-  const info = campusInfo(campus);
-  if (!info) return '';
+  if (!campusInfo(campus)) return '';
   let max = 0;
   for (const no of used) {
-    if (!no.startsWith(info.prefix) || no.length < 6) continue;
-    const n = Number(no.slice(info.prefix.length));
-    if (Number.isFinite(n) && n > max) max = n;
+    if (!/^\d{1,4}$/.test(no)) continue;
+    const n = Number(no);
+    if (n > max) max = n;
   }
-  return info.prefix + String(max + 1).padStart(2, '0');
+  return String(max + 1).padStart(4, '0');
 }
 
 // ---- 集計 -----------------------------------------------------------------
@@ -717,7 +744,7 @@ export type PasteResult = { rows: PastedRow[]; warnings: string[] };
  *      ※非表示の列が入っていなくても読める。「計」の列は読み飛ばし、大問の得点だけを使う
  * 氏名も得点も無い行（入力シートの空き番号）は飛ばす。
  */
-export function parsePaste(text: string, exam: MoshiExam): PasteResult {
+export function parsePaste(text: string, exam: MoshiExam, mapLegacy?: (code: string) => string): PasteResult {
   const warnings: string[] = [];
   const rows: PastedRow[] = [];
   const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');
@@ -729,15 +756,16 @@ export function parsePaste(text: string, exam: MoshiExam): PasteResult {
     if (!line.trim()) continue;
     let cells = line.split('\t').map((c) => c.trim());
     if (cells.some((c) => c === '受験番号' || c === '氏名' || c === '配　点' || c === '配点')) continue;
-    // A列（通し番号 1〜3桁）から選んだときは1つずらす
-    if (/^\d{1,3}$/.test(toHalf(cells[0] ?? '')) && /^\d{6,}$/.test(toHalf(cells[1] ?? ''))) cells = cells.slice(1);
+    // A列（通し番号 1〜3桁）から選んだときは1つずらす（次の列が受験番号＝4桁以上の数字）
+    if (/^\d{1,3}$/.test(toHalf(cells[0] ?? '')) && /^\d{4,}$/.test(toHalf(cells[1] ?? ''))) cells = cells.slice(1);
     const first = toHalf(cells[0] ?? '').replace(/\s/g, '');
     let examNo = '';
+    // 受験番号（県一斉模試の4桁。「10」のように0を省いても、前の入力シートの 514410 でもよい）。
     // 受験番号の列が空の行（番号をまだ振っていない人）も、列の並びは同じとみなす
-    if (/^\d{4,10}$/.test(first)) { examNo = first; cells = cells.slice(1); } else if (first === '' && cells.length > 1) cells = cells.slice(1);
+    if (/^\d{1,10}$/.test(first)) { examNo = normalizeExamNo(first); cells = cells.slice(1); } else if (first === '' && cells.length > 1) cells = cells.slice(1);
     const name = normalizeName(cells[0] ?? '');
     const gender = normalizeGender(cells[1]);
-    const choices = [2, 3, 4, 5].map((i) => normalizeChoice(cells[i]));
+    const choices = [2, 3, 4, 5].map((i) => normalizeChoice(cells[i], mapLegacy));
     const rest = cells.slice(6);
 
     let scores: Scores | null = null;
@@ -828,7 +856,7 @@ export function inputSheetRows(exam: MoshiExam, results: MoshiResult[], schoolNa
   const body = byExamNo(results.filter((r) => r.examId === exam.id)).map((r) => {
     const row: (string | number)[] = [
       r.campus, r.examNo, r.name, r.gender === '男' ? 0 : r.gender === '女' ? 1 : '',
-      ...r.choices.map((c) => (/^\d{5}$/.test(c) ? c : '')),
+      ...r.choices.map((c) => (/^\d{3}-\d{2}$|^\d{5}$/.test(c) ? c : '')),
       ...r.choices.map((c) => schoolName(c)),
     ];
     let all = 0;
@@ -952,9 +980,12 @@ export type Judgement = {
 const GRADE_ORDER: JudgeGrade[] = ['A', 'B', 'C', 'D', 'E'];
 const LINE_OFFSET: Record<'A' | 'B' | 'C' | 'D', number> = { A: 1, B: 0, C: -1, D: -2 };
 
+/** 志望校の判定基準。志望校コード（県一斉の 518-01）で引く。前の5桁のコードで作った行は、基準の学校（ref）でも引ける。 */
 export function judgeLineFor(exam: MoshiExam, choice: string): JudgeLine | null {
   const key = choiceKey(choice);
-  return key ? (exam.judges ?? []).find((j) => choiceKey(j.code) === key) ?? null : null;
+  if (!key) return null;
+  const js = exam.judges ?? [];
+  return js.find((j) => choiceKey(j.code) === key) ?? js.find((j) => j.ref && choiceKey(j.ref) === key) ?? null;
 }
 
 /**
@@ -1071,16 +1102,263 @@ export function yearExams(exams: MoshiExam[], exam: MoshiExam): MoshiExam[] {
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 }
 
-export type TrendRow = { exam: MoshiExam; dev: Record<StatKey, number | null> };
+export type TrendRow = {
+  key: string;
+  kind: 'honban' | 'ken'; // 本番レベル模試 ／ 県一斉模試
+  label: string;          // 「11月」など
+  date: string;
+  current: boolean;       // この成績表の回
+  dev: Record<StatKey, number | null>;
+};
 
-/** 教科別偏差値推移：その年度の回ごとに、7列の偏差値（受けていない回は空）。 */
-export function trendRows(statsList: ExamStats[], exam: MoshiExam, target: MoshiResult): TrendRow[] {
-  return yearExams(statsList.map((s) => s.exam), exam).map((e) => {
+function monthOf(name: string, date: string): string {
+  const m = /(\d{1,2})月/.exec(name);
+  if (m) return `${+m[1]}月`;
+  const d = /^\d{4}-(\d{2})/.exec(date || '');
+  return d ? `${+d[1]}月` : name.slice(0, 6);
+}
+
+/**
+ * 教科別偏差値推移：その年度の回ごとに、7列の偏差値（受けていない回は空）。
+ * 本番レベル模試の回に、取り込んだ県一斉模試の回（ken）も実施日の順に並べる。県一斉模試の偏差値は業者の値をそのまま使い、
+ * 生徒は「校舎＋受験番号」で結び付ける（氏名は使わない）。
+ */
+export function trendRows(statsList: ExamStats[], exam: MoshiExam, target: MoshiResult, ken: KenitsuResult[] = []): TrendRow[] {
+  const out: TrendRow[] = yearExams(statsList.map((s) => s.exam), exam).map((e) => {
     const s = statsList.find((x) => x.exam.id === e.id);
     const row = !s ? null : s.rows.find((x) => x.r.id === target.id) ?? sameStudent(s, target);
     const figs = s && row ? reportFigures(s, row) : null;
     const dev = {} as Record<StatKey, number | null>;
     for (const k of STAT_KEYS) dev[k] = figs?.find((f) => f.key === k)?.dev ?? null;
-    return { exam: e, dev };
+    return { key: e.id, kind: 'honban', label: monthOf(e.name, e.date), date: e.date, current: e.id === exam.id, dev };
   });
+  const fy = schoolYear(exam.date);
+  if (fy != null) {
+    for (const ke of kenExams(ken)) {
+      if (schoolYear(ke.date) !== fy) continue;
+      const me = target.examNo
+        ? ken.find((x) => x.examId === ke.id && x.campus === target.campus && x.examNo === target.examNo)
+        : undefined;
+      const dev = {} as Record<StatKey, number | null>;
+      for (const k of STAT_KEYS) dev[k] = me?.stats[k]?.dev ?? null;
+      out.push({ key: ke.id, kind: 'ken', label: monthOf(ke.name, ke.date), date: ke.date, current: false, dev });
+    }
+  }
+  return out.sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.kind === b.kind ? 0 : a.kind === 'ken' ? -1 : 1));
+}
+
+// ---- 県一斉模試の取り込み ------------------------------------------------------
+// 県一斉模試（長崎県一斉模試）の集計結果 CSV から、智翔館の中等部の生徒の分を取り込む。
+// ★氏名と成績は一緒に扱わない。
+//   ・成績（kenScores）：会場名称・受験番号（無ければ ID → 氏名対応表の受験番号）・成績の列だけを読む。氏名の列は読まない
+//   ・名簿（kenRoster）：会場名称・受験番号・氏名の列だけを読む。成績の列は読まない
+//   ・ID → 受験番号（kenIdMap）：氏名対応表の ID・会場名称・受験番号の列だけを読む。氏名の列は読まない
+// 2つは「校舎＋受験番号」で結び付く（受験番号は会場ごとの4桁）。
+
+export const KEN_SLOTS = ['公立第1', '公立第2', '国・私立第1', '国・私立第2'] as const;
+export const KEN_STAT_HEAD: Record<StatKey, string> = { ja: '国語', en: '英語', ma: '数学', so: '社会', sc: '理科', k3: '3科合計', k5: '5科合計' };
+
+export type KenStat = { score: number | null; dev: number | null; rank: number | null };
+export type KenChoice = { code: string; name: string; judge: string; prob: string };
+export type KenitsuResult = {
+  examId: string;   // 取り込んだ回（例 ken-2026-10-18）
+  examName: string; // 例「長崎県一斉模試 2026年10月」
+  date: string;     // YYYY-MM-DD
+  campus: string;
+  examNo: string;
+  gender: Gender;
+  naishin: string;  // 内申点（入っていれば）
+  stats: Record<StatKey, KenStat>;
+  choices: KenChoice[]; // 公立第1・公立第2・国私立第1・国私立第2
+};
+export type KenitsuExam = { id: string; name: string; date: string; count: number; byCampus: Record<string, number> };
+
+/** CSV（ダブルクォート・改行入りのセル・BOM に対応）→ 行の配列。セルの前後の空白は落とす。 */
+export function parseCsv(text: string): string[][] {
+  const s = String(text ?? '').replace(/^﻿/, '');
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let q = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) {
+      if (c === '"' && s[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(cell.trim()); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && s[i + 1] === '\n') i++;
+      row.push(cell.trim()); cell = '';
+      if (row.some((x) => x !== '')) rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  row.push(cell.trim());
+  if (row.some((x) => x !== '')) rows.push(row);
+  return rows;
+}
+
+export type KenTable = { head: string[]; rows: string[][] };
+
+export function kenTable(text: string): KenTable {
+  const all = parseCsv(text);
+  return { head: (all[0] ?? []).map((h) => h.replace(/[\s　]+/g, ' ').trim()), rows: all.slice(1) };
+}
+
+function col(t: KenTable, ...names: string[]): number {
+  for (const n of names) {
+    const i = t.head.indexOf(n);
+    if (i !== -1) return i;
+  }
+  return -1;
+}
+
+function numOrNullCell(v: string | undefined): number | null {
+  const s = toHalf(String(v ?? '')).replace(/[,，%％]/g, '').trim();
+  if (s === '' || s === '-' || s === '－') return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** 氏名対応表 → ID から校舎・受験番号を引く表（氏名の列は読まない）。中等部の会場の行だけ。 */
+export function kenIdMap(t: KenTable): Map<string, { campus: string; examNo: string }> {
+  const iId = col(t, 'ID');
+  const iVenue = col(t, '会場名称', '会場');
+  const iNo = col(t, '受験番号');
+  const out = new Map<string, { campus: string; examNo: string }>();
+  if (iId === -1 || iVenue === -1 || iNo === -1) return out;
+  for (const r of t.rows) {
+    const campus = campusOfVenue(r[iVenue] ?? '');
+    const examNo = normalizeExamNo(r[iNo]);
+    if (campus && examNo && r[iId]) out.set(r[iId], { campus, examNo });
+  }
+  return out;
+}
+
+export type KenScoresResult = {
+  items: KenitsuResult[];
+  other: number;     // 中等部の会場ではない行（RED・ネクスタなど）
+  noNumber: number;  // 受験番号が分からない行
+  missing: string[]; // 足りない列
+  needMap: boolean;  // 受験番号の列が無く、ID はある（氏名対応表を一緒に選べば引ける）
+};
+
+/**
+ * 成績の CSV（集計結果、または成績表_氏名なし）→ 中等部の生徒の成績。氏名の列は読まない。
+ * 受験番号の列が無いファイル（成績表_氏名なし）は、idMap（氏名対応表の ID → 受験番号）で受験番号を引く。
+ */
+export function kenScores(t: KenTable, meta: { examId: string; examName: string; date: string }, idMap?: Map<string, { campus: string; examNo: string }>): KenScoresResult {
+  const missing: string[] = [];
+  const iVenue = col(t, '会場名称', '会場');
+  const iNo = col(t, '受験番号');
+  const iId = col(t, 'ID');
+  if (iVenue === -1 && !idMap) missing.push('会場名称');
+  const needMap = iNo === -1 && iId !== -1 && !idMap;
+  if (iNo === -1 && !(iId !== -1 && idMap)) missing.push('受験番号');
+  const statCols = {} as Record<StatKey, { s: number; d: number; r: number }>;
+  for (const k of STAT_KEYS) {
+    const h = KEN_STAT_HEAD[k];
+    statCols[k] = { s: col(t, `${h} 得点`), d: col(t, `${h} 偏差値`), r: col(t, `${h} 順位`) };
+  }
+  if (statCols.k5.s === -1) missing.push('5科合計 得点');
+  const iGender = col(t, '性別');
+  const iNaishin = col(t, '内申点');
+  const out: KenScoresResult = { items: [], other: 0, noNumber: 0, missing, needMap };
+  if (missing.length) return out;
+  for (const r of t.rows) {
+    let campus = iVenue === -1 ? '' : campusOfVenue(r[iVenue] ?? '');
+    let examNo = iNo === -1 ? '' : normalizeExamNo(r[iNo]);
+    if ((!campus || !examNo) && idMap && iId !== -1) {
+      const m = idMap.get(r[iId] ?? '');
+      if (m) { campus = campus || m.campus; examNo = examNo || m.examNo; }
+    }
+    if (!campus) { out.other++; continue; }
+    if (!examNo) { out.noNumber++; continue; }
+    const stats = {} as Record<StatKey, KenStat>;
+    for (const k of STAT_KEYS) {
+      const c = statCols[k];
+      stats[k] = { score: numOrNullCell(r[c.s]), dev: numOrNullCell(r[c.d]), rank: numOrNullCell(r[c.r]) };
+    }
+    const choices: KenChoice[] = KEN_SLOTS.map((slot) => ({
+      code: normalizeChoice(r[col(t, `${slot} コード`)] ?? ''),
+      name: String(r[col(t, `${slot} 志望校名称`)] ?? '').replace(/[\s　]+/g, ' ').trim(),
+      judge: String(r[col(t, `${slot} 判定`)] ?? '').trim(),
+      prob: String(r[col(t, `${slot} 合格確率`)] ?? '').trim(),
+    }));
+    out.items.push({
+      ...meta, campus, examNo,
+      gender: iGender === -1 ? '' : normalizeGender(r[iGender]),
+      naishin: iNaishin === -1 ? '' : String(r[iNaishin] ?? '').trim(),
+      stats, choices,
+    });
+  }
+  return out;
+}
+
+export type KenRosterRow = { campus: string; examNo: string; name: string };
+
+/** 名簿（氏名対応表、または集計結果）→ 中等部の生徒の校舎・受験番号・氏名。成績の列は読まない。 */
+export function kenRoster(t: KenTable): { rows: KenRosterRow[]; other: number; missing: string[] } {
+  const iVenue = col(t, '会場名称', '会場');
+  const iNo = col(t, '受験番号');
+  const iName = col(t, '氏名', '生徒氏名');
+  const missing = [iVenue === -1 && '会場名称', iNo === -1 && '受験番号', iName === -1 && '氏名'].filter((x): x is string => !!x);
+  const out = { rows: [] as KenRosterRow[], other: 0, missing };
+  if (missing.length) return out;
+  for (const r of t.rows) {
+    const campus = campusOfVenue(r[iVenue] ?? '');
+    if (!campus) { out.other++; continue; }
+    const examNo = normalizeExamNo(r[iNo]);
+    const name = normalizeName(r[iName] ?? '');
+    if (examNo && name) out.rows.push({ campus, examNo, name });
+  }
+  return out;
+}
+
+/** 取り込んだ県一斉模試の回の一覧（新しい順）。 */
+export function kenExams(items: KenitsuResult[]): KenitsuExam[] {
+  const m = new Map<string, KenitsuExam>();
+  for (const x of items) {
+    const e = m.get(x.examId) ?? { id: x.examId, name: x.examName, date: x.date, count: 0, byCampus: {} };
+    e.count++;
+    e.byCampus[x.campus] = (e.byCampus[x.campus] ?? 0) + 1;
+    m.set(x.examId, e);
+  }
+  return [...m.values()].sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/** ファイル名（「…_2026年10月_…」）から回名と実施日の見当をつける（日は分からないので1日）。 */
+export function kenGuessFromFileName(fileName: string): { name: string; date: string } {
+  const m = /(\d{4})年(\d{1,2})月/.exec(fileName ?? '');
+  if (!m) return { name: '長崎県一斉模試', date: '' };
+  return { name: `長崎県一斉模試 ${m[1]}年${+m[2]}月`, date: `${m[1]}-${String(+m[2]).padStart(2, '0')}-01` };
+}
+
+export const MAX_KEN_ROWS = 400;
+
+/** API で受け取った県一斉模試の1行を確かめて整える（氏名の項目は持たない）。 */
+export function cleanKenItem(raw: unknown, meta: { examId: string; examName: string; date: string }): KenitsuResult | null {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const campus = String(r.campus ?? '');
+  if (!CAMPUS_NAMES.includes(campus)) return null;
+  const examNo = normalizeExamNo(r.examNo);
+  if (!examNo) return null;
+  const st = (r.stats ?? {}) as Record<string, Record<string, unknown>>;
+  const num = (v: unknown, max: number) => {
+    const n = v == null || v === '' ? NaN : Number(v);
+    return Number.isFinite(n) && n >= 0 && n <= max ? n : null;
+  };
+  const stats = {} as Record<StatKey, KenStat>;
+  for (const k of STAT_KEYS) stats[k] = { score: num(st[k]?.score, 1000), dev: num(st[k]?.dev, 100), rank: num(st[k]?.rank, 1_000_000) };
+  const ch = Array.isArray(r.choices) ? (r.choices as Record<string, unknown>[]) : [];
+  return {
+    ...meta, campus, examNo,
+    gender: normalizeGender(r.gender),
+    naishin: String(r.naishin ?? '').slice(0, 10),
+    stats,
+    choices: KEN_SLOTS.map((_, i) => ({
+      code: normalizeChoice(ch[i]?.code ?? ''), name: String(ch[i]?.name ?? '').slice(0, 40),
+      judge: String(ch[i]?.judge ?? '').slice(0, 4), prob: String(ch[i]?.prob ?? '').slice(0, 6),
+    })),
+  };
 }

@@ -3081,6 +3081,7 @@ body.ms-focus .app-main { margin-left: 0; padding-top: 0; }
 .rs-pill-pink { background: #e9a8c8; }
 .rs-h { font-size: 8pt; font-weight: 700; margin: 0 0 1mm; }
 .rs-h-sm { margin-top: 2mm; }
+.rs-h-note { font-size: 5.8pt; font-weight: 400; color: #555; margin-left: 2mm; }
 
 .rs-judge { border: .25mm solid #6b6b6b; margin-bottom: 1.4mm; font-size: 6.6pt; }
 .rs-j-head { display: flex; gap: 3mm; align-items: baseline; background: #dbe7f7; padding: .6mm 1.6mm; font-size: 7.4pt; border-bottom: .2mm solid #9db3d1; }
@@ -3136,8 +3137,9 @@ body.ms-focus .app-main { margin-left: 0; padding-top: 0; }
 .rs-trend { width: 100%; border-collapse: collapse; font-size: 6.6pt; table-layout: fixed; }
 .rs-trend th, .rs-trend td { border: .25mm solid #333; height: 3.6mm; padding: 0 .8mm; }
 .rs-trend thead th { font-weight: 400; text-align: left; }
-.rs-trend tbody th { font-weight: 400; text-align: left; width: 9mm; }
-.rs-trend thead th:first-child { width: 9mm; }
+.rs-trend tbody th { font-weight: 400; text-align: left; width: 10.5mm; white-space: nowrap; }
+.rs-trend tr.rs-ken th, .rs-trend tr.rs-ken td { background: #f4f7fb; }
+.rs-trend thead th:first-child { width: 10.5mm; }
 .rs-trend tbody td { text-align: right; font-variant-numeric: tabular-nums; }
 .rs-trend tr.rs-cur td, .rs-trend tr.rs-cur th { font-weight: 700; }
 .rs-comment { flex: 1; min-height: 16mm; border: .3mm solid #6b6b6b; padding: 1.5mm 2mm; font-size: 7.6pt; line-height: 1.5; white-space: pre-wrap; }
@@ -3148,3 +3150,13 @@ body.ms-focus .app-main { margin-left: 0; padding-top: 0; }
   .rs-fit-inner { zoom: 1 !important; padding: 0; box-shadow: none; width: auto; }
   .ms-page .rs-sheet { break-inside: avoid; }
 }
+
+/* 本番レベル模試：県一斉模試の取り込み（/moshi/import） */
+.ms-import-sec { margin: 0 0 18px; padding: 12px 16px 14px; background: #fff; border: 1px solid #e2e6ea; border-radius: 10px; }
+.ms-import-sec .ms-h2 { margin-top: 2px; }
+.ms-import-sec > .ms-fine { margin: 2px 0 10px; line-height: 1.6; }
+.ms-import-sec input[type='file'] { padding: 6px 8px; font-size: 13px; background: #fafbfc; }
+.ms-import-preview { margin: 4px 0 0; padding: 8px 12px; font-size: 13px; background: #f6f8fa; border-radius: 8px; line-height: 1.7; }
+.ms-import-preview p { margin: 0; }
+.ms-import-preview .warn { color: #8a5a00; }
+.ms-import .ms-bar { margin: 0 0 10px; }

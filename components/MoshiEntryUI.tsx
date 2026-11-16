@@ -10,11 +10,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import {
   SUBJECT_KEYS, SUBJECT_NAMES, byExamNo, campusInfo, campusOfExamNo, emptyScores, examMax, inputSheetRows,
-  isPartial, nameKey, nextExamNo, normalizeChoice, normalizeName, parsePaste, parseScore, planPaste, subjectMax,
+  isPartial, nameKey, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, subjectMax,
   subjectOf, subjectTotal, toCsv, toHalf,
   type Gender, type MoshiExam, type MoshiResult, type SubjectKey,
 } from '@/lib/moshi/model';
-import { SCHOOLS, schoolName } from '@/lib/moshi/schools';
+import { SCHOOLS, schoolName, toKenCode } from '@/lib/moshi/schools';
 import type { ResultField } from '@/lib/moshi/store';
 import {
   ExamCampusBar, PageHead, StateNote, downloadCsv, newId, reasonText, useExamCampus, useMoshiData,
@@ -258,7 +258,8 @@ export default function MoshiEntryUI({ name }: { name: string }) {
 
   // ---- 名簿 ----------------------------------------------------------------
 
-  const usedNos = useMemo(() => results.filter((r) => r.examId === examId).map((r) => r.examNo), [results, examId]);
+  // 受験番号は校舎ごと（県一斉模試と同じ）なので、その校舎の番号だけを見る
+  const usedNos = useMemo(() => results.filter((r) => r.examId === examId && r.campus === campus).map((r) => r.examNo), [results, examId, campus]);
 
   function addRows(list: Omit<MoshiResult, 'id' | 'examId' | 'campus' | 'createdAt' | 'createdBy' | 'updatedAt' | 'updatedBy'>[]): string[] {
     if (!exam) return [];
@@ -451,7 +452,7 @@ export default function MoshiEntryUI({ name }: { name: string }) {
                 ))}
               </tbody>
             </table>
-            <p className="ms-fine">志望校は5桁のコードか学校名を入れます（学校名の一部を打つと候補が出ます）。氏名の名字と名前の間は全角の空白にそろえます。</p>
+            <p className="ms-fine">受験番号は県一斉模試と同じ4桁（校舎ごと）。志望校は県一斉模試のコード（例 518-01）か学校名を入れます（学校名の一部を打つと候補が出ます）。前の入力シートの5桁のコードは、分かるものは県一斉のコードに読み替えます。氏名の名字と名前の間は全角の空白にそろえます。</p>
           </div>
         )}
 
@@ -586,6 +587,7 @@ const RosterRow = memo(function RosterRow({ r, ri, onUpdate, onKey, onRemove }: 
           className={`ms-in ms-in-no${other ? ' warn' : ''}`} inputMode="numeric" data-r={ri} data-c={0} value={r.examNo}
           title={other ? `${campusOfExamNo(r.examNo)}の受験番号です` : '受験番号'}
           onChange={(e) => { const v = toHalf(e.target.value).replace(/\D/g, '').slice(0, 10); onUpdate(r.id, (x) => ({ ...x, examNo: v }), ['examNo']); }}
+          onBlur={(e) => { const v = normalizeExamNo(e.target.value); if (v !== r.examNo) onUpdate(r.id, (x) => ({ ...x, examNo: v }), ['examNo']); }}
           onKeyDown={onKey}
         />
       </td>
@@ -608,7 +610,7 @@ const RosterRow = memo(function RosterRow({ r, ri, onUpdate, onKey, onRemove }: 
       </td>
       {[0, 1, 2, 3].map((i) => {
         const v = r.choices[i] ?? '';
-        const label = /^\d{5}$/.test(v) ? schoolName(v) : '';
+        const label = /^\d{3}-\d{2}$|^\d{5}$/.test(v) ? schoolName(v) : '';
         return (
           <td key={i} className="ms-c-choice">
             <input
@@ -618,12 +620,12 @@ const RosterRow = memo(function RosterRow({ r, ri, onUpdate, onKey, onRemove }: 
                 onUpdate(r.id, (x) => { const c = [...x.choices]; c[i] = val; return { ...x, choices: c }; }, ['choices']);
               }}
               onBlur={(e) => {
-                const val = normalizeChoice(e.target.value);
+                const val = normalizeChoice(e.target.value, toKenCode);
                 if (val !== v) onUpdate(r.id, (x) => { const c = [...x.choices]; c[i] = val; return { ...x, choices: c }; }, ['choices']);
               }}
               onKeyDown={onKey}
             />
-            {label && <small className={label.includes('表に無い') ? 'warn' : ''}>{label}</small>}
+            {label && <small className={/一覧に無い|前のコード/.test(label) ? 'warn' : ''}>{label}</small>}
           </td>
         );
       })}
@@ -639,7 +641,7 @@ function PasteDialog({ exam, campus, current, onClose, onApply }: {
   onClose: () => void; onApply: (plan: ReturnType<typeof planPaste>) => void;
 }) {
   const [text, setText] = useState('');
-  const parsed = useMemo(() => parsePaste(text, exam), [text, exam]);
+  const parsed = useMemo(() => parsePaste(text, exam, toKenCode), [text, exam]);
   const plan = useMemo(() => planPaste(parsed.rows, current), [parsed, current]);
   const others = parsed.rows.filter((p) => p.examNo && campusOfExamNo(p.examNo) && campusOfExamNo(p.examNo) !== campus);
   const withScores = parsed.rows.filter((p) => p.scores).length;
@@ -654,7 +656,7 @@ function PasteDialog({ exam, campus, current, onClose, onApply }: {
         <h2>貼り付けで取り込む（{campusInfo(campus)?.label}）</h2>
         <p className="ms-fine">
           スプレッドシートで行を選んでコピーし、下に貼り付けます。次のどちらの形でも読めます。<br />
-          ・名簿：受験番号・氏名・性別（0/1 か 男/女）・第一〜第四志望（コードか学校名）<br />
+          ・名簿：受験番号（県一斉模試の4桁）・氏名・性別（0/1 か 男/女）・第一〜第四志望（県一斉のコードか学校名）<br />
           ・入力シートの行：B列（受験番号）〜AT列（合計）。A列から選んでも、非表示の列を含んでいても読めます。大問の得点も入ります
         </p>
         <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="ここに貼り付け" autoFocus />

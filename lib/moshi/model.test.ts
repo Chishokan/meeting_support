@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   choiceRanks, cleanExam, cleanResult, computeStats, DEFAULT_JUDGE_OPTIONS, DEFAULT_SUBJECTS, devBins, judgeOf, parseRule, reportFigures, ruleMax,
   scoreBins, trendRows, yearExams, emptyOutside, emptyScores, examMax, fitScores, historyOf,
-  inputSheetRows, jpDate, nextExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
+  campusOfVenue, cleanKenItem, kenExams, kenGuessFromFileName, kenIdMap, kenRoster, kenScores, kenTable, parseCsv, inputSheetRows, jpDate, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
   scoresToCell, subjectMax,
   type MoshiExam, type MoshiResult, type Scores,
 } from './model.ts';
@@ -71,9 +71,25 @@ test('氏名：名字と名前の間は全角の空白1つ', () => {
   assert.equal(normalizeName('小川 妃菜'), '小川　妃菜');
 });
 
-test('受験番号：校舎の頭4桁＋最大の次の番号', () => {
-  assert.equal(nextExamNo('日宇校', ['514401', '514416', '514001']), '514417');
-  assert.equal(nextExamNo('駅前校', []), '514501');
+test('受験番号：県一斉模試と同じ校舎ごとの4桁。次の番号は校舎の中の最大＋1', () => {
+  assert.equal(nextExamNo('日宇校', ['0001', '0016', '0003']), '0017');
+  assert.equal(nextExamNo('駅前校', []), '0001');
+  assert.equal(normalizeExamNo('10'), '0010');
+  assert.equal(normalizeExamNo('０００５'), '0005');
+  assert.equal(normalizeExamNo('514410'), '0010'); // 前の入力シートの番号（日宇校の10番）
+  assert.equal(normalizeExamNo(''), '');
+  assert.equal(campusOfVenue('智翔館　佐世保駅前校'), '駅前校');
+  assert.equal(campusOfVenue('智翔館　日宇校'), '日宇校');
+  assert.equal(campusOfVenue('自立学習RED　佐世保日野教室'), ''); // RED・ネクスタは入れない
+});
+
+test('志望校コード：県一斉模試の形（518-01）にそろえ、前の入力シートの5桁は読み替える', () => {
+  const legacy = (c: string) => (c === '40200' ? '518-01' : '');
+  assert.equal(normalizeChoice('518-01'), '518-01');
+  assert.equal(normalizeChoice('５１８ー０１'), '518-01');
+  assert.equal(normalizeChoice('40200', legacy), '518-01');
+  assert.equal(normalizeChoice('40400', legacy), '40400'); // 読み替えられないコードは残す
+  assert.equal(normalizeChoice('佐世保北'), '佐世保北');
 });
 
 test('集計：順位は同点同順位、偏差値は全体の平均で50', () => {
@@ -155,9 +171,14 @@ test('推移：氏名（空白・★を除く）と受験番号か校舎が同�
 
 test('貼り付け：名簿（受験番号・氏名・性別・志望校）', () => {
   const e = exam();
-  const r = parsePaste('受験番号\t氏名\t性別\n514401\t山田 太郎\t0\t40200\t佐世保西\n514402\t\t\n\t鈴木 花子\t1', e);
+  const legacy = (c: string) => (c === '40200' ? '518-01' : '');
+  const r = parsePaste('受験番号\t氏名\t性別\n0001\t山田 太郎\t0\t518-01\t佐世保西\n0002\t\t\n\t鈴木 花子\t1', e);
   assert.equal(r.rows.length, 2);
-  assert.deepEqual(r.rows[0], { examNo: '514401', name: '山田　太郎', gender: '男', choices: ['40200', '佐世保西', '', ''], scores: null });
+  assert.deepEqual(r.rows[0], { examNo: '0001', name: '山田　太郎', gender: '男', choices: ['518-01', '佐世保西', '', ''], scores: null });
+  // 前の入力シートの番号・コードは読み替える
+  assert.deepEqual(parsePaste('514401\t山田 太郎\t0\t40200', e, legacy).rows[0].choices, ['518-01', '', '', '']);
+  assert.equal(parsePaste('514401\t山田 太郎', e).rows[0].examNo, '0001');
+  assert.equal(parsePaste('5\t山田 太郎', e).rows[0].examNo, '0005');
   assert.equal(r.rows[1].examNo, '');
   assert.equal(r.rows[1].gender, '女');
   assert.deepEqual(r.warnings, []);
@@ -176,7 +197,7 @@ test('貼り付け：入力シートの行（A列から・非表示の列あり�
   const r = parsePaste(cells.join('\t'), e);
   assert.equal(r.rows.length, 1);
   const row = r.rows[0];
-  assert.equal(row.examNo, '514410');
+  assert.equal(row.examNo, '0010');
   assert.deepEqual(row.choices, ['40100', '40200', '40300', '81602']);
   assert.deepEqual(row.scores!.ma, [30, 12, 9, 0, 6]);
   assert.deepEqual(row.scores!.sc, [12, 9, 12, 18, 18, 12]);
@@ -219,13 +240,13 @@ test('貼り付けの当てはめ：受験番号 → 氏名 の順で、同じ�
 
 test('cleanResult：配点を超える得点は止める。志望校の全角コードは半角に', () => {
   const e = exam();
-  const base = { id: 'abcdef12-3456', campus: '日宇校', examNo: '５１４４０１', name: '山田 太郎', gender: '0', choices: ['４０２００'] };
+  const base = { id: 'abcdef12-3456', campus: '日宇校', examNo: '１２', name: '山田 太郎', gender: '0', choices: ['５１８ー０１'] };
   const ok = cleanResult({ ...base, scores: { ja: [31, 17, 34, 18] } }, e);
   assert.ok(ok.ok);
   if (ok.ok) {
-    assert.equal(ok.value.examNo, '514401');
+    assert.equal(ok.value.examNo, '0012');
     assert.equal(ok.value.name, '山田　太郎');
-    assert.deepEqual(ok.value.choices, ['40200', '', '', '']);
+    assert.deepEqual(ok.value.choices, ['518-01', '', '', '']);
     assert.deepEqual(ok.value.scores.ja, [31, 17, 34, 18]);
     assert.deepEqual(ok.value.scores.en, [null, null, null, null]);
   }
@@ -398,7 +419,8 @@ test('教科別偏差値推移：同じ年度・学年の回を古い順に。�
   const list = [e1, e11, e7, old].map((e) => computeStats(e, all));
   assert.deepEqual(yearExams(list.map((x) => x.exam), e11).map((e) => e.id), ['e7', 'e11', 'e1']);
   const t = trendRows(list, e11, me11);
-  assert.deepEqual(t.map((x) => x.exam.id), ['e7', 'e11', 'e1']);
+  assert.deepEqual(t.map((x) => x.key), ['e7', 'e11', 'e1']);
+  assert.deepEqual(t.map((x) => x.current), [false, true, false]);
   assert.ok((t[0].dev.k5 as number) > 50);
   assert.equal(t[1].dev.k5, 50); // 11月は1人だけ
   assert.equal(t[2].dev.ja, null);
@@ -420,4 +442,98 @@ test('cleanExam：換算の基準と判定基準', () => {
   assert.deepEqual(cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, judges: [{ code: '40200', bDev: 'abc' }] }), { ok: false, reason: 'bad_judge', detail: '40200' });
   assert.deepEqual(cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, judges: [{ code: '40200', rule: '面接' }] }), { ok: false, reason: 'bad_rule', detail: '40200 面接' });
   assert.deepEqual(cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, outside: { n: '-1' } }), { ok: false, reason: 'bad_outside' });
+});
+
+// ---- 県一斉模試の取り込み（氏名と成績を一緒に扱わない） -----------------------------
+
+const KEN_HEAD = 'ID,部門,会場名称,受験番号,氏名,性別,内申点,5科合計 得点,5科合計 偏差値,5科合計 順位,3科合計 得点,3科合計 偏差値,3科合計 順位,英語 得点,英語 偏差値,英語 順位,数学 得点,数学 偏差値,数学 順位,国語 得点,国語 偏差値,国語 順位,理科 得点,理科 偏差値,理科 順位,社会 得点,社会 偏差値,社会 順位,公立第1 コード,公立第1 志望校名称,公立第1 判定,公立第1 合格確率,公立第2 コード,公立第2 志望校名称,公立第2 判定,公立第2 合格確率,国・私立第1 コード,国・私立第1 志望校名称,国・私立第1 判定,国・私立第1 合格確率,国・私立第2 コード,国・私立第2 志望校名称,国・私立第2 判定,国・私立第2 合格確率  ';
+const kenRow = (id: string, venue: string, no: string, name: string, k5: string) =>
+  `${id},中等部,${venue},${no},${name},男,,${k5},55.5,10,150,56.1,8,50,52.0,20,55,53.3,12,45,49.9,30,40,48.0,33,50,51.2,22,518-01,県立佐世保北　普通科,C,50%,520-01,県立佐世保西　普通科,A,80%,,,,,,,,`;
+const META = { examId: 'ken-2026-10-01', examName: '長崎県一斉模試 2026年10月', date: '2026-10-01' };
+
+test('parseCsv：BOM・ダブルクォート・セル内の改行・空行', () => {
+  const rows = parseCsv('\uFEFFa,"b,1","c""d"\r\n\r\n"e\nf", g \n');
+  assert.deepEqual(rows, [['a', 'b,1', 'c"d'], ['e\nf', 'g']]);
+  assert.deepEqual(kenTable('A　 B,国・私立第2 合格確率  \n1,2').head, ['A B', '国・私立第2 合格確率']);
+});
+
+test('県一斉の成績：氏名の列があっても読まない。中等部の会場だけ、受験番号は4桁', () => {
+  const csv = [KEN_HEAD,
+    kenRow('M1', '智翔館　日野校', '12', '山田　太郎', '250'),
+    kenRow('M2', '智翔館　佐世保駅前校', '0003', '鈴木　花子', '300'),
+    kenRow('M3', '個別指導ネクスタ　佐世保駅前校', '0001', '佐藤　一郎', '200'),
+    kenRow('M4', '自立学習RED　佐世保日野教室', '0002', '田中　次郎', '210'),
+    kenRow('M5', '智翔館　大野校', '', '高橋　三郎', '220'),
+  ].join('\n');
+  const r = kenScores(kenTable(csv), META);
+  assert.deepEqual(r.missing, []);
+  assert.equal(r.other, 2);
+  assert.equal(r.noNumber, 1);
+  assert.deepEqual(r.items.map((x) => [x.campus, x.examNo]), [['日野校', '0012'], ['駅前校', '0003']]);
+  const a = r.items[0];
+  assert.equal(a.stats.k5.score, 250);
+  assert.equal(a.stats.k5.dev, 55.5);
+  assert.equal(a.stats.ja.score, 45);
+  assert.equal(a.stats.en.rank, 20);
+  assert.equal(a.choices[0].code, '518-01');
+  assert.equal(a.choices[1].judge, 'A');
+  assert.equal(a.choices[2].code, '');
+  // 取り込む行に氏名は入らない
+  assert.ok(!JSON.stringify(r.items).includes('山田'));
+  assert.ok(!('name' in a));
+});
+
+test('県一斉の成績（受験番号の無いファイル）：氏名対応表から ID → 校舎・受験番号だけを引く', () => {
+  const scores = 'ID,部門,会場名称,性別,内申点,5科合計 得点,5科合計 偏差値,5科合計 順位\nM1,中等部,智翔館　日宇校,女,,300,60.1,3\nM9,中等部,智翔館　日宇校,男,,100,40,90';
+  const noMap = kenScores(kenTable(scores), META);
+  assert.equal(noMap.items.length, 0);
+  assert.deepEqual(noMap.missing, ['受験番号']);
+  assert.equal(noMap.needMap, true);
+  const roster = 'ID,会場名称,受験番号,氏名\nM1,智翔館　日宇校,0007,山田　太郎\nM2,自立学習RED　佐々教室,0001,鈴木　花子';
+  const idMap = kenIdMap(kenTable(roster));
+  assert.deepEqual([...idMap.entries()], [['M1', { campus: '日宇校', examNo: '0007' }]]);
+  assert.ok(!JSON.stringify([...idMap.values()]).includes('山田'));
+  const r = kenScores(kenTable(scores), META, idMap);
+  assert.deepEqual(r.items.map((x) => [x.campus, x.examNo, x.gender, x.stats.k5.score]), [['日宇校', '0007', '女', 300]]);
+  assert.equal(r.noNumber, 1); // M9 は対応表に無い
+});
+
+test('県一斉の名簿：校舎・受験番号・氏名だけ（成績の列は読まない）', () => {
+  const csv = [KEN_HEAD, kenRow('M1', '智翔館　日野校', '12', '山田　太郎', '250'), kenRow('M4', '自立学習RED　佐世保日野教室', '0002', '田中　次郎', '210')].join('\n');
+  const r = kenRoster(kenTable(csv));
+  assert.deepEqual(r.rows, [{ campus: '日野校', examNo: '0012', name: '山田　太郎' }]);
+  assert.equal(r.other, 1);
+  assert.deepEqual(kenRoster(kenTable('会場名称,受験番号\n智翔館　日野校,1')).missing, ['氏名']);
+});
+
+test('県一斉の回の一覧・ファイル名から回名・API の1行の確かめ', () => {
+  assert.deepEqual(kenGuessFromFileName('成績表_氏名なし_2026年10月_中等部.csv'), { name: '長崎県一斉模試 2026年10月', date: '2026-10-01' });
+  assert.equal(kenGuessFromFileName('x.csv').date, '');
+  const items = kenScores(kenTable([KEN_HEAD, kenRow('M1', '智翔館　日野校', '1', 'x', '250'), kenRow('M2', '智翔館　日野校', '2', 'y', '200')].join('\n')), META).items;
+  assert.deepEqual(kenExams(items), [{ id: META.examId, name: META.examName, date: META.date, count: 2, byCampus: { '日野校': 2 } }]);
+  const c = cleanKenItem({ ...items[0], name: '山田　太郎' }, META);
+  assert.ok(c && !('name' in c));
+  assert.equal(c?.stats.k5.score, 250);
+  assert.equal(cleanKenItem({ ...items[0], campus: 'RED' }, META), null);
+  assert.equal(cleanKenItem({ ...items[0], examNo: '' }, META), null);
+  assert.equal(cleanKenItem({ ...items[0], stats: { k5: { score: 9999, dev: 55 } } }, META)?.stats.k5.score, null);
+});
+
+test('教科別偏差値推移に県一斉模試の回を日付順で混ぜる（校舎＋受験番号で結ぶ。氏名は使わない）', () => {
+  const e11 = exam({ id: 'e11', name: '11月', date: '2026-11-22' });
+  const me = res({ name: '山田　太郎', campus: '日野校', examNo: '0012', s: full([70, 70, 70, 70, 70]) }, e11);
+  const list = [computeStats(e11, [me])];
+  const csv = [KEN_HEAD, kenRow('M1', '智翔館　日野校', '0012', '別の名前', '250'), kenRow('M2', '智翔館　大野校', '0012', 'x', '100')].join('\n');
+  const ken = [
+    ...kenScores(kenTable(csv), { examId: 'ken-2026-10-18', examName: '長崎県一斉模試 2026年10月', date: '2026-10-18' }).items,
+    ...kenScores(kenTable(csv), { examId: 'ken-2026-03-01', examName: '長崎県一斉模試 2026年3月', date: '2026-03-01' }).items, // 前の年度
+  ];
+  const t = trendRows(list, e11, me, ken);
+  assert.deepEqual(t.map((x) => [x.kind, x.label]), [['ken', '10月'], ['honban', '11月']]);
+  assert.equal(t[0].dev.k5, 55.5);
+  assert.equal(t[0].dev.ja, 49.9);
+  assert.equal(t[0].dev.ma, 53.3);
+  // 受験番号が無ければ県一斉は空（氏名では結ばない）
+  const t2 = trendRows(list, e11, { ...me, examNo: '' }, ken);
+  assert.equal(t2[0].dev.k5, null);
 });

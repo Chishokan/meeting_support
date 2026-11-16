@@ -10,11 +10,12 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import {
-  SUBJECT_KEYS, SUBJECT_NAMES, fitScores, normalizeGender, readExamExtras, scoresFromCell, scoresToCell, subjectOf,
+  KEN_SLOTS, KEN_STAT_HEAD, STAT_KEYS, SUBJECT_KEYS, SUBJECT_NAMES, fitScores, normalizeGender, readExamExtras, scoresFromCell, scoresToCell, subjectOf,
+  type KenitsuResult, type KenStat, type StatKey,
   type ExamSubject, type MoshiExam, type MoshiResult, type ResultInput, type ScheduleRow, type SubjectKey,
 } from './model';
 
-export type MoshiData = { exams: MoshiExam[]; results: MoshiResult[]; fetchedAt: string; backend: 'sheet' | 'local' };
+export type MoshiData = { exams: MoshiExam[]; results: MoshiResult[]; kenitsu: KenitsuResult[]; fetchedAt: string; backend: 'sheet' | 'local' };
 export type Fail = { ok: false; reason: string };
 
 // 画面から送る「変えた項目」の名前 → シートの見出し
@@ -140,14 +141,14 @@ function resultToSheet(r: ResultInput): Record<string, string> {
 // ---- 開発用ローカル保存 ---------------------------------------------------
 
 const LOCAL_FILE = path.join(process.cwd(), '.data', 'moshi.json');
-type LocalDb = { exams: MoshiExam[]; results: (MoshiResult & { deleted?: boolean })[] };
+type LocalDb = { exams: MoshiExam[]; results: (MoshiResult & { deleted?: boolean })[]; kenitsu: KenitsuResult[] };
 
 async function readLocal(): Promise<LocalDb> {
   try {
     const j = JSON.parse(await fs.readFile(LOCAL_FILE, 'utf8')) as Partial<LocalDb> & { exams?: (MoshiExam & { deleted?: boolean })[] };
-    return { exams: Array.isArray(j.exams) ? j.exams : [], results: Array.isArray(j.results) ? j.results : [] };
+    return { exams: Array.isArray(j.exams) ? j.exams : [], results: Array.isArray(j.results) ? j.results : [], kenitsu: Array.isArray(j.kenitsu) ? j.kenitsu : [] };
   } catch {
-    return { exams: [], results: [] };
+    return { exams: [], results: [], kenitsu: [] };
   }
 }
 
@@ -165,7 +166,7 @@ export async function loadAll(): Promise<({ ok: true } & MoshiData) | Fail> {
     const byId = new Map(exams.map((e) => [e.id, e]));
     const results = db.results.filter((r) => !r.deleted && byId.has(r.examId)).map(({ deleted: _d, ...r }) => ({ ...r, scores: fitScores(byId.get(r.examId)!, r.scores) }));
     const clean = exams.map(({ deleted: _d, ...e }) => ({ ...e, ...readExamExtras(e as unknown as Record<string, unknown>) }) as MoshiExam);
-    return { ok: true, exams: clean, results, fetchedAt: nowJp(), backend: 'local' };
+    return { ok: true, exams: clean, results, kenitsu: db.kenitsu, fetchedAt: nowJp(), backend: 'local' };
   }
   const j = await callGas({ action: 'listMoshi' });
   if (!j.ok || !Array.isArray(j.exams) || !Array.isArray(j.results)) return { ok: false, reason: j.reason || 'upstream_error' };
@@ -174,7 +175,9 @@ export async function loadAll(): Promise<({ ok: true } & MoshiData) | Fail> {
   const results = (j.results as Record<string, unknown>[])
     .map((o) => resultFromSheet(o, byId.get(String(o['模試ID'] ?? ''))))
     .filter((r) => r.id && byId.has(r.examId));
-  return { ok: true, exams, results, fetchedAt: String(j.fetchedAt ?? nowJp()), backend: 'sheet' };
+  // 再デプロイ前の Apps Script は kenitsu を返さない（県一斉模試の取り込みが無いだけで、ほかは動く）
+  const kenitsu = Array.isArray(j.kenitsu) ? (j.kenitsu as Record<string, unknown>[]).map(kenFromSheet).filter((k) => k.examId && k.campus && k.examNo) : [];
+  return { ok: true, exams, results, kenitsu, fetchedAt: String(j.fetchedAt ?? nowJp()), backend: 'sheet' };
 }
 
 export async function saveExam(exam: MoshiExam, user: string): Promise<{ ok: true; exam: MoshiExam } | Fail> {
@@ -253,5 +256,89 @@ export async function deleteResults(ids: string[], user: string): Promise<{ ok: 
     return { ok: true };
   }
   const j = await callGas({ action: 'deleteMoshiResults', ids, user });
+  return j.ok ? { ok: true } : { ok: false, reason: j.reason || 'upstream_error' };
+}
+
+// ---- 県一斉模試（取り込んだ成績。氏名は持たない） ---------------------------------
+// スプレッドシート「本番レベル模試 成績」の「県一斉成績」タブに1人1行。生徒は「校舎＋受験番号」で本番レベル模試の名簿と結び付く。
+
+const KEN_STAT_PARTS = ['得点', '偏差値', '順位'] as const;
+const KEN_CHOICE_PARTS = ['コード', '志望校名称', '判定', '合格確率'] as const;
+
+export const KEN_HEADERS: string[] = [
+  '回ID', '回名', '実施日', '校舎', '受験番号', '性別', '内申点',
+  ...STAT_KEYS.flatMap((k) => KEN_STAT_PARTS.map((p) => `${KEN_STAT_HEAD[k]} ${p}`)),
+  ...KEN_SLOTS.flatMap((slot) => KEN_CHOICE_PARTS.map((p) => `${slot} ${p}`)),
+  '取込日時', '取込者',
+];
+
+function numCell(v: unknown): number | null {
+  const n = v == null || v === '' ? NaN : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function kenFromSheet(o: Record<string, unknown>): KenitsuResult {
+  const stats = {} as Record<StatKey, KenStat>;
+  for (const k of STAT_KEYS) {
+    const h = KEN_STAT_HEAD[k];
+    stats[k] = { score: numCell(o[`${h} 得点`]), dev: numCell(o[`${h} 偏差値`]), rank: numCell(o[`${h} 順位`]) };
+  }
+  const no = String(o['受験番号'] ?? '').trim();
+  return {
+    examId: String(o['回ID'] ?? ''), examName: String(o['回名'] ?? ''), date: String(o['実施日'] ?? ''),
+    campus: String(o['校舎'] ?? ''), examNo: /^\d{1,3}$/.test(no) ? no.padStart(4, '0') : no,
+    gender: normalizeGender(o['性別']), naishin: String(o['内申点'] ?? ''),
+    stats,
+    choices: KEN_SLOTS.map((slot) => ({
+      code: String(o[`${slot} コード`] ?? ''), name: String(o[`${slot} 志望校名称`] ?? ''),
+      judge: String(o[`${slot} 判定`] ?? ''), prob: String(o[`${slot} 合格確率`] ?? ''),
+    })),
+  };
+}
+
+function kenToSheet(k: KenitsuResult, ts: string, user: string): Record<string, string | number> {
+  const o: Record<string, string | number> = {
+    回ID: k.examId, 回名: k.examName, 実施日: k.date, 校舎: k.campus, 受験番号: k.examNo, 性別: k.gender, 内申点: k.naishin,
+    取込日時: ts, 取込者: user,
+  };
+  for (const key of STAT_KEYS) {
+    const h = KEN_STAT_HEAD[key];
+    const st = k.stats[key];
+    o[`${h} 得点`] = st?.score ?? '';
+    o[`${h} 偏差値`] = st?.dev ?? '';
+    o[`${h} 順位`] = st?.rank ?? '';
+  }
+  KEN_SLOTS.forEach((slot, i) => {
+    const c = k.choices[i];
+    o[`${slot} コード`] = c?.code ?? '';
+    o[`${slot} 志望校名称`] = c?.name ?? '';
+    o[`${slot} 判定`] = c?.judge ?? '';
+    o[`${slot} 合格確率`] = c?.prob ?? '';
+  });
+  return o;
+}
+
+/** その回の分をまるごと置きかえる（同じ回を取り込み直したとき、前の分は消える）。 */
+export async function saveKenitsu(examId: string, items: KenitsuResult[], user: string): Promise<{ ok: true; count: number } | Fail> {
+  const ts = nowJp();
+  if (useLocal()) {
+    const db = await readLocal();
+    db.kenitsu = [...db.kenitsu.filter((k) => k.examId !== examId), ...items];
+    await writeLocal(db);
+    return { ok: true, count: items.length };
+  }
+  const j = await callGas({ action: 'saveMoshiKenitsu', user, examId, headers: KEN_HEADERS, rows: items.map((k) => kenToSheet(k, ts, user)) });
+  if (!j.ok) return { ok: false, reason: j.reason || 'upstream_error' };
+  return { ok: true, count: Number(j.count ?? items.length) };
+}
+
+export async function deleteKenitsu(examId: string): Promise<{ ok: true } | Fail> {
+  if (useLocal()) {
+    const db = await readLocal();
+    db.kenitsu = db.kenitsu.filter((k) => k.examId !== examId);
+    await writeLocal(db);
+    return { ok: true };
+  }
+  const j = await callGas({ action: 'deleteMoshiKenitsu', examId });
   return j.ok ? { ok: true } : { ok: false, reason: j.reason || 'upstream_error' };
 }

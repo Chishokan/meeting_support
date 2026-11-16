@@ -11,7 +11,7 @@ import {
   campusInfo, choiceKey, cloneOutside, examMax, jpDate, newExamDraft, normalizeChoice, parseRule, ruleMax, subjectMax,
   type JudgeLine, type MoshiExam, type StatKey, type SubjectKey,
 } from '@/lib/moshi/model';
-import { SCHOOLS, schoolName } from '@/lib/moshi/schools';
+import { SCHOOLS, schoolName, toKenCode } from '@/lib/moshi/schools';
 import { REFERENCES, refSchoolFor, type Reference, type RefSchool } from '@/lib/moshi/reference';
 import { PageHead, StateNote, examOptionLabel, reasonText, useMoshiData } from './MoshiShared';
 
@@ -101,33 +101,46 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
   function setJudge(i: number, patch: Partial<JudgeLine>) {
     setDraft((d) => d && ({ ...d, judges: d.judges.map((j, n) => (n === i ? { ...j, ...patch } : j)) }));
   }
-  /** 判定基準の学校コード（518-01 など）を入れたら、参考データの値を写す。 */
-  function setJudgeRef(i: number, ref: string) {
-    const s = reference?.schools.find((x) => x.ref === ref.trim());
-    setDraft((d) => d && ({ ...d, judges: d.judges.map((j, n) => (n !== i ? j : s ? fromRef(j, s) : { ...j, ref })) }));
+  /** 志望校コードに当たる参考データの学校（県一斉のコード。前の5桁のコードは対応表で読み替え）。 */
+  function refFor(j: Pick<JudgeLine, 'code' | 'ref'>): RefSchool | undefined {
+    if (!reference) return undefined;
+    return reference.schools.find((x) => x.ref === j.code) ?? (j.ref ? reference.schools.find((x) => x.ref === j.ref) : undefined)
+      ?? refSchoolFor(reference, j.code);
   }
-  /** 志望校を足す。参考データに対応する学校があれば、B判定基準などを写しておく。 */
+  /** 志望校コードを入れたら、参考データに同じ学校があれば判定基準を写す（定員はそのまま）。 */
+  function setJudgeCode(i: number, raw: string) {
+    const code = normalizeChoice(raw, toKenCode);
+    setDraft((d) => d && ({
+      ...d,
+      judges: d.judges.map((j, n) => {
+        if (n !== i) return j;
+        const s = refFor({ code, ref: '' });
+        return s ? fromRef({ ...j, code }, s) : { ...j, code };
+      }),
+    }));
+  }
+  /** 志望校を足す。参考データに同じ学校があれば、B判定基準などを写しておく。 */
   function addJudges(codes: string[]) {
     setDraft((d) => {
       if (!d) return d;
       const have = new Set(d.judges.map((j) => choiceKey(j.code)));
       const add = codes.filter((c) => c === '' || !have.has(choiceKey(c))).map((code) => {
-        const s = reference && code ? refSchoolFor(reference, code) : undefined;
+        const s = code ? refFor({ code, ref: '' }) : undefined;
         return s ? fromRef(emptyJudge(code), s) : emptyJudge(code);
       });
       return { ...d, judges: [...d.judges, ...add].slice(0, MAX_JUDGES) };
     });
   }
-  /** 参考データを回の設定に写す：換算の平均点・標準偏差と、基準の学校が決まっている行の B判定基準・判定教科。 */
+  /** 参考データを回の設定に写す：換算の平均点・標準偏差と、参考データにある学校の B判定基準・判定教科。 */
   function applyReference() {
     if (!reference || !draft) return;
-    const filled = draft.judges.filter((j) => j.ref || refSchoolFor(reference, j.code)).length;
+    const filled = draft.judges.filter((j) => refFor(j)).length;
     if (!window.confirm(`${reference.label}の平均点・標準偏差と、判定基準（${filled}校）を写します。いま入っている値は置きかわります（定員はそのまま）。よろしいですか？`)) return;
     setDraft({
       ...draft,
       outside: { source: reference.label, n: draft.outside.n, mean: { ...reference.mean }, sd: { ...reference.sd } },
       judges: draft.judges.map((j) => {
-        const s = (j.ref && reference.schools.find((x) => x.ref === j.ref)) || refSchoolFor(reference, j.code);
+        const s = refFor(j);
         return s ? fromRef(j, s) : j;
       }),
     });
@@ -371,7 +384,7 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
 
             <h3 className="ms-h3">志望校の判定基準</h3>
             <p className="ms-fine">
-              志望校（入力シートのコード）ごとに、基準にする学校（志望校別判定基準得点一覧のコード）を選ぶと、B判定基準偏差値・判定教科・B判定基準得点が入ります。
+              志望校コード（県一斉模試のコード。例 518-01）を入れると、参考データの B判定基準偏差値・判定教科・B判定基準得点が入ります。
               判定教科の倍率をかけた得点を B判定基準得点と比べ、偏差値 {draft.judgeOptions.step} ずつ上を A、下を C・D、それより下を E とします。
               定員を入れると、入学後のおよその順位（仮想順位：B判定基準偏差値を入学者の真ん中とみて、定員の中で何番目か）が出ます。
             </p>
@@ -390,15 +403,12 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
             <datalist id="ms-schools-settings">
               {SCHOOLS.map((sc) => <option key={sc.code} value={sc.code}>{sc.name}</option>)}
             </datalist>
-            <datalist id="ms-ref-schools">
-              {(reference?.schools ?? []).map((s) => <option key={s.ref} value={s.ref}>{s.name}</option>)}
-            </datalist>
             {draft.judges.length > 0 && (
               <div className="ms-judge-wrap">
                 <table className="ms-qtable ms-judge-table">
                   <thead>
                     <tr>
-                      <th>志望校コード</th><th>学校</th><th>基準の学校（コード）</th><th>判定教科</th>
+                      <th>志望校コード</th><th>学校</th><th>判定教科</th>
                       <th>B判定<br />基準偏差値</th><th>B判定<br />基準得点</th><th>満点</th><th>定員</th><th></th>
                     </tr>
                   </thead>
@@ -407,12 +417,11 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
                       const w = j.rule ? parseRule(j.rule) : parseRule('5科合計');
                       return (
                         <tr key={i}>
-                          <td><input list="ms-schools-settings" value={j.code} placeholder="コードか学校名"
-                            onChange={(e) => setJudge(i, { code: e.target.value })} onBlur={(e) => setJudge(i, { code: normalizeChoice(e.target.value) })} /></td>
-                          <td className="ms-judge-name">{schoolName(j.code)}</td>
-                          <td>
-                            <input className="ms-ref-in" list="ms-ref-schools" value={j.ref} placeholder="例）518-01" onChange={(e) => setJudgeRef(i, e.target.value)} />
-                            <small className="ms-judge-ref">{j.refName}</small>
+                          <td><input list="ms-schools-settings" value={j.code} placeholder="例）518-01"
+                            onChange={(e) => setJudge(i, { code: e.target.value })} onBlur={(e) => setJudgeCode(i, e.target.value)} /></td>
+                          <td className="ms-judge-name">
+                            {schoolName(j.code)}
+                            {j.refName && j.ref !== j.code && <small className="ms-judge-ref">基準：{j.ref} {j.refName}</small>}
                           </td>
                           <td><input className={`ms-rule-in${j.rule && !w ? ' bad' : ''}`} value={j.rule} placeholder="5科合計" maxLength={30}
                             title="5科合計・3科合計・国数のみ・国数英1.5倍・英数2倍、国理1.5倍 など"

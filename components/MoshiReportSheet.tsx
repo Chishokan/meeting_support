@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   SUBJECT_KEYS, SUBJECT_NAMES, STAT_KEYS, STAT_NAMES, campusInfo, choiceRanks, devBins, judgeOf, reportFigures,
   scoreBins, subjectMax, subjectOf, trendRows,
-  type Bin, type ExamStats, type MoshiExam, type RowStat, type StatKey, type TrendRow,
+  type Bin, type ExamStats, type KenitsuResult, type MoshiExam, type RowStat, type StatKey, type TrendRow,
 } from '@/lib/moshi/model';
 import { schoolName } from '@/lib/moshi/schools';
 
@@ -36,14 +36,6 @@ function f1(n: number | null | undefined): string {
 function ym(e: MoshiExam): string {
   const m = /^(\d{4})-(\d{2})/.exec(e.date || '');
   return m ? `${m[1]}.${m[2]}` : '';
-}
-
-/** 「2026 本番レベル模試 11月」→「11月」。月が無ければ実施日の「11/22」。 */
-function monthLabel(e: MoshiExam): string {
-  const m = /(\d{1,2}月)/.exec(e.name);
-  if (m) return m[1];
-  const d = /^\d{4}-(\d{2})-(\d{2})$/.exec(e.date || '');
-  return d ? `${+d[1]}月` : e.name.slice(0, 6);
 }
 
 // ---- 画面で幅に合わせる ------------------------------------------------------
@@ -72,12 +64,13 @@ export function FitSheet({ children, max = 1.35 }: { children: ReactNode; max?: 
 
 // ---- 帳票 ------------------------------------------------------------------
 
-export function ReportSheet({ stats, statsList, row }: { stats: ExamStats; statsList: ExamStats[]; row: RowStat }) {
+export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: ExamStats; statsList: ExamStats[]; row: RowStat; kenitsu?: KenitsuResult[] }) {
   const { exam } = stats;
   const r = row.r;
   const figs = useMemo(() => reportFigures(stats, row), [stats, row]);
   const ranks = useMemo(() => choiceRanks(stats, row), [stats, row]);
-  const trend = useMemo(() => trendRows(statsList, exam, r), [statsList, exam, r]);
+  const trend = useMemo(() => trendRows(statsList, exam, r, kenitsu), [statsList, exam, r, kenitsu]);
+  const hasKen = trend.some((t) => t.kind === 'ken');
   const anyOutside = figs.some((f) => f.outside);
   const k5 = figs.find((f) => f.key === 'k5')!;
 
@@ -119,7 +112,7 @@ export function ReportSheet({ stats, statsList, row }: { stats: ExamStats; stats
             <div key={i} className="rs-judge">
               <div className="rs-j-head">
                 <span>第{i + 1}志望</span>
-                <b>{/^\d{5}$/.test(choice) ? choice : ''}</b>
+                <b>{/^\d{3}-\d{2}$|^\d{5}$/.test(choice) ? choice : ''}</b>
                 <span>{schoolName(choice)}</span>
                 {j.line?.rule && <span className="rs-j-rule">判定教科：{j.line.rule}</span>}
               </div>
@@ -189,13 +182,13 @@ export function ReportSheet({ stats, statsList, row }: { stats: ExamStats; stats
 
       {/* ---- 右 ---- */}
       <section className="rs-col">
-        <div className="rs-h">教科別偏差値推移</div>
+        <div className="rs-h">教科別偏差値推移{hasKen && <small className="rs-h-note">県＝長崎県一斉模試</small>}</div>
         <table className="rs-trend">
           <thead><tr><th></th>{STAT_KEYS.map((k) => <th key={k}>{k === 'k3' ? '3教科' : k === 'k5' ? '5教科' : STAT_NAMES[k]}</th>)}</tr></thead>
           <tbody>
             {padRows(trend, 4).map((t, i) => (
-              <tr key={t?.exam.id ?? `pad${i}`} className={t?.exam.id === exam.id ? 'rs-cur' : ''}>
-                <th>{t ? monthLabel(t.exam) : ''}</th>
+              <tr key={t?.key ?? `pad${i}`} className={`${t?.current ? 'rs-cur' : ''}${t?.kind === 'ken' ? ' rs-ken' : ''}`}>
+                <th>{t ? trendLabel(t) : ''}</th>
                 {STAT_KEYS.map((k) => <td key={k}>{t ? f1(t.dev[k]) : ''}</td>)}
               </tr>
             ))}
@@ -217,6 +210,11 @@ export function ReportSheet({ stats, statsList, row }: { stats: ExamStats; stats
       </footer>
     </article>
   );
+}
+
+/** 推移の行の名前：本番レベル模試は「11月」、県一斉模試は「10月県」。 */
+function trendLabel(t: TrendRow): string {
+  return t.kind === 'ken' ? `${t.label}県` : t.label;
 }
 
 function padRows(rows: TrendRow[], min: number): (TrendRow | null)[] {
@@ -359,16 +357,16 @@ function TrendLines({ trend }: { trend: TrendRow[] }) {
           <text x={left - 4} y={y(t) + 3} className="rs-ax" textAnchor="end">{t.toFixed(1)}</text>
         </g>
       ))}
-      {trend.map((t, i) => <text key={t.exam.id} x={x(i)} y={H - 6} className="rs-ax" textAnchor="middle">{monthLabel(t.exam)}</text>)}
+      {trend.map((t, i) => <text key={t.key} x={x(i)} y={H - 6} className="rs-ax" textAnchor="middle">{trendLabel(t)}</text>)}
       {SERIES.map((s) => {
         const pts = trend.map((t, i) => (t.dev[s.key] == null ? null : [x(i), y(t.dev[s.key] as number)])).filter((p): p is number[] => !!p);
         return (
           <g key={s.key}>
             {pts.length > 1 && <polyline points={pts.map((p) => p.join(',')).join(' ')} fill="none" stroke={s.color} strokeWidth={s.key === 'k5' ? 2.2 : 1.6} strokeLinejoin="round" strokeLinecap="round" />}
             {trend.map((t, i) => t.dev[s.key] == null ? null : (
-              <g key={t.exam.id}>
+              <g key={t.key}>
                 <Mark kind={s.mark} x={x(i)} y={y(t.dev[s.key] as number)} color={s.color} />
-                <title>{`${monthLabel(t.exam)} ${STAT_NAMES[s.key]}：${f1(t.dev[s.key])}`}</title>
+                <title>{`${trendLabel(t)} ${STAT_NAMES[s.key]}：${f1(t.dev[s.key])}`}</title>
               </g>
             ))}
           </g>

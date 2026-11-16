@@ -14,7 +14,7 @@ import {
 } from '@/lib/moshi/model';
 import {
   ExamCampusBar, PageHead, StateNote, fmt1, printLandscape, reasonText, shortExamName,
-  useExamCampus, useMoshiData,
+  NO_KEN, useExamCampus, useMoshiData,
 } from './MoshiShared';
 import { FitSheet, ReportSheet } from './MoshiReportSheet';
 
@@ -22,6 +22,7 @@ export default function MoshiInterviewUI({ name }: { name: string }) {
   const { state, reload, setResults } = useMoshiData();
   const exams = state.status === 'ready' ? state.exams : [];
   const results = state.status === 'ready' ? state.results : [];
+  const kenitsu = state.status === 'ready' ? state.kenitsu : NO_KEN;
   const { exam, examId, campus, pickExam, pickCampus } = useExamCampus(exams, { allowAll: true, withData: results });
   const statsList = useMemo(() => exams.map((e) => computeStats(e, results)), [exams, results]);
   const stats = statsList.find((s) => s.exam.id === examId) ?? null;
@@ -106,12 +107,12 @@ export default function MoshiInterviewUI({ name }: { name: string }) {
                   />
                 )}
                 <div className="ms-noprint ms-interview-card">
-                  <FitSheet max={1.6}><ReportSheet stats={stats} statsList={statsList} row={row} /></FitSheet>
+                  <FitSheet max={1.6}><ReportSheet stats={stats} statsList={statsList} row={row} kenitsu={kenitsu} /></FitSheet>
                 </div>
                 <CommentEditor key={row.r.id} r={row.r} examId={exam.id} onSaved={(c) => setResults((rs) => rs.map((x) => (x.id === row.r.id ? { ...x, comment: c } : x)))} />
                 {printing && (
                   <div className="ms-print-only">
-                    <div className="ms-page"><ReportSheet stats={stats} statsList={statsList} row={row} /></div>
+                    <div className="ms-page"><ReportSheet stats={stats} statsList={statsList} row={row} kenitsu={kenitsu} /></div>
                   </div>
                 )}
               </>

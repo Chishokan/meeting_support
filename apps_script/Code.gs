@@ -39,6 +39,9 @@
  *   - action:'listMoshi' / 'saveMoshiExam' / 'deleteMoshiExam' / 'saveMoshiResults' / 'deleteMoshiResults'
  *                               … 本番レベル模試（/moshi）→ スプレッドシート「本番レベル模試 成績」の「模試の回」（1回1行）・
  *                                 「模試成績」（1回×1人で1行）。初めて使うときにファイルを作る（MOSHI_SPREADSHEET_ID）
+ *   - action:'saveMoshiKenitsu' / 'deleteMoshiKenitsu'
+ *                               … 取り込んだ県一斉模試の成績 → 同じファイルの「県一斉成績」タブ（1回×1人で1行。氏名は持たない。
+ *                                 校舎＋受験番号で名簿と結び付く）。同じ回を取り込み直すと、その回の行を置きかえる
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
  *
  * 【セットアップ手順】
@@ -338,6 +341,8 @@ function doPost(e) {
     if (action === 'deleteMoshiExam') return json_(deleteMoshiExam_(data));
     if (action === 'saveMoshiResults') return json_(saveMoshiResults_(data));
     if (action === 'deleteMoshiResults') return json_(deleteMoshiResults_(data));
+    if (action === 'saveMoshiKenitsu') return json_(saveMoshiKenitsu_(data));
+    if (action === 'deleteMoshiKenitsu') return json_(deleteMoshiKenitsu_(data));
 
     if (action === 'saveShareItems') {
       return json_(saveShareItems_(data));
@@ -3343,6 +3348,7 @@ var MOSHI_RESULT_HEADERS = ['ID', '模試ID', '校舎', '受験番号', '氏名'
   '国語', '英語', '数学', '社会', '理科', '国語計', '英語計', '数学計', '社会計', '理科計', '合計', 'コメント',
   '作成日時', '作成者', '更新日時', '更新者', '削除'];
 var MOSHI_TOTAL_HEADERS = ['国語計', '英語計', '数学計', '社会計', '理科計', '合計'];
+var MOSHI_KEN_SHEET = '県一斉成績';
 
 function moshiBook_() {
   var props = PropertiesService.getScriptProperties();
@@ -3425,7 +3431,19 @@ function listMoshi_(data) {
     var results = moshiRows_(moshiSheet_(MOSHI_RESULT_SHEET, MOSHI_RESULT_HEADERS), MOSHI_RESULT_HEADERS)
       .filter(function (x) { return x.obj['削除'] !== '1'; })
       .map(function (x) { delete x.obj['削除']; return x.obj; });
-    return { ok: true, saved: 'moshi', exams: exams, results: results, fetchedAt: nowJp_() };
+    // 県一斉成績タブは取り込んだときに作る（無ければ空）。見出しはアプリが送ってくる（lib/moshi/store.ts の KEN_HEADERS）
+    var kenitsu = [];
+    var ksh = moshiBook_().getSheetByName(MOSHI_KEN_SHEET);
+    if (ksh && ksh.getLastRow() >= 2) {
+      var kh = ksh.getRange(1, 1, 1, ksh.getLastColumn()).getValues()[0];
+      var kv = ksh.getRange(2, 1, ksh.getLastRow() - 1, ksh.getLastColumn()).getValues();
+      for (var r = 0; r < kv.length; r++) {
+        var ko = {};
+        for (var c = 0; c < kh.length; c++) if (kh[c] !== '') ko[String(kh[c]).trim()] = dbCellStr_(kv[r][c]);
+        if (ko['回ID']) kenitsu.push(ko);
+      }
+    }
+    return { ok: true, saved: 'moshi', exams: exams, results: results, kenitsu: kenitsu, fetchedAt: nowJp_() };
   } catch (err) {
     return { ok: false, reason: 'db_open_failed:' + err };
   }
@@ -3612,4 +3630,73 @@ function deleteMoshiResults_(data) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// 県一斉模試の成績を取り込む。data = { examId, headers: [見出し], rows: [{見出し: 値}], user }。
+// その回（回ID）の行を消してから足す（取り込み直しても二重にならない）。氏名の列は持たない（アプリも送らない）。
+function saveMoshiKenitsu_(data) {
+  var examId = String(data.examId || '').trim();
+  var headers = data.headers || [];
+  var rows = data.rows || [];
+  if (!examId || !headers.length) return { ok: false, reason: 'bad_input' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = moshiSheet_(MOSHI_KEN_SHEET, headers);
+    var removed = moshiDeleteKenRows_(sh, examId);
+    var col = dbColMap_(sh);
+    var width = Math.max(sh.getLastColumn(), headers.length);
+    if (rows.length) {
+      var out = [];
+      for (var i = 0; i < rows.length; i++) {
+        var line = [];
+        for (var w = 0; w < width; w++) line.push('');
+        for (var h in rows[i]) if (col[h] !== undefined) line[col[h]] = rows[i][h] == null ? '' : rows[i][h];
+        out.push(line);
+      }
+      // 受験番号の先頭の 0 が落ちないよう、先に文字列書式にしてから書く
+      sh.getRange(sh.getLastRow() + 1, 1, out.length, width).setNumberFormat('@').setValues(out);
+    }
+    return { ok: true, saved: 'moshiKenitsu', count: rows.length, removed: removed };
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed:' + err };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteMoshiKenitsu_(data) {
+  var examId = String(data.examId || '').trim();
+  if (!examId) return { ok: false, reason: 'bad_input' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = moshiBook_().getSheetByName(MOSHI_KEN_SHEET);
+    var removed = sh ? moshiDeleteKenRows_(sh, examId) : 0;
+    return { ok: true, saved: 'moshiKenitsu', removed: removed };
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed:' + err };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 回ID が同じ行を消す。消した行の数を返す。
+// 1つの回の行はまとめて足すので続いていることが多い。続いている行はまとめて1回で消す（1行ずつだと遅い）
+function moshiDeleteKenRows_(sh, examId) {
+  if (sh.getLastRow() < 2) return 0;
+  var col = dbColMap_(sh);
+  if (col['回ID'] === undefined) return 0;
+  var ids = sh.getRange(2, col['回ID'] + 1, sh.getLastRow() - 1, 1).getValues();
+  var n = 0;
+  var i = ids.length - 1;
+  while (i >= 0) {
+    if (String(ids[i][0]).trim() !== examId) { i--; continue; }
+    var end = i;
+    while (i - 1 >= 0 && String(ids[i - 1][0]).trim() === examId) i--;
+    sh.deleteRows(i + 2, end - i + 1);
+    n += end - i + 1;
+    i--;
+  }
+  return n;
 }

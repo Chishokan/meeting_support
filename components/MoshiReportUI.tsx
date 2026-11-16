@@ -10,13 +10,13 @@ import { useMemo, useState } from 'react';
 import {
   SUBJECT_KEYS, SUBJECT_NAMES, SUBJECT_SHORT, byExamNo, campusInfo, computeStats, examMax, rankedRows,
   subjectMax, subjectOf, toCsv,
-  type ExamStats, type RowStat,
+  type ExamStats, type KenitsuResult, type RowStat,
 } from '@/lib/moshi/model';
 import { schoolName } from '@/lib/moshi/schools';
 import { FitSheet, ReportSheet } from './MoshiReportSheet';
 import {
   ExamCampusBar, PageHead, StateNote, campusLabel, downloadCsv, fmt1, pct, printLandscape, printPortrait,
-  useExamCampus, useMoshiData,
+  NO_KEN, useExamCampus, useMoshiData,
 } from './MoshiShared';
 
 type Tab = 'rank' | 'avg' | 'cards';
@@ -25,6 +25,7 @@ export default function MoshiReportUI({ name }: { name: string }) {
   const { state, reload } = useMoshiData();
   const exams = state.status === 'ready' ? state.exams : [];
   const results = state.status === 'ready' ? state.results : [];
+  const kenitsu = state.status === 'ready' ? state.kenitsu : NO_KEN;
   const { exam, examId, campus, pickExam, pickCampus } = useExamCampus(exams, { allowAll: true, withData: results });
   const [tab, setTab] = useState<Tab>('rank');
   const statsList = useMemo(() => exams.map((e) => computeStats(e, results)), [exams, results]);
@@ -54,7 +55,7 @@ export default function MoshiReportUI({ name }: { name: string }) {
         </div>
         {tab === 'rank' && <RankTab stats={stats} campus={campus} />}
         {tab === 'avg' && <AvgTab stats={stats} />}
-        {tab === 'cards' && <CardsTab stats={stats} statsList={statsList} campus={campus} />}
+        {tab === 'cards' && <CardsTab stats={stats} statsList={statsList} campus={campus} kenitsu={kenitsu} />}
       </div>
     </div>
   );
@@ -215,7 +216,7 @@ function AvgTab({ stats }: { stats: ExamStats }) {
 
 // ---- 個人成績表 -------------------------------------------------------------
 
-function CardsTab({ stats, statsList, campus }: { stats: ExamStats; statsList: ExamStats[]; campus: string }) {
+function CardsTab({ stats, statsList, campus, kenitsu }: { stats: ExamStats; statsList: ExamStats[]; campus: string; kenitsu: KenitsuResult[] }) {
   const list = byExamNo(stats.rows.filter((x) => (!campus || x.r.campus === campus)).map((x) => ({ ...x, examNo: x.r.examNo, name: x.r.name })));
   const takers = list.filter((x) => SUBJECT_KEYS.some((k) => x.sub[k] != null));
   const [checked, setChecked] = useState<Set<string> | null>(null);
@@ -259,14 +260,14 @@ function CardsTab({ stats, statsList, campus }: { stats: ExamStats; statsList: E
         </ul>
         <div className="ms-preview">
           {focusRow && SUBJECT_KEYS.some((k) => focusRow.sub[k] != null)
-            ? <FitSheet><ReportSheet stats={stats} statsList={statsList} row={focusRow} /></FitSheet>
+            ? <FitSheet><ReportSheet stats={stats} statsList={statsList} row={focusRow} kenitsu={kenitsu} /></FitSheet>
             : <p className="ms-note">得点が入っている生徒を選ぶと、ここに成績表が出ます。</p>}
         </div>
       </div>
       <div className="ms-print-only">
         {printing.map((x) => (
           <div key={x.r.id} className="ms-page">
-            <ReportSheet stats={stats} statsList={statsList} row={x} />
+            <ReportSheet stats={stats} statsList={statsList} row={x} kenitsu={kenitsu} />
           </div>
         ))}
       </div>

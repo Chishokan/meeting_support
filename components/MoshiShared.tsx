@@ -6,7 +6,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { CAMPUS_NAMES, campusInfo, round1, sortExams, type MoshiExam, type MoshiResult } from '@/lib/moshi/model';
+import { CAMPUS_NAMES, campusInfo, round1, sortExams, type KenitsuResult, type MoshiExam, type MoshiResult } from '@/lib/moshi/model';
 import { MOSHI_DEPTS } from '@/lib/moshi/access';
 
 // ---- 失敗の理由 ------------------------------------------------------------
@@ -46,7 +46,7 @@ export function reasonText(reason: unknown, detail?: unknown): string {
 export type MoshiState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | { status: 'ready'; exams: MoshiExam[]; results: MoshiResult[]; backend: string; fetchedAt: string };
+  | { status: 'ready'; exams: MoshiExam[]; results: MoshiResult[]; kenitsu: KenitsuResult[]; backend: string; fetchedAt: string };
 
 export function useMoshiData() {
   const [state, setState] = useState<MoshiState>({ status: 'loading' });
@@ -55,7 +55,7 @@ export function useMoshiData() {
       const res = await fetch('/api/moshi', { cache: 'no-store' });
       const j = await res.json().catch(() => null);
       if (!j?.ok) { setState({ status: 'error', message: reasonText(j?.reason) }); return false; }
-      setState({ status: 'ready', exams: sortExams(j.exams), results: j.results, backend: j.backend, fetchedAt: j.fetchedAt });
+      setState({ status: 'ready', exams: sortExams(j.exams), results: j.results, kenitsu: j.kenitsu ?? [], backend: j.backend, fetchedAt: j.fetchedAt });
       return true;
     } catch {
       setState({ status: 'error', message: reasonText('network_error') });
@@ -71,6 +71,9 @@ export function useMoshiData() {
   }, []);
   return { state, reload: load, setResults, setExams };
 }
+
+/** 県一斉模試の成績がまだ無いとき（再描画のたびに新しい配列を作らないよう、1つを使い回す）。 */
+export const NO_KEN: KenitsuResult[] = [];
 
 export function newId(): string {
   try { return crypto.randomUUID(); } catch { return `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`; }
