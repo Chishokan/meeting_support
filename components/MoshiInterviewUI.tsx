@@ -5,17 +5,18 @@
 //   - 前の回との差（合計・偏差値・順位）
 //   - 「大きく表示」で左の一覧とメニューを隠す（ほかの生徒の名前を見せないため）
 //   - 成績表のコメント（先生から）をここで書いて保存し、成績表に印刷する
-// 数字は成績表（components/MoshiShared.tsx の ReportCard）と同じ計算。
+// 中身は個人成績表（components/MoshiReportSheet.tsx）と同じものを、画面の幅に合わせて出す。
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  MAX_COMMENT, SUBJECT_KEYS, byExamNo, campusInfo, computeStats, historyOf,
+  MAX_COMMENT, SUBJECT_KEYS, byExamNo, campusInfo, computeStats, dev5Of, historyOf,
   type MoshiResult, type RowStat,
 } from '@/lib/moshi/model';
 import {
-  ExamCampusBar, PageHead, ReportCard, StateNote, fmt1, printAfterRender, reasonText, shortExamName,
+  ExamCampusBar, PageHead, StateNote, fmt1, printLandscape, reasonText, shortExamName,
   useExamCampus, useMoshiData,
 } from './MoshiShared';
+import { FitSheet, ReportSheet } from './MoshiReportSheet';
 
 export default function MoshiInterviewUI({ name }: { name: string }) {
   const { state, reload, setResults } = useMoshiData();
@@ -96,16 +97,21 @@ export default function MoshiInterviewUI({ name }: { name: string }) {
                   <button type="button" className="ms-btn ms-btn-sub" disabled={idx < 0 || idx >= takers.length - 1} onClick={() => setSel(takers[idx + 1].r.id)}>次の生徒 →</button>
                   <span className="ms-spacer" />
                   <button type="button" className="ms-btn ms-btn-sub" onClick={() => setBig((b) => !b)}>{big ? '一覧に戻る（Esc）' : '大きく表示'}</button>
-                  <button type="button" className="ms-btn" onClick={() => printAfterRender(() => setPrinting(true))}>成績表を印刷</button>
+                  <button type="button" className="ms-btn" onClick={() => printLandscape(() => setPrinting(true))}>成績表を印刷</button>
                 </div>
-                {before && <Compare before={before.row} now={row} label={shortExamName(before.exam)} beforeN={before.n} nowN={stats.complete} />}
+                {before && (
+                  <Compare
+                    before={before.row} now={row} label={shortExamName(before.exam)} beforeN={before.n} nowN={stats.complete}
+                    beforeDev={dev5Of(before.exam, before.row)} nowDev={dev5Of(exam, row)}
+                  />
+                )}
                 <div className="ms-noprint ms-interview-card">
-                  <ReportCard stats={stats} row={row} history={history} />
+                  <FitSheet max={1.6}><ReportSheet stats={stats} statsList={statsList} row={row} /></FitSheet>
                 </div>
                 <CommentEditor key={row.r.id} r={row.r} examId={exam.id} onSaved={(c) => setResults((rs) => rs.map((x) => (x.id === row.r.id ? { ...x, comment: c } : x)))} />
                 {printing && (
                   <div className="ms-print-only">
-                    <div className="ms-page"><ReportCard stats={stats} row={row} history={history} /></div>
+                    <div className="ms-page"><ReportSheet stats={stats} statsList={statsList} row={row} /></div>
                   </div>
                 )}
               </>
@@ -123,14 +129,17 @@ function diffText(n: number, unit: string, digits = 0): string {
   return `${v > 0 ? '+' : ''}${digits ? v.toFixed(1) : v}${unit}`;
 }
 
-function Compare({ before, now, label, beforeN, nowN }: { before: RowStat; now: RowStat; label: string; beforeN: number; nowN: number }) {
+// 偏差値は成績表と同じ計算（業者の平均点・標準偏差があればその値。lib/moshi/model.ts の dev5Of）
+function Compare({ before, now, label, beforeN, nowN, beforeDev, nowDev }: {
+  before: RowStat; now: RowStat; label: string; beforeN: number; nowN: number; beforeDev: number | null; nowDev: number | null;
+}) {
   if (before.total == null || now.total == null) return null;
   const up = now.total - before.total;
   return (
     <div className="ms-compare ms-noprint">
       <span className="ms-compare-h">前回（{label}）との比較</span>
       <span>合計 <b className={up > 0 ? 'up' : up < 0 ? 'down' : ''}>{diffText(up, '点')}</b>（{before.total} → {now.total}）</span>
-      {before.dev != null && now.dev != null && <span>偏差値 <b>{diffText(now.dev - before.dev, '', 1)}</b>（{fmt1(before.dev)} → {fmt1(now.dev)}）</span>}
+      {beforeDev != null && nowDev != null && <span>偏差値 <b>{diffText(nowDev - beforeDev, '', 1)}</b>（{fmt1(beforeDev)} → {fmt1(nowDev)}）</span>}
       {before.rank != null && now.rank != null && <span>順位 {before.rank}位／{beforeN}人 → <b>{now.rank}位</b>／{nowN}人</span>}
     </div>
   );

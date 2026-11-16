@@ -8,13 +8,14 @@
 
 import { useMemo, useState } from 'react';
 import {
-  SUBJECT_KEYS, SUBJECT_NAMES, SUBJECT_SHORT, byExamNo, campusInfo, computeStats, examMax, historyOf, rankedRows,
+  SUBJECT_KEYS, SUBJECT_NAMES, SUBJECT_SHORT, byExamNo, campusInfo, computeStats, examMax, rankedRows,
   subjectMax, subjectOf, toCsv,
   type ExamStats, type RowStat,
 } from '@/lib/moshi/model';
 import { schoolName } from '@/lib/moshi/schools';
+import { FitSheet, ReportSheet } from './MoshiReportSheet';
 import {
-  ExamCampusBar, PageHead, ReportCard, StateNote, campusLabel, downloadCsv, fmt1, pct, printAfterRender,
+  ExamCampusBar, PageHead, StateNote, campusLabel, downloadCsv, fmt1, pct, printLandscape, printPortrait,
   useExamCampus, useMoshiData,
 } from './MoshiShared';
 
@@ -81,7 +82,7 @@ function RankTab({ stats, campus }: { stats: ExamStats; campus: string }) {
   return (
     <section className="ms-sheet">
       <div className="ms-toolbar ms-noprint">
-        <button type="button" className="ms-btn" onClick={() => window.print()}>印刷する</button>
+        <button type="button" className="ms-btn" onClick={printPortrait}>印刷する</button>
         <button type="button" className="ms-btn ms-btn-sub" onClick={csv} disabled={!rows.length}>CSV で書き出す</button>
       </div>
       <h2 className="ms-print-title">{exam.name}　順位表（{campusLabel(campus)}）</h2>
@@ -153,7 +154,7 @@ function AvgTab({ stats }: { stats: ExamStats }) {
   return (
     <section className="ms-sheet">
       <div className="ms-toolbar ms-noprint">
-        <button type="button" className="ms-btn" onClick={() => window.print()}>印刷する</button>
+        <button type="button" className="ms-btn" onClick={printPortrait}>印刷する</button>
       </div>
       <h2 className="ms-print-title">{exam.name}　平均点</h2>
       <table className="ms-table ms-avg">
@@ -229,7 +230,7 @@ function CardsTab({ stats, statsList, campus }: { stats: ExamStats; statsList: E
     setChecked(n);
   }
   function print(rows: RowStat[]) {
-    printAfterRender(() => setPrinting(rows));
+    printLandscape(() => setPrinting(rows));
   }
 
   return (
@@ -238,7 +239,7 @@ function CardsTab({ stats, statsList, campus }: { stats: ExamStats; statsList: E
         <button type="button" className="ms-btn" disabled={!sel.size} onClick={() => print(list.filter((x) => sel.has(x.r.id)))}>選んだ {sel.size}人の成績表を印刷</button>
         <button type="button" className="ms-btn ms-btn-sub" onClick={() => setChecked(new Set(takers.map((x) => x.r.id)))}>すべて選ぶ</button>
         <button type="button" className="ms-btn ms-btn-sub" onClick={() => setChecked(new Set())}>すべて外す</button>
-        <span className="ms-muted">1人1枚（A4・縦）。印刷の画面で「背景のグラフィック」を入れると色が出ます。</span>
+        <span className="ms-muted">1人1枚（A4・横）。印刷の画面で「背景のグラフィック」を入れると色が出ます。</span>
       </div>
       <div className="ms-split ms-noprint">
         <ul className="ms-pick">
@@ -258,14 +259,14 @@ function CardsTab({ stats, statsList, campus }: { stats: ExamStats; statsList: E
         </ul>
         <div className="ms-preview">
           {focusRow && SUBJECT_KEYS.some((k) => focusRow.sub[k] != null)
-            ? <ReportCard stats={stats} row={focusRow} history={historyOf(statsList, focusRow.r)} />
+            ? <FitSheet><ReportSheet stats={stats} statsList={statsList} row={focusRow} /></FitSheet>
             : <p className="ms-note">得点が入っている生徒を選ぶと、ここに成績表が出ます。</p>}
         </div>
       </div>
       <div className="ms-print-only">
         {printing.map((x) => (
           <div key={x.r.id} className="ms-page">
-            <ReportCard stats={stats} row={x} history={historyOf(statsList, x.r)} />
+            <ReportSheet stats={stats} statsList={statsList} row={x} />
           </div>
         ))}
       </div>

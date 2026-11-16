@@ -52,6 +52,27 @@ export type Question = { max: number; topic: string };
 export type ExamSubject = { key: SubjectKey; questions: Question[] };
 export type ScheduleRow = { label: string; time: string };
 
+// 成績表の列（5教科・三教科（国英数）・五教科）
+export const STAT_KEYS = ['ja', 'en', 'ma', 'so', 'sc', 'k3', 'k5'] as const;
+export type StatKey = (typeof STAT_KEYS)[number];
+export const STAT_NAMES: Record<StatKey, string> = { ...SUBJECT_NAMES, k3: '三教科', k5: '五教科' };
+export const K3_KEYS: SubjectKey[] = ['ja', 'en', 'ma'];
+
+/**
+ * 模試業者から届く全体の集計（任意）。入れた項目だけ、成績表の平均点・偏差値・母数をこの値で出す。
+ * 偏差値は平均点と標準偏差の両方があるときだけ、この値で計算し直す（無ければ智翔館の受験者で計算）。
+ */
+export type OutsideStats = {
+  n: number | null; // 母数（受験者数）
+  mean: Partial<Record<StatKey, number | null>>;
+  sd: Partial<Record<StatKey, number | null>>;
+};
+
+// 志望校の判定ライン（その回の五教科の点。A 以上が A 判定 … D 未満が E 判定）
+export const JUDGE_GRADES = ['A', 'B', 'C', 'D'] as const;
+export type JudgeGrade = (typeof JUDGE_GRADES)[number] | 'E';
+export type JudgeLine = { code: string } & Record<(typeof JUDGE_GRADES)[number], number | null>;
+
 export type MoshiExam = {
   id: string;
   name: string;        // 例「2026 本番レベル模試 11月」
@@ -62,8 +83,16 @@ export type MoshiExam = {
   belongings: string;  // 受験票の持ち物
   notes: string;       // 受験票の注意事項
   venues: Record<string, string>; // 校舎 → 会場（空なら「智翔館 ○○校」）
+  outside: OutsideStats; // 業者の全体集計（任意）
+  judges: JudgeLine[];   // 志望校の判定ライン（任意）
   createdAt: string; createdBy: string; updatedAt: string; updatedBy: string;
 };
+
+export const MAX_JUDGES = 80;
+
+export function emptyOutside(): OutsideStats {
+  return { n: null, mean: {}, sd: {} };
+}
 
 export const MAX_QUESTIONS = 10;
 export const MAX_SCHEDULE_ROWS = 12;
@@ -107,6 +136,9 @@ export function newExamDraft(base?: MoshiExam | null): Omit<MoshiExam, 'id' | 'c
     belongings: base?.belongings ?? DEFAULT_BELONGINGS,
     notes: base?.notes ?? DEFAULT_NOTES,
     venues: { ...(base?.venues ?? {}) },
+    // 業者の集計と判定ラインは回ごとに違うので写さない（設定画面の「前の回の判定ラインを写す」で写せる）
+    outside: emptyOutside(),
+    judges: [],
   };
 }
 
@@ -327,15 +359,53 @@ export function cleanExam(raw: unknown): CleanExam {
     const v = String(venuesRaw[c] ?? '').trim().slice(0, 40);
     if (v) venues[c] = v;
   }
+  const outside = cleanOutside(r.outside);
+  if (!outside) return { ok: false, reason: 'bad_outside' };
+  const judges: JudgeLine[] = [];
+  for (const j of (Array.isArray(r.judges) ? (r.judges as Record<string, unknown>[]) : []).slice(0, MAX_JUDGES)) {
+    const code = normalizeChoice(j?.code);
+    if (!code) continue;
+    const line = { code } as JudgeLine;
+    for (const g of JUDGE_GRADES) {
+      const v = optNumber(j?.[g], 0, 1000, true);
+      if (v === undefined) return { ok: false, reason: 'bad_judge', detail: `${code} ${g}` };
+      line[g] = v;
+    }
+    judges.push(line);
+  }
   return {
     ok: true,
     value: {
       name, grade, date, subjects, schedule,
       belongings: String(r.belongings ?? '').trim().slice(0, MAX_TEXT),
       notes: String(r.notes ?? '').trim().slice(0, MAX_TEXT),
-      venues,
+      venues, outside, judges,
     },
   };
+}
+
+/** 空なら null、範囲内の数なら数、読めなければ undefined。 */
+function optNumber(v: unknown, min: number, max: number, int = false): number | null | undefined {
+  const s = toHalf(String(v ?? '')).trim();
+  if (s === '') return null;
+  const n = Number(s);
+  if (!Number.isFinite(n) || n < min || n > max || (int && !Number.isInteger(n))) return undefined;
+  return n;
+}
+
+function cleanOutside(raw: unknown): OutsideStats | null {
+  const o = (raw ?? {}) as { n?: unknown; mean?: Record<string, unknown>; sd?: Record<string, unknown> };
+  const n = optNumber(o.n, 0, 1_000_000, true);
+  if (n === undefined) return null;
+  const out: OutsideStats = { n, mean: {}, sd: {} };
+  for (const k of STAT_KEYS) {
+    const m = optNumber(o.mean?.[k], 0, 1000);
+    const d = optNumber(o.sd?.[k], 0, 1000);
+    if (m === undefined || d === undefined) return null;
+    if (m != null) out.mean[k] = m;
+    if (d != null) out.sd[k] = d;
+  }
+  return out;
 }
 
 // ---- 受験番号 -------------------------------------------------------------
@@ -402,6 +472,9 @@ export type RowStat = {
   r: MoshiResult;
   sub: Record<SubjectKey, number | null>;
   total: number | null; // 5教科すべて受けた人だけ
+  total3: number | null; // 三教科（国英数）。3教科とも受けた人だけ
+  rank3: number | null;
+  dev3: number | null;
   complete: boolean;
   rank: number | null;        // 全体（智翔館内）の順位
   campusRank: number | null;  // 校舎内の順位
@@ -413,6 +486,7 @@ export type RowStat = {
 
 export type GroupStats = {
   total: Stat | null;
+  total3: Stat | null;
   sub: Record<SubjectKey, Stat | null>;
   // 大問ごとの平均点（その教科を受けた人の中で。空欄は 0 点）
   questionMean: Record<SubjectKey, number[]>;
@@ -427,7 +501,7 @@ export type ExamStats = {
   complete: number;  // 5教科すべて入っている人
 };
 
-function groupStats(exam: MoshiExam, rows: { r: MoshiResult; sub: Record<SubjectKey, number | null>; total: number | null }[]): GroupStats {
+function groupStats(exam: MoshiExam, rows: { r: MoshiResult; sub: Record<SubjectKey, number | null>; total: number | null; total3: number | null }[]): GroupStats {
   const sub = {} as Record<SubjectKey, Stat | null>;
   const questionMean = {} as Record<SubjectKey, number[]>;
   for (const k of SUBJECT_KEYS) {
@@ -437,7 +511,11 @@ function groupStats(exam: MoshiExam, rows: { r: MoshiResult; sub: Record<Subject
     questionMean[k] = Array.from({ length: qn }, (_, i) =>
       takers.length ? takers.reduce((a, x) => a + (x.r.scores[k]?.[i] ?? 0), 0) / takers.length : 0);
   }
-  return { total: statOf(rows.filter((x) => x.total != null).map((x) => x.total as number)), sub, questionMean };
+  return {
+    total: statOf(rows.filter((x) => x.total != null).map((x) => x.total as number)),
+    total3: statOf(rows.filter((x) => x.total3 != null).map((x) => x.total3 as number)),
+    sub, questionMean,
+  };
 }
 
 /** 1回分の集計。results はその回の行だけでも、全部の回の行でもよい（examId で絞る）。 */
@@ -448,13 +526,15 @@ export function computeStats(exam: MoshiExam, results: MoshiResult[]): ExamStats
     for (const k of SUBJECT_KEYS) sub[k] = subjectTotal(r, k);
     const complete = SUBJECT_KEYS.every((k) => sub[k] != null);
     const total = complete ? SUBJECT_KEYS.reduce((a, k) => a + (sub[k] as number), 0) : null;
-    return { r, sub, total, complete };
+    const total3 = K3_KEYS.every((k) => sub[k] != null) ? K3_KEYS.reduce((a, k) => a + (sub[k] as number), 0) : null;
+    return { r, sub, total, total3, complete };
   });
   const overall = groupStats(exam, base);
   const byCampus: Record<string, GroupStats> = {};
   for (const c of new Set(base.map((x) => x.r.campus))) byCampus[c] = groupStats(exam, base.filter((x) => x.r.campus === c));
 
   const totals = base.filter((x) => x.total != null).map((x) => x.total as number);
+  const totals3 = base.filter((x) => x.total3 != null).map((x) => x.total3 as number);
   const subVals = {} as Record<SubjectKey, number[]>;
   for (const k of SUBJECT_KEYS) subVals[k] = base.filter((x) => x.sub[k] != null).map((x) => x.sub[k] as number);
 
@@ -474,6 +554,8 @@ export function computeStats(exam: MoshiExam, results: MoshiResult[]): ExamStats
       rank: x.total == null ? null : rankIn(totals, x.total),
       campusRank: x.total == null ? null : rankIn(same.filter((y) => y.total != null).map((y) => y.total as number), x.total),
       dev: x.total == null ? null : deviation(x.total, overall.total),
+      rank3: x.total3 == null ? null : rankIn(totals3, x.total3),
+      dev3: x.total3 == null ? null : deviation(x.total3, overall.total3),
       subRank, subCampusRank, subDev,
     };
   });
@@ -527,45 +609,23 @@ export function choiceRanks(stats: ExamStats, row: RowStat): ChoiceRank[] {
   });
 }
 
-export type TopicPoint = {
-  key: SubjectKey; index: number; topic: string; max: number;
-  score: number; rate: number; meanRate: number; diff: number; // 得点率と平均との差（0〜1）
-};
-
-/** 大問ごとの得点率と平均との差（その教科を受けていれば。空欄は 0 点）。 */
-export function topicPoints(stats: ExamStats, row: RowStat): TopicPoint[] {
-  const out: TopicPoint[] = [];
-  for (const k of SUBJECT_KEYS) {
-    if (row.sub[k] == null) continue;
-    subjectOf(stats.exam, k).questions.forEach((q, i) => {
-      const score = row.r.scores[k]?.[i] ?? 0;
-      const meanRate = (stats.overall.questionMean[k][i] ?? 0) / q.max;
-      const rate = score / q.max;
-      out.push({ key: k, index: i, topic: q.topic || `大問${i + 1}`, max: q.max, score, rate, meanRate, diff: rate - meanRate });
-    });
-  }
-  return out;
-}
-
-/** 面談で話す材料：平均より得点率が高い大問（得意）と低い大問（伸ばしたい）を3つずつ。 */
-export function strengthsAndWeaknesses(points: TopicPoint[], n = 3): { strong: TopicPoint[]; weak: TopicPoint[] } {
-  const strong = points.filter((p) => p.diff > 0.0001).sort((a, b) => b.diff - a.diff || b.rate - a.rate).slice(0, n);
-  const weak = points.filter((p) => p.diff < -0.0001).sort((a, b) => a.diff - b.diff || a.rate - b.rate).slice(0, n);
-  return { strong, weak };
-}
-
 export type HistoryPoint = { exam: MoshiExam; row: RowStat; n: number };
+
+/** その回の中で、target と同じ生徒の行（氏名が同じで、受験番号か校舎が同じ）。 */
+export function sameStudent(stats: ExamStats, target: MoshiResult): RowStat | null {
+  const key = nameKey(target.name);
+  if (!key) return null;
+  return stats.rows.find((x) => nameKey(x.r.name) === key && ((target.examNo && x.r.examNo === target.examNo) || x.r.campus === target.campus)) ?? null;
+}
 
 /**
  * 同じ生徒のこれまでの回（古い順）。氏名（空白・★を除いて）が同じで、受験番号か校舎が同じ行を同じ人とみなす
  * （受験番号は回をまたいで同じことが多いが、付け直したときにも追えるように校舎でも拾う）。
  */
 export function historyOf(statsList: ExamStats[], target: MoshiResult): HistoryPoint[] {
-  const key = nameKey(target.name);
-  if (!key) return [];
   const out: HistoryPoint[] = [];
   for (const s of statsList) {
-    const row = s.rows.find((x) => nameKey(x.r.name) === key && ((target.examNo && x.r.examNo === target.examNo) || x.r.campus === target.campus));
+    const row = sameStudent(s, target);
     if (row) out.push({ exam: s.exam, row, n: s.complete });
   }
   return out.sort((a, b) => (a.exam.date || '').localeCompare(b.exam.date || '') || (a.exam.createdAt || '').localeCompare(b.exam.createdAt || ''));
@@ -717,4 +777,142 @@ export function inputSheetRows(exam: MoshiExam, results: MoshiResult[], schoolNa
     return row;
   });
   return [head, ...body];
+}
+
+// ---- 成績表（元の帳票「公立高校・高専本番レベル模試」の形） ----------------------
+
+export type Figure = {
+  key: StatKey; label: string; max: number;
+  score: number | null;
+  mean: number | null;   // 平均点（業者の集計があればその値）
+  dev: number | null;    // 偏差値（業者の平均点と標準偏差があればその値で計算）
+  rank: number | null;   // 順位（智翔館の受験者の中で）
+  rankN: number;         // 順位の母数（智翔館）
+  n: number;             // 母数（業者の集計があればその値）
+  outside: boolean;      // 平均点を業者の集計で出したか
+};
+
+/** 成績表の得点表の7列（国・英・数・社・理・三教科・五教科）。 */
+export function reportFigures(stats: ExamStats, row: RowStat): Figure[] {
+  const { exam } = stats;
+  const o = exam.outside ?? emptyOutside();
+  return STAT_KEYS.map((key) => {
+    let score: number | null, inside: Stat | null, rank: number | null, dev: number | null, max: number;
+    if (key === 'k5') {
+      score = row.total; inside = stats.overall.total; rank = row.rank; dev = row.dev; max = examMax(exam);
+    } else if (key === 'k3') {
+      score = row.total3; inside = stats.overall.total3; rank = row.rank3; dev = row.dev3;
+      max = K3_KEYS.reduce((a, k) => a + subjectMax(exam, k), 0);
+    } else {
+      score = row.sub[key]; inside = stats.overall.sub[key]; rank = row.subRank[key]; dev = row.subDev[key]; max = subjectMax(exam, key);
+    }
+    const om = o.mean?.[key] ?? null;
+    const osd = o.sd?.[key] ?? null;
+    if (score != null && om != null && osd != null && osd > 0) dev = 50 + (10 * (score - om)) / osd;
+    return {
+      key, label: STAT_NAMES[key], max, score,
+      mean: om ?? inside?.mean ?? null,
+      dev, rank, rankN: inside?.n ?? 0,
+      n: o.n ?? inside?.n ?? 0,
+      outside: om != null,
+    };
+  });
+}
+
+export type Judgement = {
+  line: JudgeLine | null;
+  grade: JudgeGrade | null;
+  next: { grade: JudgeGrade; gap: number } | null; // あと何点で次の判定か
+};
+
+const GRADE_ORDER: JudgeGrade[] = ['A', 'B', 'C', 'D', 'E'];
+
+/** 志望校の判定（その回の判定ラインと五教科の点から）。ラインが無ければ grade は null。 */
+export function judgeOf(exam: MoshiExam, choice: string, total: number | null): Judgement {
+  const key = choiceKey(choice);
+  const line = key ? (exam.judges ?? []).find((j) => choiceKey(j.code) === key) ?? null : null;
+  if (!line || total == null) return { line, grade: null, next: null };
+  const defined = JUDGE_GRADES.filter((g) => line[g] != null);
+  if (!defined.length) return { line, grade: null, next: null };
+  let grade: JudgeGrade | null = null;
+  for (const g of JUDGE_GRADES) if (line[g] != null && total >= (line[g] as number)) { grade = g; break; }
+  if (!grade) grade = GRADE_ORDER[GRADE_ORDER.indexOf(defined[defined.length - 1]) + 1];
+  let next: Judgement['next'] = null;
+  for (let i = GRADE_ORDER.indexOf(grade) - 1; i >= 0; i--) {
+    const g = GRADE_ORDER[i] as (typeof JUDGE_GRADES)[number];
+    if (line[g] != null) { next = { grade: g, gap: (line[g] as number) - total }; break; }
+  }
+  return { line, grade, next };
+}
+
+export type Bin = { label: string; count: number; mine: boolean };
+
+/** 五教科の得点の分布（高い点から。元の帳票と同じく25点きざみ「476～500」…「0～25」）。 */
+export function scoreBins(stats: ExamStats, row: RowStat | null, size = 25): Bin[] {
+  const max = examMax(stats.exam);
+  const nb = Math.max(1, Math.ceil(max / size));
+  const totals = stats.rows.filter((x) => x.total != null).map((x) => x.total as number);
+  const out: Bin[] = [];
+  for (let i = nb - 1; i >= 0; i--) {
+    const lo = i === 0 ? 0 : i * size + 1;
+    const hi = Math.min(max, (i + 1) * size);
+    out.push({
+      label: `${lo}～${hi}`,
+      count: totals.filter((t) => t >= lo && t <= hi).length,
+      mine: row?.total != null && row.total >= lo && row.total <= hi,
+    });
+  }
+  return out;
+}
+
+/** 五教科の偏差値（業者の平均点・標準偏差があればその値で計算。成績表の得点表と同じ）。 */
+export function dev5Of(exam: MoshiExam, row: RowStat): number | null {
+  if (row.total == null) return null;
+  const om = exam.outside?.mean?.k5;
+  const osd = exam.outside?.sd?.k5;
+  if (om != null && osd != null && osd > 0) return 50 + (10 * (row.total - om)) / osd;
+  return row.dev;
+}
+
+/** 五教科の偏差値の分布（高いほうから。2.5 きざみで、75 以上・25 未満はまとめる）。 */
+export function devBins(stats: ExamStats, row: RowStat | null, width = 2.5, lo = 25, hi = 75): Bin[] {
+  const devs = stats.rows.map((x) => dev5Of(stats.exam, x)).filter((d): d is number => d != null);
+  const mine = row ? dev5Of(stats.exam, row) : null;
+  const inBin = (d: number, a: number, b: number) => d >= a && d < b;
+  const out: Bin[] = [{ label: `${hi.toFixed(1)}以上`, count: devs.filter((d) => d >= hi).length, mine: mine != null && mine >= hi }];
+  for (let b = hi - width; b >= lo - 1e-9; b -= width) {
+    out.push({ label: b.toFixed(1), count: devs.filter((d) => inBin(d, b, b + width)).length, mine: mine != null && inBin(mine, b, b + width) });
+  }
+  out.push({ label: `${lo.toFixed(1)}未満`, count: devs.filter((d) => d < lo).length, mine: mine != null && mine < lo });
+  return out;
+}
+
+/** 年度（4月はじまり）。日付が無ければ null。 */
+export function schoolYear(date: string): number | null {
+  const m = /^(\d{4})-(\d{2})/.exec(date || '');
+  if (!m) return null;
+  return +m[2] >= 4 ? +m[1] : +m[1] - 1;
+}
+
+/** 同じ年度・同じ学年の回（実施日の古い順）。成績表の「教科別偏差値推移」の行になる（まだ受けていない回も入る）。 */
+export function yearExams(exams: MoshiExam[], exam: MoshiExam): MoshiExam[] {
+  const fy = schoolYear(exam.date);
+  if (fy == null) return [exam];
+  return exams
+    .filter((e) => e.id === exam.id || (e.grade === exam.grade && schoolYear(e.date) === fy))
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+}
+
+export type TrendRow = { exam: MoshiExam; dev: Record<StatKey, number | null> };
+
+/** 教科別偏差値推移：その年度の回ごとに、7列の偏差値（受けていない回は空）。 */
+export function trendRows(statsList: ExamStats[], exam: MoshiExam, target: MoshiResult): TrendRow[] {
+  return yearExams(statsList.map((s) => s.exam), exam).map((e) => {
+    const s = statsList.find((x) => x.exam.id === e.id);
+    const row = !s ? null : s.rows.find((x) => x.r.id === target.id) ?? sameStudent(s, target);
+    const figs = s && row ? reportFigures(s, row) : null;
+    const dev = {} as Record<StatKey, number | null>;
+    for (const k of STAT_KEYS) dev[k] = figs?.find((f) => f.key === k)?.dev ?? null;
+    return { exam: e, dev };
+  });
 }

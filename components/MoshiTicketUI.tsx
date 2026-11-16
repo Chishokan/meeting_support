@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { byExamNo, campusInfo, jpDate, venueOf, type MoshiExam, type MoshiResult } from '@/lib/moshi/model';
-import { ExamCampusBar, PageHead, StateNote, useExamCampus, useMoshiData } from './MoshiShared';
+import { ExamCampusBar, PageHead, StateNote, printPortrait, useExamCampus, useMoshiData } from './MoshiShared';
 
 type Layout = 2 | 4;
 const LAYOUT_KEY = 'moshi.ticketLayout';
@@ -65,7 +65,7 @@ export default function MoshiTicketUI({ name }: { name: string }) {
             <button type="button" className={layout === 4 ? 'on' : ''} onClick={() => pickLayout(4)}>1枚に4人</button>
             <button type="button" className={layout === 2 ? 'on' : ''} onClick={() => pickLayout(2)}>1枚に2人</button>
           </div>
-          <button type="button" className="ms-btn" disabled={!chosen.length} onClick={() => window.print()}>印刷する（{chosen.length}人・{pages.length}枚）</button>
+          <button type="button" className="ms-btn" disabled={!chosen.length} onClick={printPortrait}>印刷する（{chosen.length}人・{pages.length}枚）</button>
           <button type="button" className="ms-btn ms-btn-sub" onClick={() => setUnchecked(new Set())}>すべて選ぶ</button>
           <button type="button" className="ms-btn ms-btn-sub" onClick={() => setUnchecked(new Set(list.map((r) => r.id)))}>すべて外す</button>
         </div>

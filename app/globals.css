@@ -2908,6 +2908,14 @@ button.app-nav-item { background: none; border: 0; font-family: inherit; cursor:
 .ms-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
 .ms-venues { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 12px; }
 .ms-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+.ms-outside { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: flex-start; }
+.ms-outside .ms-field { width: 130px; }
+.ms-outside-table { width: auto; }
+.ms-outside-table th:first-child { white-space: nowrap; }
+.ms-outside-table input, .ms-judge-table input.num { width: 78px; text-align: right; }
+.ms-judge-table { width: auto; margin-top: 6px; }
+.ms-judge-table td:first-child input { width: 130px; }
+.ms-judge-name { font-size: 12.5px; color: #2a2f36; min-width: 120px; }
 
 /* 表（順位表・平均点・成績表） */
 .ms-table { border-collapse: collapse; font-size: 13px; background: #fff; }
@@ -2940,62 +2948,6 @@ button.app-nav-item { background: none; border: 0; font-family: inherit; cursor:
 .ms-pick-score { font-size: 12px; color: #556; font-variant-numeric: tabular-nums; }
 .ms-preview { min-width: 0; }
 .ms-search { margin-bottom: 8px; padding: 8px 10px; font-size: 14px; }
-
-/* 個人成績表（A4 1枚） */
-.ms-card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; max-width: 860px; color: #1f2329; font-size: 13px; }
-.ms-card-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-bottom: 2px solid var(--navy); padding-bottom: 8px; }
-.ms-card-title { font-size: 17px; font-weight: 800; color: var(--navy); }
-.ms-card-sub { font-size: 12px; color: #556; margin-top: 2px; }
-.ms-card-who { text-align: right; font-size: 12px; color: #445; }
-.ms-card-name { font-size: 20px; font-weight: 800; color: #1a1a1a; margin-top: 2px; }
-.ms-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 10px 0 6px; }
-.ms-kpis div { border: 1px solid #e3e8ee; border-radius: 8px; padding: 6px 10px; }
-.ms-kpis span { display: block; font-size: 11px; color: #667; }
-.ms-kpis b { font-size: 24px; font-weight: 700; }
-.ms-kpis small { font-size: 12px; color: #667; margin-left: 2px; }
-.ms-card-note { font-size: 12px; color: #9a6b00; margin: 0 0 6px; }
-.ms-card-row { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 14px; align-items: start; margin-top: 8px; }
-.ms-card-row-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.ms-card-h { font-size: 13px; margin: 10px 0 4px; padding-left: 6px; border-left: 3px solid var(--navy); }
-.ms-card .ms-table { width: 100%; font-size: 12px; }
-.ms-card .ms-table th, .ms-card .ms-table td { padding: 3px 6px; }
-.ms-subj td b { font-size: 14px; }
-.ms-subj td small { color: #8a94a0; margin-left: 1px; }
-.ms-topics { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; }
-.ms-topic tbody th { vertical-align: top; background: #f6f8fb; font-size: 12px; white-space: nowrap; }
-.ms-topic tr.ms-topic-first td, .ms-topic tr.ms-topic-first th { border-top: 1px solid #cfd6de; }
-.ms-topic-name { font-size: 11.5px; }
-.ms-topic-bar { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
-.ms-topic-bar span { font-size: 11px; color: #445; min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; }
-.ms-ratebar { width: 64px; height: 11px; flex: none; }
-.ms-sw { margin: 0; font-size: 12px; }
-.ms-sw dt { font-weight: 700; margin-top: 4px; color: #2a2f36; }
-.ms-sw dd { margin: 2px 0 0; display: grid; gap: 2px; }
-.ms-sw dd small { color: #667; margin-left: 6px; }
-.ms-choice th { white-space: nowrap; font-size: 11.5px; }
-.ms-hist tr.ms-cur td { font-weight: 700; }
-.ms-hist td:first-child { white-space: nowrap; }
-.ms-hist-wrap .ms-chart svg { max-width: 420px; }
-.ms-comment { min-height: 72px; border: 1px solid #d5dbe2; border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; font-size: 12.5px; line-height: 1.6; }
-.ms-card-foot { margin-top: 10px; font-size: 10.5px; color: #7a828c; }
-
-/* グラフ */
-.ms-chart { margin: 0; }
-.ms-chart svg { width: 100%; height: auto; display: block; }
-.ms-gl { stroke: var(--ms-gridline); stroke-width: 1; }
-.ms-gl-50 { stroke: #c4cad2; }
-.ms-axis { font-size: 9px; fill: #6b7480; }
-.ms-axis-label { font-size: 11px; fill: #2a2f36; font-weight: 600; }
-.ms-value { font-size: 10.5px; fill: #1f2329; font-weight: 700; }
-.ms-bar-fill { fill: var(--ms-series); }
-.ms-ref { stroke: var(--ms-ref); stroke-width: 2; }
-.ms-track { fill: var(--ms-track); }
-.ms-line { fill: none; stroke: var(--ms-series); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.ms-dot { fill: var(--ms-series); stroke: #fff; stroke-width: 2; }
-.ms-legend { display: flex; gap: 14px; font-size: 11px; color: var(--ms-ink2); margin-top: 2px; }
-.ms-legend span { display: inline-flex; align-items: center; gap: 5px; }
-.ms-key-bar { display: inline-block; width: 14px; height: 8px; border-radius: 0 3px 3px 0; background: var(--ms-series); }
-.ms-key-ref { display: inline-block; width: 2px; height: 12px; background: var(--ms-ref); }
 
 /* 受験票（A4 に2人／4人。点線で切る） */
 .ms-ticket-pick { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 12px; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px; max-height: 160px; overflow-y: auto; }
@@ -3037,10 +2989,6 @@ button.app-nav-item { background: none; border: 0; font-family: inherit; cursor:
 .ms-compare b { font-size: 15px; }
 .ms-compare b.up { color: #1d6b3a; }
 .ms-compare b.down { color: #b03a2e; }
-.ms-interview-card .ms-card { font-size: 14px; max-width: none; }
-.ms-interview-card .ms-card .ms-table { font-size: 13px; }
-.ms-interview-card .ms-kpis b { font-size: 30px; }
-.ms-interview-card .ms-card-name { font-size: 24px; }
 .ms-comment-edit { margin-top: 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
 .ms-comment-edit label { margin: 0 0 6px; }
 .ms-comment-edit label small { font-weight: 400; color: #8a94a0; margin-left: 8px; }
@@ -3059,10 +3007,6 @@ body.ms-focus .app-main { margin-left: 0; padding-top: 0; }
 }
 @media (max-width: 720px) {
   .ms-body { padding: 12px 12px 40px; }
-  .ms-card { padding: 12px; }
-  .ms-card-row, .ms-card-row-2, .ms-topics { grid-template-columns: minmax(0, 1fr); }
-  .ms-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ms-card-who { text-align: left; }
   .ms-bar-link { margin-left: 0; }
   .ms-grid-wrap { max-height: calc(100vh - 210px); }
 }
@@ -3078,20 +3022,6 @@ body.ms-focus .app-main { margin-left: 0; padding-top: 0; }
   .ms-print-only { display: block; }
   .ms-page { break-after: page; }
   .ms-page:last-child { break-after: auto; }
-  .ms-page .ms-card { border: none; border-radius: 0; padding: 0; max-width: none; font-size: 9pt; }
-  .ms-page .ms-card .ms-table { font-size: 8.5pt; }
-  .ms-page .ms-card .ms-table th, .ms-page .ms-card .ms-table td { padding: .7mm 1.6mm; }
-  .ms-page .ms-card-head { padding-bottom: 2mm; }
-  .ms-page .ms-kpis { margin: 2.5mm 0 1mm; }
-  .ms-page .ms-kpis div { padding: 1mm 2.5mm; }
-  .ms-page .ms-kpis b { font-size: 16pt; }
-  .ms-page .ms-card-row { margin-top: 2mm; }
-  .ms-page .ms-card-h { margin: 2.5mm 0 1.2mm; }
-  .ms-page .ms-comment { min-height: 28mm; }
-  .ms-page .ms-card-last { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
-  .ms-page .ms-hist-wrap { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 3mm; align-items: start; }
-  .ms-page .ms-hist-wrap .ms-chart svg { max-height: 30mm; }
-  .ms-page .ms-card-foot { margin-top: 2mm; }
   body:has(.ms) .env-banner { display: none !important; }
   .ms-sheet .ms-table { font-size: 8.5pt; width: 100%; }
   .ms-sheet .ms-table th, .ms-sheet .ms-table td { padding: 1mm 1.5mm; }
@@ -3102,4 +3032,102 @@ body.ms-focus .app-main { margin-left: 0; padding-top: 0; }
   .ms-ticket-page { width: auto; height: 276mm; padding: 0; margin: 0; box-shadow: none; break-after: page; }
   .ms-ticket-page:last-child { break-after: auto; }
   .ms-ticket-pick { display: none; }
+}
+
+/* ============ 本番レベル模試：個人成績表（A4 横1枚。元の帳票「公立高校・高専本番レベル模試」の並び） ============
+   mm・pt で組んである。画面では FitSheet（.rs-fit）が幅に合わせて zoom で縮める。 */
+.rs-fit { width: 100%; overflow: hidden; }
+.rs-fit-inner { width: 293mm; padding: 6mm; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.14); box-sizing: border-box; }
+.rs-sheet {
+  width: 281mm; height: 194mm; box-sizing: border-box; background: #fff; color: #111;
+  display: grid; grid-template-columns: 99mm 93mm 83mm; grid-template-rows: minmax(0, 1fr) auto; column-gap: 3mm;
+  font-size: 7pt; line-height: 1.25; font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', system-ui, sans-serif;
+}
+.rs-col { min-width: 0; display: flex; flex-direction: column; }
+.rs-head { display: flex; align-items: center; gap: 4mm; }
+.rs-logo { height: 8.5mm; width: auto; }
+.rs-title { font-size: 13.5pt; font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
+.rs-ym { text-align: right; font-size: 7pt; margin: -.5mm 0 1mm; }
+.rs-info { display: grid; grid-template-columns: 16mm 1fr; gap: .5mm 2mm; margin: 0 0 2.5mm 2mm; font-size: 7pt; }
+.rs-info dt { color: #333; }
+.rs-info dd { margin: 0; }
+.rs-info .rs-name { font-size: 9.5pt; font-weight: 700; }
+.rs-score { width: 100%; border-collapse: collapse; font-size: 6.8pt; table-layout: fixed; }
+.rs-score th, .rs-score td { border: .2mm solid #8a8a8a; padding: .45mm 1mm; height: 3.9mm; }
+.rs-score thead th { background: #d9b48f; font-weight: 700; text-align: center; }
+.rs-score thead th:first-child { width: 18mm; font-size: 5.8pt; white-space: nowrap; padding: .45mm .6mm; }
+.rs-score tbody th { background: #fbeee2; text-align: left; font-weight: 400; white-space: nowrap; }
+.rs-score tbody td { text-align: right; font-variant-numeric: tabular-nums; }
+.rs-score tbody tr:nth-child(odd) td { background: #fffaf5; }
+
+.rs-pill { align-self: flex-start; display: inline-block; padding: .7mm 3mm; margin: 2.6mm 0 1.4mm; border: .3mm solid #333; border-radius: 1.6mm; font-size: 9pt; font-weight: 700; }
+.rs-pill-green { background: #a9d88d; }
+.rs-pill-orange { background: #f7a541; }
+.rs-pill-blue { background: #bfe3f5; }
+.rs-pill-pink { background: #e9a8c8; }
+.rs-h { font-size: 8pt; font-weight: 700; margin: 0 0 1mm; }
+.rs-h-sm { margin-top: 2mm; }
+
+.rs-judge { border: .25mm solid #6b6b6b; margin-bottom: 1.4mm; font-size: 6.6pt; }
+.rs-j-head { display: flex; gap: 3mm; align-items: baseline; background: #dbe7f7; padding: .6mm 1.6mm; font-size: 7.4pt; border-bottom: .2mm solid #9db3d1; }
+.rs-j-head b { font-variant-numeric: tabular-nums; }
+.rs-j-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.rs-j-table th, .rs-j-table td { border: .2mm solid #a9a9a9; height: 3.5mm; padding: 0 1mm; text-align: center; font-weight: 400; font-variant-numeric: tabular-nums; }
+.rs-j-table th { background: #f3f6fb; }
+.rs-j-table tr:first-child th:first-child { width: 14mm; }
+.rs-j-g { font-weight: 700 !important; }
+.rs-j-note { font-size: 5.6pt; color: #555; text-align: left !important; }
+.rs-j-grade { display: flex; align-items: center; gap: 2.5mm; padding: .7mm 1.6mm; }
+.rs-j-box { display: inline-block; min-width: 13mm; height: 4.4mm; line-height: 4.4mm; border: .35mm solid #111; text-align: center; font-size: 9pt; font-weight: 800; }
+.rs-j-next { display: grid; gap: .3mm; background: #eef3fb; padding: .6mm 1.6mm .8mm; }
+.rs-j-next span:last-child { padding-left: 10mm; }
+.rs-j-next b { font-size: 8pt; }
+.rs-blank { display: inline-block; width: 12mm; }
+
+.rs-chart { display: block; width: 100%; height: auto; }
+.rs-gl { stroke: #dfe3e8; stroke-width: .6; fill: none; }
+.rs-gl-50 { stroke: #b4bac2; }
+.rs-ax { font-size: 7.2px; fill: #444; }
+.rs-ax-label { font-size: 8.5px; fill: #222; font-weight: 600; }
+.rs-bar { fill: #6da7ec; }
+.rs-bar-mine { fill: #1c5cab; }
+.rs-mine-label { font-size: 7.5px; font-weight: 700; fill: #1c5cab; }
+.rs-legend-svg text { font-size: 7.5px; fill: #333; }
+.rs-radar-ring { fill: none; }
+.rs-radar-avg { fill: none; stroke: #52514e; stroke-width: 1.2; stroke-dasharray: 3 2; }
+.rs-radar-mine { fill: rgba(42, 120, 214, .12); stroke: #2a78d6; stroke-width: 1.6; stroke-linejoin: round; }
+.rs-radar-mine-line { stroke: #2a78d6; stroke-width: 1.6; }
+.rs-radar-dot { fill: #2a78d6; stroke: #fff; stroke-width: 1; }
+.rs-trend-chart { border: .2mm solid #c4c4c4; margin: 2mm 0 0; }
+
+.rs-q { width: 100%; border-collapse: collapse; font-size: 6.3pt; margin-top: 1.5mm; table-layout: fixed; }
+.rs-q th, .rs-q td { border: .2mm solid #9a9a9a; padding: .2mm 1mm; height: 3.25mm; line-height: 1.1; }
+.rs-q thead th { background: #4fc6db; font-weight: 700; text-align: center; }
+.rs-q-c1 { width: 9mm; }
+.rs-q-c3 { width: 8mm; }
+.rs-q-c5 { width: 10mm; }
+.rs-q-c6 { width: 10mm; }
+.rs-q thead th.rs-q-title { text-align: left; }
+.rs-q thead th { white-space: nowrap; }
+.rs-q tbody th { text-align: left; vertical-align: top; font-weight: 400; background: #fff; }
+.rs-q tbody td { text-align: right; font-variant-numeric: tabular-nums; }
+.rs-q td.rs-q-topic { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #eefafc; }
+.rs-q .rs-q-rate { background: #dbe7f7; }
+.rs-q .rs-q-rate.low { color: #d40000; }
+.rs-q tr.rs-q-first th, .rs-q tr.rs-q-first td { border-top: .35mm solid #555; }
+
+.rs-trend { width: 100%; border-collapse: collapse; font-size: 6.6pt; table-layout: fixed; }
+.rs-trend th, .rs-trend td { border: .25mm solid #333; height: 3.6mm; padding: 0 .8mm; }
+.rs-trend thead th { font-weight: 400; text-align: left; }
+.rs-trend tbody th { font-weight: 400; text-align: left; width: 9mm; }
+.rs-trend thead th:first-child { width: 9mm; }
+.rs-trend tbody td { text-align: right; font-variant-numeric: tabular-nums; }
+.rs-trend tr.rs-cur td, .rs-trend tr.rs-cur th { font-weight: 700; }
+.rs-comment { flex: 1; min-height: 16mm; border: .3mm solid #6b6b6b; padding: 1.5mm 2mm; font-size: 7.6pt; line-height: 1.5; white-space: pre-wrap; }
+.rs-foot { grid-column: 1 / -1; font-size: 5.8pt; color: #444; padding-top: 1.2mm; }
+
+@media print {
+  .rs-fit { overflow: visible; }
+  .rs-fit-inner { zoom: 1 !important; padding: 0; box-shadow: none; width: auto; }
+  .ms-page .rs-sheet { break-inside: avoid; }
 }

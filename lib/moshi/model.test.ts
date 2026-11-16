@@ -3,16 +3,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  choiceRanks, cleanExam, cleanResult, computeStats, DEFAULT_SUBJECTS, emptyScores, examMax, fitScores, historyOf,
+  choiceRanks, cleanExam, cleanResult, computeStats, DEFAULT_SUBJECTS, devBins, judgeOf, reportFigures, scoreBins, trendRows, yearExams, emptyOutside, emptyScores, examMax, fitScores, historyOf,
   inputSheetRows, jpDate, nextExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
-  scoresToCell, strengthsAndWeaknesses, subjectMax, topicPoints,
+  scoresToCell, subjectMax,
   type MoshiExam, type MoshiResult, type Scores,
 } from './model.ts';
 
 function exam(p: Partial<MoshiExam> = {}): MoshiExam {
   return {
     id: 'exam-11', name: '2026 本番レベル模試 11月', grade: '中3', date: '2026-11-22',
-    subjects: DEFAULT_SUBJECTS, schedule: [], belongings: '', notes: '', venues: {},
+    subjects: DEFAULT_SUBJECTS, schedule: [], belongings: '', notes: '', venues: {}, outside: emptyOutside(), judges: [],
     createdAt: '', createdBy: '', updatedAt: '', updatedBy: '', ...p,
   };
 }
@@ -129,17 +129,13 @@ test('志望者内の順位：第一志望が同じ人の中と、第1〜4志望
   assert.deepEqual(rb[1].any, { n: 3, rank: 2 });
 });
 
-test('大問別：平均との差で得意・伸ばしたい分野を3つずつ', () => {
+test('設問別の平均：その教科を受けた人の大問ごとの平均点（空欄は0点）', () => {
   const e = exam();
   const a = res({ name: 'A', s: { ma: [30, 0, 15, 0, 24] } });
   const b = res({ name: 'B', s: { ma: [0, 15, 0, 16, 0] } });
-  const s = computeStats(e, [a, b]);
-  const row = s.rows.find((x) => x.r.name === 'A')!;
-  const pts = topicPoints(s, row);
-  assert.equal(pts.length, 5);
-  const { strong, weak } = strengthsAndWeaknesses(pts);
-  assert.deepEqual(strong.map((p) => p.topic), ['計算と作図', '二次関数', '探究的な問題']);
-  assert.deepEqual(weak.map((p) => p.topic), ['データの活用', '平面図形・空間図形']);
+  const s = computeStats(e, [a, b, res({ name: 'C', s: { ja: [10] } })]);
+  assert.deepEqual(s.overall.questionMean.ma, [15, 7.5, 7.5, 8, 12]);
+  assert.equal(s.overall.sub.ma!.n, 2);
 });
 
 test('推移：氏名（空白・★を除く）と受験番号か校舎が同じ行を、実施日の古い順に', () => {
@@ -262,4 +258,90 @@ test('jpDate・emptyScores', () => {
   assert.equal(jpDate('2026-11-22'), '2026年11月22日（日）');
   assert.equal(jpDate(''), '');
   assert.equal(emptyScores(exam()).sc.length, 6);
+});
+
+test('成績表の得点表：三教科（国英数）と五教科。業者の平均点・標準偏差があればその値で偏差値と母数を出す', () => {
+  const rows = [
+    res({ name: 'A', s: full([80, 70, 60, 50, 40]) }),
+    res({ name: 'B', s: full([60, 60, 60, 60, 60]) }),
+    res({ name: 'C', s: { ja: [10], en: [10], ma: [10] } }), // 三教科だけ
+  ];
+  const inside = computeStats(exam(), rows);
+  const a = inside.rows.find((x) => x.r.name === 'A')!;
+  assert.equal(a.total3, 210);
+  assert.equal(a.rank3, 1);
+  assert.equal(inside.overall.total3!.n, 3);
+  const f = reportFigures(inside, a);
+  assert.deepEqual(f.map((x) => x.label), ['国語', '英語', '数学', '社会', '理科', '三教科', '五教科']);
+  assert.equal(f[5].score, 210);
+  assert.equal(f[5].max, 300);
+  assert.equal(f[6].n, 2);
+  assert.equal(f[6].outside, false);
+
+  const outside = computeStats(exam({ outside: { n: 967, mean: { ja: 55.4, k5: 244.8 }, sd: { k5: 80 } } }), rows);
+  const fo = reportFigures(outside, outside.rows.find((x) => x.r.name === 'A')!);
+  assert.equal(fo[0].mean, 55.4);
+  assert.equal(fo[0].outside, true);
+  assert.equal(fo[0].n, 967);
+  assert.ok(Math.abs((fo[6].dev as number) - (50 + 10 * (300 - 244.8) / 80)) < 1e-9);
+  assert.equal(fo[1].outside, false); // 英語は業者の値なし → 智翔館の平均
+  assert.equal(fo[6].rank, 1);        // 順位は智翔館の中
+});
+
+test('判定：ラインを上から見て、あと何点で次の判定か', () => {
+  const e = exam({ judges: [{ code: '40200', A: 380, B: 350, C: 320, D: 290 }, { code: '40300', A: 330, B: null, C: null, D: 250 }] });
+  assert.deepEqual(judgeOf(e, '40200', 360), { line: e.judges[0], grade: 'B', next: { grade: 'A', gap: 20 } });
+  assert.deepEqual(judgeOf(e, '40200', 400).next, null);
+  assert.equal(judgeOf(e, '40200', 400).grade, 'A');
+  assert.deepEqual(judgeOf(e, '40200', 200), { line: e.judges[0], grade: 'E', next: { grade: 'D', gap: 90 } });
+  assert.deepEqual(judgeOf(e, '40300', 300), { line: e.judges[1], grade: 'D', next: { grade: 'A', gap: 30 } });
+  assert.equal(judgeOf(e, '41300', 300).grade, null); // ラインが無い学校
+  assert.equal(judgeOf(e, '40200', null).grade, null);
+});
+
+test('得点の分布は25点きざみで高い点から、偏差値の分布は2.5きざみ', () => {
+  const rows = [res({ name: 'A', s: full([100, 100, 100, 100, 100]) }), res({ name: 'B', s: full([5, 5, 5, 5, 5]) }), res({ name: 'C', s: full([50, 50, 50, 50, 51]) })];
+  const s = computeStats(exam(), rows);
+  const bins = scoreBins(s, s.rows.find((x) => x.r.name === 'C')!);
+  assert.equal(bins.length, 20);
+  assert.equal(bins[0].label, '476～500');
+  assert.equal(bins[0].count, 1);
+  assert.equal(bins[19].label, '0～25');
+  assert.equal(bins[19].count, 1); // B（25点）は「0～25」
+  assert.equal(bins[18].count, 0); // 「26～50」
+  assert.ok(bins.find((b) => b.mine)!.label === '251～275');
+  const d = devBins(s, s.rows[0]);
+  assert.equal(d[0].label, '75.0以上');
+  assert.equal(d[d.length - 1].label, '25.0未満');
+  assert.equal(d.reduce((a, b) => a + b.count, 0), 3);
+  assert.equal(d.filter((b) => b.mine).length, 1);
+});
+
+test('教科別偏差値推移：同じ年度・学年の回を古い順に。受けていない回は空', () => {
+  const e7 = exam({ id: 'e7', name: '7月', date: '2026-07-12' });
+  const e11 = exam({ id: 'e11', name: '11月', date: '2026-11-22' });
+  const e1 = exam({ id: 'e1', name: '1月', date: '2027-01-17' });
+  const old = exam({ id: 'old', name: '前年度', date: '2026-02-01' });
+  const me7 = res({ name: '山田　太郎', examNo: '514401', s: full([60, 60, 60, 60, 60]) }, e7);
+  const other7 = res({ name: '鈴木　花子', examNo: '514402', s: full([40, 40, 40, 40, 40]) }, e7);
+  const me11 = res({ name: '山田　太郎', examNo: '514401', s: full([70, 70, 70, 70, 70]) }, e11);
+  const all = [me7, other7, me11];
+  const list = [e1, e11, e7, old].map((e) => computeStats(e, all));
+  assert.deepEqual(yearExams(list.map((x) => x.exam), e11).map((e) => e.id), ['e7', 'e11', 'e1']);
+  const t = trendRows(list, e11, me11);
+  assert.deepEqual(t.map((x) => x.exam.id), ['e7', 'e11', 'e1']);
+  assert.ok((t[0].dev.k5 as number) > 50);
+  assert.equal(t[1].dev.k5, 50); // 11月は1人だけ
+  assert.equal(t[2].dev.ja, null);
+});
+
+test('cleanExam：業者の集計と判定ライン', () => {
+  const ok = cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, outside: { n: '967', mean: { ja: '55.4', k5: '' }, sd: { k5: '81.7' } }, judges: [{ code: '４０２００', A: '380', B: '', C: '320', D: '290' }, { code: '', A: '1' }] });
+  assert.ok(ok.ok);
+  if (ok.ok) {
+    assert.deepEqual(ok.value.outside, { n: 967, mean: { ja: 55.4 }, sd: { k5: 81.7 } });
+    assert.deepEqual(ok.value.judges, [{ code: '40200', A: 380, B: null, C: 320, D: 290 }]);
+  }
+  assert.deepEqual(cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, judges: [{ code: '40200', A: 'abc' }] }), { ok: false, reason: 'bad_judge', detail: '40200 A' });
+  assert.deepEqual(cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, outside: { n: '-1' } }), { ok: false, reason: 'bad_outside' });
 });

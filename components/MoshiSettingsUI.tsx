@@ -2,13 +2,15 @@
 
 // 本番レベル模試：模試の設定（/moshi/settings）。回ごとに、模試名・実施日・教科ごとの大問の配点と分野・
 // 受験票の時間割・持ち物・注意事項・会場を決める。新しい回は「前の回をもとに作る」と配点・分野・時間割を写せる。
+// 成績表に使う「業者の全体集計（母数・平均点・標準偏差）」と「志望校の判定ライン」も回ごとに入れる（どちらも任意）。
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  CAMPUS_NAMES, MAX_QUESTIONS, MAX_SCHEDULE_ROWS, SUBJECT_KEYS, SUBJECT_NAMES, campusInfo, examMax, jpDate, newExamDraft,
-  subjectMax,
-  type MoshiExam, type SubjectKey,
+  CAMPUS_NAMES, JUDGE_GRADES, MAX_JUDGES, MAX_QUESTIONS, MAX_SCHEDULE_ROWS, STAT_KEYS, STAT_NAMES, SUBJECT_KEYS, SUBJECT_NAMES,
+  campusInfo, choiceKey, examMax, jpDate, newExamDraft, normalizeChoice, subjectMax,
+  type JudgeLine, type MoshiExam, type StatKey, type SubjectKey,
 } from '@/lib/moshi/model';
+import { SCHOOLS, schoolName } from '@/lib/moshi/schools';
 import { PageHead, StateNote, examOptionLabel, reasonText, useMoshiData } from './MoshiShared';
 
 type Draft = ReturnType<typeof newExamDraft> & { id?: string };
@@ -18,6 +20,8 @@ function draftOf(e: MoshiExam): Draft {
     id: e.id, name: e.name, grade: e.grade, date: e.date,
     subjects: e.subjects.map((s) => ({ key: s.key, questions: s.questions.map((q) => ({ ...q })) })),
     schedule: e.schedule.map((s) => ({ ...s })), belongings: e.belongings, notes: e.notes, venues: { ...e.venues },
+    outside: { n: e.outside?.n ?? null, mean: { ...(e.outside?.mean ?? {}) }, sd: { ...(e.outside?.sd ?? {}) } },
+    judges: (e.judges ?? []).map((j) => ({ ...j })),
   };
 }
 
@@ -70,6 +74,38 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
   function removeQ(k: SubjectKey, i: number) {
     setDraft((d) => d && ({ ...d, subjects: d.subjects.map((s) => (s.key !== k ? s : { ...s, questions: s.questions.filter((_, j) => j !== i) })) }));
   }
+
+  function setOutside(kind: 'mean' | 'sd', k: StatKey, v: string) {
+    setDraft((d) => {
+      if (!d) return d;
+      const next = { ...d.outside, [kind]: { ...d.outside[kind] } };
+      if (v === '') delete next[kind][k]; else next[kind][k] = Number(v);
+      return { ...d, outside: next };
+    });
+  }
+  function setJudge(i: number, patch: Partial<JudgeLine>) {
+    setDraft((d) => d && ({ ...d, judges: d.judges.map((j, n) => (n === i ? { ...j, ...patch } : j)) }));
+  }
+  function addJudges(codes: string[]) {
+    setDraft((d) => {
+      if (!d) return d;
+      const have = new Set(d.judges.map((j) => choiceKey(j.code)));
+      const add = codes.filter((c) => c && !have.has(choiceKey(c))).map((code) => ({ code, A: null, B: null, C: null, D: null }));
+      return { ...d, judges: [...d.judges, ...add].slice(0, MAX_JUDGES) };
+    });
+  }
+  // この回の受験者が志望校に書いた学校（多い順）
+  const choiceCodes = useMemo(() => {
+    if (!current) return [] as string[];
+    const n = new Map<string, number>();
+    for (const r of results) {
+      if (r.examId !== current.id) continue;
+      for (const c of r.choices) if (c) n.set(c, (n.get(c) ?? 0) + 1);
+    }
+    return [...n.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
+  }, [results, current]);
+  // 判定ラインが入っている、いちばん新しいほかの回
+  const prevJudges = exams.find((e) => e.id !== current?.id && (e.judges ?? []).length) ?? null;
 
   async function submit() {
     if (!draft || busy) return;
@@ -244,6 +280,73 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
                   />
                 </label>
               ))}
+            </div>
+
+            <h2 className="ms-h2">成績表に使う数字（任意）</h2>
+            <h3 className="ms-h3">模試業者の全体の集計</h3>
+            <p className="ms-fine">
+              入れた教科だけ、成績表の平均点・母数をこの値で出します。偏差値は平均点と標準偏差の両方があるときにこの値で計算します。
+              空欄なら、この回を受けた智翔館の受験者で計算します（順位はいつも智翔館の中での順位）。
+            </p>
+            <div className="ms-outside">
+              <label className="ms-field">
+                <span>母数（受験者数）</span>
+                <input type="number" min={0} inputMode="numeric" value={draft.outside.n ?? ''}
+                  onChange={(e) => setDraft({ ...draft, outside: { ...draft.outside, n: e.target.value === '' ? null : Number(e.target.value) } })} />
+              </label>
+              <table className="ms-qtable ms-outside-table">
+                <thead><tr><th></th>{STAT_KEYS.map((k) => <th key={k}>{STAT_NAMES[k]}</th>)}</tr></thead>
+                <tbody>
+                  {(['mean', 'sd'] as const).map((kind) => (
+                    <tr key={kind}>
+                      <th>{kind === 'mean' ? '平均点' : '標準偏差'}</th>
+                      {STAT_KEYS.map((k) => (
+                        <td key={k}>
+                          <input type="number" step="0.1" min={0} className="num" value={draft.outside[kind][k] ?? ''}
+                            onChange={(e) => setOutside(kind, k, e.target.value)} aria-label={`${STAT_NAMES[k]}の${kind === 'mean' ? '平均点' : '標準偏差'}`} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <h3 className="ms-h3">志望校の判定ライン（五教科の点）</h3>
+            <p className="ms-fine">A の点以上で A 判定、B の点以上で B 判定 … D の点より下は E 判定。成績表の志望校判定に「判定」と「あと何点で次の判定か」が出ます。ラインの無い学校は空欄のまま出ます。</p>
+            <datalist id="ms-schools-settings">
+              {SCHOOLS.map((sc) => <option key={sc.code} value={sc.code}>{sc.name}</option>)}
+            </datalist>
+            {draft.judges.length > 0 && (
+              <table className="ms-qtable ms-judge-table">
+                <thead><tr><th>志望校コード</th><th>学校</th>{JUDGE_GRADES.map((g) => <th key={g}>{g}</th>)}<th></th></tr></thead>
+                <tbody>
+                  {draft.judges.map((j, i) => (
+                    <tr key={i}>
+                      <td><input list="ms-schools-settings" value={j.code} placeholder="コードか学校名"
+                        onChange={(e) => setJudge(i, { code: e.target.value })} onBlur={(e) => setJudge(i, { code: normalizeChoice(e.target.value) })} /></td>
+                      <td className="ms-judge-name">{schoolName(j.code)}</td>
+                      {JUDGE_GRADES.map((g) => (
+                        <td key={g}><input type="number" min={0} className="num" value={j[g] ?? ''} aria-label={`${schoolName(j.code)} ${g}`}
+                          onChange={(e) => setJudge(i, { [g]: e.target.value === '' ? null : Number(e.target.value) })} /></td>
+                      ))}
+                      <td><button type="button" className="ms-x" onClick={() => setDraft({ ...draft, judges: draft.judges.filter((_, n) => n !== i) })}>消す</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <div className="ms-toolbar">
+              <button type="button" className="ms-link" onClick={() => addJudges([''])} disabled={draft.judges.length >= MAX_JUDGES}>＋ 学校を足す</button>
+              {choiceCodes.length > 0 && (
+                <button type="button" className="ms-link" onClick={() => addJudges(choiceCodes)}>＋ この回の受験者の志望校をまとめて足す（{choiceCodes.length}校）</button>
+              )}
+              {prevJudges && (
+                <button type="button" className="ms-link" onClick={() => {
+                  if (draft.judges.length && !window.confirm(`今のラインを消して、${prevJudges.name}の判定ラインを写します。よろしいですか？`)) return;
+                  setDraft({ ...draft, judges: prevJudges.judges.map((j) => ({ ...j })) });
+                }}>{prevJudges.name}の判定ラインを写す</button>
+              )}
             </div>
 
             <div className="ms-actions">
