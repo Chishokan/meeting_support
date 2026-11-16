@@ -10,7 +10,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import {
-  SUBJECT_KEYS, SUBJECT_NAMES, emptyOutside, fitScores, normalizeGender, scoresFromCell, scoresToCell, subjectOf,
+  SUBJECT_KEYS, SUBJECT_NAMES, fitScores, normalizeGender, readExamExtras, scoresFromCell, scoresToCell, subjectOf,
   type ExamSubject, type MoshiExam, type MoshiResult, type ResultInput, type ScheduleRow, type SubjectKey,
 } from './model';
 
@@ -71,7 +71,7 @@ async function callGas(payload: Record<string, unknown>): Promise<Gas> {
 
 // ---- シートの行 ⇄ 型 -------------------------------------------------------
 
-type ExamSettings = Pick<MoshiExam, 'subjects' | 'schedule' | 'belongings' | 'notes' | 'venues' | 'outside' | 'judges'>;
+type ExamSettings = Pick<MoshiExam, 'subjects' | 'schedule' | 'belongings' | 'notes' | 'venues' | 'outside' | 'judges' | 'judgeOptions'>;
 
 export function examFromSheet(o: Record<string, unknown>): MoshiExam {
   let cfg: Partial<ExamSettings> = {};
@@ -90,26 +90,16 @@ export function examFromSheet(o: Record<string, unknown>): MoshiExam {
     belongings: String(cfg.belongings ?? ''),
     notes: String(cfg.notes ?? ''),
     venues: cfg.venues && typeof cfg.venues === 'object' ? { ...cfg.venues } : {},
-    outside: cfg.outside && typeof cfg.outside === 'object'
-      ? { n: numOrNull(cfg.outside.n), mean: { ...(cfg.outside.mean ?? {}) }, sd: { ...(cfg.outside.sd ?? {}) } }
-      : emptyOutside(),
-    judges: Array.isArray(cfg.judges)
-      ? cfg.judges.map((j) => ({ code: String(j?.code ?? ''), A: numOrNull(j?.A), B: numOrNull(j?.B), C: numOrNull(j?.C), D: numOrNull(j?.D) })).filter((j) => j.code)
-      : [],
+    ...readExamExtras(cfg as Record<string, unknown>),
     createdAt: String(o['作成日時'] ?? ''), createdBy: String(o['作成者'] ?? ''),
     updatedAt: String(o['更新日時'] ?? ''), updatedBy: String(o['更新者'] ?? ''),
   };
 }
 
-function numOrNull(v: unknown): number | null {
-  const n = v == null || v === '' ? NaN : Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 function examToSheet(e: MoshiExam): Record<string, string> {
   const cfg: ExamSettings = {
     subjects: e.subjects, schedule: e.schedule, belongings: e.belongings, notes: e.notes, venues: e.venues,
-    outside: e.outside, judges: e.judges,
+    outside: e.outside, judges: e.judges, judgeOptions: e.judgeOptions,
   };
   return {
     ID: e.id, 模試名: e.name, 学年: e.grade, 実施日: e.date, 設定: JSON.stringify(cfg),
@@ -174,7 +164,7 @@ export async function loadAll(): Promise<({ ok: true } & MoshiData) | Fail> {
     const exams = (db.exams as (MoshiExam & { deleted?: boolean })[]).filter((e) => !e.deleted);
     const byId = new Map(exams.map((e) => [e.id, e]));
     const results = db.results.filter((r) => !r.deleted && byId.has(r.examId)).map(({ deleted: _d, ...r }) => ({ ...r, scores: fitScores(byId.get(r.examId)!, r.scores) }));
-    const clean = exams.map(({ deleted: _d, ...e }) => ({ ...e, outside: e.outside ?? emptyOutside(), judges: e.judges ?? [] }) as MoshiExam);
+    const clean = exams.map(({ deleted: _d, ...e }) => ({ ...e, ...readExamExtras(e as unknown as Record<string, unknown>) }) as MoshiExam);
     return { ok: true, exams: clean, results, fetchedAt: nowJp(), backend: 'local' };
   }
   const j = await callGas({ action: 'listMoshi' });

@@ -3,16 +3,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  choiceRanks, cleanExam, cleanResult, computeStats, DEFAULT_SUBJECTS, devBins, judgeOf, reportFigures, scoreBins, trendRows, yearExams, emptyOutside, emptyScores, examMax, fitScores, historyOf,
+  choiceRanks, cleanExam, cleanResult, computeStats, DEFAULT_JUDGE_OPTIONS, DEFAULT_SUBJECTS, devBins, judgeOf, parseRule, reportFigures, ruleMax,
+  scoreBins, trendRows, yearExams, emptyOutside, emptyScores, examMax, fitScores, historyOf,
   inputSheetRows, jpDate, nextExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
   scoresToCell, subjectMax,
   type MoshiExam, type MoshiResult, type Scores,
 } from './model.ts';
+import { REFERENCES, TO_REF, refSchoolFor } from './reference.ts';
 
 function exam(p: Partial<MoshiExam> = {}): MoshiExam {
   return {
     id: 'exam-11', name: '2026 本番レベル模試 11月', grade: '中3', date: '2026-11-22',
     subjects: DEFAULT_SUBJECTS, schedule: [], belongings: '', notes: '', venues: {}, outside: emptyOutside(), judges: [],
+    judgeOptions: { ...DEFAULT_JUDGE_OPTIONS },
     createdAt: '', createdBy: '', updatedAt: '', updatedBy: '', ...p,
   };
 }
@@ -278,7 +281,7 @@ test('成績表の得点表：三教科（国英数）と五教科。業者の�
   assert.equal(f[6].n, 2);
   assert.equal(f[6].outside, false);
 
-  const outside = computeStats(exam({ outside: { n: 967, mean: { ja: 55.4, k5: 244.8 }, sd: { k5: 80 } } }), rows);
+  const outside = computeStats(exam({ outside: { source: '', n: 967, mean: { ja: 55.4, k5: 244.8 }, sd: { k5: 80 } } }), rows);
   const fo = reportFigures(outside, outside.rows.find((x) => x.r.name === 'A')!);
   assert.equal(fo[0].mean, 55.4);
   assert.equal(fo[0].outside, true);
@@ -288,15 +291,81 @@ test('成績表の得点表：三教科（国英数）と五教科。業者の�
   assert.equal(fo[6].rank, 1);        // 順位は智翔館の中
 });
 
-test('判定：ラインを上から見て、あと何点で次の判定か', () => {
-  const e = exam({ judges: [{ code: '40200', A: 380, B: 350, C: 320, D: 290 }, { code: '40300', A: 330, B: null, C: null, D: 250 }] });
-  assert.deepEqual(judgeOf(e, '40200', 360), { line: e.judges[0], grade: 'B', next: { grade: 'A', gap: 20 } });
-  assert.deepEqual(judgeOf(e, '40200', 400).next, null);
-  assert.equal(judgeOf(e, '40200', 400).grade, 'A');
-  assert.deepEqual(judgeOf(e, '40200', 200), { line: e.judges[0], grade: 'E', next: { grade: 'D', gap: 90 } });
-  assert.deepEqual(judgeOf(e, '40300', 300), { line: e.judges[1], grade: 'D', next: { grade: 'A', gap: 30 } });
-  assert.equal(judgeOf(e, '41300', 300).grade, null); // ラインが無い学校
-  assert.equal(judgeOf(e, '40200', null).grade, null);
+const KEN = REFERENCES[0];
+const withRef = (p: Partial<MoshiExam> = {}) => exam({ outside: { source: KEN.label, n: null, mean: { ...KEN.mean }, sd: { ...KEN.sd } }, ...p });
+
+test('換算表：県一斉模試の平均点・標準偏差で換算し、25.0〜75.0 に収める（換算表の値と同じ）', () => {
+  const s = computeStats(withRef(), [
+    res({ name: 'A', s: { ja: [31, 17, 34, 18], en: [27, 30, 11, 32], ma: [30, 15, 15, 16, 24], so: [23, 19, 24, 17, 17], sc: [15, 15, 19, 18, 18, 15] } }), // 500点
+    res({ name: 'B', s: full([80, 80, 80, 80, 80]) }), // 400点
+    res({ name: 'C', s: full([19, 1, 0, 0, 0]) }),
+  ]);
+  const dev = (n: string, k: number) => reportFigures(s, s.rows.find((x) => x.r.name === n)!)[k].dev;
+  assert.equal(dev('A', 6), 75);                          // 500点 → 75.0（上限）
+  assert.equal(Math.round((dev('B', 6) as number) * 10) / 10, 65.3); // 400点 → 65.3
+  assert.equal(Math.round((dev('A', 1) as number) * 10) / 10, 72.9); // 英語100点 → 72.9
+  assert.equal(dev('C', 0), 25);                          // 国語19点 → 25.0（下限）
+  assert.equal(reportFigures(s, s.rows[0])[0].mean, 57.8);
+});
+
+test('判定教科の読み取り：判定基準得点一覧の書き方と満点', () => {
+  const e = exam();
+  const max = (r: string) => ruleMax(e, parseRule(r)!);
+  assert.equal(max('5科合計'), 500);
+  assert.equal(max('3科合計'), 300);
+  assert.equal(max('国数のみ'), 200);
+  assert.equal(max('国数英1.5倍'), 650);
+  assert.equal(max('数英1.5倍'), 600);
+  assert.equal(max('国2倍'), 600);
+  assert.equal(max('英数2倍、国理1.5倍'), 800);
+  assert.equal(max('英語2倍、数国1.5倍'), 700);
+  assert.deepEqual(parseRule('英数2倍、国理1.5倍'), { ja: 1.5, en: 2, ma: 2, so: 1, sc: 1.5 });
+  assert.equal(parseRule('よく分からない'), null);
+  assert.equal(parseRule('国数英1.5倍と面接'), null);
+});
+
+test('参考データ：判定基準の満点が判定教科と合い、入力シートのコードから学校が引ける', () => {
+  const e = exam();
+  assert.ok(KEN.schools.length > 150);
+  for (const s of KEN.schools) {
+    const w = parseRule(s.rule);
+    assert.ok(w, `${s.ref} ${s.rule}`);
+    assert.equal(ruleMax(e, w!), s.max, `${s.ref} ${s.name}`);
+    assert.ok(s.bScore <= s.max);
+  }
+  assert.equal(new Set(KEN.schools.map((s) => s.ref)).size, KEN.schools.length);
+  for (const [code, ref] of Object.entries(TO_REF)) assert.ok(KEN.schools.some((s) => s.ref === ref), `${code} → ${ref}`);
+  assert.equal(refSchoolFor(KEN, '40200')!.name, '県立佐世保北 普通科');
+  assert.equal(refSchoolFor(KEN, '43004')!.ref, '599-50');
+  assert.equal(refSchoolFor(KEN, '40400'), undefined); // 学科が分からない
+});
+
+test('判定：判定教科の倍率をかけた得点を B判定基準と比べ、偏差値 step ずつで A〜E。定員から仮想順位', () => {
+  const kita = KEN.schools.find((s) => s.ref === '518-01')!; // 県立佐世保北 国数英1.5倍 B 424/650（偏差値57）
+  const judge = { code: '40200', ref: kita.ref, refName: kita.name, rule: kita.rule, bDev: kita.bDev, bScore: kita.bScore, capacity: 280 };
+  const e = withRef({ judges: [judge], judgeOptions: { step: 3, spread: 5 } });
+  const s = computeStats(e, [
+    res({ name: 'A', choices: ['40200', '', '', ''], s: full([80, 70, 60, 60, 60]) }), // 1.5×(80+70+60)+60+60 = 435
+    res({ name: 'B', choices: ['40200', '', '', ''], s: full([40, 30, 30, 30, 30]) }), // 1.5×100+60 = 210
+    res({ name: 'C', choices: ['40200', '', '', ''], s: { ja: [10] } }),                // 英数が無い
+  ]);
+  const j = judgeOf(s, s.rows[0], '40200');
+  // 平均（判定用）= 1.5×(57.8+49.0+52.7)+50.9+53.7 = 343.85、偏差値1あたり (424−343.85)/7 ≈ 11.45点
+  assert.equal(j.score, 435);
+  assert.equal(j.max, 650);
+  assert.deepEqual(j.lines, { A: 459, B: 424, C: 390, D: 356 });
+  assert.equal(j.grade, 'B');
+  assert.deepEqual(j.next, { grade: 'A', gap: 24 });
+  assert.ok(Math.abs((j.dev as number) - (50 + (435 - 343.85) / ((424 - 343.85) / 7))) < 1e-9);
+  assert.deepEqual(j.rank, { rank: 119, capacity: 280 }); // 偏差値 57.96：真ん中（57）より少し上
+  const b = judgeOf(s, s.rows[1], '40200');
+  assert.equal(b.grade, 'E');
+  assert.deepEqual(b.next, { grade: 'D', gap: 146 });
+  assert.equal(b.rank!.rank, 280);                         // 定員のいちばん下に収める
+  assert.equal(judgeOf(s, s.rows[2], '40200').grade, null); // 判定教科がそろっていない
+  assert.equal(judgeOf(s, s.rows[0], '40300').line, null);  // 基準が無い学校
+  const noCap = computeStats(withRef({ judges: [{ ...judge, capacity: null }] }), [res({ s: full([80, 70, 60, 60, 60]) })]);
+  assert.equal(judgeOf(noCap, noCap.rows[0], '40200').rank, null);
 });
 
 test('得点の分布は25点きざみで高い点から、偏差値の分布は2.5きざみ', () => {
@@ -335,13 +404,20 @@ test('教科別偏差値推移：同じ年度・学年の回を古い順に。�
   assert.equal(t[2].dev.ja, null);
 });
 
-test('cleanExam：業者の集計と判定ライン', () => {
-  const ok = cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, outside: { n: '967', mean: { ja: '55.4', k5: '' }, sd: { k5: '81.7' } }, judges: [{ code: '４０２００', A: '380', B: '', C: '320', D: '290' }, { code: '', A: '1' }] });
+test('cleanExam：換算の基準と判定基準', () => {
+  const ok = cleanExam({
+    name: 'x', subjects: DEFAULT_SUBJECTS,
+    outside: { source: ' 第2回 長崎県一斉模試 ', n: '967', mean: { ja: '55.4', k5: '' }, sd: { k5: '81.7' } },
+    judges: [{ code: '４０２００', ref: '518-01', refName: '県立佐世保北 普通科', rule: '国数英1.5倍', bDev: '57', bScore: '424', capacity: '' }, { code: '', bDev: '1' }],
+    judgeOptions: { step: '4', spread: '' },
+  });
   assert.ok(ok.ok);
   if (ok.ok) {
-    assert.deepEqual(ok.value.outside, { n: 967, mean: { ja: 55.4 }, sd: { k5: 81.7 } });
-    assert.deepEqual(ok.value.judges, [{ code: '40200', A: 380, B: null, C: 320, D: 290 }]);
+    assert.deepEqual(ok.value.outside, { source: '第2回 長崎県一斉模試', n: 967, mean: { ja: 55.4 }, sd: { k5: 81.7 } });
+    assert.deepEqual(ok.value.judges, [{ code: '40200', ref: '518-01', refName: '県立佐世保北 普通科', rule: '国数英1.5倍', bDev: 57, bScore: 424, capacity: null }]);
+    assert.deepEqual(ok.value.judgeOptions, { step: 4, spread: 5 });
   }
-  assert.deepEqual(cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, judges: [{ code: '40200', A: 'abc' }] }), { ok: false, reason: 'bad_judge', detail: '40200 A' });
+  assert.deepEqual(cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, judges: [{ code: '40200', bDev: 'abc' }] }), { ok: false, reason: 'bad_judge', detail: '40200' });
+  assert.deepEqual(cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, judges: [{ code: '40200', rule: '面接' }] }), { ok: false, reason: 'bad_rule', detail: '40200 面接' });
   assert.deepEqual(cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, outside: { n: '-1' } }), { ok: false, reason: 'bad_outside' });
 });

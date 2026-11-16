@@ -113,7 +113,7 @@ export function ReportSheet({ stats, statsList, row }: { stats: ExamStats; stats
         <div className="rs-pill rs-pill-green">志望校判定</div>
         {[0, 1, 2, 3].map((i) => {
           const choice = r.choices[i] ?? '';
-          const j = judgeOf(exam, choice, row.total);
+          const j = judgeOf(stats, row, choice);
           const cr = ranks[i];
           return (
             <div key={i} className="rs-judge">
@@ -121,22 +121,28 @@ export function ReportSheet({ stats, statsList, row }: { stats: ExamStats; stats
                 <span>第{i + 1}志望</span>
                 <b>{/^\d{5}$/.test(choice) ? choice : ''}</b>
                 <span>{schoolName(choice)}</span>
+                {j.line?.rule && <span className="rs-j-rule">判定教科：{j.line.rule}</span>}
               </div>
               <table className="rs-j-table">
                 <tbody>
                   <tr>
                     <th>仮想順位</th>
-                    <td>{cr?.any ? `${cr.any.rank}位` : ''}</td>
-                    <td>{cr?.any ? `${cr.any.n}人中` : ''}</td>
+                    <td>{j.rank ? `${j.rank.rank}位` : ''}</td>
+                    <td>{j.rank ? `${j.rank.capacity}人中` : ''}</td>
                     <th className="rs-j-g">A</th><th className="rs-j-g">B</th><th className="rs-j-g">C</th><th className="rs-j-g">D</th>
                   </tr>
                   <tr>
-                    <td colSpan={3} className="rs-j-note">{choice ? '判定ライン（五教科）' : ''}</td>
-                    {(['A', 'B', 'C', 'D'] as const).map((g) => <td key={g}>{j.line?.[g] ?? ''}</td>)}
+                    <th>判定用得点</th>
+                    <td>{j.score ?? ''}</td>
+                    <td>{j.max ? `／${j.max}` : ''}</td>
+                    {(['A', 'B', 'C', 'D'] as const).map((g) => <td key={g}>{j.lines?.[g] ?? ''}</td>)}
                   </tr>
                 </tbody>
               </table>
-              <div className="rs-j-grade"><span>判定</span><span className="rs-j-box">{j.grade ?? ''}</span></div>
+              <div className="rs-j-grade">
+                <span>判定</span><span className="rs-j-box">{j.grade ?? ''}</span>
+                {cr?.any && <span className="rs-j-inside">塾内の志望者 {cr.any.n}人中 {cr.any.rank}位</span>}
+              </div>
               <div className="rs-j-next">
                 <span>次の判定まであと何点</span>
                 <span>
@@ -204,9 +210,10 @@ export function ReportSheet({ stats, statsList, row }: { stats: ExamStats; stats
 
       <footer className="rs-foot">
         {anyOutside
-          ? `平均点・母数は模試の全体の集計${Object.keys(exam.outside?.sd ?? {}).length ? '、偏差値はその平均点と標準偏差から計算' : ''}（入っていない教科は智翔館の受験者で計算）。設問別の平均・得点の分布は智翔館の受験者（五教科 ${k5.rankN}人）。`
+          ? `平均点・偏差値は${exam.outside?.source || '県全体の模試'}の平均点・標準偏差で換算した参考値（偏差値は25.0〜75.0）。順位・設問別の平均・得点の分布は智翔館の受験者（五教科 ${k5.rankN}人）。`
           : `平均点・偏差値・母数・分布は、この回を受けた智翔館の中3生の中でのもの（五教科 ${k5.n}人）。`}
-        順位・仮想順位は智翔館の受験者の中での順位（仮想順位＝その学校を第1〜第4志望に書いた人の中）。得点率が平均より低い設問は赤字。
+        {(exam.judges ?? []).length > 0 && `判定は${exam.outside?.source ? `${exam.outside.source}の` : ''}志望校別判定基準（B判定基準）による目安。仮想順位は定員の中での入学後のおよその順位。`}
+        得点率が平均より低い設問は赤字。
       </footer>
     </article>
   );

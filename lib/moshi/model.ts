@@ -59,19 +59,43 @@ export const STAT_NAMES: Record<StatKey, string> = { ...SUBJECT_NAMES, k3: '三�
 export const K3_KEYS: SubjectKey[] = ['ja', 'en', 'ma'];
 
 /**
- * 模試業者から届く全体の集計（任意）。入れた項目だけ、成績表の平均点・偏差値・母数をこの値で出す。
- * 偏差値は平均点と標準偏差の両方があるときだけ、この値で計算し直す（無ければ智翔館の受験者で計算）。
+ * 偏差値の換算に使う平均点・標準偏差（任意）。本番レベル模試は智翔館の塾生だけが受けるので、
+ * 県全体の模試（例：長崎県一斉模試の「得点ー偏差値 換算表」）の値を参考に入れて、県内での位置に換算する。
+ * 入れた項目だけ、成績表の平均点・偏差値・母数をこの値で出す（偏差値は平均点と標準偏差の両方があるとき）。
+ * 無ければ智翔館の受験者で計算する。偏差値は換算表と同じく 25.0〜75.0 に収める。
  */
 export type OutsideStats = {
+  source: string;   // 出典（例「第2回 長崎県一斉模試 2026年10月」）。成績表の下に出す
   n: number | null; // 母数（受験者数）
   mean: Partial<Record<StatKey, number | null>>;
   sd: Partial<Record<StatKey, number | null>>;
 };
 
-// 志望校の判定ライン（その回の五教科の点。A 以上が A 判定 … D 未満が E 判定）
-export const JUDGE_GRADES = ['A', 'B', 'C', 'D'] as const;
-export type JudgeGrade = (typeof JUDGE_GRADES)[number] | 'E';
-export type JudgeLine = { code: string } & Record<(typeof JUDGE_GRADES)[number], number | null>;
+/**
+ * 志望校の判定基準（県全体の模試の「志望校別判定基準得点一覧」を参考に入れる）。
+ * 判定教科（傾斜配点）で計算した得点を、B判定基準得点と比べて A〜E を出す。
+ * 定員を入れると、入学後のおよその順位（仮想順位）も出す。
+ */
+export type JudgeLine = {
+  code: string;            // 志望校コード（入力シートのコード。例 40200）か学校名
+  ref: string;             // 判定基準の学校コード（例 518-01）
+  refName: string;         // 判定基準の学校名（例 県立佐世保北 普通科）
+  rule: string;            // 判定教科（例 5科合計・3科合計・国数英1.5倍・英数2倍、国理1.5倍・国数のみ）
+  bDev: number | null;     // B判定基準偏差値
+  bScore: number | null;   // B判定基準得点（判定教科の配点で）
+  capacity: number | null; // 定員（仮想順位に使う）
+};
+export type JudgeGrade = 'A' | 'B' | 'C' | 'D' | 'E';
+
+/**
+ * 判定と仮想順位の決まり。
+ *   step   … 判定のあいだの偏差値の幅。B判定基準から +step で A、-step で C、-2×step で D、それより下が E
+ *   spread … 入学する生徒の偏差値のばらつき（標準偏差）。B判定基準偏差値を入学者の真ん中とみて、定員の中の順位に換算する
+ */
+export type JudgeOptions = { step: number; spread: number };
+export const DEFAULT_JUDGE_OPTIONS: JudgeOptions = { step: 3, spread: 5 };
+export const DEV_MIN = 25;
+export const DEV_MAX = 75;
 
 export type MoshiExam = {
   id: string;
@@ -83,15 +107,47 @@ export type MoshiExam = {
   belongings: string;  // 受験票の持ち物
   notes: string;       // 受験票の注意事項
   venues: Record<string, string>; // 校舎 → 会場（空なら「智翔館 ○○校」）
-  outside: OutsideStats; // 業者の全体集計（任意）
-  judges: JudgeLine[];   // 志望校の判定ライン（任意）
+  outside: OutsideStats;      // 偏差値の換算に使う平均点・標準偏差（任意）
+  judges: JudgeLine[];        // 志望校の判定基準（任意）
+  judgeOptions: JudgeOptions; // 判定・仮想順位の決まり
   createdAt: string; createdBy: string; updatedAt: string; updatedBy: string;
 };
 
-export const MAX_JUDGES = 80;
+export const MAX_JUDGES = 120;
 
 export function emptyOutside(): OutsideStats {
-  return { n: null, mean: {}, sd: {} };
+  return { source: '', n: null, mean: {}, sd: {} };
+}
+
+export function cloneOutside(o: OutsideStats | null | undefined): OutsideStats {
+  return { source: o?.source ?? '', n: o?.n ?? null, mean: { ...(o?.mean ?? {}) }, sd: { ...(o?.sd ?? {}) } };
+}
+
+function numOrNull(v: unknown): number | null {
+  const n = v == null || v === '' ? NaN : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** 保存してある設定（JSON）から、換算の基準・判定基準・判定の決まりを読む（古い形や欠けた項目があっても壊れない）。 */
+export function readExamExtras(cfg: Record<string, unknown> | null | undefined): Pick<MoshiExam, 'outside' | 'judges' | 'judgeOptions'> {
+  const o = (cfg?.outside ?? {}) as Record<string, unknown>;
+  const outside: OutsideStats = {
+    source: String(o.source ?? ''),
+    n: numOrNull(o.n),
+    mean: { ...((o.mean as OutsideStats['mean']) ?? {}) },
+    sd: { ...((o.sd as OutsideStats['sd']) ?? {}) },
+  };
+  const judges: JudgeLine[] = (Array.isArray(cfg?.judges) ? (cfg!.judges as Record<string, unknown>[]) : [])
+    .map((j) => ({
+      code: String(j?.code ?? ''), ref: String(j?.ref ?? ''), refName: String(j?.refName ?? ''), rule: String(j?.rule ?? ''),
+      bDev: numOrNull(j?.bDev), bScore: numOrNull(j?.bScore), capacity: numOrNull(j?.capacity),
+    }))
+    .filter((j) => j.code);
+  const jo = (cfg?.judgeOptions ?? {}) as Record<string, unknown>;
+  return {
+    outside, judges,
+    judgeOptions: { step: numOrNull(jo.step) ?? DEFAULT_JUDGE_OPTIONS.step, spread: numOrNull(jo.spread) ?? DEFAULT_JUDGE_OPTIONS.spread },
+  };
 }
 
 export const MAX_QUESTIONS = 10;
@@ -136,9 +192,10 @@ export function newExamDraft(base?: MoshiExam | null): Omit<MoshiExam, 'id' | 'c
     belongings: base?.belongings ?? DEFAULT_BELONGINGS,
     notes: base?.notes ?? DEFAULT_NOTES,
     venues: { ...(base?.venues ?? {}) },
-    // 業者の集計と判定ラインは回ごとに違うので写さない（設定画面の「前の回の判定ラインを写す」で写せる）
-    outside: emptyOutside(),
-    judges: [],
+    // 換算の基準（県一斉模試などの参考データ）と判定基準は、新しい参考データが出るまで同じものを使うので写す
+    outside: cloneOutside(base?.outside),
+    judges: (base?.judges ?? []).map((j) => ({ ...j })),
+    judgeOptions: { ...DEFAULT_JUDGE_OPTIONS, ...(base?.judgeOptions ?? {}) },
   };
 }
 
@@ -365,14 +422,22 @@ export function cleanExam(raw: unknown): CleanExam {
   for (const j of (Array.isArray(r.judges) ? (r.judges as Record<string, unknown>[]) : []).slice(0, MAX_JUDGES)) {
     const code = normalizeChoice(j?.code);
     if (!code) continue;
-    const line = { code } as JudgeLine;
-    for (const g of JUDGE_GRADES) {
-      const v = optNumber(j?.[g], 0, 1000, true);
-      if (v === undefined) return { ok: false, reason: 'bad_judge', detail: `${code} ${g}` };
-      line[g] = v;
-    }
-    judges.push(line);
+    const rule = String(j?.rule ?? '').trim().slice(0, 30);
+    if (rule && !parseRule(rule)) return { ok: false, reason: 'bad_rule', detail: `${code} ${rule}` };
+    const bDev = optNumber(j?.bDev, 0, 100);
+    const bScore = optNumber(j?.bScore, 0, 2000);
+    const capacity = optNumber(j?.capacity, 1, 5000, true);
+    if (bDev === undefined || bScore === undefined || capacity === undefined) return { ok: false, reason: 'bad_judge', detail: code };
+    judges.push({
+      code, rule, bDev, bScore, capacity,
+      ref: toHalf(String(j?.ref ?? '')).trim().slice(0, 12),
+      refName: String(j?.refName ?? '').replace(/\s+/g, ' ').trim().slice(0, 40),
+    });
   }
+  const jo = (r.judgeOptions ?? {}) as Record<string, unknown>;
+  const step = optNumber(jo.step, 0.5, 20);
+  const spread = optNumber(jo.spread, 0.5, 30);
+  if (step === undefined || spread === undefined) return { ok: false, reason: 'bad_judge_options' };
   return {
     ok: true,
     value: {
@@ -380,6 +445,7 @@ export function cleanExam(raw: unknown): CleanExam {
       belongings: String(r.belongings ?? '').trim().slice(0, MAX_TEXT),
       notes: String(r.notes ?? '').trim().slice(0, MAX_TEXT),
       venues, outside, judges,
+      judgeOptions: { step: step ?? DEFAULT_JUDGE_OPTIONS.step, spread: spread ?? DEFAULT_JUDGE_OPTIONS.spread },
     },
   };
 }
@@ -394,10 +460,10 @@ function optNumber(v: unknown, min: number, max: number, int = false): number | 
 }
 
 function cleanOutside(raw: unknown): OutsideStats | null {
-  const o = (raw ?? {}) as { n?: unknown; mean?: Record<string, unknown>; sd?: Record<string, unknown> };
+  const o = (raw ?? {}) as { source?: unknown; n?: unknown; mean?: Record<string, unknown>; sd?: Record<string, unknown> };
   const n = optNumber(o.n, 0, 1_000_000, true);
   if (n === undefined) return null;
-  const out: OutsideStats = { n, mean: {}, sd: {} };
+  const out: OutsideStats = { source: String(o.source ?? '').replace(/\s+/g, ' ').trim().slice(0, 60), n, mean: {}, sd: {} };
   for (const k of STAT_KEYS) {
     const m = optNumber(o.mean?.[k], 0, 1000);
     const d = optNumber(o.sd?.[k], 0, 1000);
@@ -809,6 +875,7 @@ export function reportFigures(stats: ExamStats, row: RowStat): Figure[] {
     const om = o.mean?.[key] ?? null;
     const osd = o.sd?.[key] ?? null;
     if (score != null && om != null && osd != null && osd > 0) dev = 50 + (10 * (score - om)) / osd;
+    if (dev != null) dev = clampDev(dev);
     return {
       key, label: STAT_NAMES[key], max, score,
       mean: om ?? inside?.mean ?? null,
@@ -819,30 +886,131 @@ export function reportFigures(stats: ExamStats, row: RowStat): Figure[] {
   });
 }
 
+/** 偏差値を換算表と同じく 25.0〜75.0 に収める。 */
+export function clampDev(d: number): number {
+  return Math.min(DEV_MAX, Math.max(DEV_MIN, d));
+}
+
+// ---- 志望校判定・仮想順位 -------------------------------------------------------
+
+const RULE_CHARS: Record<string, SubjectKey> = { 国: 'ja', 英: 'en', 数: 'ma', 社: 'so', 理: 'sc' };
+
+/**
+ * 判定教科の文字 → 教科ごとの倍率。判定基準得点一覧の書き方に合わせる。
+ *   5科合計 → 5教科×1 ／ 3科合計 → 国英数×1 ／ 国数のみ → 国数×1
+ *   国数英1.5倍 → 国数英×1.5・社理×1 ／ 英数2倍、国理1.5倍 → 英数×2・国理×1.5・社×1 ／ 英語2倍、数国1.5倍 など
+ * 読めなければ null。
+ */
+export function parseRule(rule: string): Record<SubjectKey, number> | null {
+  const s = toHalf(String(rule ?? '')).replace(/[\s　]/g, '');
+  if (!s) return null;
+  const w = { ja: 1, en: 1, ma: 1, so: 1, sc: 1 } as Record<SubjectKey, number>;
+  if (/^5科(合計)?$/.test(s)) return w;
+  if (/^3科(合計)?$/.test(s)) return { ja: 1, en: 1, ma: 1, so: 0, sc: 0 };
+  const only = /^([国英数社理語]+)のみ$/.exec(s);
+  if (only) {
+    const o = { ja: 0, en: 0, ma: 0, so: 0, sc: 0 } as Record<SubjectKey, number>;
+    for (const c of only[1]) if (RULE_CHARS[c]) o[RULE_CHARS[c]] = 1;
+    return Object.values(o).some((v) => v > 0) ? o : null;
+  }
+  const re = /([国英数社理語]+)(\d+(?:\.\d+)?)倍/g;
+  let m: RegExpExecArray | null;
+  let any = false;
+  let rest = s;
+  while ((m = re.exec(s))) {
+    any = true;
+    for (const c of m[1]) if (RULE_CHARS[c]) w[RULE_CHARS[c]] = Number(m[2]);
+    rest = rest.replace(m[0], '');
+  }
+  if (!any || rest.replace(/[、,，・]/g, '') !== '') return null;
+  return w;
+}
+
+/** 判定教科の配点（満点）。 */
+export function ruleMax(exam: MoshiExam, weights: Record<SubjectKey, number>): number {
+  return SUBJECT_KEYS.reduce((a, k) => a + weights[k] * subjectMax(exam, k), 0);
+}
+
+/** 標準正規分布の累積（Φ）。erf の近似（誤差 1.5e-7）。 */
+export function normCdf(z: number): number {
+  const t = 1 / (1 + 0.3275911 * (Math.abs(z) / Math.SQRT2));
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-(z * z) / 2);
+  return z >= 0 ? (1 + y) / 2 : (1 - y) / 2;
+}
+
 export type Judgement = {
   line: JudgeLine | null;
+  score: number | null;   // 判定用の得点（判定教科の傾斜をかけたもの）
+  max: number | null;     // 判定用の満点
+  dev: number | null;     // 判定用の得点の偏差値（換算）
+  lines: Record<'A' | 'B' | 'C' | 'D', number> | null; // 判定ライン（判定用の得点で）
   grade: JudgeGrade | null;
   next: { grade: JudgeGrade; gap: number } | null; // あと何点で次の判定か
+  rank: { rank: number; capacity: number } | null; // 仮想順位（入学後のおよその順位）
 };
 
 const GRADE_ORDER: JudgeGrade[] = ['A', 'B', 'C', 'D', 'E'];
+const LINE_OFFSET: Record<'A' | 'B' | 'C' | 'D', number> = { A: 1, B: 0, C: -1, D: -2 };
 
-/** 志望校の判定（その回の判定ラインと五教科の点から）。ラインが無ければ grade は null。 */
-export function judgeOf(exam: MoshiExam, choice: string, total: number | null): Judgement {
+export function judgeLineFor(exam: MoshiExam, choice: string): JudgeLine | null {
   const key = choiceKey(choice);
-  const line = key ? (exam.judges ?? []).find((j) => choiceKey(j.code) === key) ?? null : null;
-  if (!line || total == null) return { line, grade: null, next: null };
-  const defined = JUDGE_GRADES.filter((g) => line[g] != null);
-  if (!defined.length) return { line, grade: null, next: null };
-  let grade: JudgeGrade | null = null;
-  for (const g of JUDGE_GRADES) if (line[g] != null && total >= (line[g] as number)) { grade = g; break; }
-  if (!grade) grade = GRADE_ORDER[GRADE_ORDER.indexOf(defined[defined.length - 1]) + 1];
-  let next: Judgement['next'] = null;
-  for (let i = GRADE_ORDER.indexOf(grade) - 1; i >= 0; i--) {
-    const g = GRADE_ORDER[i] as (typeof JUDGE_GRADES)[number];
-    if (line[g] != null) { next = { grade: g, gap: (line[g] as number) - total }; break; }
+  return key ? (exam.judges ?? []).find((j) => choiceKey(j.code) === key) ?? null : null;
+}
+
+/**
+ * 志望校の判定と仮想順位。
+ *  1. 判定用の得点：判定教科の倍率をかけた合計（倍率のかかる教科がそろっていなければ出さない）
+ *  2. 判定用の平均：教科ごとの平均点（換算の基準があればその値）に同じ倍率をかけた合計
+ *  3. 偏差値1あたりの点：B判定基準得点と B判定基準偏差値から（基準得点 − 平均）÷（基準偏差値 − 50）。
+ *     偏差値が 50 ちょうどなどで出せないときは、五教科の標準偏差を満点の比で広げた値を使う
+ *  4. 判定ライン：B判定基準得点を B。そこから偏差値 step ずつ上が A、下が C・D（judgeOptions.step）。D より下は E
+ *  5. 仮想順位：判定用の偏差値と B判定基準偏差値の差を、入学者の偏差値のばらつき（judgeOptions.spread）で割り、
+ *     B判定基準偏差値を入学者の真ん中とみて、定員の中で上から何番目にあたるかに換算する
+ * いずれも県全体の模試の基準を参考にした目安。
+ */
+export function judgeOf(stats: ExamStats, row: RowStat, choice: string): Judgement {
+  const { exam } = stats;
+  const line = judgeLineFor(exam, choice);
+  const empty: Judgement = { line, score: null, max: null, dev: null, lines: null, grade: null, next: null, rank: null };
+  if (!line) return empty;
+  const weights = parseRule(line.rule || '5科合計');
+  if (!weights) return empty;
+  const max = ruleMax(exam, weights);
+  const keys = SUBJECT_KEYS.filter((k) => weights[k] > 0);
+  const score = keys.every((k) => row.sub[k] != null) ? keys.reduce((a, k) => a + weights[k] * (row.sub[k] as number), 0) : null;
+  const meanOf = (k: SubjectKey) => exam.outside?.mean?.[k] ?? stats.overall.sub[k]?.mean ?? null;
+  const means = keys.map(meanOf);
+  const meanW = means.every((v) => v != null) ? keys.reduce((a, k, i) => a + weights[k] * (means[i] as number), 0) : null;
+  const sd5 = exam.outside?.sd?.k5 ?? stats.overall.total?.sd ?? 90;
+  const fallbackUnit = (sd5 * (max / Math.max(1, examMax(exam)))) / 10;
+  let unit = fallbackUnit;
+  if (line.bScore != null && line.bDev != null && meanW != null && Math.abs(line.bDev - 50) >= 0.5) {
+    const u = (line.bScore - meanW) / (line.bDev - 50);
+    if (u > 0) unit = u;
   }
-  return { line, grade, next };
+  const bScore = line.bScore ?? (line.bDev != null && meanW != null ? meanW + (line.bDev - 50) * unit : null);
+  const bDev = line.bDev ?? (line.bScore != null && meanW != null ? 50 + (line.bScore - meanW) / unit : null);
+  const dev = score != null && meanW != null ? 50 + (score - meanW) / unit : null;
+  const step = exam.judgeOptions?.step ?? DEFAULT_JUDGE_OPTIONS.step;
+  const spread = exam.judgeOptions?.spread ?? DEFAULT_JUDGE_OPTIONS.spread;
+  const lines = bScore == null ? null : (Object.fromEntries((['A', 'B', 'C', 'D'] as const).map((g) => [
+    g, Math.max(0, Math.min(max, Math.ceil(bScore + LINE_OFFSET[g] * step * unit - 1e-9))),
+  ])) as Record<'A' | 'B' | 'C' | 'D', number>);
+  if (score == null || !lines) return { ...empty, score, max, dev, lines };
+  let grade: JudgeGrade = 'E';
+  for (const g of ['A', 'B', 'C', 'D'] as const) if (score >= lines[g]) { grade = g; break; }
+  let next: Judgement['next'] = null;
+  const gi = GRADE_ORDER.indexOf(grade);
+  if (gi > 0) {
+    const g = GRADE_ORDER[gi - 1] as 'A' | 'B' | 'C' | 'D';
+    next = { grade: g, gap: Math.max(1, Math.ceil(lines[g] - score - 1e-9)) };
+  }
+  let rank: Judgement['rank'] = null;
+  if (line.capacity && dev != null && bDev != null && spread > 0) {
+    const above = 1 - normCdf((dev - bDev) / spread); // 入学者のうち、自分より上にいる人の割合
+    rank = { rank: Math.min(line.capacity, Math.max(1, Math.ceil(line.capacity * above))), capacity: line.capacity };
+  }
+  return { line, score, max, dev, lines, grade, next, rank };
 }
 
 export type Bin = { label: string; count: number; mine: boolean };
@@ -870,8 +1038,8 @@ export function dev5Of(exam: MoshiExam, row: RowStat): number | null {
   if (row.total == null) return null;
   const om = exam.outside?.mean?.k5;
   const osd = exam.outside?.sd?.k5;
-  if (om != null && osd != null && osd > 0) return 50 + (10 * (row.total - om)) / osd;
-  return row.dev;
+  if (om != null && osd != null && osd > 0) return clampDev(50 + (10 * (row.total - om)) / osd);
+  return row.dev == null ? null : clampDev(row.dev);
 }
 
 /** 五教科の偏差値の分布（高いほうから。2.5 きざみで、75 以上・25 未満はまとめる）。 */

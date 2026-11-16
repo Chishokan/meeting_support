@@ -2913,9 +2913,23 @@ button.app-nav-item { background: none; border: 0; font-family: inherit; cursor:
 .ms-outside-table { width: auto; }
 .ms-outside-table th:first-child { white-space: nowrap; }
 .ms-outside-table input, .ms-judge-table input.num { width: 78px; text-align: right; }
+.ms-outside .ms-field-wide { width: 300px; }
+.ms-ref-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 4px; padding: 10px 12px; background: #f3f7fb; border: 1px solid #d7e3ef; border-radius: 10px; }
+.ms-ref-bar select { width: auto; padding: 7px 10px; font-size: 14px; }
+.ms-ref-bar .ms-fine { margin: 0; }
+.ms-judge-wrap { overflow-x: auto; }
 .ms-judge-table { width: auto; margin-top: 6px; }
-.ms-judge-table td:first-child input { width: 130px; }
-.ms-judge-name { font-size: 12.5px; color: #2a2f36; min-width: 120px; }
+.ms-judge-table td { vertical-align: top; }
+.ms-judge-table th { white-space: nowrap; line-height: 1.3; }
+.ms-qtable.ms-outside-table input.num { width: 82px; }
+.ms-qtable.ms-judge-table input.num { width: 62px; }
+.ms-judge-table td:first-child input { width: 96px; }
+.ms-judge-name { font-size: 12.5px; color: #2a2f36; min-width: 120px; padding-top: 8px !important; }
+.ms-judge-table .ms-ref-in { width: 92px; }
+.ms-judge-ref { display: block; font-size: 11px; color: #5a6470; padding: 2px 2px 0; max-width: 170px; }
+.ms-judge-table .ms-rule-in { width: 128px; }
+.ms-judge-table .ms-rule-in.bad { border-color: #e0a0a0; background: #fff3f3; }
+.ms-judge-table td.num { padding-top: 8px; color: #445; }
 
 /* 表（順位表・平均点・成績表） */
 .ms-table { border-collapse: collapse; font-size: 13px; background: #fff; }
@@ -3071,6 +3085,9 @@ body.ms-focus .app-main { margin-left: 0; padding-top: 0; }
 .rs-judge { border: .25mm solid #6b6b6b; margin-bottom: 1.4mm; font-size: 6.6pt; }
 .rs-j-head { display: flex; gap: 3mm; align-items: baseline; background: #dbe7f7; padding: .6mm 1.6mm; font-size: 7.4pt; border-bottom: .2mm solid #9db3d1; }
 .rs-j-head b { font-variant-numeric: tabular-nums; }
+.rs-j-rule { margin-left: auto; font-size: 5.8pt; color: #445; }
+.rs-j-inside { margin-left: auto; font-size: 6pt; color: #555; }
+.rs-j-table tr:nth-child(2) th { font-size: 5.8pt; }
 .rs-j-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .rs-j-table th, .rs-j-table td { border: .2mm solid #a9a9a9; height: 3.5mm; padding: 0 1mm; text-align: center; font-weight: 400; font-variant-numeric: tabular-nums; }
 .rs-j-table th { background: #f3f6fb; }
