@@ -9,7 +9,7 @@ export type SavedGate = { ok: true; owner: string } | { ok: false; status: numbe
 /** 使えない理由（画面に出す文）。 */
 export const GATE_MESSAGES: Record<'login' | 'db', string> = {
   login: '会話の保存は、メールアドレスでログインすると使えます。',
-  db: '会話を保存する場所がまだ設定されていません（システム担当に連絡してください）。',
+  db: '会話を保存する場所（Apps Script）がまだ設定されていません（システム担当に連絡してください）。',
 };
 
 export function savedGate(): SavedGate {

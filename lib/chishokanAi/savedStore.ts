@@ -1,30 +1,34 @@
 // 智翔館AI：会話の保存（履歴・保存した会話）と、いつものコンテキストの読み書き。サーバ専用。
-// 決まり（件数・期間）は savedRules.ts、表は supabase/migrations/0004_chishokan_ai.sql。
+// 決まり（件数・期間）は savedRules.ts。
 //
-// 置き場所：Supabase（dev は chishokan_dev、本番は chishokan_prod）。
-// 手元の開発だけ（NODE_ENV が production 以外で、Supabase の設定が無いとき）は .data/chishokan-ai-saved.json（git には入れない）。
+// 置き場所：スプレッドシート「智翔館AI 会話ログ」（Apps Script の aiConvo… ／ aiPreset…。apps_script/Code.gs）。
+//   _会話の保存 … 1行＝1つの会話（中身の JSON は4万5千字ずつ右のセルに分ける）
+//   _いつものコンテキスト … 1行＝1つ
+// 手元の開発だけ（NODE_ENV が production 以外で、APPS_SCRIPT_URL が無いとき）は .data/chishokan-ai-saved.json（git には入れない）。
 // どの関数も、持ち主（ログインで確かめたメールアドレス）の行だけを読み書きする。
 
 import { promises as fs } from 'fs';
 import path from 'path';
-import { supabaseAdmin } from '../core/supabase';
-import { idsToPurge, REMOVED_DAYS, splitRows, type ConvoKind, type ConvoRow, type Preset } from './savedRules';
+import { callGas } from './gas';
+import { idsToPurge, splitRows, type ConvoKind, type ConvoRow, type Preset } from './savedRules';
 
 export type StoreFail = { ok: false; reason: 'no_db' | 'db_error' | 'not_found'; detail?: string };
 type FullRow = ConvoRow & { data: unknown };
 type LocalDb = { convos: Record<string, FullRow[]>; presets: Record<string, Preset[]> };
 
-const T_CONVO = 'ai_conversations';
-const T_PRESET = 'ai_context_presets';
 const LOCAL_FILE = path.join(process.cwd(), '.data', 'chishokan-ai-saved.json');
 
+function gasOn(): boolean {
+  return !!process.env.APPS_SCRIPT_URL;
+}
+
 function localMode(): boolean {
-  return !supabaseAdmin() && process.env.NODE_ENV !== 'production';
+  return !gasOn() && process.env.NODE_ENV !== 'production';
 }
 
 /** 保存先があるか（無ければ、画面に保存の機能を出さない）。 */
 export function storeAvailable(): boolean {
-  return !!supabaseAdmin() || localMode();
+  return gasOn() || localMode();
 }
 
 async function readLocal(): Promise<LocalDb> {
@@ -41,24 +45,38 @@ async function writeLocal(db: LocalDb): Promise<void> {
   await fs.writeFile(LOCAL_FILE, JSON.stringify(db));
 }
 
-const fail = (e: { message?: string } | null | undefined): StoreFail => ({ ok: false, reason: 'db_error', detail: e?.message?.slice(0, 200) });
+/** Apps Script を呼ぶ。再デプロイ前（印 saved が無い）や失敗は StoreFail。 */
+async function gas(payload: Record<string, unknown>, mark: 'aiConvo' | 'aiPreset'): Promise<Record<string, unknown> | StoreFail> {
+  const j = await callGas(payload);
+  if (!j.ok) return { ok: false, reason: 'db_error', detail: String(j.reason ?? '') };
+  if (j.saved !== mark) return { ok: false, reason: 'db_error', detail: 'Apps Script が古いまま（再デプロイが必要）' };
+  return j;
+}
+const failed = (r: Record<string, unknown> | StoreFail): r is StoreFail => r.ok === false;
 
-type DbConvo = { id: string; kind: ConvoKind; title: string; turns: number; chars: number; created_at: string; updated_at: string; data?: unknown };
-const fromDb = (r: DbConvo): ConvoRow => ({
-  id: r.id, kind: r.kind, title: r.title, turns: Number(r.turns) || 0, chars: Number(r.chars) || 0, createdAt: r.created_at, updatedAt: r.updated_at,
-});
-const LIST_COLS = 'id,kind,title,turns,chars,created_at,updated_at';
+function toRow(v: unknown): ConvoRow | null {
+  const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+  if (typeof o.id !== 'string' || !o.id) return null;
+  return {
+    id: o.id,
+    kind: o.kind === '保存' ? '保存' : '履歴',
+    title: String(o.title ?? ''),
+    turns: Number(o.turns) || 0,
+    chars: Number(o.chars) || 0,
+    createdAt: String(o.createdAt ?? ''),
+    updatedAt: String(o.updatedAt ?? ''),
+  };
+}
 
 async function listRows(owner: string): Promise<{ ok: true; rows: ConvoRow[] } | StoreFail> {
   if (localMode()) {
     const db = await readLocal();
     return { ok: true, rows: (db.convos[owner] ?? []).map(({ data: _data, ...r }) => r) };
   }
-  const sb = supabaseAdmin();
-  if (!sb) return { ok: false, reason: 'no_db' };
-  const { data, error } = await sb.from(T_CONVO).select(LIST_COLS).eq('owner', owner);
-  if (error) return fail(error);
-  return { ok: true, rows: (data as DbConvo[]).map(fromDb) };
+  if (!gasOn()) return { ok: false, reason: 'no_db' };
+  const j = await gas({ action: 'aiConvoList', owner }, 'aiConvo');
+  if (failed(j)) return j;
+  return { ok: true, rows: (Array.isArray(j.rows) ? j.rows : []).map(toRow).filter((r): r is ConvoRow => !!r) };
 }
 
 async function deleteIds(owner: string, ids: string[]): Promise<void> {
@@ -69,7 +87,8 @@ async function deleteIds(owner: string, ids: string[]): Promise<void> {
     await writeLocal(db);
     return;
   }
-  await supabaseAdmin()?.from(T_CONVO).delete().eq('owner', owner).in('id', ids);
+  const j = await gas({ action: 'aiConvoDelete', owner, ids }, 'aiConvo');
+  if (failed(j)) throw new Error(j.detail ?? j.reason);
 }
 
 /** 一覧（新しい順）。開くたびに、期限切れと上限を超えた古い履歴を消す。 */
@@ -87,22 +106,28 @@ export async function getConversation(owner: string, id: string): Promise<{ ok: 
     const row = (await readLocal()).convos[owner]?.find((r) => r.id === id);
     return row ? { ok: true, row } : { ok: false, reason: 'not_found' };
   }
-  const sb = supabaseAdmin();
-  if (!sb) return { ok: false, reason: 'no_db' };
-  const { data, error } = await sb.from(T_CONVO).select(`${LIST_COLS},data`).eq('owner', owner).eq('id', id).maybeSingle();
-  if (error) return fail(error);
-  if (!data) return { ok: false, reason: 'not_found' };
-  return { ok: true, row: { ...fromDb(data as DbConvo), data: (data as DbConvo).data } };
+  if (!gasOn()) return { ok: false, reason: 'no_db' };
+  const j = await gas({ action: 'aiConvoGet', owner, id }, 'aiConvo');
+  if (failed(j)) return j;
+  const row = toRow(j);
+  if (!j.found || !row) return { ok: false, reason: 'not_found' };
+  let data: unknown;
+  try {
+    data = JSON.parse(String(j.data ?? ''));
+  } catch {
+    return { ok: false, reason: 'db_error', detail: '保存した中身を読めませんでした' };
+  }
+  return { ok: true, row: { ...row, data } };
 }
 
 /**
  * 会話を書く（質問のたびの自動保存）。今ある行の種類（履歴・保存）と、保存した会話の名前はそのまま。
- * 新しい会話なら履歴として足す。
+ * 新しい会話なら履歴として足す。user は、シートで見分けやすいように一緒に書く名前。
  */
 export async function putConversation(
   owner: string,
   id: string,
-  v: { data: unknown; autoTitle: string; turns: number; chars: number },
+  v: { data: unknown; autoTitle: string; turns: number; chars: number; user?: string },
   now = new Date(),
 ): Promise<{ ok: true; kind: ConvoKind } | StoreFail> {
   const at = now.toISOString();
@@ -118,63 +143,54 @@ export async function putConversation(
     await writeLocal(db);
     return { ok: true, kind: row.kind };
   }
-  const sb = supabaseAdmin();
-  if (!sb) return { ok: false, reason: 'no_db' };
-  const { data: cur, error: e1 } = await sb.from(T_CONVO).select('kind,title').eq('owner', owner).eq('id', id).maybeSingle();
-  if (e1) return fail(e1);
-  const kind: ConvoKind = (cur as { kind?: ConvoKind } | null)?.kind ?? '履歴';
-  const title = kind === '保存' ? String((cur as { title?: string }).title ?? '') : v.autoTitle;
-  const { error } = await sb
-    .from(T_CONVO)
-    .upsert({ owner, id, kind, title, data: v.data, turns: v.turns, chars: v.chars, updated_at: at }, { onConflict: 'owner,id' });
-  if (error) return fail(error);
-  return { ok: true, kind };
+  if (!gasOn()) return { ok: false, reason: 'no_db' };
+  const j = await gas(
+    { action: 'aiConvoPut', owner, id, data: JSON.stringify(v.data), autoTitle: v.autoTitle, turns: v.turns, user: v.user ?? '' },
+    'aiConvo',
+  );
+  if (failed(j)) return j;
+  return { ok: true, kind: j.kind === '保存' ? '保存' : '履歴' };
 }
 
 /** 保存した会話にする（名前を付ける）／履歴に戻す。 */
 export async function setConversationKind(owner: string, id: string, kind: ConvoKind, title: string, now = new Date()): Promise<{ ok: true } | StoreFail> {
-  const at = now.toISOString();
   if (localMode()) {
     const db = await readLocal();
     const row = db.convos[owner]?.find((r) => r.id === id);
     if (!row) return { ok: false, reason: 'not_found' };
-    Object.assign(row, { kind, title: title || row.title, updatedAt: at });
+    Object.assign(row, { kind, title: title || row.title, updatedAt: now.toISOString() });
     await writeLocal(db);
     return { ok: true };
   }
-  const sb = supabaseAdmin();
-  if (!sb) return { ok: false, reason: 'no_db' };
-  const patch: Record<string, unknown> = { kind, updated_at: at };
-  if (title) patch.title = title;
-  const { data, error } = await sb.from(T_CONVO).update(patch).eq('owner', owner).eq('id', id).select('id');
-  if (error) return fail(error);
-  return (data as unknown[]).length ? { ok: true } : { ok: false, reason: 'not_found' };
+  if (!gasOn()) return { ok: false, reason: 'no_db' };
+  const j = await gas({ action: 'aiConvoKind', owner, id, kind, title }, 'aiConvo');
+  if (failed(j)) return j;
+  return j.found ? { ok: true } : { ok: false, reason: 'not_found' };
 }
 
 export async function deleteConversation(owner: string, id: string): Promise<{ ok: true } | StoreFail> {
-  if (!localMode() && !supabaseAdmin()) return { ok: false, reason: 'no_db' };
+  if (!storeAvailable()) return { ok: false, reason: 'no_db' };
   try {
     await deleteIds(owner, [id]);
     return { ok: true };
   } catch (e) {
-    return fail(e as Error);
+    return { ok: false, reason: 'db_error', detail: String((e as Error)?.message ?? e).slice(0, 200) };
   }
 }
 
 // --- いつものコンテキスト -------------------------------------------------------
 
-type DbPreset = { id: string; name: string; text: string; auto: boolean; sort_order: number; updated_at: string };
-
 export async function listPresets(owner: string): Promise<{ ok: true; items: Preset[] } | StoreFail> {
   if (localMode()) return { ok: true, items: [...((await readLocal()).presets[owner] ?? [])].sort((a, b) => a.sortOrder - b.sortOrder) };
-  const sb = supabaseAdmin();
-  if (!sb) return { ok: false, reason: 'no_db' };
-  const { data, error } = await sb.from(T_PRESET).select('id,name,text,auto,sort_order,updated_at').eq('owner', owner).order('sort_order');
-  if (error) return fail(error);
-  return {
-    ok: true,
-    items: (data as DbPreset[]).map((r) => ({ id: r.id, name: r.name, text: r.text, auto: !!r.auto, sortOrder: Number(r.sort_order) || 0, updatedAt: r.updated_at })),
-  };
+  if (!gasOn()) return { ok: false, reason: 'no_db' };
+  const j = await gas({ action: 'aiPresetList', owner }, 'aiPreset');
+  if (failed(j)) return j;
+  const items = (Array.isArray(j.items) ? j.items : [])
+    .map((x) => (x && typeof x === 'object' ? (x as Record<string, unknown>) : {}))
+    .filter((x) => typeof x.id === 'string' && typeof x.text === 'string')
+    .map((x) => ({ id: String(x.id), name: String(x.name ?? ''), text: String(x.text), auto: x.auto === true, sortOrder: Number(x.sortOrder) || 0, updatedAt: String(x.updatedAt ?? '') }))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  return { ok: true, items };
 }
 
 export async function putPreset(owner: string, p: Omit<Preset, 'updatedAt'>, now = new Date()): Promise<{ ok: true; item: Preset } | StoreFail> {
@@ -185,12 +201,9 @@ export async function putPreset(owner: string, p: Omit<Preset, 'updatedAt'>, now
     await writeLocal(db);
     return { ok: true, item };
   }
-  const sb = supabaseAdmin();
-  if (!sb) return { ok: false, reason: 'no_db' };
-  const { error } = await sb
-    .from(T_PRESET)
-    .upsert({ owner, id: p.id, name: p.name, text: p.text, auto: p.auto, sort_order: p.sortOrder, updated_at: item.updatedAt }, { onConflict: 'owner,id' });
-  if (error) return fail(error);
+  if (!gasOn()) return { ok: false, reason: 'no_db' };
+  const j = await gas({ action: 'aiPresetPut', owner, preset: p }, 'aiPreset');
+  if (failed(j)) return j;
   return { ok: true, item };
 }
 
@@ -201,43 +214,7 @@ export async function deletePreset(owner: string, id: string): Promise<{ ok: tru
     await writeLocal(db);
     return { ok: true };
   }
-  const sb = supabaseAdmin();
-  if (!sb) return { ok: false, reason: 'no_db' };
-  const { error } = await sb.from(T_PRESET).delete().eq('owner', owner).eq('id', id);
-  return error ? fail(error) : { ok: true };
-}
-
-/**
- * 職員一覧から外れた人（退職など）の保存を消す。最後に使ってから REMOVED_DAYS 日たったものだけ。
- * active は、いまログインできるメールアドレス（小文字）。メールアドレスでのログインを入れたら、定期的に呼ぶ。
- */
-export async function purgeRemovedOwners(active: string[], now = new Date()): Promise<{ ok: true; owners: string[] } | StoreFail> {
-  const before = new Date(now.getTime() - REMOVED_DAYS * 86_400_000).toISOString();
-  const keep = new Set(active.map((a) => a.toLowerCase()));
-  if (localMode()) {
-    const db = await readLocal();
-    const all = new Set([...Object.keys(db.convos), ...Object.keys(db.presets)]);
-    const owners = [...all].filter((o) => !keep.has(o) && [...(db.convos[o] ?? []), ...(db.presets[o] ?? [])].every((r) => r.updatedAt < before));
-    for (const o of owners) { delete db.convos[o]; delete db.presets[o]; }
-    await writeLocal(db);
-    return { ok: true, owners };
-  }
-  const sb = supabaseAdmin();
-  if (!sb) return { ok: false, reason: 'no_db' };
-  const c = await sb.from(T_CONVO).select('owner,updated_at');
-  if (c.error) return fail(c.error);
-  const p = await sb.from(T_PRESET).select('owner,updated_at');
-  if (p.error) return fail(p.error);
-  const last = new Map<string, string>();
-  for (const r of [...c.data, ...p.data] as { owner: string; updated_at: string }[]) {
-    if ((last.get(r.owner) ?? '') < r.updated_at) last.set(r.owner, r.updated_at);
-  }
-  const owners = [...last].filter(([o, at]) => !keep.has(o) && at < before).map(([o]) => o);
-  if (owners.length) {
-    const a = await sb.from(T_CONVO).delete().in('owner', owners);
-    if (a.error) return fail(a.error);
-    const b = await sb.from(T_PRESET).delete().in('owner', owners);
-    if (b.error) return fail(b.error);
-  }
-  return { ok: true, owners };
+  if (!gasOn()) return { ok: false, reason: 'no_db' };
+  const j = await gas({ action: 'aiPresetDelete', owner, id }, 'aiPreset');
+  return failed(j) ? j : { ok: true };
 }

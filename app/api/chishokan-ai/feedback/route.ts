@@ -2,7 +2,7 @@
 // 回答の質を確かめ、足りない資料や回答方針の直しどころを見つけるのに使う。
 
 import { getSession } from '@/lib/core/auth';
-import { logInteraction } from '@/lib/core/log';
+import { logAi } from '@/lib/chishokanAi/aiLog';
 import { canUseChishokanAi } from '@/lib/chishokanAi/access';
 
 export const runtime = 'nodejs';
@@ -22,13 +22,22 @@ export async function POST(req: Request) {
   const turn = typeof body?.turn === 'number' && Number.isFinite(body.turn) ? Math.floor(body.turn) : 0;
   const convoNote = conversationId ? `（会話: ${conversationId}${turn ? `・${turn}回目` : ''}）` : '';
   const sources = Array.isArray(body?.sources) ? body.sources.filter((s: unknown) => typeof s === 'string').slice(0, 20).join('、') : '';
+  const answer = cut(body?.answer, 4000);
   try {
-    await logInteraction({
-      user: session.name,
-      campus: session.campus,
-      input: `[智翔館AI・評価]${convoNote} ${rating}${comment ? ` ${comment}` : ''}\n（質問）${question}${sources ? `\n（読んだ資料）${sources}` : ''}`,
-      output: cut(body?.answer, 4000),
-    });
+    await logAi(
+      {
+        user: session.name,
+        campus: session.campus,
+        email: session.email,
+        kind: '評価',
+        conversationId,
+        turn,
+        question: `${rating}${comment ? ` ${comment}` : ''}\n（質問）${question}`,
+        answer,
+        sources,
+      },
+      { input: `[智翔館AI・評価]${convoNote} ${rating}${comment ? ` ${comment}` : ''}\n（質問）${question}${sources ? `\n（読んだ資料）${sources}` : ''}`, output: answer },
+    );
   } catch {}
   return Response.json({ ok: true });
 }

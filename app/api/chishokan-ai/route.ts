@@ -26,7 +26,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { getSession } from '@/lib/core/auth';
 import { MODEL, THINKING } from '@/lib/systemPrompt';
-import { logInteraction } from '@/lib/core/log';
+import { logAi } from '@/lib/chishokanAi/aiLog';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/core/sanitize';
 import { canUseChishokanAi } from '@/lib/chishokanAi/access';
 import { buildChishokanAiPrompt } from '@/lib/chishokanAi/prompt';
@@ -631,13 +631,33 @@ export async function POST(req: Request) {
         const docNote = createdDocs.length
           ? `（作成した文書: ${createdDocs.map((d) => (d.ok ? `${d.title} ${d.url}` : `${d.title}＝作れず:${d.note}`)).join('、')}）`
           : '';
+        // 会話ログ：スプレッドシート「智翔館AI 会話ログ」のアカウント別のシートに、列を分けて残す（lib/chishokanAi/aiLog.ts）。
+        // 再デプロイ前の Apps Script のために、従来の1つにまとめた形（input）も送る。
+        const answer = stripRoleBleed(full);
         try {
-          await logInteraction({
-            user: session.name,
-            campus: session.campus,
-            input: `[智翔館AI]${convoNote}${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}${pinNote}${proposalNote}${fakeNote}\n（調べた資料: ${opened.join('、') || 'なし'}）${statNote}`,
-            output: stripRoleBleed(full),
-          }, { timeoutMs: Math.max(2_000, Math.min(15_000, LIMIT_MS - (Date.now() - requestStarted) - 2_000)) });
+          await logAi(
+            {
+              user: session.name,
+              campus: session.campus,
+              email: session.email,
+              kind: '質問',
+              conversationId,
+              turn,
+              task: activeTask?.id,
+              question: `${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}`,
+              answer,
+              sources: opened.join('\n') || 'なし',
+              files: createdDocs.map((d) => (d.ok ? `${d.title} ${d.url}` : `${d.title}＝作れず:${d.note}`)).join('\n'),
+              context: [pinNote, proposalNote].filter(Boolean).join(''),
+              flags: [flags, gapNote, fakeNote].filter(Boolean).join(''),
+              stats: statNote.replace(/^（|）$/g, ''),
+            },
+            {
+              input: `[智翔館AI]${convoNote}${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}${pinNote}${proposalNote}${fakeNote}\n（調べた資料: ${opened.join('、') || 'なし'}）${statNote}`,
+              output: answer,
+            },
+            { timeoutMs: Math.max(2_000, Math.min(15_000, LIMIT_MS - (Date.now() - requestStarted) - 2_000)) },
+          );
         } catch {}
         try {
           controller.close();
