@@ -22,11 +22,13 @@ export const MATH_QUIZ_TOOL: Anthropic.Tool = {
     '作業「数学の小テストを作る」で問題と答えが決まったら使う（「チャットだけで」と言われたら使わない）。番号（□(1)・□1）はアプリが付けるので、文には書かない。' +
     '1枚に入る量の目安：図の無い計算8〜10問、文章題5〜6問、図のある問題3〜4問。1枚に収まらないときは作らずに理由を返すので、減らすか sheets を分けて呼び直す。' +
     '角を求める図は、求める角と分かっている角に angle で印と label を付ける（無いと作らずに返す）。直線の名前は line の label（"l" は ℓ）。' +
-    '数式は $ … $ の中に書く（分数 \\frac{1}{2}、根号 \\sqrt{3}、累乗 x^2、×は \\times）。',
+    '数式は $ … $ の中に書く（分数 \\frac{1}{2}、根号 \\sqrt{3}、累乗 x^2、×は \\times）。' +
+    '小学校・中学校の小テストでは、高校で習う書き方・方法（点と傾きの式、絶対値の記号 | |、f(x)、三角比 など）を使わない（見つかると作らずに理由を返す）。',
   input_schema: {
     type: 'object',
     properties: {
       title: { type: 'string', description: 'ファイル名（例：中1 正負の数 小テスト）。40字まで' },
+      level: { type: 'string', enum: ['小学校', '中学校', '高校'], description: '対象の学校。高校の小テストのときだけ「高校」。省くと題名から決める' },
       series: { type: 'string', description: '各枚の上の題名（No. の前）。省くと「志望校合格にむけて　ベーシック」' },
       start_no: { type: 'number', description: '1枚目の No.（省くと1）' },
       sheets: {
@@ -71,7 +73,14 @@ export const MATH_QUIZ_TOOL: Anthropic.Tool = {
 
 export type QuizItem = { text: string; sub: string[]; side?: Side; frequent: boolean; answer: string };
 export type QuizSection = { heading: string; items: QuizItem[] };
-export type MathQuiz = { title: string; series: string; startNo: number; sheets: { sections: QuizSection[] }[] };
+export type MathQuiz = {
+  title: string;
+  series: string;
+  startNo: number;
+  sheets: { sections: QuizSection[] }[];
+  /** 対象の学校（小学校・中学校・高校）。省くと題名から決める（mathScope.ts） */
+  level?: string;
+};
 
 export const DEFAULT_SERIES = '志望校合格にむけて　ベーシック';
 const LIMITS = { sheets: 10, sections: 4, items: 12, sub: 6, text: 600, answer: 200, rows: 10, cols: 6 };
@@ -165,5 +174,6 @@ export function checkMathQuizInput(input: unknown): { ok: true; value: MathQuiz 
     sheets.push({ sections });
   }
   const startNo = typeof o.start_no === 'number' && o.start_no >= 1 && o.start_no < 1000 ? Math.floor(o.start_no) : 1;
-  return { ok: true, value: { title, series: str(o.series, 40) || DEFAULT_SERIES, startNo, sheets } };
+  const level = typeof o.level === 'string' && ['小学校', '中学校', '高校'].includes(o.level) ? o.level : undefined;
+  return { ok: true, value: { title, series: str(o.series, 40) || DEFAULT_SERIES, startNo, sheets, level } };
 }
