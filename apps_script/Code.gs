@@ -22,7 +22,7 @@
  *     ※ 旧「夏期数値」シート（2026年夏まで）はそのまま残してある。読み書きはしない。
  *   - action:'saveReview'   … 「全体会議振り返り」の入力      → 「全体会議振り返り」シートに1行で記録
  *   - action:'saveTaskReport' … 「重要タスク報告」（小中等部の週次）→ 「重要タスク報告」シートに1件1行（出し直すと追記）
- *   - action:'getTaskEvaluation' … AI壁打ち用。重要タスク評価シート（TASK_EVAL_BOOK_ID）の校舎タブ（A〜G列）を表示値のまま返す
+ *   - action:'getTaskEvaluation' … AI壁打ち・智翔館AI用。重要タスク評価シート（いちばん新しい週のファイル。taskEvalBookId_）の校舎タブ（A〜G列）を表示値のまま返す
  *   - action:'appendPlanActions' … AI壁打ちの行動計画の案を、秋～冬行動計画（GOALS_BOOK_ID）の「校舎×区分×日付」のセルに
  *                                   「★行動」として書き足す（今ある文は消さない）＋「AI壁打ち書き込み」シートに記録
  *   - action:'saveSuccess'  … 月次・講習結果報告の成功事例       → 「成功事例」シートに1件1行で記録（「報告」転記時に自動）
@@ -95,9 +95,10 @@ var GOALS_BOOK_ID = '';
 // 注記があり、タブの並びは変わる前提。名前で引く。
 var GOALS_SHEET_NAME = '秋～冬行動計画';
 
-// 「AI壁打ち」が読む重要タスク評価シートのID（URL の /d/ と /edit の間）。校舎ごとのタブ（日野校・駅前校…）を読む。
-// 毎週の評価を別のファイルで作ったときは、ここを新しいファイルのIDに変えて再デプロイする。
-var TASK_EVAL_BOOK_ID = '1lDWFQSOIHY18UbOB2XYokRgI_jCzPKA7sOX_O7NqQXk';
+// 「AI壁打ち」・智翔館AI が読む重要タスク評価シートのID（URL の /d/ と /edit の間）。校舎ごとのタブ（日野校・駅前校…）を読む。
+// ★2026-11-16 から、名前が「…_中等部重要タスクAI評価_評価シート_…」のいちばん新しいファイルを自動で使う（taskEvalBookId_）。
+//   ここは、そのファイルが見つからないときの予備。毎週書き換えて再デプロイしなくてよい。特定の週に固定するときは setTaskEvalBook を実行する。
+var TASK_EVAL_BOOK_ID = '18vSU6PdSoCbCqAYT3wP0uMtJJakh0QHpZUvrgtCDZo8'; // 20261116_…_評価シート_1109-1114
 // 評価シートのタブ名＝秋～冬行動計画の校舎の行の名前。★lib/taskCoach.ts の COACH_SCHOOLS と同じにする。
 var TASK_COACH_SCHOOLS = ['日野校', '駅前校', '大野校', '日宇校'];
 var PLAN_LOG_SHEET = 'AI壁打ち書き込み';
@@ -110,7 +111,8 @@ var AI_READ_FOLDER_IDS = [
   '1rDTV-Lg3YJmZHMSTfHs-ErDnpR3lhR_x', // 05_広告制作
   '1b7qfB8Ey-fkFxm7XMFtbkoARyuiKmzoz', // 10_研修会議
   '1x3qb8GA-rBxV3DoTmH00s4efJHn3GBKD', // 04_講習
-  '1blYbdrl24BF3HXMdNnC-D4SDW9X-Su8Y'  // 15_AI利用データ（数学教材の見本・AIスライドテンプレート・AI作成・中等部議事録。2026-11-14 追加）
+  '1blYbdrl24BF3HXMdNnC-D4SDW9X-Su8Y'  // 15_AI利用データ（数学教材の見本・AIスライドテンプレート・AI作成・中等部議事録。2026-11-14 追加。
+                                        //   2026-11-16 から、中等部重要タスクAI評価（毎週の評価シート）も入れた）
 ];
 // 入れていないフォルダ（2026-11-04 確認）：00_進行中（要対応生徒リスト・成果配分案がある）、03_模試テスト（模試の入力シート・
 // 生徒ランキング・受検票・進学希望者一覧がある）、07_名簿成績出席、11_総務、総会（目標シート・プライベートのやりたいこと一覧がある）
@@ -1072,19 +1074,60 @@ function saveTaskReport_(data) {
 }
 
 // AI壁打ち：重要タスク評価シートの校舎タブを、表示値（「14%」「動いているが…」など見えているとおり）で返す。
+// 読む評価シート：
+//   1. スクリプトのプロパティ TASK_EVAL_BOOK_ID（特定の週に固定したいとき。setTaskEvalBook で入れる）
+//   2. 名前が「…_中等部重要タスクAI評価_評価シート_…」のスプレッドシートのうち、いちばん新しい日付のもの（毎週のファイルを自動で使う）
+//   3. 上の定数 TASK_EVAL_BOOK_ID
+// （2026-11-16：評価シートは毎週新しいファイルになるため、ID を書き換えて再デプロイしなくてもよいようにした）
+var TASK_EVAL_TITLE = '中等部重要タスクAI評価_評価シート_';
+
+function taskEvalBookId_() {
+  var pinned = PropertiesService.getScriptProperties().getProperty('TASK_EVAL_BOOK_ID');
+  if (pinned) return pinned;
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('TASK_EVAL_LATEST');
+  if (hit) return hit;
+  var best = null;
+  try {
+    var it = DriveApp.searchFiles("title contains '" + TASK_EVAL_TITLE + "' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false");
+    while (it.hasNext()) {
+      var f = it.next();
+      var m = /^(\d{8})_/.exec(f.getName());
+      var key = (m ? m[1] : '00000000') + '_' + f.getDateCreated().toISOString();
+      if (!best || key > best.key) best = { key: key, id: f.getId() };
+    }
+  } catch (e) {}
+  if (best) {
+    cache.put('TASK_EVAL_LATEST', best.id, 600);
+    return best.id;
+  }
+  return TASK_EVAL_BOOK_ID;
+}
+
+// 【特定の評価シートに固定する】エディタで setTaskEvalBook('評価シートのURL') を実行する。空の文字を渡すと固定をやめ、いちばん新しいファイルを使う。
+function setTaskEvalBook(urlOrId) {
+  var id = String(urlOrId || '').replace(/^.*\/d\/([\w-]+).*$/, '$1').trim();
+  var props = PropertiesService.getScriptProperties();
+  if (id) props.setProperty('TASK_EVAL_BOOK_ID', id); else props.deleteProperty('TASK_EVAL_BOOK_ID');
+  CacheService.getScriptCache().remove('TASK_EVAL_LATEST');
+  Logger.log(id ? '評価シートを ' + id + ' に固定しました' : '固定をやめました（いちばん新しい評価シートを使います）');
+}
+
 function getTaskEvaluation_(data) {
-  if (!TASK_EVAL_BOOK_ID) return { ok: false, reason: 'eval_not_configured' };
+  var bookId = taskEvalBookId_();
+  if (!bookId) return { ok: false, reason: 'eval_not_configured' };
   if (TASK_COACH_SCHOOLS.indexOf(data.school) === -1) return { ok: false, reason: 'bad_school' };
   var ss;
   try {
-    ss = SpreadsheetApp.openById(TASK_EVAL_BOOK_ID);
+    ss = SpreadsheetApp.openById(bookId);
   } catch (err) {
     return { ok: false, reason: 'eval_open_failed' };
   }
   var sh = ss.getSheetByName(data.school);
   if (!sh) return { ok: false, reason: 'eval_sheet_not_found' };
-  var n = Math.min(Math.max(sh.getLastRow(), 1), 60);
-  return { ok: true, rows: sh.getRange(1, 1, n, 7).getDisplayValues() };
+  // 11/16 から、計画へのアドバイス・募集の数字・定期テストの表・報告と入力の差異が下に増えた（75行ほど）。余裕を見て150行まで読む
+  var n = Math.min(Math.max(sh.getLastRow(), 1), 150);
+  return { ok: true, rows: sh.getRange(1, 1, n, 7).getDisplayValues(), book: ss.getName() };
 }
 
 // 「11/04」と「11/4」を同じに扱う。

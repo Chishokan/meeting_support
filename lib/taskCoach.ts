@@ -27,28 +27,61 @@ export type ActionRow = {
   name: string; level: number; points: string; levelName: string;
   sources: string; evidence: string; advice: string;
 };
+/** 課題より下に足された欄（計画へのアドバイス・募集の数字の表・定期テストの表・報告と入力の差異 など。2026-11-16〜） */
+export type EvalSection = { title: string; lines: string[] };
 export type TaskEvaluation = {
   title: string; period: string; reporter: string; note: string;
   total: string; progressPoint: string; actionPoint: string;
   progress: ProgressRow[]; actions: ActionRow[]; good: string[]; issues: string[];
+  sections: EvalSection[];
 };
 
 const cell = (rows: string[][], r: number, c: number) => String(rows[r]?.[c] ?? '').trim();
 const bullet = (s: string) => s.replace(/^[・\s]+/, '');
 
+const filled = (rows: string[][], r: number) => (rows[r] ?? []).filter((c) => String(c ?? '').trim()).length;
+
 /**
- * 評価シートの校舎タブ（A1:G32 の表示値）を読む。行の位置ではなく見出しの文字で探すので、
+ * 評価シートの校舎タブ（A〜G列の表示値）を読む。行の位置ではなく見出しの文字で探すので、
  * 行を足したり減らしたりしても読める。行動の行が1つも無ければ null。
+ * 「課題」より下に足された欄（見出しの行＋「・」の行、または見出しの行＋表）は sections に入れる
+ * （表は「項目：見出し 値／見出し 値…」の1行ずつにする）。
  */
 export function parseEvaluation(rows: string[][]): TaskEvaluation | null {
   const ev: TaskEvaluation = {
     title: cell(rows, 0, 0), period: '', reporter: '', note: '', total: '', progressPoint: '', actionPoint: '',
-    progress: [], actions: [], good: [], issues: [],
+    progress: [], actions: [], good: [], issues: [], sections: [],
   };
-  let section: '' | 'progress' | 'actions' | 'good' | 'issues' = '';
+  let section: '' | 'progress' | 'actions' | 'good' | 'issues' | 'list' | 'table' = '';
+  let header: string[] = [];
   for (let r = 1; r < rows.length; r++) {
     const a = cell(rows, r, 0);
     const b = cell(rows, r, 1);
+    // 課題より下の欄：「・」で始まらない行は新しい欄の見出し（次の行に3つ以上の値があれば表の見出し）
+    if (section === 'table' && !filled(rows, r)) { section = 'list'; continue; }
+    if ((section === 'good' || section === 'issues' || section === 'list' || section === 'table') && a && !a.startsWith('・') && a !== '良い動き' && a !== '課題' && section !== 'table') {
+      const isTable = filled(rows, r + 1) >= 3;
+      ev.sections.push({ title: a, lines: [] });
+      if (isTable) {
+        header = (rows[r + 1] ?? []).map((c) => String(c ?? '').trim());
+        r++;
+        section = 'table';
+      } else {
+        section = 'list';
+      }
+      continue;
+    }
+    if (section === 'table') {
+      const cur = ev.sections[ev.sections.length - 1];
+      const vals = (rows[r] ?? []).map((c) => String(c ?? '').trim());
+      const parts = vals.slice(1).map((v, i) => (v ? `${header[i + 1] || ''}${header[i + 1] ? ' ' : ''}${v}` : '')).filter(Boolean);
+      if (vals[0] || parts.length) cur.lines.push(`${vals[0]}${parts.length ? `：${parts.join('／')}` : ''}`);
+      continue;
+    }
+    if (section === 'list') {
+      if (a) ev.sections[ev.sections.length - 1].lines.push(bullet(a));
+      continue;
+    }
     if (a === '報告者' || a === '責任者') { ev.reporter = b; ev.period = cell(rows, r, 3); continue; }
     if (a.startsWith('合計点')) { ev.total = b; ev.note = cell(rows, r + 1, 0); continue; }
     if (a === '指標' && b === '母数') { section = 'progress'; continue; }
@@ -104,6 +137,9 @@ export function evaluationText(ev: TaskEvaluation, key: string): string {
   ev.actions.forEach((a, i) => { if (i !== focus) lines.push(describe(a)); });
   if (ev.good.length) lines.push('', '◆良い動き', ...ev.good.map((g) => `・${g}`));
   if (ev.issues.length) lines.push('', '◆課題', ...ev.issues.map((g) => `・${g}`));
+  for (const sec of ev.sections) {
+    if (sec.lines.length) lines.push('', `◆${sec.title}`, ...sec.lines.map((l) => `・${l}`));
+  }
   return lines.join('\n');
 }
 
