@@ -2355,6 +2355,8 @@ function nowIso_() {
 // data.title と data.markdown（見出し・箇条書き・表・段落）から文書を作り、00_進行中/AI作成 に置いてURLを返す。
 // 智翔館AI が作ったファイル（数学の教材の Word など）を、そのまま「AI作成」フォルダに保存する。
 // files = [{ name, mime, base64 }]（最大4つ・合わせて 20MB まで）。Google ドキュメントには変換しない（書体・配置を崩さないため）。
+// ★ドライブは「アクセスが拒否されました: DriveApp」などで一時的に失敗することがある（2026-11-14、2つ目のファイルで失敗）。
+//   ファイルごとに3回まで作り直し、共有の設定に失敗しても作ったファイルは返す。一部だけ保存できたときは files と failed の両方を返す。
 function saveAiFiles_(data) {
   var files = Array.isArray(data.files) ? data.files.slice(0, 4) : [];
   if (!files.length) return { ok: false, reason: 'empty' };
@@ -2365,20 +2367,46 @@ function saveAiFiles_(data) {
   try { folder = aiOutputFolder_(); } catch (e) { return { ok: false, reason: 'folder_failed', detail: String(e).slice(0, 200) }; }
   var stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
   var out = [];
-  try {
-    for (var k = 0; k < files.length; k++) {
-      var f = files[k] || {};
-      var name = stamp + '_AI作成_' + String(f.name || 'ファイル').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 100);
-      var blob = Utilities.newBlob(Utilities.base64Decode(String(f.base64 || '')), String(f.mime || 'application/octet-stream'), name);
-      var file = folder.createFile(blob);
-      if (AI_OUTPUT_SHARING === 'view') file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      if (AI_OUTPUT_SHARING === 'edit') file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
-      out.push({ name: name, url: file.getUrl() });
+  var failed = [];
+  for (var k = 0; k < files.length; k++) {
+    var f = files[k] || {};
+    var name = stamp + '_AI作成_' + String(f.name || 'ファイル').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 100);
+    var file = null;
+    var lastErr = '';
+    for (var attempt = 0; attempt < 3 && !file; attempt++) {
+      if (attempt) Utilities.sleep(1500 * attempt);
+      try {
+        var blob = Utilities.newBlob(Utilities.base64Decode(String(f.base64 || '')), String(f.mime || 'application/octet-stream'), name);
+        file = folder.createFile(blob);
+      } catch (e) {
+        lastErr = String(e).slice(0, 200);
+      }
     }
-  } catch (e) {
-    return { ok: false, reason: 'create_failed', detail: String(e).slice(0, 200) };
+    if (!file) { failed.push({ name: name, detail: lastErr }); continue; }
+    var shareError = aiShare_(file);
+    out.push(shareError ? { name: name, url: file.getUrl(), shareError: shareError } : { name: name, url: file.getUrl() });
   }
-  return { ok: true, saved: 'aiFiles', files: out };
+  if (!out.length) {
+    return { ok: false, reason: 'create_failed', detail: failed.map(function (x) { return x.detail; }).join(' / ').slice(0, 300) };
+  }
+  return { ok: true, saved: 'aiFiles', files: out, failed: failed };
+}
+
+// 作ったファイルを、リンクを知っている人が開けるようにする（AI_OUTPUT_SHARING）。3回まで試す。失敗したら理由を返す（成功なら ''）。
+function aiShare_(file) {
+  if (AI_OUTPUT_SHARING !== 'view' && AI_OUTPUT_SHARING !== 'edit') return '';
+  var perm = AI_OUTPUT_SHARING === 'edit' ? DriveApp.Permission.EDIT : DriveApp.Permission.VIEW;
+  var err = '';
+  for (var a = 0; a < 3; a++) {
+    if (a) Utilities.sleep(1500 * a);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, perm);
+      return '';
+    } catch (e) {
+      err = String(e).slice(0, 200);
+    }
+  }
+  return err;
 }
 
 function createAiDoc_(data) {
@@ -2405,11 +2433,12 @@ function createAiDoc_(data) {
   doc.saveAndClose();
 
   var file = DriveApp.getFileById(doc.getId());
-  folder.addFile(file);
+  try { folder.addFile(file); } catch (e) {}
   try { DriveApp.getRootFolder().removeFile(file); } catch (e) {}
-  if (AI_OUTPUT_SHARING === 'view') file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  if (AI_OUTPUT_SHARING === 'edit') file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
-  return { ok: true, saved: 'aiDoc', name: name, url: doc.getUrl() };
+  var shareError = aiShare_(file);
+  var res = { ok: true, saved: 'aiDoc', name: name, url: doc.getUrl() };
+  if (shareError) res.shareError = shareError;
+  return res;
 }
 
 function aiOutputFolder_() {
@@ -2737,8 +2766,8 @@ function createAiSlides_(data) {
   } catch (e) {
     return { ok: false, reason: 'create_failed', detail: String(e).slice(0, 200) };
   }
-  if (AI_OUTPUT_SHARING === 'view') copy.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  if (AI_OUTPUT_SHARING === 'edit') copy.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
+  var shareError = aiShare_(copy);
+  if (shareError) warnings.push('リンクの共有を設定できませんでした（' + shareError.slice(0, 80) + '）');
   return { ok: true, saved: 'aiSlides', name: name, url: 'https://docs.google.com/presentation/d/' + copy.getId() + '/edit', warnings: warnings.slice(0, 30) };
 }
 

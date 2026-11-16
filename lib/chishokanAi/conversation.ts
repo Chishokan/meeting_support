@@ -19,6 +19,8 @@ export type AiEvent =
   | { t: 'cut'; reason: 'time' | 'length' }
   /** コンテキスト欄の直し案（id が空なら新しい項目の案）。職員が押すまで変わらない（lib/chishokanAi/pinnedContext.ts） */
   | { t: 'pin'; id: string; name: string; text: string; summary: string }
+  /** 回答に書かれた作り話のリンク（道具で作っていないファイルの URL）。画面は回答の中のこの URL を消す */
+  | { t: 'redact'; urls: string[] }
   | { t: 'error'; v: string };
 
 export function encodeEvent(ev: AiEvent): string {
@@ -229,3 +231,68 @@ export function missingSectionNotice(text: string, heading: string): string | nu
   if (text.includes(heading)) return null;
   return `この回答には「${heading}」（置いた前提・要項に無く空けた項目・制作側で作ったコピー）がありません。数字・日付・料金は、確定した要項と照らし合わせてから使ってください。`;
 }
+
+// --- 作り話のリンク・聞き返し ---------------------------------------------------
+
+// Google のファイル・フォルダの URL（ドキュメント・スプレッドシート・スライド・フォーム、ドライブのファイル・フォルダ、open?id=）
+const GOOGLE_FILE_URL = /https?:\/\/(?:docs|drive)\.google\.com\/[^\s)）」』\]<>"'`|]+/g;
+const ID_IN_URL = /(?:\/d\/|\/folders\/|[?&]id=)([\w-]{10,})/;
+
+/**
+ * 回答の中の Google のファイルの URL のうち、ID がこの会話（質問・前の回答・渡した資料・道具の結果・回答方針）に
+ * 一度も出てきていないものを返す。道具を呼ばずに「作りました」と書いた、作り話のリンクを見つけるため。
+ */
+export function unknownGoogleLinks(answer: string, known: string): string[] {
+  const out: string[] = [];
+  for (const m of answer.matchAll(GOOGLE_FILE_URL)) {
+    const url = m[0].replace(/[.,、。:：;；]+$/, '');
+    const id = url.match(ID_IN_URL)?.[1];
+    if (!id || known.includes(id) || out.includes(url)) continue;
+    out.push(url);
+  }
+  return out;
+}
+
+export const FAKE_LINK_LABEL = '〔開けないリンク：AIが作り話で書いたため消しました〕';
+
+/** 回答から作り話のリンクを消す（Markdown のリンクは、文字だけ残す）。 */
+export function redactLinks(text: string, urls: string[]): string {
+  let out = text;
+  for (const u of urls) {
+    const esc = u.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(`\\[([^\\]\\n]*)\\]\\(${esc}\\)`, 'g'), (_m, label: string) => `${label}${FAKE_LINK_LABEL}`);
+    out = out.split(u).join(FAKE_LINK_LABEL);
+  }
+  return out;
+}
+
+/** 画面に出す知らせ。 */
+export function fakeLinkNotice(retrying: boolean): string {
+  return (
+    'この回答に、AIが実際には作っていないファイルのリンクがあったため消しました（開けないリンクです）。' +
+    (retrying ? 'いま、ファイルを作り直させています。' : 'ファイルが必要なときは「Word にして」などと、もう一度頼んでください。')
+  );
+}
+
+/** AI に1回だけ送る、作り直しの頼み（画面には出さない）。 */
+export function fakeLinkPrompt(urls: string[]): string {
+  return (
+    `（アプリから自動で送っています）あなたの回答に、道具で作っていないファイルの URL（${urls.join('、')}）がありました。` +
+    '作り話の URL は開けないので、画面からは消しました。\n' +
+    'ファイルを作る必要があるなら、いま create_math_quiz・create_math_material・create_google_doc・create_google_slides のどれかを呼んで作り、' +
+    '道具の結果に出た URL だけを書いてください。作らないなら、URL を書かずに、ファイルはまだ作っていないことを1〜2文で伝えてください。' +
+    '前の回答の繰り返し・長いお詫びは書かない。'
+  );
+}
+
+/**
+ * ```選択肢 のブロックが閉じた位置（閉じた ``` のすぐ後ろ）。無ければ -1。
+ * 選択肢を出したら、その回答はそこで終える（聞いたら返事を待つ。同じ回答の中で作り始めない）。
+ */
+export function closedChoicesEnd(text: string): number {
+  const m = /```[ \t]*(?:選択肢|choices)[ \t]*\r?\n[\s\S]*?\r?\n[ \t]*```/.exec(text);
+  return m ? m.index + m[0].length : -1;
+}
+
+/** 文字も道具も無いまま終わった回答を作り直すときに、画面には出さずに送る頼み。 */
+export const EMPTY_ANSWER_PROMPT = '（アプリから自動で送っています）回答が空でした。上の質問に答えてください。';

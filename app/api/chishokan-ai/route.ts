@@ -14,6 +14,10 @@
 // 文章で頼まれたときは AI が start_task で開く。資料づくりの回答は、埋め残しの {{ }} と「確認してほしいこと」の有無を確かめる。
 // コンテキスト欄（lib/chishokanAi/pinnedContext.ts）：職員が画面の右の欄に置いた前提を、質問のたびに渡す。
 // AI は頼まれたときだけ propose_context_edit で直し案を出し、画面に送る（職員が押すまで変わらない）。
+// 回答の確かめ（2026-11-14 の会話ログで見つかった不具合への対策）：
+//   - 道具を呼ばずにファイルの URL を書いた（作り話のリンク）→ 画面から消して知らせ、1回だけ作り直させる
+//   - 選択肢で聞き返したのに、同じ回答の中で作り始めた → ```選択肢 のブロックが閉じたら、そこで回答を終える
+//   - 文字も道具も無いまま終わった（空の回答）→ 1回だけ作り直させる
 // GET は画面の作業ボタンの一覧を返す。
 // 停止：画面が通信を切ったら、AI への問い合わせも止める。時間切れ：300秒の制限の手前で止め、「途中で切れました」を送る。
 
@@ -47,7 +51,13 @@ import {
   buildCarryBlock,
   citationWarnings,
   citedPaths,
+  closedChoicesEnd,
+  EMPTY_ANSWER_PROMPT,
   encodeEvent,
+  fakeLinkNotice,
+  fakeLinkPrompt,
+  redactLinks,
+  unknownGoogleLinks,
   findGaps,
   leftoverPlaceholders,
   missingSectionNotice,
@@ -65,6 +75,11 @@ import {
   proposalToolResult,
 } from '@/lib/chishokanAi/pinnedContext';
 import { TASKS_DIR, listTasks, loadTaskBundle, taskButtons, taskListForPrompt, taskTool, type TaskDef } from '@/lib/chishokanAi/tasks';
+
+// 作る道具が失敗したあとに呼び直したときの返事（「作れていた」と取り違えさせない）
+const FAILED_AGAIN =
+  '前の呼び出しで、作れなかった（保存できなかった）ファイルがあります。この回答では、もう作り直せません。' +
+  '「作れていた」とは書かず、上の道具の結果のとおりに、保存できたもの・できなかったものと理由、作ろうとした中身を回答に書き、少し時間をおいてもう一度頼むよう伝える。';
 
 const STOP = ['\n\nus', '\n\nUs', '\n\nassistant', '\n\nAssistant', '\n\nhuman', '\n\nHuman'];
 
@@ -130,6 +145,23 @@ function markLatestToolResults(convo: Anthropic.MessageParam[]) {
     const b = last.content[last.content.length - 1];
     if (b.type === 'tool_result') (b as Anthropic.ToolResultBlockParam).cache_control = { type: 'ephemeral' };
   }
+}
+
+/**
+ * この回答で AI に渡したもの（回答方針・質問・前の回答・渡した資料・道具の結果）を1つの文にする。
+ * 回答に書かれたファイルの URL が、ここに出てきたものかを確かめる（作り話のリンクを見つける）。PDF・画像は入れない。
+ */
+function knownText(system: Anthropic.TextBlockParam[], convo: Anthropic.MessageParam[]): string {
+  const parts: string[] = system.map((b) => b.text);
+  for (const m of convo) {
+    if (typeof m.content === 'string') { parts.push(m.content); continue; }
+    for (const b of m.content) {
+      if (b.type === 'text') parts.push(b.text);
+      else if (b.type === 'tool_result') parts.push(typeof b.content === 'string' ? b.content : JSON.stringify(b.content ?? ''));
+      else if (b.type === 'tool_use') parts.push(JSON.stringify(b.input ?? {}));
+    }
+  }
+  return parts.join('\n');
 }
 
 // 画面の「よく使う作業」ボタンの一覧。
@@ -201,7 +233,15 @@ export async function POST(req: Request) {
   let templateReads = 0;
   let slidesMade = 0;
   let mathMade = 0;
+  // 作る道具が失敗したか（失敗のあとに呼び直したとき、「作れていた」と取り違えさせない）
+  let mathFailed = false;
   const proposals: string[] = [];
+  // 回答の確かめ：作り話のリンク・選択肢で止めた・空の回答
+  const fakeLinks: string[] = [];
+  let fakeRetried = false;
+  let choicesStop = false;
+  let emptyRetried = false;
+  let lastStop = '';
   const lastUserText = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
 
   const encoder = new TextEncoder();
@@ -311,7 +351,18 @@ export async function POST(req: Request) {
           let roundText = '';
           // 計算・考える時間を挟んで文章が続くときも、前の文章と段落を分ける
           let breakBeforeText = false;
+          // トークン（途中で止めたときも数えられるように、届いた順に覚えておく）
+          const ru = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
           for await (const ev of stream) {
+            if (ev.type === 'message_start') {
+              const mu = ev.message.usage;
+              ru.input = mu.input_tokens ?? 0;
+              ru.cacheRead = mu.cache_read_input_tokens ?? 0;
+              ru.cacheWrite = mu.cache_creation_input_tokens ?? 0;
+              ru.output = mu.output_tokens ?? 0;
+            } else if (ev.type === 'message_delta' && ev.usage) {
+              ru.output = ev.usage.output_tokens ?? ru.output;
+            }
             if (ev.type === 'content_block_start') {
               const b = ev.content_block as { type: string; name?: string };
               if (b.type === 'server_tool_use') {
@@ -326,11 +377,28 @@ export async function POST(req: Request) {
               // ツールを挟んで文章が続くときは、前の文章と段落を分ける。
               const sep = full && (!roundText || breakBeforeText) ? '\n\n' : '';
               breakBeforeText = false;
-              const piece = `${sep}${ev.delta.text}`;
-              roundText += ev.delta.text;
+              let text = ev.delta.text;
+              // 選択肢で聞き返したら、その回答はそこで終える（返事を待つ。同じ回答の中で作り始めない）
+              const end = closedChoicesEnd(roundText + text);
+              if (end >= 0) {
+                text = (roundText + text).slice(roundText.length, end);
+                choicesStop = true;
+              }
+              const piece = `${sep}${text}`;
+              roundText += text;
               full += piece;
               send({ t: 'text', v: piece });
+              if (choicesStop) break; // ループを抜けると、この往復の生成は止まる（SDK が中断する）
             }
+          }
+          if (choicesStop) {
+            tokens.input += ru.input;
+            tokens.cacheRead += ru.cacheRead;
+            tokens.cacheWrite += ru.cacheWrite;
+            tokens.output += ru.output;
+            usage.push(`in=${ru.input} cache_read=${ru.cacheRead} cache_write=${ru.cacheWrite} out=${ru.output} (選択肢で止めた)`);
+            lastStop = 'choices';
+            break;
           }
           const msg = await stream.finalMessage();
           const u = msg.usage;
@@ -347,7 +415,36 @@ export async function POST(req: Request) {
             convo.push({ role: 'assistant', content: msg.content });
             continue;
           }
-          if (msg.stop_reason !== 'tool_use') break;
+          if (msg.stop_reason !== 'tool_use') {
+            lastStop = msg.stop_reason ?? '';
+            const canRetry = round < MAX_ROUNDS - 1 && !ac.signal.aborted && Date.now() - requestStarted < TOOL_BUDGET_MS;
+            // 空の回答（文字も道具も無いまま終わった）：1回だけ作り直させる
+            // （空の回答は送り返せないので、同じ問い合わせをもう一度送る。最後の質問の後ろに、答えるよう一言だけ足す）
+            if (!full.trim() && !emptyRetried && canRetry && msg.stop_reason !== 'max_tokens') {
+              emptyRetried = true;
+              const last = convo[convo.length - 1];
+              if (last?.role === 'user' && Array.isArray(last.content)) {
+                last.content = [...last.content, { type: 'text', text: EMPTY_ANSWER_PROMPT }] as Anthropic.ContentBlockParam[];
+              }
+              continue;
+            }
+            // 作り話のリンク：道具で作っていないファイルの URL を消して知らせ、1回だけ作り直させる
+            const fakes = full ? unknownGoogleLinks(full, knownText(system, convo)) : [];
+            if (fakes.length) {
+              fakeLinks.push(...fakes.filter((f) => !fakeLinks.includes(f)));
+              full = redactLinks(full, fakes);
+              send({ t: 'redact', urls: fakes });
+              const retry = !fakeRetried && canRetry;
+              send({ t: 'notice', v: fakeLinkNotice(retry) });
+              if (retry) {
+                fakeRetried = true;
+                convo.push({ role: 'assistant', content: msg.content });
+                convo.push({ role: 'user', content: [{ type: 'text', text: fakeLinkPrompt(fakes) }] });
+                continue;
+              }
+            }
+            break;
+          }
 
           convo.push({ role: 'assistant', content: msg.content });
           const results: Anthropic.ToolResultBlockParam[] = [];
@@ -391,7 +488,7 @@ export async function POST(req: Request) {
               templateReads++;
             } else if (block.name === CREATE_SLIDES_TOOL.name) {
               if (slidesMade >= 1) {
-                out = 'スライドは1回の回答で1つまでです。作ったスライドのURLを伝えてください。';
+                out = createdDocs.some((d) => !d.ok) ? FAILED_AGAIN : 'スライドは1回の回答で1つまでです。前の呼び出しの結果に出たURLを伝えてください。';
               } else {
                 const r = await runCreateSlides(input, { campus: session.campus, user: session.name }, ac.signal);
                 createdDocs.push(r.created);
@@ -400,12 +497,14 @@ export async function POST(req: Request) {
               }
             } else if (block.name === MATH_MATERIAL_TOOL.name || block.name === MATH_QUIZ_TOOL.name) {
               if (mathMade >= 1) {
-                out = '数学の教材のファイルは1回の回答で1組までです。作ったファイルのURLを伝えてください。';
+                out = mathFailed ? FAILED_AGAIN : '数学の教材のファイルは1回の回答で1組までです。前の呼び出しの結果に出たURLを伝えてください。';
               } else {
                 const run = block.name === MATH_QUIZ_TOOL.name ? runCreateMathQuiz : runCreateMathMaterial;
                 const r = await run(input, { campus: session.campus, user: session.name }, ac.signal);
                 createdDocs.push(...r.created);
-                mathMade++;
+                mathFailed = r.created.some((d) => !d.ok);
+                // 入力の誤り（保存の前の確かめで止まった）なら、直して呼び直せるように数えない
+                if (!r.inputError) mathMade++;
                 out = r.toolResult;
               }
             } else if (block.name === PROPOSE_CONTEXT_TOOL.name) {
@@ -422,7 +521,7 @@ export async function POST(req: Request) {
               }
             } else if (block.name === CREATE_DOC_TOOL.name) {
               if (createdDocs.length >= 1) {
-                out = '文書は1回の回答で1つまでです。作った文書のURLを伝えてください。';
+                out = createdDocs.some((d) => !d.ok) ? FAILED_AGAIN : '文書は1回の回答で1つまでです。前の呼び出しの結果に出たURLを伝えてください。';
               } else {
                 const r = await runCreateDoc(input, { campus: session.campus, user: session.name }, ac.signal);
                 createdDocs.push(r.created);
@@ -490,7 +589,14 @@ export async function POST(req: Request) {
         // 「資料に無い：…」は、ナレッジに足す資料の手がかりとして会話ログに残す。
         const gaps = findGaps(full);
 
-        const flags = [continuation ? '続き' : '', failed ? 'エラー' : '', clientGone ? '停止' : '', cut === 'time' ? '時間切れ' : cut === 'length' ? '長さで切れた' : '']
+        const flags = [
+          continuation ? '続き' : '',
+          failed ? 'エラー' : '',
+          clientGone ? '停止' : '',
+          cut === 'time' ? '時間切れ' : cut === 'length' ? '長さで切れた' : '',
+          fakeLinks.length ? `作り話のリンク${fakeLinks.length}件${fakeRetried ? '→作り直し' : ''}` : '',
+          !full.trim() && !clientGone && !failed ? `空の回答（${lastStop || '理由不明'}${emptyRetried ? '・作り直しても空' : ''}）` : '',
+        ]
           .filter(Boolean)
           .join('・');
         try {
@@ -517,10 +623,11 @@ export async function POST(req: Request) {
         const taskNote = activeTask ? `（作業: ${activeTask.id}）` : '';
         const gapNote = gaps.length ? `（資料に無い: ${gaps.join('／')}）` : '';
         const k = (n: number) => (n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n));
-        const statNote = `（${Math.round((Date.now() - requestStarted) / 1000)}秒・往復${usage.length}・トークン 入力${k(tokens.input)}/キャッシュ読${k(tokens.cacheRead)}/キャッシュ書${k(tokens.cacheWrite)}/出力${k(tokens.output)}${deep ? '・じっくり考える' : ''}${codeRuns ? `・計算${codeRuns}回` : ''}）`;
+        const statNote = `（${Math.round((Date.now() - requestStarted) / 1000)}秒・往復${usage.length}・トークン 入力${k(tokens.input)}/キャッシュ読${k(tokens.cacheRead)}/キャッシュ書${k(tokens.cacheWrite)}/出力${k(tokens.output)}${deep ? '・じっくり考える' : ''}${codeRuns ? `・計算${codeRuns}回` : ''}${choicesStop ? '・選択肢で止めた' : ''}${emptyRetried && full.trim() ? '・空の回答を作り直した' : ''}）`;
         // コンテキスト欄の項目（名前と字数だけ。全文は追加・置き換えのときに context-log で1回だけ残す）
         const pinNote = pinned.length ? `（コンテキスト: ${pinned.map((p) => `${p.id}「${p.name}」${p.text.length}字`).join('、')}）` : '';
         const proposalNote = proposals.length ? `（コンテキストの直し案: ${proposals.join('、')}）` : '';
+        const fakeNote = fakeLinks.length ? `（作り話のリンク: ${fakeLinks.join('、')}）` : '';
         const docNote = createdDocs.length
           ? `（作成した文書: ${createdDocs.map((d) => (d.ok ? `${d.title} ${d.url}` : `${d.title}＝作れず:${d.note}`)).join('、')}）`
           : '';
@@ -528,7 +635,7 @@ export async function POST(req: Request) {
           await logInteraction({
             user: session.name,
             campus: session.campus,
-            input: `[智翔館AI]${convoNote}${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}${pinNote}${proposalNote}\n（調べた資料: ${opened.join('、') || 'なし'}）${statNote}`,
+            input: `[智翔館AI]${convoNote}${flags ? `（${flags}）` : ''}${taskNote}${gapNote} ${continuation ? '（続きを書く）' : lastUserText}${attachNote}${driveNote}${docNote}${pinNote}${proposalNote}${fakeNote}\n（調べた資料: ${opened.join('、') || 'なし'}）${statNote}`,
             output: stripRoleBleed(full),
           }, { timeoutMs: Math.max(2_000, Math.min(15_000, LIMIT_MS - (Date.now() - requestStarted) - 2_000)) });
         } catch {}

@@ -29,6 +29,7 @@ import {
   mergeContext,
   normalizeContext,
   parseEvents,
+  redactLinks,
   type CarryContext,
   type Source,
 } from '@/lib/chishokanAi/conversation';
@@ -677,6 +678,8 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           else if (ev.t === 'cut') draft = { ...draft, cut: ev.reason };
           else if (ev.t === 'error') draft = { ...draft, notices: [...(draft.notices ?? []), ev.v], error: !draft.content };
           else if (ev.t === 'context') updateContext(mergeContext(contextRef.current, { reads: ev.reads, texts: ev.texts }));
+          // 作り話のリンク（AI が道具を呼ばずに書いたファイルの URL）は、回答から消す（次の質問の履歴にも残さない）
+          else if (ev.t === 'redact') draft = { ...draft, content: redactLinks(draft.content, ev.urls) };
           else if (ev.t === 'pin') {
             // AI の直し案。同じ項目の前の案は捨て、この回答の下と右の欄に出す（押すまで変わらない）
             const key = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -900,7 +903,12 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
               <li>PDF・画像・Word・Excel・PowerPoint は添付、Google のファイルはリンクを貼ると読みます（決められたフォルダの中だけ・1回に3件まで）</li>
               <li>業績の数字（売上・利益）は持っていません</li>
               <li>右の欄の「コンテキスト」に置いた文は、質問のたびにAIに渡します（担当・決まり・前の回答など、会話の前提を置く）</li>
-              <li>会話は、この画面を閉じると消えます。残すときは、右の欄の「ファイルに書き出す」。改善のため、質問と回答は社内の記録（会話ログ）に残しています</li>
+              <li>
+                {saved?.enabled
+                  ? '会話は自動で右の欄の「履歴」に残ります（見られるのは本人だけ）。ずっと残すときは「この会話を保存」。'
+                  : '会話は、この画面を閉じると消えます。残すときは、右の欄の「ファイルに書き出す」。'}
+                改善のため、質問と回答は社内の記録（会話ログ）に残しています
+              </li>
               <li>生徒・保護者の名前や成績は入れないでください</li>
               <li>試用期間中です。うまく動かないときは「不具合を報告」、こうしてほしいときは「要望を送る」から送ってください</li>
             </ul>
