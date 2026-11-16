@@ -47,6 +47,7 @@ import { runCreateSlides, runSlideTemplates } from '@/lib/chishokanAi/slides';
 import { MATH_MATERIAL_TOOL } from '@/lib/chishokanAi/mathMaterialTool';
 import { runCreateMathMaterial, runCreateMathQuiz } from '@/lib/chishokanAi/mathMaterial';
 import { MATH_QUIZ_TOOL } from '@/lib/chishokanAi/mathQuizTool';
+import { runTaskEvaluation, TASK_EVAL_TOOL } from '@/lib/chishokanAi/taskEval';
 import {
   buildCarryBlock,
   citationWarnings,
@@ -225,6 +226,7 @@ export async function POST(req: Request) {
     MATH_MATERIAL_TOOL,
     MATH_QUIZ_TOOL,
     PROPOSE_CONTEXT_TOOL,
+    TASK_EVAL_TOOL,
   ] as unknown as Anthropic.Tool[];
   let tasksStarted = 0;
   // 計算の道具は、作業の手順書が使うときだけ足す（回答の途中で手順書を開いたら、次の往復から足す）。
@@ -507,6 +509,10 @@ export async function POST(req: Request) {
                 if (!r.inputError) mathMade++;
                 out = r.toolResult;
               }
+            } else if (block.name === TASK_EVAL_TOOL.name) {
+              // 校舎の重要タスク評価（AI壁打ちと同じ評価シート・基準）。行動計画を見直すときに読む
+              const r = await runTaskEvaluation(input, { campus: session.campus });
+              out = r.text;
             } else if (block.name === PROPOSE_CONTEXT_TOOL.name) {
               // 直し案は画面に送るだけ（職員が「置き換える」「追加する」を押すまで変わらない）
               const c = checkProposal(input, pinned);
@@ -537,7 +543,7 @@ export async function POST(req: Request) {
                 ? `${block.name}:${String(input.title ?? '')}`
                 : block.name === PROPOSE_CONTEXT_TOOL.name
                   ? `${block.name}:${String(input.id || input.name || '')}`
-                  : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? input.task ?? input.template ?? '')}`,
+                  : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? input.task ?? input.template ?? input.school ?? '')}`,
             );
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           }
