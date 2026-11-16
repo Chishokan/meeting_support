@@ -2779,3 +2779,327 @@ button.app-nav-item { background: none; border: 0; font-family: inherit; cursor:
   .ks-q { padding: 16px 14px 14px; }
   .ks-list-head, .ks-list-cols { padding-left: 16px; padding-right: 16px; }
 }
+
+/* ============ 本番レベル模試（/moshi）：成績入力・成績表・受験票・面談 ============
+   色：本人の得点＝青（--ms-series）、平均＝濃い灰色の縦線（--ms-ref）。1系列＋基準線なので色だけに頼らず、凡例を添える。 */
+.ms {
+  --ms-series: #2a78d6; --ms-ref: #3d3c39; --ms-track: #e8ecf1; --ms-gridline: #e3e6ea;
+  --ms-tint: #f6f8fb; --ms-bad: #fde8e8; --ms-gap: #fff6d6; --ms-ink2: #52514e;
+}
+.ms-body { padding: 16px 24px 48px; }
+.ms-who { color: #8a94a0; margin-left: 4px; }
+.ms-muted { color: #8a94a0; }
+.ms-fine { font-size: 12px; color: #6b7480; line-height: 1.6; margin: 6px 0 0; }
+.ms-note { margin: 12px 0; padding: 14px 16px; background: #fff; border: 1px solid var(--line); border-radius: 10px; font-size: 14px; line-height: 1.7; color: #2a2f36; }
+.ms-note p { margin: 0 0 6px; }
+.ms-note-err { border-color: #f1c4c4; background: #fff6f6; }
+.ms-note button, .ms-note .ms-btn { margin-top: 6px; }
+.ms-notice { margin: 8px 0; padding: 8px 12px; font-size: 13px; color: #2e6b4f; background: #eaf6ef; border: 1px solid #cfe8db; border-radius: 8px; cursor: pointer; }
+.ms-notice small { color: #7a9a88; margin-left: 6px; }
+.ms-notice.warn { color: #7a5c00; background: #fffbe9; border-color: #f0e2ad; cursor: default; }
+.ms-msg { font-size: 13px; color: #445; }
+
+.ms-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; margin-bottom: 10px; }
+.ms-bar label { display: flex; flex-direction: column; gap: 3px; margin: 0; font-size: 12px; color: #667; }
+.ms-bar select { width: auto; min-width: 150px; padding: 7px 10px; font-size: 14px; }
+.ms-bar-link { margin-left: auto; font-size: 13px; color: var(--navy); padding: 8px 4px; }
+.ms-save { font-size: 12.5px; color: #445; padding: 8px 0; }
+.ms-save.ok { color: #2e6b4f; }
+.ms-save.muted { color: #8a94a0; }
+.ms-save.err { color: #c0392b; }
+.ms-save button { margin-left: 6px; font-size: 12px; padding: 3px 10px; border-radius: 6px; border: 1px solid #e2b4b4; background: #fff; color: #c0392b; cursor: pointer; }
+
+.ms-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.ms-spacer { flex: 1; }
+.ms-seg { display: inline-flex; border: 1px solid #cdd8e3; border-radius: 8px; overflow: hidden; background: #fff; }
+.ms-seg button { border: none; background: transparent; padding: 7px 12px; font-size: 13px; color: #445; cursor: pointer; font-family: inherit; }
+.ms-seg button + button { border-left: 1px solid #e3e8ee; }
+.ms-seg button.on { background: var(--navy); color: #fff; font-weight: 700; }
+.ms-btn {
+  display: inline-block; padding: 8px 14px; font-size: 13px; font-weight: 700; color: #fff; background: var(--navy);
+  border: 1px solid var(--navy); border-radius: 8px; cursor: pointer; text-decoration: none; font-family: inherit; white-space: nowrap;
+}
+.ms-btn:disabled { opacity: .45; cursor: default; }
+.ms-btn-sub { color: var(--navy); background: #fff; border-color: #cdd8e3; font-weight: 600; }
+.ms-btn-sub:hover:not(:disabled) { background: #f2f5f9; }
+.ms-btn-danger { color: #b03a2e; background: #fff; border-color: #e8c3bf; font-weight: 600; }
+.ms-check { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 400; color: #445; }
+.ms-check input { width: auto; margin: 0; }
+.ms-link { border: none; background: none; color: var(--navy); font-size: 13px; padding: 6px 0; cursor: pointer; font-family: inherit; }
+.ms-x { border: 1px solid #e3e6ea; background: #fff; color: #8a6a66; font-size: 12px; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.ms-x:disabled { opacity: .4; cursor: default; }
+
+.ms-progress { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; font-size: 12.5px; }
+.ms-progress span { padding: 3px 10px; border-radius: 999px; background: #eef1f5; color: #445; }
+.ms-progress span.ok { background: #e6f4ec; color: #2e6b4f; }
+.ms-progress span.bad { background: var(--ms-bad); color: #b03a2e; }
+.ms-progress em { font-style: normal; color: #9a6b00; }
+
+/* 入力の表（入力シートと同じ1人1行。見出しと受験番号・氏名は固定） */
+.ms-grid-wrap { overflow: auto; max-height: calc(100vh - 250px); background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+.ms-grid { border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.ms-grid th, .ms-grid td { border-bottom: 1px solid #edf0f3; padding: 0; white-space: nowrap; background: #fff; }
+.ms-grid thead th { position: sticky; top: 0; z-index: 2; background: #f6f8fb; font-weight: 700; color: #3a4350; padding: 5px 4px; text-align: center; border-bottom: 1px solid #e3e6ea; }
+.ms-grid thead tr:nth-child(2) th { top: 27px; }
+.ms-grid .ms-sticky { position: sticky; left: 0; z-index: 1; }
+.ms-grid thead .ms-sticky { z-index: 3; }
+.ms-grid .ms-c-no { min-width: 74px; left: 0; padding: 0 8px; font-variant-numeric: tabular-nums; color: #556; }
+.ms-grid .ms-c-name { min-width: 120px; left: 74px; padding: 0 8px; border-right: 1px solid #e3e6ea; text-align: left; }
+.ms-grid td.ms-c-no, .ms-grid td.ms-c-name { height: 32px; }
+.ms-subj-h { border-left: 2px solid #d9dee5; }
+.ms-q-h { font-weight: 600 !important; min-width: 38px; }
+.ms-q-h small { display: block; font-size: 10px; font-weight: 400; color: #8a94a0; }
+.ms-q-topic { display: block; font-size: 10px; font-weight: 400; color: #5a6470; max-width: 90px; white-space: normal; line-height: 1.3; }
+.ms-q-sum { background: #eef2f7 !important; }
+.ms-grid td.ms-first { border-left: 2px solid #d9dee5; }
+.ms-grid .ms-s-en, .ms-grid .ms-s-so { background: var(--ms-tint); }
+.ms-cell {
+  width: 40px; height: 32px; padding: 0 2px; margin: 0; border: 1px solid transparent; border-radius: 0; background: transparent;
+  text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; font-family: inherit;
+}
+.ms-cell:focus { outline: 2px solid var(--ms-series); outline-offset: -2px; background: #fff; }
+.ms-cell.bad { background: var(--ms-bad); color: #b03a2e; font-weight: 700; }
+.ms-cell.gap { background: var(--ms-gap); }
+.ms-sum-td { min-width: 40px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; background: #eef2f7 !important; color: #2a2f36; }
+.ms-c-total { min-width: 52px; text-align: center; border-left: 2px solid #d9dee5; }
+.ms-roster td, .ms-grid.ms-roster td.ms-c-no, .ms-grid.ms-roster td.ms-c-name { padding: 3px 4px; vertical-align: top; height: auto; }
+.ms-in { width: 100%; min-width: 0; padding: 6px 8px; font-size: 13.5px; border: 1px solid #d5dbe2; border-radius: 6px; }
+.ms-in-no { width: 80px; font-variant-numeric: tabular-nums; }
+.ms-in-no.warn { border-color: #e0b44a; background: #fffbe9; }
+.ms-in-g { width: 60px; padding: 6px 4px; }
+.ms-roster .ms-c-name { min-width: 150px; }
+.ms-c-choice { min-width: 130px; }
+.ms-c-choice small { display: block; font-size: 11px; color: #5a6470; padding: 2px 2px 0; white-space: normal; }
+.ms-c-choice small.warn { color: #b06a00; }
+
+.ms-modal { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.ms-modal-box { background: #fff; border-radius: 12px; padding: 18px 20px; width: min(760px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
+.ms-modal-box h2 { font-size: 16px; margin: 0 0 6px; }
+.ms-modal-box textarea { width: 100%; height: 180px; margin-top: 10px; padding: 8px; font-size: 12px; font-family: ui-monospace, monospace; border: 1px solid #cdd3da; border-radius: 8px; }
+.ms-paste-sum p { margin: 6px 0; font-size: 13px; }
+.ms-paste-sum .warn, .ms-subj-card small.warn { color: #b06a00; }
+.ms-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+/* 模試の設定 */
+.ms-settings { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 18px; align-items: start; }
+.ms-exam-list { display: grid; gap: 6px; }
+.ms-exam-item { text-align: left; padding: 10px 12px; border: 1px solid var(--line); background: #fff; border-radius: 9px; cursor: pointer; font-family: inherit; color: #2a2f36; }
+.ms-exam-item b { display: block; font-size: 13.5px; }
+.ms-exam-item small { display: block; font-size: 11.5px; color: #8a94a0; margin-top: 2px; }
+.ms-exam-item.on { border-color: var(--navy); background: #eaf1f8; }
+.ms-exam-item.new { color: var(--navy); font-weight: 700; font-size: 13.5px; }
+.ms-form { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px 20px; min-width: 0; }
+.ms-field { display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; font-size: 12px; color: #556; }
+.ms-field input, .ms-field select, .ms-field textarea { padding: 8px 10px; font-size: 14px; font-family: inherit; border: 1px solid #cdd3da; border-radius: 8px; }
+.ms-field-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.ms-field-row .ms-field { min-width: 120px; }
+.ms-field-row .grow { flex: 1; min-width: 240px; }
+.ms-h2 { font-size: 15px; margin: 18px 0 4px; }
+.ms-h2 small, .ms-subj-card h3 small { font-size: 12px; font-weight: 400; color: #667; margin-left: 6px; }
+.ms-h3 { font-size: 13.5px; margin: 14px 0 6px; color: #2a2f36; }
+.ms-subj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; margin-top: 8px; }
+.ms-subj-card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.ms-subj-card h3 { font-size: 14px; margin: 0 0 6px; }
+.ms-qtable { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ms-qtable th { font-size: 11px; color: #8a94a0; font-weight: 600; text-align: left; padding: 2px 4px; }
+.ms-qtable td { padding: 2px 4px; }
+.ms-qtable input { padding: 5px 7px; font-size: 13px; }
+.ms-qtable input.num { width: 56px; text-align: right; }
+.ms-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.ms-venues { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 12px; }
+.ms-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+
+/* 表（順位表・平均点・成績表） */
+.ms-table { border-collapse: collapse; font-size: 13px; background: #fff; }
+.ms-table th, .ms-table td { padding: 4px 8px; border-bottom: 1px solid #e8ebef; text-align: left; }
+.ms-table thead th { font-size: 12px; color: #556; background: #f6f8fb; font-weight: 700; white-space: nowrap; }
+.ms-table thead th small { font-weight: 400; color: #8a94a0; margin-left: 2px; }
+.ms-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ms-table tr.ms-sum th, .ms-table tr.ms-sum td { background: #f6f8fb; font-weight: 700; }
+.ms-table tfoot th, .ms-table tfoot td { background: #f6f8fb; font-weight: 700; font-size: 12px; }
+.ms-sheet { overflow-x: auto; }
+.ms-sheet > .ms-table { width: 100%; }
+.ms-print-title { font-size: 16px; margin: 6px 0 8px; }
+.ms-rank .ms-name { white-space: nowrap; }
+.ms-rank .ms-school { font-size: 12px; color: #445; white-space: nowrap; }
+.ms-avg-topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 12px; align-items: start; }
+.ms-avg-q td:nth-child(2) { min-width: 8.5em; }
+.ms-avg-q { width: 100%; }
+.ms-low { color: #b03a2e; font-weight: 700; }
+
+/* 生徒を選ぶ一覧＋右に成績表 */
+.ms-split { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 16px; align-items: start; }
+.ms-pick { list-style: none; margin: 0; padding: 4px; background: #fff; border: 1px solid var(--line); border-radius: 10px; max-height: calc(100vh - 230px); overflow-y: auto; }
+.ms-pick li { display: flex; align-items: center; gap: 6px; padding: 0 4px; border-radius: 7px; }
+.ms-pick li.on { background: #eaf1f8; }
+.ms-pick li input { width: auto; margin: 0; }
+.ms-pick button { flex: 1; display: flex; gap: 8px; align-items: baseline; padding: 7px 4px; border: none; background: none; text-align: left; cursor: pointer; font-family: inherit; color: #2a2f36; min-width: 0; }
+.ms-pick button:disabled { color: #a0a8b2; cursor: default; }
+.ms-pick-no { font-size: 11.5px; color: #8a94a0; font-variant-numeric: tabular-nums; }
+.ms-pick-name { flex: 1; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-pick-score { font-size: 12px; color: #556; font-variant-numeric: tabular-nums; }
+.ms-preview { min-width: 0; }
+.ms-search { margin-bottom: 8px; padding: 8px 10px; font-size: 14px; }
+
+/* 個人成績表（A4 1枚） */
+.ms-card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; max-width: 860px; color: #1f2329; font-size: 13px; }
+.ms-card-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-bottom: 2px solid var(--navy); padding-bottom: 8px; }
+.ms-card-title { font-size: 17px; font-weight: 800; color: var(--navy); }
+.ms-card-sub { font-size: 12px; color: #556; margin-top: 2px; }
+.ms-card-who { text-align: right; font-size: 12px; color: #445; }
+.ms-card-name { font-size: 20px; font-weight: 800; color: #1a1a1a; margin-top: 2px; }
+.ms-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 10px 0 6px; }
+.ms-kpis div { border: 1px solid #e3e8ee; border-radius: 8px; padding: 6px 10px; }
+.ms-kpis span { display: block; font-size: 11px; color: #667; }
+.ms-kpis b { font-size: 24px; font-weight: 700; }
+.ms-kpis small { font-size: 12px; color: #667; margin-left: 2px; }
+.ms-card-note { font-size: 12px; color: #9a6b00; margin: 0 0 6px; }
+.ms-card-row { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 14px; align-items: start; margin-top: 8px; }
+.ms-card-row-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.ms-card-h { font-size: 13px; margin: 10px 0 4px; padding-left: 6px; border-left: 3px solid var(--navy); }
+.ms-card .ms-table { width: 100%; font-size: 12px; }
+.ms-card .ms-table th, .ms-card .ms-table td { padding: 3px 6px; }
+.ms-subj td b { font-size: 14px; }
+.ms-subj td small { color: #8a94a0; margin-left: 1px; }
+.ms-topics { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+.ms-topic tbody th { vertical-align: top; background: #f6f8fb; font-size: 12px; white-space: nowrap; }
+.ms-topic tr.ms-topic-first td, .ms-topic tr.ms-topic-first th { border-top: 1px solid #cfd6de; }
+.ms-topic-name { font-size: 11.5px; }
+.ms-topic-bar { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.ms-topic-bar span { font-size: 11px; color: #445; min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; }
+.ms-ratebar { width: 64px; height: 11px; flex: none; }
+.ms-sw { margin: 0; font-size: 12px; }
+.ms-sw dt { font-weight: 700; margin-top: 4px; color: #2a2f36; }
+.ms-sw dd { margin: 2px 0 0; display: grid; gap: 2px; }
+.ms-sw dd small { color: #667; margin-left: 6px; }
+.ms-choice th { white-space: nowrap; font-size: 11.5px; }
+.ms-hist tr.ms-cur td { font-weight: 700; }
+.ms-hist td:first-child { white-space: nowrap; }
+.ms-hist-wrap .ms-chart svg { max-width: 420px; }
+.ms-comment { min-height: 72px; border: 1px solid #d5dbe2; border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; font-size: 12.5px; line-height: 1.6; }
+.ms-card-foot { margin-top: 10px; font-size: 10.5px; color: #7a828c; }
+
+/* グラフ */
+.ms-chart { margin: 0; }
+.ms-chart svg { width: 100%; height: auto; display: block; }
+.ms-gl { stroke: var(--ms-gridline); stroke-width: 1; }
+.ms-gl-50 { stroke: #c4cad2; }
+.ms-axis { font-size: 9px; fill: #6b7480; }
+.ms-axis-label { font-size: 11px; fill: #2a2f36; font-weight: 600; }
+.ms-value { font-size: 10.5px; fill: #1f2329; font-weight: 700; }
+.ms-bar-fill { fill: var(--ms-series); }
+.ms-ref { stroke: var(--ms-ref); stroke-width: 2; }
+.ms-track { fill: var(--ms-track); }
+.ms-line { fill: none; stroke: var(--ms-series); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ms-dot { fill: var(--ms-series); stroke: #fff; stroke-width: 2; }
+.ms-legend { display: flex; gap: 14px; font-size: 11px; color: var(--ms-ink2); margin-top: 2px; }
+.ms-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.ms-key-bar { display: inline-block; width: 14px; height: 8px; border-radius: 0 3px 3px 0; background: var(--ms-series); }
+.ms-key-ref { display: inline-block; width: 2px; height: 12px; background: var(--ms-ref); }
+
+/* 受験票（A4 に2人／4人。点線で切る） */
+.ms-ticket-pick { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 12px; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px; max-height: 160px; overflow-y: auto; }
+.ms-tickets { overflow-x: auto; }
+.ms-ticket-page {
+  width: 210mm; height: 297mm; padding: 10mm; margin: 0 auto 16px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.12);
+  display: grid; box-sizing: border-box;
+}
+.ms-tickets-4 .ms-ticket-page { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.ms-tickets-2 .ms-ticket-page { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+.ms-ticket { border: 1px dashed #9aa3ad; padding: 6mm; display: flex; flex-direction: column; gap: 3mm; overflow: hidden; font-size: 9.5pt; color: #111; }
+.ms-ticket header { display: flex; align-items: baseline; gap: 3mm; border-bottom: 1.5px solid #111; padding-bottom: 2mm; }
+.ms-ticket-kind { font-size: 15pt; font-weight: 800; letter-spacing: .3em; }
+.ms-ticket-exam { font-size: 10pt; font-weight: 700; }
+.ms-ticket-body { display: flex; flex-direction: column; gap: 3mm; flex: 1; min-height: 0; }
+.ms-tickets-2 .ms-ticket-body { flex-direction: row; gap: 6mm; }
+.ms-tickets-2 .ms-ticket-main, .ms-tickets-2 .ms-ticket-side { flex: 1; min-width: 0; }
+.ms-ticket-main { display: grid; grid-template-columns: auto 1fr; gap: 1.5mm 4mm; margin: 0; align-items: baseline; align-content: start; }
+.ms-tickets-2 .ms-ticket { font-size: 10.5pt; padding: 8mm 9mm; }
+.ms-tickets-2 .ms-ticket-main { gap: 4mm 5mm; }
+.ms-tickets-2 .ms-ticket-no { font-size: 28pt; }
+.ms-tickets-2 .ms-ticket-name { font-size: 20pt; }
+.ms-tickets-2 .ms-ticket-sched { font-size: 10.5pt; }
+.ms-tickets-2 .ms-ticket-note { font-size: 9.5pt; margin-top: 2mm; }
+.ms-ticket-main dt { font-size: 8.5pt; color: #333; }
+.ms-ticket-main dd { margin: 0; border-bottom: 1px solid #bbb; padding-bottom: .5mm; }
+.ms-ticket-no { font-size: 22pt; font-weight: 800; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+.ms-ticket-name { font-size: 15pt; font-weight: 700; }
+.ms-ticket-sched { border-collapse: collapse; width: 100%; font-size: 9pt; }
+.ms-ticket-sched th, .ms-ticket-sched td { border: 1px solid #999; padding: 1mm 2mm; text-align: left; }
+.ms-ticket-sched th { width: 35%; font-weight: 600; background: #f3f3f3; }
+.ms-ticket-note { margin: 0; font-size: 8.5pt; line-height: 1.45; white-space: pre-wrap; }
+.ms-ticket-note b { display: inline-block; margin-right: 2mm; padding: 0 1.5mm; border: 1px solid #555; font-size: 8pt; }
+.ms-ticket footer { font-size: 8pt; color: #333; margin-top: auto; }
+
+/* 面談 */
+.ms-compare { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; margin: 4px 0 10px; padding: 8px 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px; font-size: 13.5px; }
+.ms-compare-h { font-size: 12px; color: #667; font-weight: 700; }
+.ms-compare b { font-size: 15px; }
+.ms-compare b.up { color: #1d6b3a; }
+.ms-compare b.down { color: #b03a2e; }
+.ms-interview-card .ms-card { font-size: 14px; max-width: none; }
+.ms-interview-card .ms-card .ms-table { font-size: 13px; }
+.ms-interview-card .ms-kpis b { font-size: 30px; }
+.ms-interview-card .ms-card-name { font-size: 24px; }
+.ms-comment-edit { margin-top: 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.ms-comment-edit label { margin: 0 0 6px; }
+.ms-comment-edit label small { font-weight: 400; color: #8a94a0; margin-left: 8px; }
+.ms-comment-edit textarea { width: 100%; padding: 8px 10px; font-size: 14px; font-family: inherit; border: 1px solid #cdd3da; border-radius: 8px; line-height: 1.6; }
+.ms-interview.big .page-head { display: none; }
+.ms-interview.big .ms-split { grid-template-columns: minmax(0, 1fr); }
+body.ms-focus .sidebar, body.ms-focus .mobilebar, body.ms-focus .sidebar-overlay { display: none !important; }
+body.ms-focus .app-main { margin-left: 0; padding-top: 0; }
+
+.ms-print-only { display: none; }
+
+@media (max-width: 980px) {
+  .ms-settings, .ms-split { grid-template-columns: minmax(0, 1fr); }
+  .ms-pick { max-height: 240px; }
+  .ms-two { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .ms-body { padding: 12px 12px 40px; }
+  .ms-card { padding: 12px; }
+  .ms-card-row, .ms-card-row-2, .ms-topics { grid-template-columns: minmax(0, 1fr); }
+  .ms-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ms-card-who { text-align: left; }
+  .ms-bar-link { margin-left: 0; }
+  .ms-grid-wrap { max-height: calc(100vh - 210px); }
+}
+
+/* 印刷：模試の画面だけ。メニュー・操作の部品を外し、A4 縦で出す */
+@media print {
+  @page { size: A4 portrait; margin: 10mm; }
+  body:has(.ms) { background: #fff; }
+  body:has(.ms) .sidebar, body:has(.ms) .mobilebar, body:has(.ms) .sidebar-overlay, .ms .page-head, .ms-noprint { display: none !important; }
+  body:has(.ms) .app-main { margin-left: 0 !important; padding-top: 0 !important; }
+  .ms-body { padding: 0 !important; }
+  .ms, .ms * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ms-print-only { display: block; }
+  .ms-page { break-after: page; }
+  .ms-page:last-child { break-after: auto; }
+  .ms-page .ms-card { border: none; border-radius: 0; padding: 0; max-width: none; font-size: 9pt; }
+  .ms-page .ms-card .ms-table { font-size: 8.5pt; }
+  .ms-page .ms-card .ms-table th, .ms-page .ms-card .ms-table td { padding: .7mm 1.6mm; }
+  .ms-page .ms-card-head { padding-bottom: 2mm; }
+  .ms-page .ms-kpis { margin: 2.5mm 0 1mm; }
+  .ms-page .ms-kpis div { padding: 1mm 2.5mm; }
+  .ms-page .ms-kpis b { font-size: 16pt; }
+  .ms-page .ms-card-row { margin-top: 2mm; }
+  .ms-page .ms-card-h { margin: 2.5mm 0 1.2mm; }
+  .ms-page .ms-comment { min-height: 28mm; }
+  .ms-page .ms-card-last { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+  .ms-page .ms-hist-wrap { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 3mm; align-items: start; }
+  .ms-page .ms-hist-wrap .ms-chart svg { max-height: 30mm; }
+  .ms-page .ms-card-foot { margin-top: 2mm; }
+  body:has(.ms) .env-banner { display: none !important; }
+  .ms-sheet .ms-table { font-size: 8.5pt; width: 100%; }
+  .ms-sheet .ms-table th, .ms-sheet .ms-table td { padding: 1mm 1.5mm; }
+  .ms-sheet tr { break-inside: avoid; }
+  .ms-sheet thead { display: table-header-group; }
+  .ms-avg-topics { grid-template-columns: 1fr 1fr; }
+  .ms-tickets { overflow: visible; }
+  .ms-ticket-page { width: auto; height: 276mm; padding: 0; margin: 0; box-shadow: none; break-after: page; }
+  .ms-ticket-page:last-child { break-after: auto; }
+  .ms-ticket-pick { display: none; }
+}

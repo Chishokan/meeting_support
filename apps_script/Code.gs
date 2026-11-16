@@ -36,6 +36,9 @@
  *   - action:'getKenshuAnswer' / 'saveKenshuAnswer'
  *                               … 全体研修会アンケート（/kenshu）→ 「研修会アンケート」シートに1人1行（研修会×部門×氏名）。送り直すと上書き
  *   - action:'listGoals'        … 目標管理用 → 中等部会議議事録（GOALS_BOOK_ID）の「秋～冬行動計画」タブから月×校舎×指標の目標／実績を返す
+ *   - action:'listMoshi' / 'saveMoshiExam' / 'deleteMoshiExam' / 'saveMoshiResults' / 'deleteMoshiResults'
+ *                               … 本番レベル模試（/moshi）→ スプレッドシート「本番レベル模試 成績」の「模試の回」（1回1行）・
+ *                                 「模試成績」（1回×1人で1行）。初めて使うときにファイルを作る（MOSHI_SPREADSHEET_ID）
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
  *
  * 【セットアップ手順】
@@ -328,6 +331,13 @@ function doPost(e) {
     if (action === 'listGoals') {
       return json_(listGoals_(data));
     }
+
+    // 本番レベル模試（/moshi）：回の設定と成績（スプレッドシート「本番レベル模試 成績」）
+    if (action === 'listMoshi') return json_(listMoshi_(data));
+    if (action === 'saveMoshiExam') return json_(saveMoshiExam_(data));
+    if (action === 'deleteMoshiExam') return json_(deleteMoshiExam_(data));
+    if (action === 'saveMoshiResults') return json_(saveMoshiResults_(data));
+    if (action === 'deleteMoshiResults') return json_(deleteMoshiResults_(data));
 
     if (action === 'saveShareItems') {
       return json_(saveShareItems_(data));
@@ -3306,4 +3316,300 @@ function copyOldAiLogs() {
     n++;
   }
   Logger.log(n + '行を写しました');
+}
+
+
+// ============================================================================
+// 本番レベル模試（/moshi）：回の設定と成績（2026-11-16〜）
+// ----------------------------------------------------------------------------
+// 置き場所はスプレッドシート「本番レベル模試 成績」（会議サポートアプリログとは別のファイル）。
+//   MOSHI_SPREADSHEET_ID を空にしておくと、初めて使うときに作り、ID をスクリプトのプロパティに覚える
+//   （会議サポートアプリログと同じフォルダに置く。共有は持ち主だけ）。
+//   ★生徒の氏名と成績が入るので、共有を広げない。見せる人はこのファイルの共有設定で決める。
+// シート：
+//   模試の回 … 1行＝1回。配点・分野・時間割・持ち物などは「設定」列に JSON で入れる
+//   模試成績 … 1行＝1回×1人。大問ごとの得点は教科ごとに「29,15,32,18」の形（空欄は「29,,32,18」）。
+//              「国語計」〜「合計」はシートで見るための列（保存のたびにここで計算し直す。アプリは使わない）
+// 画面からの保存は fields（この保存で変えた列）付きで来る。変えた列だけを書くので、同じ生徒の
+// 国語と数学を別の先生が同時に入れても、もう一方の入力は消えない（同じ教科を同時に直したときは後の保存が残る）。
+// 決まりと計算はアプリ側（lib/moshi/model.ts・lib/moshi/store.ts）。ここは言われたとおりに読み書きする。
+// ============================================================================
+var MOSHI_SPREADSHEET_ID = ''; // 例 '1AbcDEfGhIJkLmNoPqRsTuVwXyZ'。空なら自動で作る
+var MOSHI_EXAM_SHEET = '模試の回';
+var MOSHI_EXAM_HEADERS = ['ID', '模試名', '学年', '実施日', '設定', '作成日時', '作成者', '更新日時', '更新者', '削除'];
+var MOSHI_RESULT_SHEET = '模試成績';
+var MOSHI_SUBJECT_HEADERS = ['国語', '英語', '数学', '社会', '理科'];
+var MOSHI_RESULT_HEADERS = ['ID', '模試ID', '校舎', '受験番号', '氏名', '性別', '第一志望', '第二志望', '第三志望', '第四志望',
+  '国語', '英語', '数学', '社会', '理科', '国語計', '英語計', '数学計', '社会計', '理科計', '合計', 'コメント',
+  '作成日時', '作成者', '更新日時', '更新者', '削除'];
+var MOSHI_TOTAL_HEADERS = ['国語計', '英語計', '数学計', '社会計', '理科計', '合計'];
+
+function moshiBook_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = MOSHI_SPREADSHEET_ID || props.getProperty('MOSHI_SPREADSHEET_ID');
+  if (id) return SpreadsheetApp.openById(id);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    id = props.getProperty('MOSHI_SPREADSHEET_ID');
+    if (id) return SpreadsheetApp.openById(id);
+    var ss = SpreadsheetApp.create('本番レベル模試 成績');
+    props.setProperty('MOSHI_SPREADSHEET_ID', ss.getId());
+    try {
+      var main = SPREADSHEET_ID ? DriveApp.getFileById(SPREADSHEET_ID) : DriveApp.getFileById(SpreadsheetApp.getActiveSpreadsheet().getId());
+      var parents = main.getParents();
+      if (parents.hasNext()) DriveApp.getFileById(ss.getId()).moveTo(parents.next());
+    } catch (e) {}
+    var first = ss.getSheets()[0];
+    first.setName(MOSHI_EXAM_SHEET);
+    return ss;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** シートを開く（無ければ作る）。全列を文字列扱いにし、無い見出しは右端に足す（読み書きは見出し名で引く）。 */
+function moshiSheet_(name, headers) {
+  var ss = moshiBook_();
+  var sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, sh.getMaxRows(), headers.length).setNumberFormat('@');
+    return sh;
+  }
+  var cur = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+  var have = {};
+  for (var i = 0; i < cur.length; i++) have[String(cur[i]).trim()] = true;
+  for (var c = 0; c < headers.length; c++) {
+    if (have[headers[c]]) continue;
+    var at = sh.getLastColumn() + 1;
+    sh.getRange(1, at).setValue(headers[c]);
+    sh.getRange(1, at, sh.getMaxRows(), 1).setNumberFormat('@');
+    have[headers[c]] = true;
+  }
+  return sh;
+}
+
+function moshiRows_(sh, headers) {
+  if (sh.getLastRow() < 2) return [];
+  var col = dbColMap_(sh);
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+  var out = [];
+  for (var r = 0; r < values.length; r++) {
+    var obj = {};
+    for (var i = 0; i < headers.length; i++) obj[headers[i]] = col[headers[i]] === undefined ? '' : dbCellStr_(values[r][col[headers[i]]]);
+    if (!obj['ID']) continue;
+    out.push({ row: r + 2, obj: obj });
+  }
+  return out;
+}
+
+function moshiToRow_(obj, col, width, headers) {
+  var row = [];
+  for (var i = 0; i < width; i++) row.push('');
+  for (var j = 0; j < headers.length; j++) {
+    var h = headers[j];
+    if (col[h] === undefined) continue;
+    row[col[h]] = obj[h] == null ? '' : obj[h];
+  }
+  return row;
+}
+
+function listMoshi_(data) {
+  try {
+    var exams = moshiRows_(moshiSheet_(MOSHI_EXAM_SHEET, MOSHI_EXAM_HEADERS), MOSHI_EXAM_HEADERS)
+      .filter(function (x) { return x.obj['削除'] !== '1'; })
+      .map(function (x) { delete x.obj['削除']; return x.obj; });
+    var results = moshiRows_(moshiSheet_(MOSHI_RESULT_SHEET, MOSHI_RESULT_HEADERS), MOSHI_RESULT_HEADERS)
+      .filter(function (x) { return x.obj['削除'] !== '1'; })
+      .map(function (x) { delete x.obj['削除']; return x.obj; });
+    return { ok: true, saved: 'moshi', exams: exams, results: results, fetchedAt: nowJp_() };
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed:' + err };
+  }
+}
+
+function saveMoshiExam_(data) {
+  var rec = data.exam || {};
+  var id = String(rec['ID'] || '').trim();
+  if (!id) return { ok: false, reason: 'bad_id' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = moshiSheet_(MOSHI_EXAM_SHEET, MOSHI_EXAM_HEADERS);
+    var col = dbColMap_(sh);
+    var width = Math.max(sh.getLastColumn(), MOSHI_EXAM_HEADERS.length);
+    var rows = moshiRows_(sh, MOSHI_EXAM_HEADERS);
+    var cur = null;
+    for (var i = 0; i < rows.length; i++) if (rows[i].obj['ID'] === id) cur = rows[i];
+    var ts = nowJp_();
+    rec['更新日時'] = ts;
+    rec['削除'] = '';
+    if (cur) {
+      if (cur.obj['削除'] === '1') return { ok: false, reason: 'not_found' };
+      rec['作成日時'] = cur.obj['作成日時'];
+      rec['作成者'] = cur.obj['作成者'];
+      sh.getRange(cur.row, 1, 1, width).setNumberFormat('@').setValues([moshiToRow_(rec, col, width, MOSHI_EXAM_HEADERS)]);
+    } else {
+      rec['作成日時'] = ts;
+      rec['作成者'] = rec['更新者'] || '';
+      sh.getRange(sh.getLastRow() + 1, 1, 1, width).setNumberFormat('@').setValues([moshiToRow_(rec, col, width, MOSHI_EXAM_HEADERS)]);
+    }
+    delete rec['削除'];
+    return { ok: true, saved: 'moshiExam', item: rec };
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed:' + err };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteMoshiExam_(data) {
+  var id = String(data.id || '').trim();
+  if (!id) return { ok: false, reason: 'bad_id' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = moshiSheet_(MOSHI_EXAM_SHEET, MOSHI_EXAM_HEADERS);
+    var col = dbColMap_(sh);
+    var rows = moshiRows_(sh, MOSHI_EXAM_HEADERS);
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].obj['ID'] !== id) continue;
+      sh.getRange(rows[i].row, col['削除'] + 1).setValue('1');
+      sh.getRange(rows[i].row, col['更新日時'] + 1).setValue(nowJp_());
+      sh.getRange(rows[i].row, col['更新者'] + 1).setValue(String(data.user || ''));
+      return { ok: true, saved: 'moshiExam' };
+    }
+    return { ok: false, reason: 'not_found' };
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed:' + err };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 「29,,32,18」→ 合計（数字が1つも無ければ ''）
+function moshiCellSum_(v) {
+  var parts = String(v == null ? '' : v).split(',');
+  var sum = 0, any = false;
+  for (var i = 0; i < parts.length; i++) {
+    var s = parts[i].trim();
+    if (s === '' || isNaN(Number(s))) continue;
+    sum += Number(s);
+    any = true;
+  }
+  return any ? sum : '';
+}
+
+function moshiTotals_(obj) {
+  var all = 0, complete = true;
+  for (var i = 0; i < MOSHI_SUBJECT_HEADERS.length; i++) {
+    var t = moshiCellSum_(obj[MOSHI_SUBJECT_HEADERS[i]]);
+    obj[MOSHI_SUBJECT_HEADERS[i] + '計'] = t;
+    if (t === '') complete = false; else all += t;
+  }
+  obj['合計'] = complete ? all : '';
+}
+
+// data.rows = [{ record: {見出し名: 値}, fields: [この保存で変えた見出し名] }]。fields が無い・新しい行なら行まるごと書く。
+function saveMoshiResults_(data) {
+  var list = data.rows || [];
+  if (!list.length) return { ok: true, saved: 'moshiResults', items: [] };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = moshiSheet_(MOSHI_RESULT_SHEET, MOSHI_RESULT_HEADERS);
+    var col = dbColMap_(sh);
+    var width = Math.max(sh.getLastColumn(), MOSHI_RESULT_HEADERS.length);
+    var rows = moshiRows_(sh, MOSHI_RESULT_HEADERS);
+    var byId = {};
+    for (var i = 0; i < rows.length; i++) byId[rows[i].obj['ID']] = rows[i];
+    var ts = nowJp_();
+    var user = String(data.user || '');
+    var appended = [];
+    var items = [];
+    var skip = { 'ID': 1, '作成日時': 1, '作成者': 1, '更新日時': 1, '更新者': 1, '削除': 1 };
+    for (var n = 0; n < list.length; n++) {
+      var rec = list[n].record || {};
+      var id = String(rec['ID'] || '').trim();
+      if (!id) continue;
+      var cur = byId[id];
+      var obj;
+      if (cur && cur.obj['削除'] !== '1') {
+        obj = {};
+        for (var k in cur.obj) obj[k] = cur.obj[k];
+        var fields = list[n].fields;
+        if (fields && fields.length) {
+          for (var f = 0; f < fields.length; f++) {
+            if (!skip[fields[f]] && MOSHI_RESULT_HEADERS.indexOf(fields[f]) !== -1) obj[fields[f]] = rec[fields[f]] == null ? '' : String(rec[fields[f]]);
+          }
+        } else {
+          for (var h = 0; h < MOSHI_RESULT_HEADERS.length; h++) {
+            var hh = MOSHI_RESULT_HEADERS[h];
+            if (!skip[hh]) obj[hh] = rec[hh] == null ? '' : String(rec[hh]);
+          }
+        }
+        obj['更新日時'] = ts;
+        obj['更新者'] = user;
+        moshiTotals_(obj);
+        sh.getRange(cur.row, 1, 1, width).setNumberFormat('@').setValues([moshiToRow_(obj, col, width, MOSHI_RESULT_HEADERS)]);
+      } else if (cur) {
+        continue; // 消した行は戻さない
+      } else {
+        obj = {};
+        for (var a = 0; a < MOSHI_RESULT_HEADERS.length; a++) {
+          var ah = MOSHI_RESULT_HEADERS[a];
+          obj[ah] = rec[ah] == null ? '' : String(rec[ah]);
+        }
+        obj['作成日時'] = ts;
+        obj['作成者'] = user;
+        obj['更新日時'] = ts;
+        obj['更新者'] = user;
+        obj['削除'] = '';
+        moshiTotals_(obj);
+        appended.push(moshiToRow_(obj, col, width, MOSHI_RESULT_HEADERS));
+        byId[id] = { row: -1, obj: obj };
+      }
+      var out = {};
+      for (var o in obj) out[o] = obj[o];
+      delete out['削除'];
+      items.push(out);
+    }
+    if (appended.length) {
+      sh.getRange(sh.getLastRow() + 1, 1, appended.length, width).setNumberFormat('@').setValues(appended);
+    }
+    return { ok: true, saved: 'moshiResults', items: items };
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed:' + err };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteMoshiResults_(data) {
+  var ids = data.ids || [];
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = moshiSheet_(MOSHI_RESULT_SHEET, MOSHI_RESULT_HEADERS);
+    var col = dbColMap_(sh);
+    var rows = moshiRows_(sh, MOSHI_RESULT_HEADERS);
+    var want = {};
+    for (var i = 0; i < ids.length; i++) want[String(ids[i])] = true;
+    var n = 0;
+    for (var r = 0; r < rows.length; r++) {
+      if (!want[rows[r].obj['ID']]) continue;
+      sh.getRange(rows[r].row, col['削除'] + 1).setValue('1');
+      sh.getRange(rows[r].row, col['更新日時'] + 1).setValue(nowJp_());
+      sh.getRange(rows[r].row, col['更新者'] + 1).setValue(String(data.user || ''));
+      n++;
+    }
+    return { ok: true, saved: 'moshiResults', deleted: n };
+  } catch (err) {
+    return { ok: false, reason: 'db_open_failed:' + err };
+  } finally {
+    lock.releaseLock();
+  }
 }

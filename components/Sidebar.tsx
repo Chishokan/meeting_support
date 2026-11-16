@@ -3,8 +3,10 @@
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useState } from 'react';
+import { MOSHI_DEPTS } from '@/lib/moshi/access';
 
-type NavItem = { href: string; label: string; desc?: string; soon?: boolean; hidden?: boolean; depts?: string[] };
+// exact: true は、配下のパス（/moshi/report など）を開いているときにアクティブにしない（/moshi は成績入力だけ）。
+type NavItem = { href: string; label: string; desc?: string; soon?: boolean; hidden?: boolean; depts?: string[]; exact?: boolean };
 type NavGroup = { title?: string; items: NavItem[] };
 
 // 左メニュー。会議DXの基本は「部門会議」（事前共有 → 録音 → 議事録 → 次回の事前共有）なので、
@@ -37,15 +39,26 @@ const NAV: NavGroup[] = [
       { href: '/task-coach', label: 'AI壁打ち', desc: '重要タスク評価をもとに行動計画を相談', depts: ['小中等部'] },
     ],
   },
+  {
+    // 本番レベル模試（中3）。生徒の氏名・成績を扱うので小中等部の職員だけに出す（画面と API でも確かめる。lib/moshi/access.ts の MOSHI_DEPTS）。
+    title: '本番レベル模試',
+    items: [
+      { href: '/moshi', label: '成績入力', desc: '大問ごとの得点・名簿・志望校', depts: MOSHI_DEPTS, exact: true },
+      { href: '/moshi/report', label: '成績表・順位表', desc: '個人成績表の印刷・順位表・平均点', depts: MOSHI_DEPTS },
+      { href: '/moshi/ticket', label: '受験票', desc: '受験票の印刷（1枚に2人／4人）', depts: MOSHI_DEPTS },
+      { href: '/moshi/interview', label: '面談（個人成績）', desc: '面談で見せる生徒ごとの成績と推移', depts: MOSHI_DEPTS },
+      { href: '/moshi/settings', label: '模試の設定', desc: '回の追加・配点と分野・受験票の時間割', depts: MOSHI_DEPTS },
+    ],
+  },
 ];
 
 const ALL_ITEMS: NavItem[] = NAV.flatMap((g) => g.items);
 
 // 前方一致だけだと、頭が同じ別の画面（/report と /report-xxx など）までアクティブになるので、
 // 完全一致か「その配下のパス」だけをアクティブとみなす。
-function isActive(pathname: string | null, href: string): boolean {
+function isActive(pathname: string | null, href: string, exact = false): boolean {
   if (!pathname) return false;
-  return pathname === href || pathname.startsWith(href + '/');
+  return pathname === href || (!exact && pathname.startsWith(href + '/'));
 }
 
 export default function Sidebar({ name, campus }: { name: string; campus: string }) {
@@ -58,7 +71,7 @@ export default function Sidebar({ name, campus }: { name: string; campus: string
   }
 
   // 非表示の画面を URL で開いたときも、スマホの上のバーに画面名を出す。
-  const current = ALL_ITEMS.find((n) => isActive(pathname, n.href));
+  const current = ALL_ITEMS.find((n) => isActive(pathname, n.href, n.exact));
 
   const groups = NAV
     .map((g) => ({ ...g, items: g.items.filter((n) => !n.hidden && (!n.depts || n.depts.includes(campus))) }))
@@ -87,7 +100,7 @@ export default function Sidebar({ name, campus }: { name: string; campus: string
             <div key={g.title ?? gi} className="nav-group">
               {g.title && <div className="nav-group-title">{g.title}</div>}
               {g.items.map((n) => {
-                const active = isActive(pathname, n.href);
+                const active = isActive(pathname, n.href, n.exact);
                 return (
                   <Link
                     key={n.href}
