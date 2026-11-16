@@ -7,6 +7,7 @@ import { parseFigure, textsWithoutGlyph } from './figure';
 import { renderFigurePng } from './figurePng';
 import { buildAnswerDocx, buildProblemDocx, type FigureRenderer } from './mathDoc';
 import { checkMathMaterialInput } from './mathMaterialTool';
+import { materialScopeMessage, quizScopeMessage } from './mathScope';
 import { buildQuizDocx, QuizOverflowError } from './mathQuizDoc';
 import { checkMathQuizInput } from './mathQuizTool';
 
@@ -90,6 +91,9 @@ export async function runCreateMathQuiz(
   const c = checkMathQuizInput(input);
   if (!c.ok) return { toolResult: c.message, created: [{ ok: false, title: `小テスト：${String(input?.title ?? '')}`, note: c.message }], inputError: true };
   const q = c.value;
+  // 小学校・中学校の小テストに、高校で習う書き方・方法が無いか（入力の誤りとして返し、書き直してもらう）
+  const scopeQ = quizScopeMessage(q);
+  if (scopeQ) return { toolResult: scopeQ, created: [{ ok: false, title: `小テスト：${q.title}`, note: `中学の範囲外の書き方で作り直し（${scopeQ.slice(0, 80)}）` }], inputError: true };
   const notes: string[] = [];
   const render = figureRenderer(notes);
   let quiz: Buffer;
@@ -154,6 +158,9 @@ export async function runCreateMathMaterial(
   const c = checkMathMaterialInput(input);
   if (!c.ok) return { toolResult: c.message, created: [{ ok: false, title: `数学の教材：${String(input?.title ?? '')}`, note: c.message }], inputError: true };
   const m = c.value;
+  // 小学校・中学校の教材に、高校で習う書き方・方法が無いか（2026-11-16：模試の解説に点と傾きの式・絶対値の記号が出た）
+  const scopeM = materialScopeMessage(m);
+  if (scopeM) return { toolResult: scopeM, created: [{ ok: false, title: `数学の教材：${m.title}`, note: `中学の範囲外の書き方で作り直し（${scopeM.slice(0, 80)}）` }], inputError: true };
   const notes: string[] = [];
   const render = figureRenderer(notes);
   let problem: Buffer;
