@@ -1412,6 +1412,118 @@ export function kenExamRef(e: Pick<KenitsuExam, 'id' | 'name' | 'date'>): Pick<M
   return { id: e.id, name: e.name, date: e.date, grade: '中3' };
 }
 
+// ---- 県一斉模試の面談（詳細） ---------------------------------------------------------
+// 業者の成績の画面に近い形で、教科ごとの県平均・偏差値・県内順位、志望校ごとの判定の中身、これまでの回を出す。
+
+export type KenFit = { mean: number; sd: number; n: number };
+
+/**
+ * 県全体の平均点・標準偏差を、取り込んだ行の「得点と偏差値」から求める
+ * （偏差値＝50＋10×(得点−平均点)÷標準偏差 を最小二乗で当てはめる。25〜75 の外の偏差値は使わない）。
+ * 2026年10月の回では、換算表の平均点・標準偏差と一致する。行が5つ未満なら null。
+ */
+export function kenFitOf(items: KenitsuResult[], examId: string, key: StatKey): KenFit | null {
+  const pts = items
+    .filter((x) => x.examId === examId)
+    .map((x) => x.stats[key])
+    .filter((v): v is KenStat => !!v && v.score != null && v.dev != null && v.dev > 25 && v.dev < 75)
+    .map((v) => [v.score as number, v.dev as number]);
+  const n = pts.length;
+  if (n < 5) return null;
+  const mx = pts.reduce((a, p) => a + p[0], 0) / n;
+  const my = pts.reduce((a, p) => a + p[1], 0) / n;
+  const sxx = pts.reduce((a, p) => a + (p[0] - mx) ** 2, 0);
+  if (!sxx) return null;
+  const b = pts.reduce((a, p) => a + (p[0] - mx) * (p[1] - my), 0) / sxx;
+  if (!(b > 0)) return null;
+  const a = my - b * mx;
+  return { mean: (50 - a) / b, sd: 10 / b, n };
+}
+
+export function kenFits(items: KenitsuResult[], examId: string): Record<StatKey, KenFit | null> {
+  const out = {} as Record<StatKey, KenFit | null>;
+  for (const key of STAT_KEYS) out[key] = kenFitOf(items, examId, key);
+  return out;
+}
+
+/** 志望校の判定基準（参考データの1校分：判定教科・B判定基準偏差値・B判定基準得点・満点）。 */
+export type KenJudgeBase = { rule: string; bDev: number; bScore: number; max: number };
+
+export type KenJudgeDetail = {
+  rule: string;
+  max: number;
+  score: number | null;  // 判定得点（判定教科の倍率をかけた合計）
+  dev: number | null;    // 判定偏差値（基準の資料がこの回のものでないときは null）
+  bDev: number;          // 基準偏差値（B判定基準偏差値）
+  bScore: number | null; // 基準得点（B判定基準得点。この回の資料のときだけ）
+  toB: number | null;    // 基準得点まであと何点（届いていれば 0 以下）
+};
+
+/**
+ * 志望校の判定の中身。判定得点は判定教科の倍率をかけた合計。
+ * 判定偏差値は、判定用の平均（教科の県平均に同じ倍率をかけた合計）と「偏差値1あたりの点＝(基準得点−判定用の平均)÷(基準偏差値−50)」から出す
+ * （業者の判定偏差値と同じ。基準の資料がその回のもの＝sameExam のときだけ）。
+ */
+export function kenJudgeDetail(k: KenitsuResult, base: KenJudgeBase, fits: Record<StatKey, KenFit | null>, sameExam: boolean): KenJudgeDetail | null {
+  const w = parseRule(base.rule);
+  if (!w) return null;
+  let score: number | null = 0;
+  let wMean: number | null = 0;
+  for (const key of SUBJECT_KEYS) {
+    if (!w[key]) continue;
+    const sc = k.stats[key]?.score;
+    const m = fits[key]?.mean;
+    score = score == null || sc == null ? null : score + w[key] * sc;
+    wMean = wMean == null || m == null ? null : wMean + w[key] * m;
+  }
+  const out: KenJudgeDetail = { rule: base.rule, max: base.max, score: score == null ? null : round1(score), dev: null, bDev: base.bDev, bScore: null, toB: null };
+  if (!sameExam) return out;
+  out.bScore = base.bScore;
+  if (score != null) out.toB = Math.ceil(round1(base.bScore - score));
+  if (score != null && wMean != null && base.bDev !== 50) {
+    const ppd = (base.bScore - wMean) / (base.bDev - 50);
+    if (ppd > 0) out.dev = round1(50 + (score - wMean) / ppd);
+  }
+  return out;
+}
+
+/** その学校を（4つのどれかに）書いた塾内の生徒：人数・本人の順位（判定得点、無ければ5科）・判定偏差値（無ければ5科偏差値）の平均。 */
+export function kenSchoolGroup(
+  ks: KenStats, row: KenRow, code: string,
+  base: KenJudgeBase | null, fits: Record<StatKey, KenFit | null>, sameExam: boolean,
+): { n: number; rank: number | null; avgDev: number | null } | null {
+  if (!code) return null;
+  const group = ks.rows.filter((x) => x.k.choices.some((c) => c.code === code));
+  if (!group.length) return null;
+  const detail = (x: KenRow) => (base ? kenJudgeDetail(x.k, base, fits, sameExam) : null);
+  const scoreOf = (x: KenRow) => detail(x)?.score ?? x.k.stats.k5?.score ?? null;
+  const devOf = (x: KenRow) => detail(x)?.dev ?? x.k.stats.k5?.dev ?? null;
+  const scores = group.map(scoreOf).filter((v): v is number => v != null);
+  const mine = scoreOf(row);
+  const devs = group.map(devOf).filter((v): v is number => v != null);
+  return {
+    n: group.length,
+    rank: mine == null || !group.some((x) => x === row || (x.k.campus === row.k.campus && x.k.examNo === row.k.examNo)) ? null : rankIn(scores, mine),
+    avgDev: devs.length ? round1(devs.reduce((a, b) => a + b, 0) / devs.length) : null,
+  };
+}
+
+/** その学校を第1志望（公立第1か国・私立第1）にした塾内の生徒の、教科ごとの平均点。 */
+export function kenFirstChoiceMean(ks: KenStats, code: string): { n: number; mean: Record<SubjectKey, number | null> } {
+  const group = ks.rows.filter((x) => code && (x.k.choices[0]?.code === code || x.k.choices[2]?.code === code));
+  const mean = {} as Record<SubjectKey, number | null>;
+  for (const key of SUBJECT_KEYS) {
+    const v = group.map((x) => x.k.stats[key]?.score).filter((s): s is number => s != null);
+    mean[key] = v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  }
+  return { n: group.length, mean };
+}
+
+/** 同じ生徒（校舎＋受験番号）の、取り込んだ県一斉模試の全部の回（古い順）。 */
+export function kenHistory(items: KenitsuResult[], campus: string, examNo: string): KenitsuResult[] {
+  return items.filter((x) => x.campus === campus && x.examNo === examNo).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 /** ファイル名（「…_2026年10月_…」）から回名と実施日の見当をつける（日は分からないので1日）。 */
 export function kenGuessFromFileName(fileName: string): { name: string; date: string } {
   const m = /(\d{4})年(\d{1,2})月/.exec(fileName ?? '');

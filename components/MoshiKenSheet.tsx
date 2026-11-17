@@ -3,7 +3,7 @@
 // 県一斉模試の個人成績表（A4 横1枚）。取り込んだ県一斉模試の成績だけで出す（本番レベル模試の成績表と同じ枠・同じグラフ）。
 //   左：表題・受験番号・氏名・所属 ／ 得点表（得点・偏差値・県内順位・塾内順位・塾内平均）／ 志望校判定（業者の判定・合格確率・塾内の志望者の順位）
 //   中：得点の分布（塾内）／ 教科のバランス（塾内平均と）／ 前回の県一斉模試との比較
-//   右：教科別偏差値推移（本番レベル模試の回も並ぶ）／ 偏差値の分布（塾内）／ 先生から（書き込む欄）
+//   右：教科別偏差値推移（本番レベル模試の回も並ぶ）／ 偏差値の分布（塾内）（「先生から」の欄は置かない）
 // 偏差値・県内順位・判定・合格確率は業者の値（県全体）。塾内の数字は、取り込んだ智翔館 中等部の行から計算する（lib/moshi/model.ts の kenStatsOf）。
 // 氏名は本番レベル模試の名簿から「校舎＋受験番号」で引いたもの（県一斉模試の行は氏名を持たない）。
 
@@ -138,8 +138,6 @@ export function KenReportSheet({ ks, row, kenitsu, statsList }: { ks: KenStats; 
         <TrendLines trend={trend} />
         <div className="rs-pill rs-pill-pink">偏差値の分布<small className="rs-pill-note">5教科・塾内</small></div>
         <DevDist bins={devBinsOf(devs, k.stats.k5?.dev ?? null)} />
-        <div className="rs-h rs-h-sm">先生から</div>
-        <div className="rs-comment" />
       </section>
 
       <footer className="rs-foot">

@@ -5,11 +5,11 @@ import assert from 'node:assert/strict';
 import {
   choiceRanks, cleanExam, cleanResult, computeStats, DEFAULT_JUDGE_OPTIONS, DEFAULT_SUBJECTS, devBins, judgeOf, parseRule, reportFigures, ruleMax,
   scoreBins, trendRows, yearExams, emptyOutside, emptyScores, examMax, fitScores, historyOf,
-  campusOfVenue, cleanKenItem, devBinsOf, kenChoiceRank, kenExamRef, kenNames, kenStatsOf, scoreBinsOf, kenExams, kenGuessFromFileName, kenIdMap, kenRoster, kenScores, kenTable, parseCsv, inputSheetRows, jpDate, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
+  campusOfVenue, cleanKenItem, devBinsOf, kenFitOf, kenFits, kenJudgeDetail, kenSchoolGroup, kenFirstChoiceMean, kenHistory, kenChoiceRank, kenExamRef, kenNames, kenStatsOf, scoreBinsOf, kenExams, kenGuessFromFileName, kenIdMap, kenRoster, kenScores, kenTable, parseCsv, inputSheetRows, jpDate, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
   scoresToCell, subjectMax,
   type MoshiExam, type MoshiResult, type Scores,
 } from './model.ts';
-import { REFERENCES, TO_REF, refSchoolFor } from './reference.ts';
+import { REFERENCES, TO_REF, refSchoolByCode, refSchoolFor, referenceForDate } from './reference.ts';
 
 function exam(p: Partial<MoshiExam> = {}): MoshiExam {
   return {
@@ -596,4 +596,69 @@ test('県一斉模試の回を「この回」にした推移：同じ年度の�
   const t = trendRows(list, kenExamRef({ id: 'ken-2026-10-18', name: '長崎県一斉模試 2026年10月', date: '2026-10-18' }), { name: '山田　太郎', campus: '日野校', examNo: '0012' }, ken);
   assert.deepEqual(t.map((x) => [x.kind, x.label, x.current]), [['ken', '8月', false], ['ken', '10月', true], ['honban', '11月', false]]);
   assert.equal(t[2].dev.k5, 50); // 本番は氏名＋受験番号で同じ生徒を見つける
+});
+
+// 県一斉模試の1行（教科の得点・偏差値だけ）
+function kenItem(examId: string, campus: string, examNo: string, sc: Partial<Record<'ja' | 'en' | 'ma' | 'so' | 'sc' | 'k3' | 'k5', [number, number]>>, codes: string[] = []) {
+  const stats = {} as Record<string, { score: number | null; dev: number | null; rank: number | null }>;
+  for (const key of ['ja', 'en', 'ma', 'so', 'sc', 'k3', 'k5']) {
+    const v = (sc as Record<string, [number, number] | undefined>)[key];
+    stats[key] = { score: v ? v[0] : null, dev: v ? v[1] : null, rank: null };
+  }
+  return {
+    examId, examName: examId, date: '2026-10-18', campus, examNo, gender: '' as const, naishin: '',
+    stats: stats as never, choices: [0, 1, 2, 3].map((i) => ({ code: codes[i] ?? '', name: '', judge: '', prob: '' })),
+  };
+}
+
+test('県平均・標準偏差：得点と偏差値の組から当てはめる（25〜75 の外は使わない）', () => {
+  const dev = (x: number) => 50 + (10 * (x - 264.3)) / 88.8; // 実際のファイルは0.1に丸めてあるが、行が多いので同じ値になる
+  const items = [120, 180, 230, 264, 300, 350, 420, 480].map((x, i) => kenItem('ken-a', '日野校', String(i + 1).padStart(4, '0'), { k5: [x, dev(x)] }));
+  items.push(kenItem('ken-a', '日野校', '0099', { k5: [500, 80] })); // 75 を超える偏差値は使わない
+  const f = kenFitOf(items, 'ken-a', 'k5')!;
+  assert.equal(Math.round(f.mean * 10) / 10, 264.3);
+  assert.equal(Math.round(f.sd * 10) / 10, 88.8);
+  assert.equal(f.n, 8);
+  assert.equal(kenFitOf(items.slice(0, 3), 'ken-a', 'k5'), null); // 5つ未満
+  assert.equal(kenFits(items, 'ken-a').ja, null);
+});
+
+test('判定の中身：判定得点・判定偏差値・基準まであと何点（業者の画面の数字と同じ）', () => {
+  const fits = { ja: { mean: 57.8, sd: 15.2, n: 99 }, en: { mean: 49.0, sd: 22.3, n: 99 }, ma: { mean: 52.7, sd: 20.6, n: 99 }, so: { mean: 50.9, sd: 20.7, n: 99 }, sc: { mean: 53.7, sd: 21.5, n: 99 }, k3: null, k5: null };
+  const k = kenItem('ken-a', '日野校', '0001', { en: [51, 50.9], ma: [55, 51.1], ja: [48, 43.5], sc: [57, 51.5], so: [66, 57.3] });
+  const base = refSchoolByCode(REFERENCES[0], '518-01')!; // 県立佐世保北 普通科：国数英1.5倍・基準偏差値57・基準得点424
+  const d = kenJudgeDetail(k, base, fits, true)!;
+  assert.equal(d.score, 354);
+  assert.equal(d.max, 650);
+  assert.equal(d.dev, 50.9);
+  assert.equal(d.bDev, 57);
+  assert.equal(d.toB, 70);
+  // 資料が別の回のものなら、判定偏差値・基準得点・あと何点は出さない
+  const other = kenJudgeDetail(k, base, fits, false)!;
+  assert.deepEqual([other.score, other.dev, other.bScore, other.toB], [354, null, null, null]);
+  // 教科が欠けていれば判定得点は出ない
+  assert.equal(kenJudgeDetail(kenItem('ken-a', '日野校', '0002', { en: [51, 50] }), base, fits, true)!.score, null);
+  assert.equal(referenceForDate('2026-10-18')?.id, 'kenitsu-2026-10');
+  assert.equal(referenceForDate('2026-08-23'), undefined);
+});
+
+test('塾内の志望者・第1志望者の平均・これまでの回', () => {
+  const s5 = (x: number): [number, number] => [x, 50];
+  const items = [
+    kenItem('ken-a', '日野校', '0001', { ja: [80, 60], en: [70, 55], k5: s5(350) }, ['518-01', '', '608-01']),
+    kenItem('ken-a', '日野校', '0002', { ja: [60, 50], en: [50, 50], k5: s5(300) }, ['520-01', '518-01']),
+    kenItem('ken-a', '大野校', '0001', { ja: [40, 40], en: [30, 40], k5: s5(250) }, ['518-01']),
+    { ...kenItem('ken-b', '日野校', '0001', { k5: s5(320) }), date: '2026-08-23' },
+  ];
+  const ks = kenStatsOf(items, 'ken-a', new Map())!;
+  const me = ks.rows[1]; // 日野校 0002
+  const g = kenSchoolGroup(ks, me, '518-01', null, {} as never, false)!;
+  assert.deepEqual([g.n, g.rank], [3, 2]);
+  assert.equal(kenSchoolGroup(ks, me, '', null, {} as never, false), null);
+  const fc = kenFirstChoiceMean(ks, '518-01'); // 第1志望（公立第1・国私立第1）は 日野0001・大野0001
+  assert.equal(fc.n, 2);
+  assert.equal(fc.mean.ja, 60);
+  assert.equal(fc.mean.en, 50);
+  assert.equal(kenFirstChoiceMean(ks, '608-01').n, 1);
+  assert.deepEqual(kenHistory(items, '日野校', '0001').map((x) => x.examId), ['ken-b', 'ken-a']);
 });

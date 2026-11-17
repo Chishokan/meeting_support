@@ -3181,3 +3181,76 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 /* 成績表・面談：本番レベル模試／県一斉模試の切り替え（components/MoshiShared.tsx の KindSwitch） */
 .ms-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 12px; }
 .ms-kind-label { font-size: 12px; color: #667; }
+
+/* 県一斉模試の面談画面（詳細。components/MoshiKenDetail.tsx）。業者の成績の画面に近い形 */
+.kd { background: #fff; border: 1px solid #e2e6ea; border-radius: 10px; padding: 14px 16px 18px; container-type: inline-size; }
+.kd-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; font-size: 15px; margin: 0 0 10px; }
+.kd-head b { font-size: 20px; letter-spacing: .04em; }
+.kd-sub { font-size: 12.5px; color: #667; }
+.kd-tabs, .kd-subtabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.kd-tabs { padding: 8px; background: #f6f8fa; border: 1px solid #e3e8ee; border-radius: 8px; }
+.kd-tabs button, .kd-subtabs button { border: 1px solid #2a78d6; background: #fff; color: #2a78d6; border-radius: 6px; padding: 7px 14px; font-size: 14px; font-family: inherit; cursor: pointer; }
+.kd-tabs button.on, .kd-subtabs button.on { background: #2a78d6; color: #fff; }
+.kd-subtabs { margin: 0 0 6px; }
+.kd-panel { margin-top: 12px; }
+.kd-h { font-size: 17px; margin: 14px 0 6px; }
+.kd-h::before { content: '◇'; margin-right: 2px; }
+.kd-h-blue { color: #1f6fc5; }
+.kd-h-blue::before { content: none; }
+.kd-note, .kd-muted { font-size: 12px; color: #6b7480; line-height: 1.6; }
+.kd-note { margin: 8px 0 0; }
+.kd-scroll { overflow-x: auto; }
+.kd-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.kd-table th, .kd-table td { border: 1px solid #d5dbe1; padding: 7px 10px; }
+.kd-table thead th { background: #f3f5f8; font-weight: 600; text-align: center; white-space: nowrap; }
+.kd-table tbody th { text-align: left; font-weight: 600; white-space: nowrap; background: #fafbfc; }
+.kd-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kd-table small { color: #6b7480; font-size: 11.5px; }
+.kd-center { text-align: center; }
+.kd-now tr.kd-total th { font-size: 15.5px; }
+.kd-now .kd-dev { font-size: 16px; }
+.kd-graph-h { min-width: 300px; }
+.kd-scale { position: relative; height: 16px; margin-top: 4px; font-weight: 400; font-size: 12px; color: #445; }
+.kd-scale span { position: absolute; transform: translateX(-50%); }
+.kd-graph { padding: 6px 8px !important; }
+.kd-track { position: relative; height: 18px; background: #eef1f4; }
+.kd-track i { position: absolute; top: 0; bottom: 0; width: 1px; background: #d7dce2; }
+.kd-track i.kd-50 { background: #9aa3ad; }
+.kd-bar { position: absolute; left: 0; top: 0; bottom: 0; opacity: .92; }
+.kd-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.kd-select { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #445; white-space: nowrap; }
+.kd-select select { padding: 7px 10px; font-size: 14px; font-family: inherit; border: 1px solid #cdd3da; border-radius: 8px; }
+.kd-radar { display: block; width: 100%; max-width: 520px; height: auto; margin: 6px 0 0; }
+.kd-ring { fill: none; stroke: #d6dbe1; stroke-width: 1; }
+.kd-ax { font-size: 12px; fill: #556; }
+.kd-ax-cur { font-weight: 700; fill: #111; }
+.kd-ax-label { font-size: 14px; fill: #222; font-weight: 600; }
+.kd-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.kd-legend button { display: inline-flex; align-items: center; gap: 6px; border: none; background: none; font-size: 13px; color: #333; cursor: pointer; font-family: inherit; padding: 2px 0; }
+.kd-legend button.off { opacity: .4; text-decoration: line-through; }
+.kd-legend i { width: 28px; height: 12px; border: 2px solid; border-radius: 2px; }
+.kd-trend th, .kd-trend td { min-width: 70px; }
+.kd-trend td.kd-cur { font-weight: 700; background: #f2f7fd; }
+.kd-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+.kd-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+.kd-lines { width: 100%; height: auto; border: 1px solid #e3e8ee; border-radius: 6px; }
+.kd-grid { stroke: #e3e7ec; stroke-width: 1; }
+.kd-grid-50 { stroke: #b6bdc5; }
+.kd-legend-svg { font-size: 12.5px; fill: #333; }
+.kd-judge { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+/* 面談の画面は左に生徒の一覧があって狭いので、幅が足りないときは判定の表と志望校情報を上下に並べる */
+@container (max-width: 1040px) { .kd-judge { grid-template-columns: minmax(0, 1fr); } }
+.kd-jlist td:nth-child(3) { min-width: 12em; }
+.kd-jlist tr.on td { background: #f2f7fd; }
+.kd-pill { border: 1px solid #2a78d6; background: #fff; color: #2a78d6; border-radius: 6px; padding: 6px 10px; font-size: 13.5px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.kd-pill.on { background: #2a78d6; color: #fff; }
+.kd-grade { text-align: center; font-size: 20px; font-weight: 800; }
+.kd-prob { font-size: 17px; font-weight: 700; }
+.kd-info { table-layout: fixed; }
+.kd-info th { background: #d7eef4 !important; text-align: center !important; white-space: normal !important; }
+.kd-info td { font-size: 15px; }
+.kd-big { font-size: 17px; color: #445; margin: 12px 0 0; }
+.kd-big b { font-size: 30px; color: #111; margin: 0 4px; }
+.kd-next { margin-top: 12px; }
+.kd-next td { font-size: 15px; }
+.kd-past tr.on td { background: #f2f7fd; }

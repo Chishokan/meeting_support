@@ -3,7 +3,8 @@
 // 県一斉模試の成績表・面談（成績表の画面・面談の画面で「見る模試：県一斉模試」を選んだとき）。
 // 取り込んだ県一斉模試の成績だけで出す。氏名は本番レベル模試の名簿から「校舎＋受験番号」で引く（lib/moshi/model.ts の kenNames）。
 //   - 成績表：一覧（5教科の高い順。印刷・CSV）と、個人成績表（1人1枚 A4 横。選んだ人をまとめて印刷）
-//   - 面談：生徒を1人選んで個人成績表を大きく出す。前回の県一斉模試との差。「大きく表示」でほかの生徒の名前を隠す
+//   - 面談：生徒を1人選んで、業者の成績の画面のような詳しい成績（components/MoshiKenDetail.tsx）を出す。前回の県一斉模試との差。
+//     「大きく表示」でほかの生徒の名前を隠す。印刷は個人成績表（A4 横）
 
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -12,6 +13,7 @@ import {
 } from '@/lib/moshi/model';
 import { FitSheet } from './MoshiReportSheet';
 import { KenReportSheet, kenBefore } from './MoshiKenSheet';
+import { KenDetail } from './MoshiKenDetail';
 import { KenBar, NoKenNote, campusLabel, downloadCsv, fmt1, printLandscape, printPortrait } from './MoshiShared';
 
 type Common = {
@@ -237,8 +239,8 @@ export function KenInterviewView(p: Common) {
                 <button type="button" className="ms-btn" onClick={() => printLandscape(() => setPrinting(true))}>成績表を印刷</button>
               </div>
               {before && <KenCompare before={before} now={row.k} />}
-              <div className="ms-noprint ms-interview-card">
-                <FitSheet max={1.6}><KenReportSheet ks={ks} row={row} kenitsu={p.kenitsu} statsList={p.statsList} /></FitSheet>
+              <div className="ms-noprint">
+                <KenDetail ks={ks} row={row} kenitsu={p.kenitsu} statsList={p.statsList} onPickExam={p.onKen} />
               </div>
               {!row.name && (
                 <p className="ms-fine ms-noprint">
