@@ -3,7 +3,7 @@
 智翔館アプリ群の本番リリースごとの変更を記録する。
 バージョンの付け方と本番に出す手順は [docs/release.md](docs/release.md) を参照。
 
-## [未リリース]
+## [1.4.1] - 2026-11-17
 
 ### 変更
 - 成績管理（本番レベル模試）の保存先を、会議DXの Apps Script から**成績管理専用の Apps Script（apps_script/seiseki.gs）と
