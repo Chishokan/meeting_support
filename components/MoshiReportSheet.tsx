@@ -29,7 +29,7 @@ const SERIES: { key: StatKey; color: string; mark: 'circle' | 'diamond' | 'trian
   { key: 'k5', color: '#1f2329', mark: 'star' },
 ];
 
-function f1(n: number | null | undefined): string {
+export function f1(n: number | null | undefined): string {
   return n == null || !Number.isFinite(n) ? '' : (Math.round(n * 10) / 10).toFixed(1);
 }
 
@@ -213,11 +213,11 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
 }
 
 /** 推移の行の名前：本番レベル模試は「11月」、県一斉模試は「10月県」。 */
-function trendLabel(t: TrendRow): string {
+export function trendLabel(t: TrendRow): string {
   return t.kind === 'ken' ? `${t.label}県` : t.label;
 }
 
-function padRows(rows: TrendRow[], min: number): (TrendRow | null)[] {
+export function padRows(rows: TrendRow[], min: number): (TrendRow | null)[] {
   const out: (TrendRow | null)[] = [...rows];
   while (out.length < min) out.push(null);
   return out;
@@ -226,7 +226,7 @@ function padRows(rows: TrendRow[], min: number): (TrendRow | null)[] {
 // ---- グラフ ----------------------------------------------------------------
 
 /** 得点の分布（縦棒・高い点から）。自分の入る棒だけ濃くして「あなた」と書く。 */
-function ScoreDist({ bins }: { bins: Bin[] }) {
+export function ScoreDist({ bins }: { bins: Bin[] }) {
   const W = 330, H = 150, left = 22, right = 4, top = 10, bottom = 44;
   const maxC = Math.max(1, ...bins.map((b) => b.count));
   const step = niceStep(maxC);
@@ -278,24 +278,37 @@ function niceStep(max: number): number {
 
 /** 教科のバランス（レーダー）：本人の得点（青）と平均点（灰色の点線）を、各教科の満点に対する割合で。 */
 function Balance({ stats, row }: { stats: ExamStats; row: RowStat }) {
-  const W = 330, H = 170, cx = 165, cy = 92, R = 66;
   const figs = reportFigures(stats, row);
+  return (
+    <Radar
+      mine={SUBJECT_KEYS.map((k) => row.sub[k])}
+      avg={SUBJECT_KEYS.map((k) => figs.find((f) => f.key === k)?.mean ?? null)}
+      max={SUBJECT_KEYS.map((k) => subjectMax(stats.exam, k) || 100)}
+    />
+  );
+}
+
+/** 5教科のレーダー（国英数社理の順）。mine・avg は得点、max は満点。avgLabel は凡例の「平均」の言い方。 */
+export function Radar({ mine: mineScores, avg: avgScores, max, avgLabel = '平均' }: {
+  mine: (number | null)[]; avg: (number | null)[]; max: number[]; avgLabel?: string;
+}) {
+  const W = 330, H = 170, cx = 165, cy = 92, R = 66;
   const pt = (i: number, v: number) => {
     const a = -Math.PI / 2 + (2 * Math.PI * i) / SUBJECT_KEYS.length;
     return [cx + R * v * Math.cos(a), cy + R * v * Math.sin(a)];
   };
-  const ratio = (k: (typeof SUBJECT_KEYS)[number], v: number | null) => (v == null ? 0 : Math.max(0, Math.min(1, v / (subjectMax(stats.exam, k) || 100))));
-  const mine = SUBJECT_KEYS.map((k, i) => pt(i, ratio(k, row.sub[k])));
-  const avg = SUBJECT_KEYS.map((k, i) => pt(i, ratio(k, figs.find((f) => f.key === k)?.mean ?? null)));
+  const ratio = (i: number, v: number | null) => (v == null ? 0 : Math.max(0, Math.min(1, v / (max[i] || 100))));
+  const mine = SUBJECT_KEYS.map((_, i) => pt(i, ratio(i, mineScores[i])));
+  const avg = SUBJECT_KEYS.map((_, i) => pt(i, ratio(i, avgScores[i])));
   const poly = (ps: number[][]) => ps.map((p) => p.join(',')).join(' ');
   return (
     <svg className="rs-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="教科のバランス">
       <g className="rs-legend-svg">
         <line x1={8} x2={22} y1={10} y2={10} className="rs-radar-avg" />
-        <text x={26} y={13}>平均</text>
-        <line x1={58} x2={72} y1={10} y2={10} className="rs-radar-mine-line" />
-        <circle cx={65} cy={10} r={2.6} className="rs-radar-dot" />
-        <text x={76} y={13}>あなたの得点</text>
+        <text x={26} y={13}>{avgLabel}</text>
+        <line x1={68} x2={82} y1={10} y2={10} className="rs-radar-mine-line" />
+        <circle cx={75} cy={10} r={2.6} className="rs-radar-dot" />
+        <text x={86} y={13}>あなたの得点</text>
       </g>
       {[0.2, 0.4, 0.6, 0.8, 1].map((t) => (
         <polygon key={t} points={poly(SUBJECT_KEYS.map((_, i) => pt(i, t)))} className="rs-gl rs-radar-ring" />
@@ -306,7 +319,7 @@ function Balance({ stats, row }: { stats: ExamStats; row: RowStat }) {
       <polygon points={poly(mine)} className="rs-radar-mine" />
       {SUBJECT_KEYS.map((k, i) => (
         <circle key={k} cx={mine[i][0]} cy={mine[i][1]} r={2.6} className="rs-radar-dot">
-          <title>{`${SUBJECT_NAMES[k]}：${row.sub[k] ?? '未受験'}点（平均 ${f1(figs.find((f) => f.key === k)?.mean)}点）`}</title>
+          <title>{`${SUBJECT_NAMES[k]}：${mineScores[i] ?? '未受験'}点（${avgLabel} ${f1(avgScores[i])}点）`}</title>
         </circle>
       ))}
       {SUBJECT_KEYS.map((k, i) => {
@@ -339,7 +352,7 @@ function Mark({ kind, x, y, color }: { kind: (typeof SERIES)[number]['mark']; x:
 }
 
 /** 偏差値の推移（その年度の回ごと）。教科ごとに色と印の形を変え、右に凡例を置く。 */
-function TrendLines({ trend }: { trend: TrendRow[] }) {
+export function TrendLines({ trend }: { trend: TrendRow[] }) {
   const W = 300, H = 160, left = 26, right = 64, top = 10, bottom = 22;
   const vals = trend.flatMap((t) => SERIES.map((s) => t.dev[s.key])).filter((v): v is number => v != null);
   const lo = Math.min(30, Math.floor(Math.min(...vals, 50) / 10) * 10);
@@ -383,7 +396,7 @@ function TrendLines({ trend }: { trend: TrendRow[] }) {
 }
 
 /** 偏差値の分布（横棒・上が高い偏差値）。自分の入る棒だけ濃くする。 */
-function DevDist({ bins }: { bins: Bin[] }) {
+export function DevDist({ bins }: { bins: Bin[] }) {
   const W = 300, rowH = 9, left = 44, right = 30, top = 4, bottom = 16;
   const H = top + rowH * bins.length + bottom;
   const maxC = Math.max(1, ...bins.map((b) => b.count));

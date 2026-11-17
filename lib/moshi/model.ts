@@ -705,7 +705,7 @@ export function choiceRanks(stats: ExamStats, row: RowStat): ChoiceRank[] {
 export type HistoryPoint = { exam: MoshiExam; row: RowStat; n: number };
 
 /** その回の中で、target と同じ生徒の行（氏名が同じで、受験番号か校舎が同じ）。 */
-export function sameStudent(stats: ExamStats, target: MoshiResult): RowStat | null {
+export function sameStudent(stats: ExamStats, target: Pick<MoshiResult, 'name' | 'examNo' | 'campus'>): RowStat | null {
   const key = nameKey(target.name);
   if (!key) return null;
   return stats.rows.find((x) => nameKey(x.r.name) === key && ((target.examNo && x.r.examNo === target.examNo) || x.r.campus === target.campus)) ?? null;
@@ -1048,9 +1048,13 @@ export type Bin = { label: string; count: number; mine: boolean };
 
 /** 五教科の得点の分布（高い点から。元の帳票と同じく25点きざみ「476～500」…「0～25」）。 */
 export function scoreBins(stats: ExamStats, row: RowStat | null, size = 25): Bin[] {
-  const max = examMax(stats.exam);
-  const nb = Math.max(1, Math.ceil(max / size));
   const totals = stats.rows.filter((x) => x.total != null).map((x) => x.total as number);
+  return scoreBinsOf(totals, row?.total ?? null, examMax(stats.exam), size);
+}
+
+/** 得点の分布（高い点から size 点きざみ）。totals＝全員の得点、mine＝本人の得点。 */
+export function scoreBinsOf(totals: number[], mine: number | null, max: number, size = 25): Bin[] {
+  const nb = Math.max(1, Math.ceil(max / size));
   const out: Bin[] = [];
   for (let i = nb - 1; i >= 0; i--) {
     const lo = i === 0 ? 0 : i * size + 1;
@@ -1058,7 +1062,7 @@ export function scoreBins(stats: ExamStats, row: RowStat | null, size = 25): Bin
     out.push({
       label: `${lo}～${hi}`,
       count: totals.filter((t) => t >= lo && t <= hi).length,
-      mine: row?.total != null && row.total >= lo && row.total <= hi,
+      mine: mine != null && mine >= lo && mine <= hi,
     });
   }
   return out;
@@ -1076,7 +1080,11 @@ export function dev5Of(exam: MoshiExam, row: RowStat): number | null {
 /** 五教科の偏差値の分布（高いほうから。2.5 きざみで、75 以上・25 未満はまとめる）。 */
 export function devBins(stats: ExamStats, row: RowStat | null, width = 2.5, lo = 25, hi = 75): Bin[] {
   const devs = stats.rows.map((x) => dev5Of(stats.exam, x)).filter((d): d is number => d != null);
-  const mine = row ? dev5Of(stats.exam, row) : null;
+  return devBinsOf(devs, row ? dev5Of(stats.exam, row) : null, width, lo, hi);
+}
+
+/** 偏差値の分布（高いほうから width きざみ。hi 以上・lo 未満はまとめる）。devs＝全員、mine＝本人。 */
+export function devBinsOf(devs: number[], mine: number | null, width = 2.5, lo = 25, hi = 75): Bin[] {
   const inBin = (d: number, a: number, b: number) => d >= a && d < b;
   const out: Bin[] = [{ label: `${hi.toFixed(1)}以上`, count: devs.filter((d) => d >= hi).length, mine: mine != null && mine >= hi }];
   for (let b = hi - width; b >= lo - 1e-9; b -= width) {
@@ -1094,9 +1102,9 @@ export function schoolYear(date: string): number | null {
 }
 
 /** 同じ年度・同じ学年の回（実施日の古い順）。成績表の「教科別偏差値推移」の行になる（まだ受けていない回も入る）。 */
-export function yearExams(exams: MoshiExam[], exam: MoshiExam): MoshiExam[] {
+export function yearExams(exams: MoshiExam[], exam: Pick<MoshiExam, 'id' | 'date' | 'grade'>): MoshiExam[] {
   const fy = schoolYear(exam.date);
-  if (fy == null) return [exam];
+  if (fy == null) return exams.filter((e) => e.id === exam.id);
   return exams
     .filter((e) => e.id === exam.id || (e.grade === exam.grade && schoolYear(e.date) === fy))
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
@@ -1120,13 +1128,19 @@ function monthOf(name: string, date: string): string {
 
 /**
  * 教科別偏差値推移：その年度の回ごとに、7列の偏差値（受けていない回は空）。
+ * exam は本番レベル模試の回か、県一斉模試の回（{ id: 'ken-…', name, date, grade: '中3' }）。その回の行が current になる。
  * 本番レベル模試の回に、取り込んだ県一斉模試の回（ken）も実施日の順に並べる。県一斉模試の偏差値は業者の値をそのまま使い、
  * 生徒は「校舎＋受験番号」で結び付ける（氏名は使わない）。
  */
-export function trendRows(statsList: ExamStats[], exam: MoshiExam, target: MoshiResult, ken: KenitsuResult[] = []): TrendRow[] {
+export function trendRows(
+  statsList: ExamStats[],
+  exam: Pick<MoshiExam, 'id' | 'name' | 'date' | 'grade'>,
+  target: Pick<MoshiResult, 'name' | 'examNo' | 'campus'> & { id?: string },
+  ken: KenitsuResult[] = [],
+): TrendRow[] {
   const out: TrendRow[] = yearExams(statsList.map((s) => s.exam), exam).map((e) => {
     const s = statsList.find((x) => x.exam.id === e.id);
-    const row = !s ? null : s.rows.find((x) => x.r.id === target.id) ?? sameStudent(s, target);
+    const row = !s ? null : (target.id ? s.rows.find((x) => x.r.id === target.id) : undefined) ?? sameStudent(s, target);
     const figs = s && row ? reportFigures(s, row) : null;
     const dev = {} as Record<StatKey, number | null>;
     for (const k of STAT_KEYS) dev[k] = figs?.find((f) => f.key === k)?.dev ?? null;
@@ -1141,7 +1155,7 @@ export function trendRows(statsList: ExamStats[], exam: MoshiExam, target: Moshi
         : undefined;
       const dev = {} as Record<StatKey, number | null>;
       for (const k of STAT_KEYS) dev[k] = me?.stats[k]?.dev ?? null;
-      out.push({ key: ke.id, kind: 'ken', label: monthOf(ke.name, ke.date), date: ke.date, current: false, dev });
+      out.push({ key: ke.id, kind: 'ken', label: monthOf(ke.name, ke.date), date: ke.date, current: ke.id === exam.id, dev });
     }
   }
   return out.sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.kind === b.kind ? 0 : a.kind === 'ken' ? -1 : 1));
@@ -1325,6 +1339,77 @@ export function kenExams(items: KenitsuResult[]): KenitsuExam[] {
     m.set(x.examId, e);
   }
   return [...m.values()].sort((a, b) => b.date.localeCompare(a.date));
+}
+
+// ---- 県一斉模試の成績表・面談 ----------------------------------------------------
+// 取り込んだ県一斉模試の成績だけで、個人成績表と面談の画面を出す。
+//   ・偏差値・県内順位・判定・合格確率：業者の値（県全体）をそのまま
+//   ・塾内順位・塾内平均・分布：その回を受けた智翔館 中等部の生徒（取り込んだ行）の中で計算
+//   ・氏名：本番レベル模試の名簿（成績入力の行）から「校舎＋受験番号」で引く（県一斉の行は氏名を持たない）
+
+/** 県一斉模試の教科の満点（国英数社理は各100点）。 */
+export const KEN_MAX: Record<StatKey, number> = { ja: 100, en: 100, ma: 100, so: 100, sc: 100, k3: 300, k5: 500 };
+
+export function kenKey(campus: string, examNo: string): string {
+  return `${campus}|${examNo}`;
+}
+
+/** 名簿（本番レベル模試の回の行）から「校舎＋受験番号 → 氏名」。同じ人が何回にもいれば、新しい回の氏名を使う。 */
+export function kenNames(results: Pick<MoshiResult, 'examId' | 'campus' | 'examNo' | 'name'>[], exams: Pick<MoshiExam, 'id' | 'date'>[]): Map<string, string> {
+  const dateOf = new Map(exams.map((e) => [e.id, e.date || '']));
+  const sorted = [...results].sort((a, b) => (dateOf.get(a.examId) ?? '').localeCompare(dateOf.get(b.examId) ?? ''));
+  const out = new Map<string, string>();
+  for (const r of sorted) if (r.examNo && r.name) out.set(kenKey(r.campus, r.examNo), r.name);
+  return out;
+}
+
+export type KenRow = {
+  k: KenitsuResult;
+  name: string;                            // 名簿に無ければ ''
+  inside: Record<StatKey, number | null>;  // 塾内順位（その教科の得点がある人の中。同点は同じ順位）
+};
+export type KenStats = {
+  exam: KenitsuExam;
+  rows: KenRow[];
+  n: Record<StatKey, number>;              // 塾内の受験者
+  mean: Record<StatKey, number | null>;    // 塾内平均
+};
+
+/** 県一斉模試の1回分を、成績表・面談用にまとめる（塾内順位・塾内平均）。 */
+export function kenStatsOf(items: KenitsuResult[], examId: string, names: Map<string, string>): KenStats | null {
+  const exam = kenExams(items).find((e) => e.id === examId);
+  if (!exam) return null;
+  const mine = items.filter((x) => x.examId === examId);
+  const n = {} as Record<StatKey, number>;
+  const mean = {} as Record<StatKey, number | null>;
+  const vals = {} as Record<StatKey, number[]>;
+  for (const key of STAT_KEYS) {
+    vals[key] = mine.map((x) => x.stats[key]?.score).filter((v): v is number => v != null);
+    n[key] = vals[key].length;
+    mean[key] = vals[key].length ? vals[key].reduce((a, b) => a + b, 0) / vals[key].length : null;
+  }
+  const rows = mine.map((k) => {
+    const inside = {} as Record<StatKey, number | null>;
+    for (const key of STAT_KEYS) {
+      const sc = k.stats[key]?.score;
+      inside[key] = sc == null ? null : rankIn(vals[key], sc);
+    }
+    return { k, name: names.get(kenKey(k.campus, k.examNo)) ?? '', inside };
+  });
+  return { exam, rows, n, mean };
+}
+
+/** その学校を（4つのどれかに）書いた塾内の生徒の中での、5科の順位。書いた人がいなければ null。 */
+export function kenChoiceRank(ks: KenStats, row: KenRow, code: string): { n: number; rank: number } | null {
+  const me = row.k.stats.k5?.score;
+  if (!code || me == null) return null;
+  const others = ks.rows.filter((x) => x.k.choices.some((c) => c.code === code)).map((x) => x.k.stats.k5?.score).filter((v): v is number => v != null);
+  return others.length ? { n: others.length, rank: rankIn(others, me) } : null;
+}
+
+/** 県一斉模試の回を、推移（trendRows）の「この回」として渡す形。 */
+export function kenExamRef(e: Pick<KenitsuExam, 'id' | 'name' | 'date'>): Pick<MoshiExam, 'id' | 'name' | 'date' | 'grade'> {
+  return { id: e.id, name: e.name, date: e.date, grade: '中3' };
 }
 
 /** ファイル名（「…_2026年10月_…」）から回名と実施日の見当をつける（日は分からないので1日）。 */

@@ -3011,6 +3011,7 @@ button.app-nav-item { background: none; border: 0; font-family: inherit; cursor:
 .ms-interview.big .ms-split { grid-template-columns: minmax(0, 1fr); }
 body.ms-focus .sidebar, body.ms-focus .mobilebar, body.ms-focus .sidebar-overlay { display: none !important; }
 body.ms-focus .app-main { margin-left: 0; padding-top: 0; }
+body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 
 .ms-print-only { display: none; }
 
@@ -3145,6 +3146,21 @@ body.ms-focus .app-main { margin-left: 0; padding-top: 0; }
 .rs-comment { flex: 1; min-height: 16mm; border: .3mm solid #6b6b6b; padding: 1.5mm 2mm; font-size: 7.6pt; line-height: 1.5; white-space: pre-wrap; }
 .rs-foot { grid-column: 1 / -1; font-size: 5.8pt; color: #444; padding-top: 1.2mm; }
 
+/* 県一斉模試の個人成績表（components/MoshiKenSheet.tsx）。枠とグラフは本番レベル模試の成績表と同じ */
+.rs-pill-note { font-size: 6pt; font-weight: 400; margin-left: 2mm; }
+.rs-ken-judge .rs-j-grade { gap: 2mm; }
+.rs-ken-prob { display: inline-block; min-width: 12mm; height: 4.4mm; line-height: 4.4mm; border: .25mm solid #6b6b6b; text-align: center; font-size: 8pt; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rs-cmp { width: 100%; border-collapse: collapse; font-size: 6.4pt; table-layout: fixed; }
+.rs-cmp th, .rs-cmp td { border: .2mm solid #9a9a9a; height: 3.6mm; padding: 0 .8mm; }
+.rs-cmp thead th { background: #bfe3f5; font-weight: 700; text-align: center; }
+.rs-cmp thead th:first-child { width: 19mm; }
+.rs-cmp tbody th { text-align: left; font-weight: 400; white-space: nowrap; background: #f3f8fc; }
+.rs-cmp tbody td { text-align: right; font-variant-numeric: tabular-nums; }
+.rs-cmp-diff td { font-weight: 700; }
+.rs-cmp-diff td.up { color: #1c5cab; }
+.rs-cmp-diff td.down { color: #d40000; }
+.rs-cmp-none { font-size: 6.6pt; color: #555; margin: 1mm 0 0; }
+
 @media print {
   .rs-fit { overflow: visible; }
   .rs-fit-inner { zoom: 1 !important; padding: 0; box-shadow: none; width: auto; }
@@ -3160,3 +3176,7 @@ body.ms-focus .app-main { margin-left: 0; padding-top: 0; }
 .ms-import-preview p { margin: 0; }
 .ms-import-preview .warn { color: #8a5a00; }
 .ms-import .ms-bar { margin: 0 0 10px; }
+
+/* 成績表・面談：本番レベル模試／県一斉模試の切り替え（components/MoshiShared.tsx の KindSwitch） */
+.ms-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 12px; }
+.ms-kind-label { font-size: 12px; color: #667; }
