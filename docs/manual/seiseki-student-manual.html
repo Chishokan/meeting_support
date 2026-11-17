@@ -1,0 +1,357 @@
+<title>成績管理 生徒の追加 マニュアル</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+/* 縦1段の手引き。画面の写真に付けた赤い番号と、本文の赤い番号を対応させて読む。 */
+:root {
+  --bg: #f4f6f8;
+  --paper: #ffffff;
+  --ink: #1c2430;
+  --muted: #5b6573;
+  --navy: #1f4e78;
+  --navy-soft: #e8f0f8;
+  --line: #dde2e8;
+  --mark: #e0262f;
+  --warn-bg: #fff5e6;
+  --warn-line: #d98a1c;
+  --shot-frame: #cfd6de;
+  --font: 'BIZ UDPGothic', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+    --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+    --shot-frame: #3a4553; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+  --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+  --shot-frame: #3a4553; color-scheme: dark;
+}
+
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font); font-size: 15.5px; line-height: 1.85;
+  font-variant-numeric: tabular-nums;
+}
+.page {
+  max-width: 880px; margin: 0 auto;
+  padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px;
+}
+.sheet {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+  padding: clamp(20px, 4vw, 40px); min-width: 0;
+}
+
+/* 表紙 */
+.cover { display: grid; gap: 18px; }
+.cover .org { font-size: 13px; letter-spacing: .12em; color: var(--muted); }
+.cover h1 { margin: 0; font-size: clamp(28px, 5vw, 40px); line-height: 1.3; text-wrap: balance; color: var(--navy); }
+.cover .lead { margin: 0; max-width: 40em; }
+.cover dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 18px; font-size: 14px; }
+.cover dt { color: var(--muted); }
+.cover dd { margin: 0; }
+.note-sample { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; margin: 0; }
+
+/* 目次 */
+.toc h2 { font-size: 18px; margin: 0 0 10px; }
+.toc ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 14px; }
+.toc > ol > li > a { font-weight: 700; }
+.toc ol ol { display: grid; gap: 2px; margin-top: 4px; padding-left: 1.2em; font-size: 14px; }
+.toc a { color: var(--ink); text-decoration: none; }
+.toc a:hover, .toc a:focus-visible { color: var(--navy); text-decoration: underline; }
+
+/* 見出し */
+.chapter { display: grid; gap: 22px; }
+.chapter > header { display: grid; gap: 6px; border-bottom: 3px solid var(--navy); padding-bottom: 12px; }
+.eyebrow { font-size: 13px; letter-spacing: .14em; color: var(--navy); font-weight: 700; }
+.chapter h2 { margin: 0; font-size: clamp(22px, 3.6vw, 28px); line-height: 1.35; text-wrap: balance; }
+.chapter > header p { margin: 0; color: var(--muted); }
+section.sec { display: grid; gap: 14px; min-width: 0; }
+section.sec + section.sec { border-top: 1px solid var(--line); padding-top: 24px; }
+h3 { margin: 0; font-size: 19px; line-height: 1.45; text-wrap: balance; display: flex; gap: 10px; align-items: baseline; }
+h3 .no { color: var(--navy); font-size: 15px; flex: none; }
+h4 { margin: 6px 0 0; font-size: 16px; }
+p { margin: 0; }
+a { color: var(--navy); }
+
+/* 画面写真の赤い番号と同じ形 */
+.n {
+  display: inline-grid; place-items: center; flex: none;
+  width: 1.6em; height: 1.6em; border-radius: 50%;
+  background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 1;
+  vertical-align: .05em;
+}
+.btn {
+  display: inline-block; padding: 0 .5em; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--navy-soft); color: var(--navy); font-weight: 700; font-size: .92em; line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* 写真 */
+figure { margin: 0; display: grid; gap: 8px; break-inside: avoid; min-width: 0; }
+figure img {
+  display: block; width: 100%; max-width: 100%; height: auto;
+  border: 1px solid var(--shot-frame); border-radius: 10px; background: #fff;
+}
+figcaption { font-size: 13px; color: var(--muted); }
+.video video { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--shot-frame); background: #0e1520; }
+.print-only { display: none; }
+.fig-narrow img { max-width: 520px; }
+.fig-card img { max-width: 480px; }
+.side-by-side { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px; align-items: start; }
+.w-sidebar { width: 238px; }
+.w-side { width: 340px; }
+.phones { display: flex; flex-wrap: wrap; gap: 20px; }
+.phones figure { width: min(240px, 100%); }
+
+/* 番号の説明 */
+.legend { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.legend li { display: grid; grid-template-columns: 1.6em 1fr; gap: 10px; align-items: start; }
+.legend .n { margin-top: .2em; font-size: 13px; }
+.legend b { font-weight: 700; }
+
+/* 手順 */
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: st; display: grid; gap: 10px; }
+.steps > li { counter-increment: st; display: grid; grid-template-columns: 2em 1fr; gap: 8px; }
+.steps > li::before {
+  content: counter(st); width: 1.75em; height: 1.75em; border-radius: 6px; margin-top: .15em;
+  display: grid; place-items: center; background: var(--navy); color: var(--paper); font-weight: 700; font-size: 14px;
+}
+ul.plain { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
+
+/* 補足 */
+.box { border-radius: 10px; padding: 14px 18px; display: grid; gap: 6px; border: 1px solid var(--line); }
+.box > .box-title { font-weight: 700; font-size: 14px; letter-spacing: .04em; }
+.box.tip { background: var(--navy-soft); border-color: transparent; }
+.box.tip > .box-title { color: var(--navy); }
+.box.warn { background: var(--warn-bg); border-color: transparent; border-left: 4px solid var(--warn-line); }
+.box.warn > .box-title { color: var(--warn-line); }
+.box.recommend { border: 2px solid var(--navy); }
+.box.recommend > .box-title { color: var(--navy); font-size: 15px; }
+
+/* 流れ図 */
+.loop { display: grid; gap: 10px; }
+.loop ol { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.loop li {
+  position: relative; border: 1.5px solid var(--navy); border-radius: 10px; padding: 10px 12px;
+  display: grid; gap: 2px; background: var(--paper);
+}
+.loop li .k { font-size: 12px; color: var(--navy); font-weight: 700; letter-spacing: .08em; }
+.loop li .t { font-weight: 700; line-height: 1.4; }
+.loop li .d { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.loop li:not(:last-child)::after {
+  content: "→"; position: absolute; right: -10px; top: 50%; transform: translate(50%, -50%);
+  color: var(--navy); font-weight: 700; background: var(--paper); line-height: 1;
+}
+.loop .back {
+  border: 1.5px dashed var(--navy); border-radius: 10px; padding: 6px 12px; text-align: center;
+  color: var(--navy); font-weight: 700; font-size: 14px;
+}
+
+/* 表 */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+th { background: var(--navy-soft); color: var(--ink); font-weight: 700; }
+td.num { white-space: nowrap; font-weight: 700; }
+
+footer.end { text-align: center; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 680px) {
+  .side-by-side { grid-template-columns: minmax(0, 1fr); }
+  .w-sidebar, .w-side { width: auto; max-width: min(340px, 100%); }
+  .loop ol { grid-template-columns: 1fr 1fr; }
+  .loop li:nth-child(2)::after { content: none; }
+}
+@media (max-width: 420px) {
+  .loop ol { grid-template-columns: 1fr; }
+  .loop li::after { content: none !important; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+@media print {
+  :root { --bg: #fff; }
+  body { font-size: 10.5pt; line-height: 1.75; }
+  .page { max-width: none; padding: 0; gap: 0; }
+  .sheet { border: 0; border-radius: 0; padding: 0; }
+  .cover { min-height: 240mm; align-content: center; }
+  .toc, .chapter { break-before: page; }
+  section.sec { break-before: auto; }
+  .page, .cover, .chapter, section.sec, figure { display: block; }
+  .chapter > * + *, section.sec > * + * { margin-top: 12px; }
+  .chapter > header + * { margin-top: 18px; }
+  section.sec + section.sec { margin-top: 22px; }
+  .cover > * + * { margin-top: 14px; }
+  figcaption { margin-top: 4px; }
+  h3, h4 { break-after: avoid; }
+  figure, .box, .loop, table, .legend li { break-inside: avoid; }
+  figure img { max-height: 200mm; width: auto; max-width: 100%; }
+  .side-by-side { display: flow-root; }
+  .side-by-side > figure { float: left; margin: 0 8mm 4mm 0; }
+  .side-by-side > figure img { width: 100%; max-height: none; }
+  .w-sidebar { width: 60mm; }
+  .w-side { width: 78mm; }
+  a { color: var(--ink); text-decoration: none; }
+  footer.end { display: none; }
+  .video { display: none; }
+  .print-only { display: block; color: var(--muted); }
+}
+.fig-login img { max-width: 560px; }
+.fig-color img { max-width: 420px; }
+.fig-bar img { max-width: 520px; }
+.mail { font-family: var(--font); white-space: pre-wrap; background: var(--paper); border: 1px dashed var(--shot-frame); border-radius: 10px; padding: 14px 18px; font-size: 14px; line-height: 1.75; margin: 0; }
+@media print { .fig-login img { width: 120mm; } .fig-color img { width: 85mm; } .fig-bar img { width: 110mm; } }
+.fig-menu img { max-width: 620px; }
+.fig-import img { max-width: 760px; }
+.numtable { table-layout: fixed; }
+.numtable th:nth-child(1) { width: 30%; }
+.numtable th:nth-child(2) { width: 32%; }
+@media print { .fig-menu img { width: 125mm; } .fig-import img { width: 160mm; } }
+</style>
+
+<div class="page">
+
+<header class="sheet cover" id="top">
+  <div class="org">株式会社智翔館　社内向け</div>
+  <h1>成績管理<br>生徒の追加 マニュアル</h1>
+  <p class="lead">成績管理（本番レベル模試）の名簿に、生徒を足す方法をまとめています。いちばんよく使うのは、成績入力の画面の<b>［＋ 生徒を追加］</b>です。受験番号は自動で付きます。</p>
+  <dl>
+    <dt>対象</dt><dd>成績管理を使う職員（総務・人事・支援・管理、小中等部の職員）</dd>
+    <dt>アプリ</dt><dd>智翔館アプリ「成績管理」（2026年11月の画面）</dd>
+    <dt>最新版</dt><dd>智翔館アプリのヘルプデスク「マニュアル」タブからダウンロードできます</dd>
+    <dt>作成</dt><dd>2026年11月</dd>
+  </dl>
+  <p class="note-sample">※ 写真に写っている生徒・職員の氏名は、説明のために用意した架空の例です。</p>
+</header>
+
+<nav class="sheet toc" aria-label="目次">
+  <h2>目次</h2>
+  <ol>
+    <li><a href="#ch1">第1章　はじめに（受験番号のきまり）</a></li>
+    <li><a href="#ch2">第2章　［＋ 生徒を追加］で1人ずつ足す</a>
+      <ol>
+        <li><a href="#s2-1">2-1　成績入力の画面を開く</a></li>
+        <li><a href="#s2-2">2-2　生徒を足して、氏名・性別・志望校を入れる</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch3">第3章　県一斉模試を受けた生徒をまとめて入れる</a></li>
+    <li><a href="#ch4">第4章　困ったとき</a></li>
+  </ol>
+</nav>
+
+<article class="sheet chapter" id="ch1">
+  <header>
+    <div class="eyebrow">第1章</div>
+    <h2>はじめに（受験番号のきまり）</h2>
+    <p>本番レベル模試の生徒は、回ごと・校舎ごとの名簿で管理します。名簿は「成績入力」の画面にあります。</p>
+  </header>
+  <div class="table-wrap">
+    <table class="numtable">
+      <thead><tr><th>生徒</th><th>受験番号</th><th>足し方</th></tr></thead>
+      <tbody>
+        <tr><td>県一斉模試を受けた生徒</td><td>県一斉模試の番号（<b>0001</b> から。校舎ごと）</td><td>県一斉模試の名簿（氏名対応表）からまとめて入れる（第3章）</td></tr>
+        <tr><td>それ以外の生徒<br>（県一斉模試を受けていない・あとから入った生徒など）</td><td><b>0301</b> から自動（300番台。校舎ごと）</td><td>［＋ 生徒を追加］で1人ずつ足す（第2章）</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul class="plain">
+    <li>受験番号は4桁で、<b>校舎ごと</b>に付きます。校舎がちがえば、同じ番号の生徒がいてもかまいません。</li>
+    <li>［＋ 生徒を追加］で付く 300番台の番号は、県一斉模試の番号と重ならないようにするためのものです。あとから直すこともできます。</li>
+    <li>成績管理は、智翔館アプリの総合メニューの<span class="btn">成績管理</span>のカードから開きます。</li>
+  </ul>
+  <figure class="fig-menu"><img src="images/seiseki_01_menu.png" alt="総合メニューの成績管理のカード"><figcaption>図1　総合メニューの「成績管理」<span class="n">1</span></figcaption></figure>
+</article>
+
+<article class="sheet chapter" id="ch2">
+  <header>
+    <div class="eyebrow">第2章</div>
+    <h2>［＋ 生徒を追加］で1人ずつ足す</h2>
+    <p>入れたものは、約1秒後に自動で保存されます。保存のボタンはありません。</p>
+  </header>
+
+  <section class="sec" id="s2-1">
+    <h3><span class="no">2-1</span>成績入力の画面を開く</h3>
+    <figure><img src="images/seiseki_02_entry.png" alt="成績入力の画面"><figcaption>図2　成績入力の画面</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>回</b>　生徒を足す模試の回を選びます（例：2026 本番レベル模試 11月）。</div></li>
+      <li><span class="n">2</span><div><b>校舎</b>　生徒の校舎を選びます。<b>名簿は校舎ごと</b>なので、まちがえないようにしてください。</div></li>
+      <li><span class="n">3</span><div><span class="btn">＋ 生徒を追加</span>　押すと、名簿のいちばん下に新しい行ができます。</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s2-2">
+    <h3><span class="no">2-2</span>生徒を足して、氏名・性別・志望校を入れる</h3>
+    <ol class="steps">
+      <li><div><span class="btn">＋ 生徒を追加</span>を押します。表示が「名簿・志望校」に切り替わり、いちばん下に新しい行ができます。受験番号には <b>0301</b>（2人目からは 0302、0303 …）が自動で入り、氏名の欄に文字を打てる状態になります。</div></li>
+      <li><div><b>氏名</b>を入れます。名字と名前のあいだは空白を1つ入れてください（全角の空白にそろえます）。</div></li>
+      <li><div><b>性別</b>を選びます。</div></li>
+      <li><div><b>志望校</b>を入れます。県一斉模試の学校コード（例 <b>518-01</b>）か、学校名の一部（例「佐世保北」）を打つと候補が出ます。コードを入れると、欄の下に学校名が出ます。第一〜第四志望まで入れられます（空欄でもかまいません）。</div></li>
+      <li><div>上に「<b>保存しました（時刻）</b>」と出れば完了です。</div></li>
+    </ol>
+    <figure><img src="images/seiseki_03_added.png" alt="生徒を追加した直後の名簿"><figcaption>図3　［＋ 生徒を追加］を押した直後。受験番号 0301 の行ができ<span class="n">1</span>、氏名の欄<span class="n">2</span>に文字を打てます</figcaption></figure>
+    <figure><img src="images/seiseki_04_filled.png" alt="氏名・性別・志望校を入れた名簿"><figcaption>図4　氏名・性別・志望校を入れたところ</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>氏名</b>　名字と名前のあいだに空白を1つ。</div></li>
+      <li><span class="n">2</span><div><b>性別</b>　男・女を選びます。</div></li>
+      <li><span class="n">3</span><div><b>志望校</b>　コードか学校名。欄の下に学校名が出ているか確かめます。</div></li>
+      <li><span class="n">4</span><div><b>保存の状態</b>　「保存しました」と時刻が出れば保存されています。「保存できませんでした」と出たら、その横の<span class="btn">もう一度保存</span>を押します。</div></li>
+      <li><span class="n">5</span><div><span class="btn">消す</span>　まちがえて足した行を消します（第4章）。</div></li>
+    </ol>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <p>Enter で下の行、Tab で右の欄に進めます。何人も続けて足すときは、<span class="btn">＋ 生徒を追加</span>を押すたびに次の番号（0302、0303 …）の行ができます。得点は、表示を「得点」に切り替えて入れます。</p>
+    </div>
+  </section>
+</article>
+
+<article class="sheet chapter" id="ch3">
+  <header>
+    <div class="eyebrow">第3章</div>
+    <h2>県一斉模試を受けた生徒をまとめて入れる</h2>
+    <p>県一斉模試を受けた生徒は、県一斉模試の受験番号のまま、まとめて名簿に入れます。使うのは、業者から届く<b>氏名対応表</b>の CSV です。</p>
+  </header>
+  <figure class="fig-import"><img src="images/seiseki_05_import.png" alt="県一斉模試の取り込みの名簿の欄"><figcaption>図5　「県一斉模試の取り込み」の「2. 名簿」</figcaption></figure>
+  <ol class="steps">
+    <li><div>左のメニューの<b>県一斉模試の取り込み</b>を開きます。</div></li>
+    <li><div><span class="n">1</span> 名簿を入れる<b>回</b>と<b>校舎</b>を選びます（全部の校舎をまとめて入れるときは「すべての校舎」）。</div></li>
+    <li><div><span class="n">2</span>「氏名対応表の CSV」で、氏名対応表のファイルを選びます（ボタンの表示は、ブラウザによって「ファイルを選択」「Choose File」などです）。</div></li>
+    <li><div><span class="n">3</span> 志望校もまとめて入れるときは、「志望校も入れる」で県一斉模試の回を選びます（志望校が空欄の生徒にだけ入ります）。</div></li>
+    <li><div>「追加 ○人・直す ○人」と出たのを確かめて、<span class="n">4</span><span class="btn">名簿に入れる</span>を押します。</div></li>
+  </ol>
+  <div class="box warn">
+    <div class="box-title">注意</div>
+    <p>氏名対応表には生徒の氏名が入っています。作業が終わったら、パソコンにダウンロードしたファイルは消してください。成績の取り込みも含めた詳しい手順は、別紙「成績管理：県一斉模試（2026年8月・10月）の取り込み手順」をご覧ください。</p>
+  </div>
+</article>
+
+<article class="sheet chapter" id="ch4">
+  <header>
+    <div class="eyebrow">第4章</div>
+    <h2>困ったとき</h2>
+  </header>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>こんなとき</th><th>どうすればよいか</th></tr></thead>
+      <tbody>
+        <tr><td>受験番号を直したい</td><td>「名簿・志望校」の表示で、受験番号の欄を直します（数字4桁。打つと自動で保存）。県一斉模試の番号が分かった生徒は、その番号に直してください。県一斉模試の名簿（第3章）を入れると、同じ氏名の生徒は県一斉模試の番号に自動で直ります。</td></tr>
+        <tr><td>校舎をまちがえて足した</td><td>その行の<span class="btn">消す</span>で消し、正しい校舎を選び直してから、<span class="btn">＋ 生徒を追加</span>で足し直します（得点を入れていた場合は、入れ直しになります）。</td></tr>
+        <tr><td>同じ生徒を2回足した・いらない行がある</td><td>いらない行の<span class="btn">消す</span>を押し、確認で「OK」を押します。消すと、その行の得点も見えなくなります。まちがえて消したときは、管理者に連絡してください（元に戻せます）。</td></tr>
+        <tr><td>志望校の下に「一覧に無いコード」「前のコード」と出る</td><td>県一斉模試の学校コードと合っていません。学校名の一部を打って、候補から選び直してください。</td></tr>
+        <tr><td>「保存できませんでした」と出る</td><td>横の<span class="btn">もう一度保存</span>を押します。何度も出るときは、ページを読み込み直してから入れ直し、管理者に連絡してください。</td></tr>
+        <tr><td>「成績管理の保存先…が未設定です」と出る</td><td>保存先の設定がまだです。管理者に連絡してください。</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>ご不明な点や不具合は、ヘルプデスクの「ご意見・不具合の報告」からお知らせください。</p>
+</article>
+
+<footer class="end"><a href="#top">↑ 表紙へ戻る</a></footer>
+
+</div>
