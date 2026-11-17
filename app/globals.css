@@ -3175,6 +3175,12 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .rs-points { list-style: none; margin: 0; padding: 1.5mm 2mm; border: .3mm solid #6b6b6b; font-size: 7pt; line-height: 1.55; }
 .rs-points li { display: grid; grid-template-columns: 22mm 1fr; gap: 1.5mm; }
 .rs-points b { font-weight: 700; color: #333; }
+.rs-j-prev { font-size: 6.2pt; color: #333; background: #f4f7fb; border: .2mm solid #b9c6d6; border-radius: 1mm; padding: .2mm 1.2mm; }
+.rs-cmp-sm { font-size: 6pt; }
+.rs-cmp-sm th, .rs-cmp-sm td { height: 3.2mm; padding: 0 .6mm; }
+.rs-cmp-sm thead th:first-child { width: 17mm; }
+.rs-points-sm { font-size: 6.6pt; line-height: 1.45; padding: 1mm 1.6mm; }
+.rs-points-sm li { grid-template-columns: 20mm 1fr; }
 
 @media print {
   .rs-fit { overflow: visible; }
@@ -3268,3 +3274,18 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .kd-next { margin-top: 12px; }
 .kd-next td { font-size: 15px; }
 .kd-past tr.on td { background: #f2f7fd; }
+/* 面談の画面（詳細）の追加：前回の位置・設問別得点（components/MoshiDetailParts.tsx・MoshiHonbanDetail.tsx） */
+.kd-graph-note { font-weight: 400; font-size: 11px; color: #555; margin-left: 6px; }
+.kd-prev { position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1px; background: #111; border-radius: 1px; }
+.kd-diff { font-weight: 700; }
+.kd-diff.up { color: #1c5cab; }
+.kd-diff.down { color: #d40000; }
+.kd-q th, .kd-q td { padding: 5px 9px; }
+.kd-q tbody th { vertical-align: top; }
+.kd-q tr.kd-q-first > * { border-top: 2px solid #9aa3ad; }
+.kd-q td.kd-low { color: #d40000; font-weight: 700; }
+.kd-qbar-h { min-width: 220px; }
+.kd-qtrack { height: 14px; }
+.kd-big-sm { font-size: 15px; margin-top: 4px; }
+.kd-big-sm b { font-size: 20px; }
+.kd-table td.kd-cur { background: #f2f7fd; font-weight: 700; }

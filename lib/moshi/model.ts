@@ -1536,24 +1536,128 @@ export type KenPoints = {
 
 /** 成績表の「成績のポイント」：得意・のばしたい教科、前回からの上がり下がり、5教科の県平均との差（決まった計算だけ。AI は使わない）。 */
 export function kenPoints(k: KenitsuResult, before: KenitsuResult | null, fits: Record<StatKey, KenFit | null>): KenPoints {
+  return pointsOf(k.stats, before?.stats ?? null, fits.k5?.mean ?? null);
+}
+
+type DevScore = { score?: number | null; dev?: number | null };
+
+/** 成績のポイント（県一斉模試・本番レベル模試で共通）。now・before は教科ごとの得点と偏差値、mean5 は5教科の平均点。 */
+export function pointsOf(now: Partial<Record<StatKey, DevScore>>, before: Partial<Record<StatKey, DevScore>> | null, mean5: number | null): KenPoints {
+  const k = { stats: now };
   const devs = SUBJECT_KEYS.map((key) => ({ key, dev: k.stats[key]?.dev })).filter((x): x is { key: SubjectKey; dev: number } => x.dev != null);
   const strong = [...devs].sort((a, b) => b.dev - a.dev).slice(0, 2);
   const weak = [...devs].sort((a, b) => a.dev - b.dev).filter((x) => !strong.some((s) => s.key === x.key)).slice(0, 2);
   const diffs = before
     ? SUBJECT_KEYS.map((key) => {
-      const a = before.stats[key]?.dev;
+      const a = before[key]?.dev;
       const b = k.stats[key]?.dev;
       return { key, diff: a == null || b == null ? null : round1(b - a) };
     }).filter((x): x is { key: SubjectKey; diff: number } => x.diff != null)
     : [];
   const sc = k.stats.k5?.score;
-  const m = fits.k5?.mean;
+  const m = mean5;
   return {
     strong, weak,
     up: diffs.filter((x) => x.diff >= 1).sort((a, b) => b.diff - a.diff).slice(0, 2),
     down: diffs.filter((x) => x.diff <= -1).sort((a, b) => a.diff - b.diff).slice(0, 2),
     vsMean: sc == null || m == null ? null : round1(sc - m),
   };
+}
+
+// ---- 前回の回（本番レベル模試の成績表・面談） ----------------------------------------
+// 本番レベル模試の「前回」は、この回より前のいちばん新しい回（県一斉模試も含む）。2026年11月なら10月の県一斉模試。
+// 県一斉模試の成績は業者の値（得点・偏差値・県内順位）、本番レベル模試は成績表と同じ数字（換算した偏差値・塾内順位）。
+
+export type PrevStat = { score: number | null; dev: number | null; rank: number | null };
+export type PrevRecord = {
+  kind: 'honban' | 'ken';
+  id: string;
+  name: string;      // 回名
+  label: string;     // 「10月県」「7月」
+  date: string;
+  rankLabel: string; // 「県内順位」か「塾内順位」
+  stats: Record<StatKey, PrevStat>;
+  choices: KenChoice[] | null; // 県一斉模試なら、4つの志望校の判定・合格確率
+};
+
+/** この回（本番レベル模試）より前の、いちばん新しい回の成績。県一斉模試は校舎＋受験番号、本番レベル模試は sameStudent で同じ生徒を探す。 */
+export function prevRecordFor(
+  statsList: ExamStats[], kenitsu: KenitsuResult[],
+  exam: Pick<MoshiExam, 'id' | 'date'>, target: Pick<MoshiResult, 'name' | 'examNo' | 'campus'>,
+): PrevRecord | null {
+  if (!exam.date) return null;
+  const cands: PrevRecord[] = [];
+  if (target.examNo) {
+    for (const k of kenitsu) {
+      if (k.campus !== target.campus || k.examNo !== target.examNo || !(k.date < exam.date)) continue;
+      const stats = {} as Record<StatKey, PrevStat>;
+      for (const key of STAT_KEYS) stats[key] = { score: k.stats[key]?.score ?? null, dev: k.stats[key]?.dev ?? null, rank: k.stats[key]?.rank ?? null };
+      cands.push({ kind: 'ken', id: k.examId, name: k.examName, label: `${monthOf(k.examName, k.date)}県`, date: k.date, rankLabel: '県内順位', stats, choices: k.choices });
+    }
+  }
+  for (const st of statsList) {
+    if (st.exam.id === exam.id || !st.exam.date || !(st.exam.date < exam.date)) continue;
+    const row = sameStudent(st, target);
+    if (!row || !SUBJECT_KEYS.some((key) => row.sub[key] != null)) continue;
+    const stats = {} as Record<StatKey, PrevStat>;
+    for (const f of reportFigures(st, row)) stats[f.key] = { score: f.score, dev: f.dev, rank: f.rank };
+    cands.push({ kind: 'honban', id: st.exam.id, name: st.exam.name, label: monthOf(st.exam.name, st.exam.date), date: st.exam.date, rankLabel: '塾内順位', stats, choices: null });
+  }
+  return cands.sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
+}
+
+/** 本番レベル模試で、その学校を第1志望にした塾内の生徒の、教科ごとの平均点。 */
+export function honbanFirstChoiceMean(stats: ExamStats, code: string): { n: number; mean: Record<SubjectKey, number | null> } {
+  const key = choiceKey(code);
+  const group = stats.rows.filter((x) => key && choiceKey(x.r.choices[0] ?? '') === key);
+  const mean = {} as Record<SubjectKey, number | null>;
+  for (const k of SUBJECT_KEYS) {
+    const v = group.map((x) => x.sub[k]).filter((s): s is number => s != null);
+    mean[k] = v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  }
+  return { n: group.length, mean };
+}
+
+export type HistoryEntry = {
+  kind: 'honban' | 'ken';
+  id: string;
+  name: string;
+  date: string;
+  score5: number | null;
+  dev5: number | null;
+  rank: string;         // 「800位（県内）」「12位/36人（塾内）」
+  firstChoice: string;  // 第1志望の学校名と判定
+};
+
+/** 生徒のこれまでの回（県一斉模試と本番レベル模試。新しい順）。過去テスト一覧に使う。 */
+export function studentHistory(
+  statsList: ExamStats[], kenitsu: KenitsuResult[], target: Pick<MoshiResult, 'name' | 'examNo' | 'campus'>, nameOf: (code: string) => string,
+): HistoryEntry[] {
+  const out: HistoryEntry[] = [];
+  if (target.examNo) {
+    for (const k of kenitsu) {
+      if (k.campus !== target.campus || k.examNo !== target.examNo) continue;
+      const c = k.choices[0];
+      out.push({
+        kind: 'ken', id: k.examId, name: k.examName, date: k.date,
+        score5: k.stats.k5?.score ?? null, dev5: k.stats.k5?.dev ?? null,
+        rank: k.stats.k5?.rank != null ? `${k.stats.k5.rank.toLocaleString('ja-JP')}位（県内）` : '',
+        firstChoice: c?.code ? `${c.name || nameOf(c.code)} ${c.judge}`.trim() : '',
+      });
+    }
+  }
+  for (const st of statsList) {
+    const row = sameStudent(st, target);
+    if (!row || !SUBJECT_KEYS.some((key) => row.sub[key] != null)) continue;
+    const j = row.r.choices[0] ? judgeOf(st, row, row.r.choices[0]) : null;
+    out.push({
+      kind: 'honban', id: st.exam.id, name: st.exam.name, date: st.exam.date,
+      score5: row.total, dev5: dev5Of(st.exam, row),
+      rank: row.rank != null ? `${row.rank}位/${st.complete}人（塾内）` : '',
+      firstChoice: row.r.choices[0] ? `${nameOf(row.r.choices[0])} ${j?.grade ?? ''}`.trim() : '',
+    });
+  }
+  return out.sort((a, b) => b.date.localeCompare(a.date));
 }
 
 /** 同じ生徒（校舎＋受験番号）の、取り込んだ県一斉模試の全部の回（古い順）。 */
