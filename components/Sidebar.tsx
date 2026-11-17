@@ -4,15 +4,17 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useState } from 'react';
 
-type NavItem = { href: string; label: string; desc?: string; soon?: boolean; hidden?: boolean; depts?: string[] };
+// exact: true は、配下のパス（/moshi/report など）を開いているときにアクティブにしない（成績管理の /moshi は成績入力だけ）。
+type NavItem = { href: string; label: string; desc?: string; soon?: boolean; hidden?: boolean; depts?: string[]; exact?: boolean };
 type NavGroup = { title?: string; items: NavItem[] };
 
-// 左メニュー。会議DXの基本は「部門会議」（事前共有 → 録音 → 議事録 → 次回の事前共有）なので、
+// 左メニュー。app="meeting"（会議DX）と app="seiseki"（成績管理）で中身を切り替える。
+// 会議DXの基本は「部門会議」（事前共有 → 録音 → 議事録 → 次回の事前共有）なので、
 // ダッシュボードのすぐ下に置く。全体会議で使うものは見出しの下にまとめる。
 // 要項QAと「ご意見・不具合の報告」はヘルプデスク（総合メニューのアプリ・/helpdesk）へ移した。
 // ★hidden: true はメニューに出さないだけで、画面は URL で開ける。戻すときは hidden を外す。
 // ★depts を付けた項目は、その部門でログインした人にだけ出す（項目が1つも出ない見出しは見出しごと出さない）。
-const NAV: NavGroup[] = [
+const MEETING_NAV: NavGroup[] = [
   {
     items: [
       { href: '/dashboard', label: 'ダッシュボード', desc: '今日の会議・直近の議事録' },
@@ -39,17 +41,39 @@ const NAV: NavGroup[] = [
   },
 ];
 
-const ALL_ITEMS: NavItem[] = NAV.flatMap((g) => g.items);
+// 成績管理（総合メニューのカード「成績管理」。app/(seiseki)/layout.tsx）。
+// 使える部門はレイアウトで確かめる（lib/moshi/access.ts の MOSHI_DEPTS）ので、ここでは depts を付けない。
+const SEISEKI_NAV: NavGroup[] = [
+  {
+    title: '本番レベル模試（中3）',
+    items: [
+      { href: '/moshi', label: '成績入力', desc: '大問ごとの得点・名簿・志望校', exact: true },
+      { href: '/moshi/report', label: '成績表・順位表', desc: '個人成績表の印刷・順位表・平均点' },
+      { href: '/moshi/ticket', label: '受験票', desc: '受験票の印刷（1枚に2人／4人）' },
+      { href: '/moshi/interview', label: '面談（個人成績）', desc: '面談で見せる生徒ごとの成績と推移' },
+      { href: '/moshi/import', label: '県一斉模試の取り込み', desc: '県一斉模試の成績と名簿（受験番号）を別々に取り込む' },
+      { href: '/moshi/settings', label: '模試の設定', desc: '回の追加・配点と分野・受験票の時間割' },
+    ],
+  },
+];
+
+export type SidebarApp = 'meeting' | 'seiseki';
+
+const APPS: Record<SidebarApp, { nav: NavGroup[]; title: string; sub: string }> = {
+  meeting: { nav: MEETING_NAV, title: '智翔館 会議DX', sub: '会議事前準備アシスタント' },
+  seiseki: { nav: SEISEKI_NAV, title: '智翔館 成績管理', sub: '模試の成績入力・成績表・面談' },
+};
 
 // 前方一致だけだと、頭が同じ別の画面（/report と /report-xxx など）までアクティブになるので、
 // 完全一致か「その配下のパス」だけをアクティブとみなす。
-function isActive(pathname: string | null, href: string): boolean {
+function isActive(pathname: string | null, href: string, exact = false): boolean {
   if (!pathname) return false;
-  return pathname === href || pathname.startsWith(href + '/');
+  return pathname === href || (!exact && pathname.startsWith(href + '/'));
 }
 
-export default function Sidebar({ name, campus }: { name: string; campus: string }) {
+export default function Sidebar({ name, campus, app = 'meeting' }: { name: string; campus: string; app?: SidebarApp }) {
   const pathname = usePathname();
+  const { nav, title, sub } = APPS[app];
   const [open, setOpen] = useState(false);
 
   async function logout() {
@@ -58,9 +82,9 @@ export default function Sidebar({ name, campus }: { name: string; campus: string
   }
 
   // 非表示の画面を URL で開いたときも、スマホの上のバーに画面名を出す。
-  const current = ALL_ITEMS.find((n) => isActive(pathname, n.href));
+  const current = nav.flatMap((g) => g.items).find((n) => isActive(pathname, n.href, n.exact));
 
-  const groups = NAV
+  const groups = nav
     .map((g) => ({ ...g, items: g.items.filter((n) => !n.hidden && (!n.depts || n.depts.includes(campus))) }))
     .filter((g) => g.items.length > 0);
 
@@ -69,7 +93,7 @@ export default function Sidebar({ name, campus }: { name: string; campus: string
       {/* モバイル用トップバー */}
       <div className="mobilebar">
         <button className="hamburger" onClick={() => setOpen(true)} aria-label="メニュー">☰</button>
-        <span className="mobilebar-title">{current?.label ?? '智翔館 会議DX'}</span>
+        <span className="mobilebar-title">{current?.label ?? title}</span>
         <span className="mobilebar-who">{name}</span>
       </div>
 
@@ -78,8 +102,8 @@ export default function Sidebar({ name, campus }: { name: string; campus: string
       <aside className={`sidebar ${open ? 'open' : ''}`}>
         <div className="sidebar-brand">
           <Link href="/" className="sidebar-back" onClick={() => setOpen(false)}>← メニューへ</Link>
-          <div className="brand-title">智翔館 会議DX</div>
-          <div className="brand-sub">会議事前準備アシスタント</div>
+          <div className="brand-title">{title}</div>
+          <div className="brand-sub">{sub}</div>
         </div>
 
         <nav className="sidebar-nav">
@@ -87,7 +111,7 @@ export default function Sidebar({ name, campus }: { name: string; campus: string
             <div key={g.title ?? gi} className="nav-group">
               {g.title && <div className="nav-group-title">{g.title}</div>}
               {g.items.map((n) => {
-                const active = isActive(pathname, n.href);
+                const active = isActive(pathname, n.href, n.exact);
                 return (
                   <Link
                     key={n.href}

@@ -36,6 +36,7 @@
  *   - action:'getKenshuAnswer' / 'saveKenshuAnswer'
  *                               … 全体研修会アンケート（/kenshu）→ 「研修会アンケート」シートに1人1行（研修会×部門×氏名）。送り直すと上書き
  *   - action:'listGoals'        … 目標管理用 → 中等部会議議事録（GOALS_BOOK_ID）の「秋～冬行動計画」タブから月×校舎×指標の目標／実績を返す
+ *   ※ 本番レベル模試（成績管理 /moshi）の保存は、別のプロジェクト apps_script/seiseki.gs（別のスプレッドシート）に分けた（v1.4.1）
  *     ※ 初回は GAS エディタで seedProgressItems() を一度実行すると、全部門の初期項目がシートに入ります（以後は手動でも編集可）。
  *
  * 【セットアップ手順】

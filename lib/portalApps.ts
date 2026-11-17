@@ -10,6 +10,7 @@ import { APTITUDE_DEPTS, canUseAptitude } from './aptitude/access';
 import { canUseChishokanAi } from './chishokanAi/access';
 import { hubConfigured } from './core/hub';
 import { canUseColor } from './colorAccess';
+import { canUseMoshi, MOSHI_DEPTS } from './moshi/access';
 import type { HubRole } from './core/auth';
 
 // 面談管理は別アプリ（面談予約システム）の管理画面。部門ごとに URL が分かれている。
@@ -58,12 +59,16 @@ export const PORTAL_APPS: PortalApp[] = [
     href: '/dashboard',
     status: 'ready',
   },
+  // 全体研修会アンケート（/kenshu）は研修会が終わったのでメニューから外した（画面は URL で開ける。回答はシートに残る）。
+  // 成績管理：いまは本番レベル模試（/moshi）。使える部門は lib/moshi/access.ts（いまは管理部門だけ）
   {
-    id: 'kenshu',
-    name: '全体研修会アンケート',
-    desc: '10/31（土）全体研修会の事前アンケート',
-    href: '/kenshu',
+    id: 'seiseki',
+    name: '成績管理',
+    desc: '本番レベル模試の成績入力・成績表・受験票・面談・県一斉模試の取り込み',
+    href: '/moshi',
     status: 'ready',
+    canUse: canUseMoshi,
+    deniedNote: `${MOSHI_DEPTS.join('、')}のみ利用できます`,
   },
   {
     id: 'inquiry-board',
