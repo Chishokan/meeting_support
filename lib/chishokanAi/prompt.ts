@@ -5,9 +5,12 @@
 // Markdown を直して main に入れれば、コードを変えずに答え方・読める資料が変わる。
 
 import { withCompanyKnowledge } from '../core/companyKnowledge';
+import { weekRanges } from './weeks';
 
 const FRAME = `
 あなたは「智翔館AI」です。質問者は「{{部門}} / {{名前}}」さん。
+
+【週の数え方】{{週}}（月曜はじまり。「今週」「来週」「再来週」と聞かれたら、この範囲で答える。日付を書くときは曜日も確かめる）
 
 【ツールの使い方】
 - 社内ナレッジは read_file / grep_knowledge / list_dir で読む。読んでいない資料の中身を想像で書かない。
@@ -64,6 +67,7 @@ const FRAME = `
 - 作る道具が失敗したら、同じ回答の中で呼び直さない。「作れていた」と書かず、道具の結果の理由をそのまま伝える。
 - 選択肢（\`\`\`選択肢 の枠）で聞いたら、回答はそこで終える（アプリが選択肢のところで回答を止める）。
   前提・既定の答えの説明は選択肢より前に書く。「返信が無ければこの前提で進めます」と書いて作り始めない。
+  選択肢には押せばそのまま返事になるものだけを書く（「添付し直す」「文字で伝える」など、職員が添付・書き込みをするものは本文で頼む）。
 - 会社の前提（上の会社の前提知識）と資料が食い違うときは、資料の更新日が新しい方を示し、食い違いがあることも書く。
 
 【回答方針（knowledge/00_index/CLAUDE.md）】
@@ -78,7 +82,8 @@ type Args = { dept: string; name: string; policy: string; index: string; tasks?:
 export function buildChishokanAiPrompt({ dept, name, policy, index, tasks }: Args): string {
   // 置換文字列の $ を特別扱いさせないよう、関数で渡す。
   // 枠の差し込み場所を先に埋め、資料の中身（回答方針・索引）は最後に入れる（資料の中の {{…}} を誤って置き換えないように）。
-  const text = FRAME.replace('{{部門}}', () => dept)
+  const text = FRAME.replace('{{週}}', () => weekRanges())
+    .replace('{{部門}}', () => dept)
     .replace('{{名前}}', () => name)
     .replace('{{作業一覧}}', () => tasks?.trim() || '（手順書はまだありません）')
     .replace('{{回答方針}}', () => policy.trim() || '（回答方針のファイルが読めませんでした）')
