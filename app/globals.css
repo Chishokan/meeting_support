@@ -3180,7 +3180,7 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .rs-cmp-sm th, .rs-cmp-sm td { height: 3.2mm; padding: 0 .6mm; }
 .rs-cmp-sm thead th:first-child { width: 17mm; }
 .rs-points-sm { font-size: 6.6pt; line-height: 1.45; padding: 1mm 1.6mm; }
-.rs-points-sm li { grid-template-columns: 20mm 1fr; }
+.rs-points-sm li { grid-template-columns: 23mm 1fr; }
 
 @media print {
   .rs-fit { overflow: visible; }
@@ -3229,7 +3229,7 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .kd-center { text-align: center; }
 .kd-now tr.kd-total th { font-size: 15.5px; }
 .kd-now .kd-dev { font-size: 16px; }
-.kd-graph-h { min-width: 300px; }
+.kd-graph-h { min-width: 220px; }
 .kd-scale { position: relative; height: 16px; margin-top: 4px; font-weight: 400; font-size: 12px; color: #445; }
 .kd-scale span { position: absolute; transform: translateX(-50%); }
 .kd-graph { padding: 6px 8px !important; }
