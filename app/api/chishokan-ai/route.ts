@@ -48,6 +48,7 @@ import { MATH_MATERIAL_TOOL } from '@/lib/chishokanAi/mathMaterialTool';
 import { runCreateMathMaterial, runCreateMathQuiz } from '@/lib/chishokanAi/mathMaterial';
 import { MATH_QUIZ_TOOL } from '@/lib/chishokanAi/mathQuizTool';
 import { runTaskEvaluation, TASK_EVAL_TOOL } from '@/lib/chishokanAi/taskEval';
+import { carriedNote, CARRY_MAX_FILES, isHeavy } from '@/lib/chishokanAi/attachCarry';
 import {
   buildCarryBlock,
   citationWarnings,
@@ -185,6 +186,10 @@ export async function POST(req: Request) {
   const messages = sanitizeHistory(raw) as Msg[];
   if (messages.length === 0) return new Response('messages required', { status: 400 });
   const attachments: Attach[] = Array.isArray(body?.attachments) ? body.attachments.slice(0, 5) : [];
+  // 前の質問で添付した PDF・画像（画面が覚えておいて付け直す。lib/chishokanAi/attachCarry.ts）
+  const carried: Attach[] = (Array.isArray(body?.carried) ? body.carried : [])
+    .filter((a: Attach) => a && typeof a.name === 'string' && typeof a.data === 'string' && isHeavy(a))
+    .slice(0, CARRY_MAX_FILES);
   const carry = normalizeContext(body?.context);
   // コンテキスト欄の項目（質問のたびに全部渡す）
   const pinned = normalizePinnedForApi(body?.pinned);
@@ -323,6 +328,7 @@ export async function POST(req: Request) {
                   ...(carryBlock ? [{ type: 'text' as const, text: carryBlock }] : []),
                   ...(taskBlock ? [{ type: 'text' as const, text: taskBlock }] : []),
                   ...drive.blocks,
+                  ...(carried.length ? [{ type: 'text' as const, text: carriedNote(carried.map((a) => String(a.name).slice(0, 80))) }, ...attachBlocks(carried)] : []),
                   ...attachBlocks(attachments),
                   { type: 'text', text: m.content, cache_control: { type: 'ephemeral' } },
                 ] as Anthropic.ContentBlockParam[],
@@ -620,7 +626,9 @@ export async function POST(req: Request) {
             gaps.length ? `gaps=${gaps.join('／')}` : '',
           );
         } catch {}
-        const attachNote = attachments.length ? `（添付: ${attachments.map((a) => a.name).join('、')}）` : '';
+        const attachNote =
+          (attachments.length ? `（添付: ${attachments.map((a) => a.name).join('、')}）` : '') +
+          (carried.length ? `（前の添付を付け直し: ${carried.map((a) => a.name).join('、')}）` : '');
         const allReads = [...driveLinkReads, ...driveToolReads];
         const driveNote = allReads.length
           ? `（ドライブ: ${allReads.map((r) => `${r.name}${r.ok ? '' : `＝読めず:${r.note}`}`).join('、')}）`

@@ -298,3 +298,15 @@ export function closedChoicesEnd(text: string): number {
 
 /** 文字も道具も無いまま終わった回答を作り直すときに、画面には出さずに送る頼み。 */
 export const EMPTY_ANSWER_PROMPT = '（アプリから自動で送っています）回答が空でした。上の質問に答えてください。';
+
+/**
+ * 選択肢のうち、押すだけでは進められないもの（職員が添付する・内容を書く）。
+ * 2026-11-16 の会話ログ：AI が「大問4・5の画像を添付し直す」「情報を改めて書いて伝える」を選択肢にし、
+ * 押すと文字だけが送られて、AI が「添付がありません」「情報が書かれていません」と返していた。
+ * 画面は、これらを押したら送らずに入力欄へ入れ、添付・書き込みを促す。
+ */
+export function choiceNeedsInput(label: string): 'attach' | 'write' | null {
+  if (/添付|貼り直|貼る|貼って|アップロード|(画像|PDF|写真|ファイル)を(送|付け)/.test(label)) return 'attach';
+  if (/(書いて|入力して|文字で)(伝え|送|お知らせ|教え)/.test(label)) return 'write';
+  return null;
+}

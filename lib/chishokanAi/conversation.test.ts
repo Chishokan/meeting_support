@@ -139,3 +139,16 @@ test('選択肢のブロックが閉じた位置', () => {
   assert.equal(closedChoicesEnd('```図\n{}\n```'), -1);
   assert.equal(closedChoicesEnd('普通の回答'), -1);
 });
+
+// --- 押すだけでは進まない選択肢（2026-11-16 の会話ログ） ---
+import { choiceNeedsInput } from './conversation.ts';
+
+test('choiceNeedsInput：添付・書き込みが要る選択肢を見分ける', () => {
+  assert.equal(choiceNeedsInput('大問4・5の画像を添付し直す'), 'attach');
+  assert.equal(choiceNeedsInput('大問4・5の問題文が見つかったので、改めて貼る'), 'attach');
+  assert.equal(choiceNeedsInput('PDFを添付するので、それをもとに作ってほしい'), 'attach');
+  assert.equal(choiceNeedsInput('大問4・5の情報（上記の確認点）を改めて書いて伝える'), 'write');
+  assert.equal(choiceNeedsInput('この前提で作る'), null);
+  assert.equal(choiceNeedsInput('大問1〜3のみでWordファイルを作成する'), null);
+  assert.equal(choiceNeedsInput('新しく小テストを作ってほしい（学年・単元を伝える）'), null);
+});

@@ -40,8 +40,26 @@ export type FigureSpec = {
    * 1文字（＋′）でない名前（X1、_a など、図を作るための点）は、向きを書かない限り名前を書かない。
    */
   labels?: Record<string, Dir>;
+  /** 軸の目盛り（axes のとき）。x 軸・y 軸に短い線と数を書く（速さ・水量のグラフの 15・1200 など） */
+  ticks?: { x: number[]; y: number[] };
   shapes?: Shape[];
 };
+
+/**
+ * 関数のグラフ（axes）で、y の範囲 ÷ x の範囲 がこの外のときは、x と y の縮尺を別にする。
+ * 同じ縮尺だと、x 0〜32（分）・y 0〜2200（m）のグラフが細い棒になる（2026-11-17 の不具合）。
+ * 図形（axes なし）は、長さ・角が正しく見えるよう、いつも同じ縮尺。
+ */
+export const STRETCH_MIN = 0.4;
+export const STRETCH_MAX = 2.5;
+
+/** 図の縦横の比（高さ ÷ 幅）と、x と y の縮尺を別にしたか。 */
+export function figureAspect(spec: Pick<FigureSpec, 'range' | 'axes'>): { aspect: number; stretched: boolean } {
+  const [x0, y0, x1, y1] = spec.range;
+  const ratio = (y1 - y0) / (x1 - x0);
+  if (!spec.axes || (ratio >= STRETCH_MIN && ratio <= STRETCH_MAX)) return { aspect: ratio, stretched: false };
+  return { aspect: ratio > 1 ? 0.9 : 0.6, stretched: true };
+}
 
 const MAX_POINTS = 60;
 const MAX_SHAPES = 120;
@@ -203,6 +221,9 @@ export function parseFigure(raw: unknown): { ok: true; spec: FigureSpec } | { ok
     if (typeof v === 'string' && DIRS.includes(v)) labels[k] = v as Dir;
   }
   const size = isNum(o.size) ? Math.min(16, Math.max(3, o.size)) : 8;
+  const rawTicks = (o.ticks && typeof o.ticks === 'object' ? o.ticks : {}) as Record<string, unknown>;
+  const tickList = (v: unknown, lo: number, hi: number) => (Array.isArray(v) ? v.filter((n): n is number => isNum(n) && n >= lo && n <= hi && n !== 0).slice(0, 20) : []);
+  const ticks = { x: tickList(rawTicks.x, x0, x1), y: tickList(rawTicks.y, y0, y1) };
   const grid = o.grid === true ? 1 : isNum(o.grid) && o.grid > 0 ? o.grid : false;
   return {
     ok: true,
@@ -215,6 +236,7 @@ export function parseFigure(raw: unknown): { ok: true; spec: FigureSpec } | { ok
       points: pts,
       dots: Array.isArray(o.dots) ? o.dots.filter((d): d is string => typeof d === 'string' && d in pts) : [],
       labels,
+      ticks: ticks.x.length || ticks.y.length ? ticks : undefined,
       shapes: shapes as Shape[],
     },
   };
@@ -250,17 +272,20 @@ const PRINT_TEXT_MM = 3.3;
  */
 export function renderFigureSvg(spec: FigureSpec, opts: { printMm?: number } = {}): { svg: string; width: number; height: number } {
   const [x0, y0, x1, y1] = spec.range;
-  const aspect = (y1 - y0) / (x1 - x0);
+  const { aspect } = figureAspect(spec);
   const wMax = opts.printMm ? Math.min(W_MAX, Math.max(160, (opts.printMm / PRINT_TEXT_MM) * FS)) : W_MAX;
   const hMax = (wMax * H_MAX) / W_MAX;
   const M = opts.printMm ? 24 : M_SCREEN;
   let inner = wMax - 2 * M;
   if (inner * aspect > hMax - 2 * M) inner = (hMax - 2 * M) / aspect;
-  const s = inner / (x1 - x0);
+  // x と y の縮尺（ふつうは同じ。縦横の比が極端なグラフだけ別にする）。円・弧の半径は x の縮尺で描く
+  const kx = inner / (x1 - x0);
+  const ky = (inner * aspect) / (y1 - y0);
+  const s = kx;
   const width = Math.round(inner + 2 * M);
   const height = Math.round(inner * aspect + 2 * M);
-  const tx = (x: number) => M + (x - x0) * s;
-  const ty = (y: number) => M + (y1 - y) * s;
+  const tx = (x: number) => M + (x - x0) * kx;
+  const ty = (y: number) => M + (y1 - y) * ky;
   const pts = spec.points ?? {};
   const P = (p: Pt): [number, number] => (typeof p === 'string' ? pts[p] : p);
   const SP = (p: Pt): [number, number] => { const [x, y] = P(p); return [tx(x), ty(y)]; };
@@ -293,13 +318,26 @@ export function renderFigureSvg(spec: FigureSpec, opts: { printMm?: number } = {
       `<path d="M${f2(x)},${f2(y)} L${f2(x - dx * 9 - dy * 4)},${f2(y - dy * 9 + dx * 4)} L${f2(x - dx * 9 + dy * 4)},${f2(y - dy * 9 - dx * 4)} Z" fill="${STROKE}"/>`;
     if (y0 <= 0 && 0 <= y1) {
       back.push(`<line x1="${f2(tx(x0))}" y1="${f2(ty(0))}" x2="${f2(tx(x1))}" y2="${f2(ty(0))}" stroke="${STROKE}" stroke-width="1.2"/>`, arrow(tx(x1), ty(0), 1, 0));
-      text(tx(x1) - 4, ty(0) + 14, 'x');
+      // x は矢印の右に書く（いちばん右の目盛りの数と重ならないように）
+      text(tx(x1) + 7, ty(0), 'x', 'start');
     }
     if (x0 <= 0 && 0 <= x1) {
       back.push(`<line x1="${f2(tx(0))}" y1="${f2(ty(y0))}" x2="${f2(tx(0))}" y2="${f2(ty(y1))}" stroke="${STROKE}" stroke-width="1.2"/>`, arrow(tx(0), ty(y1), 0, -1));
       text(tx(0) + 12, ty(y1) + 6, 'y');
     }
     if (x0 <= 0 && 0 <= x1 && y0 <= 0 && 0 <= y1 && !('O' in pts)) text(tx(0) - 10, ty(0) + 13, 'O');
+    // 目盛り：x 軸（見えなければ下の端）に短い縦線と数、y 軸（見えなければ左の端）に短い横線と数
+    const num = (v: number) => String(Math.round(v * 1e4) / 1e4).replace('-', '−');
+    const ax = Math.min(Math.max(0, y0), y1);
+    const ay = Math.min(Math.max(0, x0), x1);
+    for (const v of spec.ticks?.x ?? []) {
+      back.push(`<line x1="${f2(tx(v))}" y1="${f2(ty(ax) - 4)}" x2="${f2(tx(v))}" y2="${f2(ty(ax) + 4)}" stroke="${STROKE}" stroke-width="1.2"/>`);
+      text(tx(v), ty(ax) + 16, num(v), 'middle', FS - 2);
+    }
+    for (const v of spec.ticks?.y ?? []) {
+      back.push(`<line x1="${f2(tx(ay) - 4)}" y1="${f2(ty(v))}" x2="${f2(tx(ay) + 4)}" y2="${f2(ty(v))}" stroke="${STROKE}" stroke-width="1.2"/>`);
+      text(tx(ay) - 8, ty(v), num(v), 'end', FS - 2);
+    }
   }
 
   // 直線・線分の名前（ℓ・m など）：右の端（縦の線は上の端）の少し外に書く。「l」は ℓ にする
@@ -543,4 +581,26 @@ export function extractFigures(md: string): { markdown: string; figures: FigureS
     return `[図:${figures.length}]`;
   });
   return { markdown, figures, errors };
+}
+
+/**
+ * 文書（Word）に入れる図を、作る前に確かめる：読めない記述（描けずに図が抜ける）と、画像に出ない日本語の文字（□になる）。
+ * 2026-11-17：グラフの線の名前「太郎」「花子」が□になり、作図の図が描けないまま Word ができた。
+ * 直してほしいことを返す（無ければ null）。
+ */
+export function checkDocFigures(figs: { where: string; figure: unknown }[]): string | null {
+  const errs: string[] = [];
+  for (const f of figs) {
+    const p = parseFigure(f.figure);
+    if (!p.ok) {
+      errs.push(`${f.where}：${p.error}`);
+      continue;
+    }
+    const ng = textsWithoutGlyph(p.spec);
+    if (ng.length) {
+      errs.push(`${f.where}：図の中の「${ng.slice(0, 3).join('」「')}」は Word の画像では文字が出ない（□になる）。A・B などの半角の英数字にして、問題文に「A は太郎さんのグラフ」のように書く`);
+    }
+  }
+  if (!errs.length) return null;
+  return `図を直してから、もう一度呼んでください（保存していません）。\n${errs.slice(0, 6).map((e) => `- ${e}`).join('\n')}`;
 }
