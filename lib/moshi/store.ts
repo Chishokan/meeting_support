@@ -1,9 +1,13 @@
-// 本番レベル模試（/moshi）の保存・取得。サーバ専用（API ルートからだけ使う）。
+// 成績管理（本番レベル模試 /moshi）の保存・取得。サーバ専用（API ルートからだけ使う）。
+// ★画面と API は、このファイルの公開 API（loadAll・saveExam・deleteExam・saveResults・deleteResults・saveKenitsu・deleteKenitsu）だけを使う。
+//   保存先を変える（DB に移す）ときは、このファイルだけを直せばよい。
 //
-// 本番：Apps Script（apps_script/Code.gs の listMoshi / saveMoshiExam / deleteMoshiExam / saveMoshiResults /
-//       deleteMoshiResults）経由で、スプレッドシート「本番レベル模試 成績」を読み書きする。
-// 開発：APPS_SCRIPT_URL が無いときは .data/moshi.json に保存する（git には入れない）。
-//       Vercel 本番でスクリプト未設定なら not_configured を返し、画面に「未設定」と出す。
+// 保存先は次の順で選ぶ：
+//   1. 成績管理専用の Apps Script（SEISEKI_SCRIPT_URL / SEISEKI_SCRIPT_TOKEN）… apps_script/seiseki.gs
+//      会議DXの Apps Script（APPS_SCRIPT_URL）とは別のプロジェクト・別のスプレッドシート（成績管理DB）
+//   2. 手元の開発だけ：.data/moshi.json（git には入れない）。Vercel でスクリプト未設定なら not_configured を返し、画面に「未設定」と出す
+//   （DB に移すときは、門配管理（lib/monpai/store.ts）と同じく、ここに Supabase を足して 1. より先に選ぶ。
+//     表の形は README の「成績管理のDB」。シートの見出し ⇄ 型の対応は下の examFromSheet / resultFromSheet / kenFromSheet）
 //
 // 成績の保存は「この保存で変えた列」（fields）だけを書く。同じ生徒の国語と数学を別の先生が同時に入れても消えない。
 
@@ -40,13 +44,13 @@ export function nowJp(): string {
 }
 
 function useLocal(): boolean {
-  return !process.env.APPS_SCRIPT_URL && process.env.NODE_ENV !== 'production';
+  return !process.env.SEISEKI_SCRIPT_URL && process.env.NODE_ENV !== 'production';
 }
 
 type Gas = Record<string, unknown> & { ok?: boolean; reason?: string; saved?: string };
 
 async function callGas(payload: Record<string, unknown>): Promise<Gas> {
-  const url = process.env.APPS_SCRIPT_URL;
+  const url = process.env.SEISEKI_SCRIPT_URL;
   if (!url) return { ok: false, reason: 'not_configured' };
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 50_000);
@@ -54,14 +58,15 @@ async function callGas(payload: Record<string, unknown>): Promise<Gas> {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: process.env.APPS_SCRIPT_TOKEN || '', ...payload }),
+      body: JSON.stringify({ token: process.env.SEISEKI_SCRIPT_TOKEN || '', ...payload }),
       cache: 'no-store',
       signal: ctl.signal,
     });
     const j = (await res.json().catch(() => null)) as Gas | null;
     if (!res.ok || !j) return { ok: false, reason: 'upstream_error' };
-    // 再デプロイ前の Apps Script は、知らない action を会話ログに書いて { ok:true } だけを返す。印が無ければ保存されていない
-    if (j.ok && !String(j.saved ?? '').startsWith('moshi')) return { ok: false, reason: 'not_deployed' };
+    // 合言葉が違う・別の Apps Script（会議DXのものなど）を指している・古いコードのままのときは、保存の印（saved:'moshi…'）が無い
+    if (j.reason === 'invalid_token') return { ok: false, reason: 'invalid_token' };
+    if (j.reason === 'unknown_action' || (j.ok && !String(j.saved ?? '').startsWith('moshi'))) return { ok: false, reason: 'not_deployed' };
     return j;
   } catch {
     return { ok: false, reason: ctl.signal.aborted ? 'timeout' : 'network_error' };
@@ -175,7 +180,6 @@ export async function loadAll(): Promise<({ ok: true } & MoshiData) | Fail> {
   const results = (j.results as Record<string, unknown>[])
     .map((o) => resultFromSheet(o, byId.get(String(o['模試ID'] ?? ''))))
     .filter((r) => r.id && byId.has(r.examId));
-  // 再デプロイ前の Apps Script は kenitsu を返さない（県一斉模試の取り込みが無いだけで、ほかは動く）
   const kenitsu = Array.isArray(j.kenitsu) ? (j.kenitsu as Record<string, unknown>[]).map(kenFromSheet).filter((k) => k.examId && k.campus && k.examNo) : [];
   return { ok: true, exams, results, kenitsu, fetchedAt: String(j.fetchedAt ?? nowJp()), backend: 'sheet' };
 }
@@ -260,7 +264,7 @@ export async function deleteResults(ids: string[], user: string): Promise<{ ok: 
 }
 
 // ---- 県一斉模試（取り込んだ成績。氏名は持たない） ---------------------------------
-// スプレッドシート「本番レベル模試 成績」の「県一斉成績」タブに1人1行。生徒は「校舎＋受験番号」で本番レベル模試の名簿と結び付く。
+// 成績管理DB の「県一斉成績」シートに1人1行。生徒は「校舎＋受験番号」で本番レベル模試の名簿と結び付く。
 
 const KEN_STAT_PARTS = ['得点', '偏差値', '順位'] as const;
 const KEN_CHOICE_PARTS = ['コード', '志望校名称', '判定', '合格確率'] as const;

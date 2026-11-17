@@ -3,6 +3,21 @@
 智翔館アプリ群の本番リリースごとの変更を記録する。
 バージョンの付け方と本番に出す手順は [docs/release.md](docs/release.md) を参照。
 
+## [1.4.1] - 2026-11-17
+
+### 変更
+- 成績管理（本番レベル模試）の保存先を、会議DXの Apps Script から**成績管理専用の Apps Script（apps_script/seiseki.gs）と
+  スプレッドシート「成績管理DB」**に分けた（門配管理と同じ形）。生徒の氏名・成績のファイルを会議DXのログと切り離し、
+  あとで DB に移すときは lib/moshi/store.ts だけを直せばよいようにした（README「成績管理のDB」に表の形と移し方）
+  - アプリの環境変数は SEISEKI_SCRIPT_URL / SEISEKI_SCRIPT_TOKEN（会議DXの APPS_SCRIPT_URL は使わない）
+  - 会議DXの apps_script/Code.gs から本番レベル模試の部分を外した
+  - 合言葉が合わない・別のスクリプトを指しているときは、画面にそう出す
+
+### 本番に出したあとにすること
+- スプレッドシート「成績管理DB（本番）」を作り、apps_script/seiseki.gs を入れてウェブアプリとして出す（手順は seiseki.gs の先頭）。
+  Vercel の Production に SEISEKI_SCRIPT_URL / SEISEKI_SCRIPT_TOKEN を入れて再デプロイ。dev 用も同じく（Preview と Development）
+- 会議DXの Apps Script（Code.gs）は、本番レベル模試の部分を外したものに貼り替えて出し直してよい（出し直さなくても成績管理には使われない）
+
 ## [1.4.0] - 2026-11-17
 
 ### 追加
