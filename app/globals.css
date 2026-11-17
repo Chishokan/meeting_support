@@ -2779,3 +2779,384 @@ button.app-nav-item { background: none; border: 0; font-family: inherit; cursor:
   .ks-q { padding: 16px 14px 14px; }
   .ks-list-head, .ks-list-cols { padding-left: 16px; padding-right: 16px; }
 }
+
+/* ============ 本番レベル模試（/moshi）：成績入力・成績表・受験票・面談 ============
+   色：本人の得点＝青（--ms-series）、平均＝濃い灰色の縦線（--ms-ref）。1系列＋基準線なので色だけに頼らず、凡例を添える。 */
+.ms {
+  --ms-series: #2a78d6; --ms-ref: #3d3c39; --ms-track: #e8ecf1; --ms-gridline: #e3e6ea;
+  --ms-tint: #f6f8fb; --ms-bad: #fde8e8; --ms-gap: #fff6d6; --ms-ink2: #52514e;
+}
+.ms-body { padding: 16px 24px 48px; }
+.ms-who { color: #8a94a0; margin-left: 4px; }
+.ms-muted { color: #8a94a0; }
+.ms-fine { font-size: 12px; color: #6b7480; line-height: 1.6; margin: 6px 0 0; }
+.ms-note { margin: 12px 0; padding: 14px 16px; background: #fff; border: 1px solid var(--line); border-radius: 10px; font-size: 14px; line-height: 1.7; color: #2a2f36; }
+.ms-note p { margin: 0 0 6px; }
+.ms-note-err { border-color: #f1c4c4; background: #fff6f6; }
+.ms-note button, .ms-note .ms-btn { margin-top: 6px; }
+.ms-notice { margin: 8px 0; padding: 8px 12px; font-size: 13px; color: #2e6b4f; background: #eaf6ef; border: 1px solid #cfe8db; border-radius: 8px; cursor: pointer; }
+.ms-notice small { color: #7a9a88; margin-left: 6px; }
+.ms-notice.warn { color: #7a5c00; background: #fffbe9; border-color: #f0e2ad; cursor: default; }
+.ms-msg { font-size: 13px; color: #445; }
+
+.ms-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; margin-bottom: 10px; }
+.ms-bar label { display: flex; flex-direction: column; gap: 3px; margin: 0; font-size: 12px; color: #667; }
+.ms-bar select { width: auto; min-width: 150px; padding: 7px 10px; font-size: 14px; }
+.ms-bar-link { margin-left: auto; font-size: 13px; color: var(--navy); padding: 8px 4px; }
+.ms-save { font-size: 12.5px; color: #445; padding: 8px 0; }
+.ms-save.ok { color: #2e6b4f; }
+.ms-save.muted { color: #8a94a0; }
+.ms-save.err { color: #c0392b; }
+.ms-save button { margin-left: 6px; font-size: 12px; padding: 3px 10px; border-radius: 6px; border: 1px solid #e2b4b4; background: #fff; color: #c0392b; cursor: pointer; }
+
+.ms-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.ms-spacer { flex: 1; }
+.ms-seg { display: inline-flex; border: 1px solid #cdd8e3; border-radius: 8px; overflow: hidden; background: #fff; }
+.ms-seg button { border: none; background: transparent; padding: 7px 12px; font-size: 13px; color: #445; cursor: pointer; font-family: inherit; }
+.ms-seg button + button { border-left: 1px solid #e3e8ee; }
+.ms-seg button.on { background: var(--navy); color: #fff; font-weight: 700; }
+.ms-btn {
+  display: inline-block; padding: 8px 14px; font-size: 13px; font-weight: 700; color: #fff; background: var(--navy);
+  border: 1px solid var(--navy); border-radius: 8px; cursor: pointer; text-decoration: none; font-family: inherit; white-space: nowrap;
+}
+.ms-btn:disabled { opacity: .45; cursor: default; }
+.ms-btn-sub { color: var(--navy); background: #fff; border-color: #cdd8e3; font-weight: 600; }
+.ms-btn-sub:hover:not(:disabled) { background: #f2f5f9; }
+.ms-btn-danger { color: #b03a2e; background: #fff; border-color: #e8c3bf; font-weight: 600; }
+.ms-check { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 400; color: #445; }
+.ms-check input { width: auto; margin: 0; }
+.ms-link { border: none; background: none; color: var(--navy); font-size: 13px; padding: 6px 0; cursor: pointer; font-family: inherit; }
+.ms-x { border: 1px solid #e3e6ea; background: #fff; color: #8a6a66; font-size: 12px; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.ms-x:disabled { opacity: .4; cursor: default; }
+
+.ms-progress { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; font-size: 12.5px; }
+.ms-progress span { padding: 3px 10px; border-radius: 999px; background: #eef1f5; color: #445; }
+.ms-progress span.ok { background: #e6f4ec; color: #2e6b4f; }
+.ms-progress span.bad { background: var(--ms-bad); color: #b03a2e; }
+.ms-progress em { font-style: normal; color: #9a6b00; }
+
+/* 入力の表（入力シートと同じ1人1行。見出しと受験番号・氏名は固定） */
+.ms-grid-wrap { overflow: auto; max-height: calc(100vh - 250px); background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+.ms-grid { border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.ms-grid th, .ms-grid td { border-bottom: 1px solid #edf0f3; padding: 0; white-space: nowrap; background: #fff; }
+.ms-grid thead th { position: sticky; top: 0; z-index: 2; background: #f6f8fb; font-weight: 700; color: #3a4350; padding: 5px 4px; text-align: center; border-bottom: 1px solid #e3e6ea; }
+.ms-grid thead tr:nth-child(2) th { top: 27px; }
+.ms-grid .ms-sticky { position: sticky; left: 0; z-index: 1; }
+.ms-grid thead .ms-sticky { z-index: 3; }
+.ms-grid .ms-c-no { min-width: 74px; left: 0; padding: 0 8px; font-variant-numeric: tabular-nums; color: #556; }
+.ms-grid .ms-c-name { min-width: 120px; left: 74px; padding: 0 8px; border-right: 1px solid #e3e6ea; text-align: left; }
+.ms-grid td.ms-c-no, .ms-grid td.ms-c-name { height: 32px; }
+.ms-subj-h { border-left: 2px solid #d9dee5; }
+.ms-q-h { font-weight: 600 !important; min-width: 38px; }
+.ms-q-h small { display: block; font-size: 10px; font-weight: 400; color: #8a94a0; }
+.ms-q-topic { display: block; font-size: 10px; font-weight: 400; color: #5a6470; max-width: 90px; white-space: normal; line-height: 1.3; }
+.ms-q-sum { background: #eef2f7 !important; }
+.ms-grid td.ms-first { border-left: 2px solid #d9dee5; }
+.ms-grid .ms-s-en, .ms-grid .ms-s-so { background: var(--ms-tint); }
+.ms-cell {
+  width: 40px; height: 32px; padding: 0 2px; margin: 0; border: 1px solid transparent; border-radius: 0; background: transparent;
+  text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; font-family: inherit;
+}
+.ms-cell:focus { outline: 2px solid var(--ms-series); outline-offset: -2px; background: #fff; }
+.ms-cell.bad { background: var(--ms-bad); color: #b03a2e; font-weight: 700; }
+.ms-cell.gap { background: var(--ms-gap); }
+.ms-sum-td { min-width: 40px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; background: #eef2f7 !important; color: #2a2f36; }
+.ms-c-total { min-width: 52px; text-align: center; border-left: 2px solid #d9dee5; }
+.ms-roster td, .ms-grid.ms-roster td.ms-c-no, .ms-grid.ms-roster td.ms-c-name { padding: 3px 4px; vertical-align: top; height: auto; }
+.ms-in { width: 100%; min-width: 0; padding: 6px 8px; font-size: 13.5px; border: 1px solid #d5dbe2; border-radius: 6px; }
+.ms-in-no { width: 80px; font-variant-numeric: tabular-nums; }
+.ms-in-no.warn { border-color: #e0b44a; background: #fffbe9; }
+.ms-in-g { width: 60px; padding: 6px 4px; }
+.ms-roster .ms-c-name { min-width: 150px; }
+.ms-c-choice { min-width: 130px; }
+.ms-c-choice small { display: block; font-size: 11px; color: #5a6470; padding: 2px 2px 0; white-space: normal; }
+.ms-c-choice small.warn { color: #b06a00; }
+
+.ms-modal { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.ms-modal-box { background: #fff; border-radius: 12px; padding: 18px 20px; width: min(760px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
+.ms-modal-box h2 { font-size: 16px; margin: 0 0 6px; }
+.ms-modal-box textarea { width: 100%; height: 180px; margin-top: 10px; padding: 8px; font-size: 12px; font-family: ui-monospace, monospace; border: 1px solid #cdd3da; border-radius: 8px; }
+.ms-paste-sum p { margin: 6px 0; font-size: 13px; }
+.ms-paste-sum .warn, .ms-subj-card small.warn { color: #b06a00; }
+.ms-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+/* 模試の設定 */
+.ms-settings { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 18px; align-items: start; }
+.ms-exam-list { display: grid; gap: 6px; }
+.ms-exam-item { text-align: left; padding: 10px 12px; border: 1px solid var(--line); background: #fff; border-radius: 9px; cursor: pointer; font-family: inherit; color: #2a2f36; }
+.ms-exam-item b { display: block; font-size: 13.5px; }
+.ms-exam-item small { display: block; font-size: 11.5px; color: #8a94a0; margin-top: 2px; }
+.ms-exam-item.on { border-color: var(--navy); background: #eaf1f8; }
+.ms-exam-item.new { color: var(--navy); font-weight: 700; font-size: 13.5px; }
+.ms-form { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px 20px; min-width: 0; }
+.ms-field { display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; font-size: 12px; color: #556; }
+.ms-field input, .ms-field select, .ms-field textarea { padding: 8px 10px; font-size: 14px; font-family: inherit; border: 1px solid #cdd3da; border-radius: 8px; }
+.ms-field-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.ms-field-row .ms-field { min-width: 120px; }
+.ms-field-row .grow { flex: 1; min-width: 240px; }
+.ms-h2 { font-size: 15px; margin: 18px 0 4px; }
+.ms-h2 small, .ms-subj-card h3 small { font-size: 12px; font-weight: 400; color: #667; margin-left: 6px; }
+.ms-h3 { font-size: 13.5px; margin: 14px 0 6px; color: #2a2f36; }
+.ms-subj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; margin-top: 8px; }
+.ms-subj-card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.ms-subj-card h3 { font-size: 14px; margin: 0 0 6px; }
+.ms-qtable { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ms-qtable th { font-size: 11px; color: #8a94a0; font-weight: 600; text-align: left; padding: 2px 4px; }
+.ms-qtable td { padding: 2px 4px; }
+.ms-qtable input { padding: 5px 7px; font-size: 13px; }
+.ms-qtable input.num { width: 56px; text-align: right; }
+.ms-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.ms-venues { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 12px; }
+.ms-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+.ms-outside { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: flex-start; }
+.ms-outside .ms-field { width: 130px; }
+.ms-outside-table { width: auto; }
+.ms-outside-table th:first-child { white-space: nowrap; }
+.ms-outside-table input, .ms-judge-table input.num { width: 78px; text-align: right; }
+.ms-outside .ms-field-wide { width: 300px; }
+.ms-ref-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 4px; padding: 10px 12px; background: #f3f7fb; border: 1px solid #d7e3ef; border-radius: 10px; }
+.ms-ref-bar select { width: auto; padding: 7px 10px; font-size: 14px; }
+.ms-ref-bar .ms-fine { margin: 0; }
+.ms-judge-wrap { overflow-x: auto; }
+.ms-judge-table { width: auto; margin-top: 6px; }
+.ms-judge-table td { vertical-align: top; }
+.ms-judge-table th { white-space: nowrap; line-height: 1.3; }
+.ms-qtable.ms-outside-table input.num { width: 82px; }
+.ms-qtable.ms-judge-table input.num { width: 62px; }
+.ms-judge-table td:first-child input { width: 96px; }
+.ms-judge-name { font-size: 12.5px; color: #2a2f36; min-width: 120px; padding-top: 8px !important; }
+.ms-judge-table .ms-ref-in { width: 92px; }
+.ms-judge-ref { display: block; font-size: 11px; color: #5a6470; padding: 2px 2px 0; max-width: 170px; }
+.ms-judge-table .ms-rule-in { width: 128px; }
+.ms-judge-table .ms-rule-in.bad { border-color: #e0a0a0; background: #fff3f3; }
+.ms-judge-table td.num { padding-top: 8px; color: #445; }
+
+/* 表（順位表・平均点・成績表） */
+.ms-table { border-collapse: collapse; font-size: 13px; background: #fff; }
+.ms-table th, .ms-table td { padding: 4px 8px; border-bottom: 1px solid #e8ebef; text-align: left; }
+.ms-table thead th { font-size: 12px; color: #556; background: #f6f8fb; font-weight: 700; white-space: nowrap; }
+.ms-table thead th small { font-weight: 400; color: #8a94a0; margin-left: 2px; }
+.ms-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ms-table tr.ms-sum th, .ms-table tr.ms-sum td { background: #f6f8fb; font-weight: 700; }
+.ms-table tfoot th, .ms-table tfoot td { background: #f6f8fb; font-weight: 700; font-size: 12px; }
+.ms-sheet { overflow-x: auto; }
+.ms-sheet > .ms-table { width: 100%; }
+.ms-print-title { font-size: 16px; margin: 6px 0 8px; }
+.ms-rank .ms-name { white-space: nowrap; }
+.ms-rank .ms-school { font-size: 12px; color: #445; white-space: nowrap; }
+.ms-avg-topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 12px; align-items: start; }
+.ms-avg-q td:nth-child(2) { min-width: 8.5em; }
+.ms-avg-q { width: 100%; }
+.ms-low { color: #b03a2e; font-weight: 700; }
+
+/* 生徒を選ぶ一覧＋右に成績表 */
+.ms-split { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 16px; align-items: start; }
+.ms-pick { list-style: none; margin: 0; padding: 4px; background: #fff; border: 1px solid var(--line); border-radius: 10px; max-height: calc(100vh - 230px); overflow-y: auto; }
+.ms-pick li { display: flex; align-items: center; gap: 6px; padding: 0 4px; border-radius: 7px; }
+.ms-pick li.on { background: #eaf1f8; }
+.ms-pick li input { width: auto; margin: 0; }
+.ms-pick button { flex: 1; display: flex; gap: 8px; align-items: baseline; padding: 7px 4px; border: none; background: none; text-align: left; cursor: pointer; font-family: inherit; color: #2a2f36; min-width: 0; }
+.ms-pick button:disabled { color: #a0a8b2; cursor: default; }
+.ms-pick-no { font-size: 11.5px; color: #8a94a0; font-variant-numeric: tabular-nums; }
+.ms-pick-name { flex: 1; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-pick-score { font-size: 12px; color: #556; font-variant-numeric: tabular-nums; }
+.ms-preview { min-width: 0; }
+.ms-search { margin-bottom: 8px; padding: 8px 10px; font-size: 14px; }
+
+/* 受験票（A4 に2人／4人。点線で切る） */
+.ms-ticket-pick { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 12px; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px; max-height: 160px; overflow-y: auto; }
+.ms-tickets { overflow-x: auto; }
+.ms-ticket-page {
+  width: 210mm; height: 297mm; padding: 10mm; margin: 0 auto 16px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.12);
+  display: grid; box-sizing: border-box;
+}
+.ms-tickets-4 .ms-ticket-page { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.ms-tickets-2 .ms-ticket-page { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+.ms-ticket { border: 1px dashed #9aa3ad; padding: 6mm; display: flex; flex-direction: column; gap: 3mm; overflow: hidden; font-size: 9.5pt; color: #111; }
+.ms-ticket header { display: flex; align-items: baseline; gap: 3mm; border-bottom: 1.5px solid #111; padding-bottom: 2mm; }
+.ms-ticket-kind { font-size: 15pt; font-weight: 800; letter-spacing: .3em; }
+.ms-ticket-exam { font-size: 10pt; font-weight: 700; }
+.ms-ticket-body { display: flex; flex-direction: column; gap: 3mm; flex: 1; min-height: 0; }
+.ms-tickets-2 .ms-ticket-body { flex-direction: row; gap: 6mm; }
+.ms-tickets-2 .ms-ticket-main, .ms-tickets-2 .ms-ticket-side { flex: 1; min-width: 0; }
+.ms-ticket-main { display: grid; grid-template-columns: auto 1fr; gap: 1.5mm 4mm; margin: 0; align-items: baseline; align-content: start; }
+.ms-tickets-2 .ms-ticket { font-size: 10.5pt; padding: 8mm 9mm; }
+.ms-tickets-2 .ms-ticket-main { gap: 4mm 5mm; }
+.ms-tickets-2 .ms-ticket-no { font-size: 28pt; }
+.ms-tickets-2 .ms-ticket-name { font-size: 20pt; }
+.ms-tickets-2 .ms-ticket-sched { font-size: 10.5pt; }
+.ms-tickets-2 .ms-ticket-note { font-size: 9.5pt; margin-top: 2mm; }
+.ms-ticket-main dt { font-size: 8.5pt; color: #333; }
+.ms-ticket-main dd { margin: 0; border-bottom: 1px solid #bbb; padding-bottom: .5mm; }
+.ms-ticket-no { font-size: 22pt; font-weight: 800; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+.ms-ticket-name { font-size: 15pt; font-weight: 700; }
+.ms-ticket-sched { border-collapse: collapse; width: 100%; font-size: 9pt; }
+.ms-ticket-sched th, .ms-ticket-sched td { border: 1px solid #999; padding: 1mm 2mm; text-align: left; }
+.ms-ticket-sched th { width: 35%; font-weight: 600; background: #f3f3f3; }
+.ms-ticket-note { margin: 0; font-size: 8.5pt; line-height: 1.45; white-space: pre-wrap; }
+.ms-ticket-note b { display: inline-block; margin-right: 2mm; padding: 0 1.5mm; border: 1px solid #555; font-size: 8pt; }
+.ms-ticket footer { font-size: 8pt; color: #333; margin-top: auto; }
+
+/* 面談 */
+.ms-compare { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; margin: 4px 0 10px; padding: 8px 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px; font-size: 13.5px; }
+.ms-compare-h { font-size: 12px; color: #667; font-weight: 700; }
+.ms-compare b { font-size: 15px; }
+.ms-compare b.up { color: #1d6b3a; }
+.ms-compare b.down { color: #b03a2e; }
+.ms-comment-edit { margin-top: 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.ms-comment-edit label { margin: 0 0 6px; }
+.ms-comment-edit label small { font-weight: 400; color: #8a94a0; margin-left: 8px; }
+.ms-comment-edit textarea { width: 100%; padding: 8px 10px; font-size: 14px; font-family: inherit; border: 1px solid #cdd3da; border-radius: 8px; line-height: 1.6; }
+.ms-interview.big .page-head { display: none; }
+.ms-interview.big .ms-split { grid-template-columns: minmax(0, 1fr); }
+body.ms-focus .sidebar, body.ms-focus .mobilebar, body.ms-focus .sidebar-overlay { display: none !important; }
+body.ms-focus .app-main { margin-left: 0; padding-top: 0; }
+
+.ms-print-only { display: none; }
+
+@media (max-width: 980px) {
+  .ms-settings, .ms-split { grid-template-columns: minmax(0, 1fr); }
+  .ms-pick { max-height: 240px; }
+  .ms-two { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .ms-body { padding: 12px 12px 40px; }
+  .ms-bar-link { margin-left: 0; }
+  .ms-grid-wrap { max-height: calc(100vh - 210px); }
+}
+
+/* 印刷：模試の画面だけ。メニュー・操作の部品を外し、A4 縦で出す */
+@media print {
+  @page { size: A4 portrait; margin: 10mm; }
+  body:has(.ms) { background: #fff; }
+  body:has(.ms) .sidebar, body:has(.ms) .mobilebar, body:has(.ms) .sidebar-overlay, .ms .page-head, .ms-noprint { display: none !important; }
+  body:has(.ms) .app-main { margin-left: 0 !important; padding-top: 0 !important; }
+  .ms-body { padding: 0 !important; }
+  .ms, .ms * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ms-print-only { display: block; }
+  .ms-page { break-after: page; }
+  .ms-page:last-child { break-after: auto; }
+  body:has(.ms) .env-banner { display: none !important; }
+  .ms-sheet .ms-table { font-size: 8.5pt; width: 100%; }
+  .ms-sheet .ms-table th, .ms-sheet .ms-table td { padding: 1mm 1.5mm; }
+  .ms-sheet tr { break-inside: avoid; }
+  .ms-sheet thead { display: table-header-group; }
+  .ms-avg-topics { grid-template-columns: 1fr 1fr; }
+  .ms-tickets { overflow: visible; }
+  .ms-ticket-page { width: auto; height: 276mm; padding: 0; margin: 0; box-shadow: none; break-after: page; }
+  .ms-ticket-page:last-child { break-after: auto; }
+  .ms-ticket-pick { display: none; }
+}
+
+/* ============ 本番レベル模試：個人成績表（A4 横1枚。元の帳票「公立高校・高専本番レベル模試」の並び） ============
+   mm・pt で組んである。画面では FitSheet（.rs-fit）が幅に合わせて zoom で縮める。 */
+.rs-fit { width: 100%; overflow: hidden; }
+.rs-fit-inner { width: 293mm; padding: 6mm; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.14); box-sizing: border-box; }
+.rs-sheet {
+  width: 281mm; height: 194mm; box-sizing: border-box; background: #fff; color: #111;
+  display: grid; grid-template-columns: 99mm 93mm 83mm; grid-template-rows: minmax(0, 1fr) auto; column-gap: 3mm;
+  font-size: 7pt; line-height: 1.25; font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', system-ui, sans-serif;
+}
+.rs-col { min-width: 0; display: flex; flex-direction: column; }
+.rs-head { display: flex; align-items: center; gap: 4mm; }
+.rs-logo { height: 8.5mm; width: auto; }
+.rs-title { font-size: 13.5pt; font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
+.rs-ym { text-align: right; font-size: 7pt; margin: -.5mm 0 1mm; }
+.rs-info { display: grid; grid-template-columns: 16mm 1fr; gap: .5mm 2mm; margin: 0 0 2.5mm 2mm; font-size: 7pt; }
+.rs-info dt { color: #333; }
+.rs-info dd { margin: 0; }
+.rs-info .rs-name { font-size: 9.5pt; font-weight: 700; }
+.rs-score { width: 100%; border-collapse: collapse; font-size: 6.8pt; table-layout: fixed; }
+.rs-score th, .rs-score td { border: .2mm solid #8a8a8a; padding: .45mm 1mm; height: 3.9mm; }
+.rs-score thead th { background: #d9b48f; font-weight: 700; text-align: center; }
+.rs-score thead th:first-child { width: 18mm; font-size: 5.8pt; white-space: nowrap; padding: .45mm .6mm; }
+.rs-score tbody th { background: #fbeee2; text-align: left; font-weight: 400; white-space: nowrap; }
+.rs-score tbody td { text-align: right; font-variant-numeric: tabular-nums; }
+.rs-score tbody tr:nth-child(odd) td { background: #fffaf5; }
+
+.rs-pill { align-self: flex-start; display: inline-block; padding: .7mm 3mm; margin: 2.6mm 0 1.4mm; border: .3mm solid #333; border-radius: 1.6mm; font-size: 9pt; font-weight: 700; }
+.rs-pill-green { background: #a9d88d; }
+.rs-pill-orange { background: #f7a541; }
+.rs-pill-blue { background: #bfe3f5; }
+.rs-pill-pink { background: #e9a8c8; }
+.rs-h { font-size: 8pt; font-weight: 700; margin: 0 0 1mm; }
+.rs-h-sm { margin-top: 2mm; }
+.rs-h-note { font-size: 5.8pt; font-weight: 400; color: #555; margin-left: 2mm; }
+
+.rs-judge { border: .25mm solid #6b6b6b; margin-bottom: 1.4mm; font-size: 6.6pt; }
+.rs-j-head { display: flex; gap: 3mm; align-items: baseline; background: #dbe7f7; padding: .6mm 1.6mm; font-size: 7.4pt; border-bottom: .2mm solid #9db3d1; }
+.rs-j-head b { font-variant-numeric: tabular-nums; }
+.rs-j-rule { margin-left: auto; font-size: 5.8pt; color: #445; }
+.rs-j-inside { margin-left: auto; font-size: 6pt; color: #555; }
+.rs-j-table tr:nth-child(2) th { font-size: 5.8pt; }
+.rs-j-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.rs-j-table th, .rs-j-table td { border: .2mm solid #a9a9a9; height: 3.5mm; padding: 0 1mm; text-align: center; font-weight: 400; font-variant-numeric: tabular-nums; }
+.rs-j-table th { background: #f3f6fb; }
+.rs-j-table tr:first-child th:first-child { width: 14mm; }
+.rs-j-g { font-weight: 700 !important; }
+.rs-j-note { font-size: 5.6pt; color: #555; text-align: left !important; }
+.rs-j-grade { display: flex; align-items: center; gap: 2.5mm; padding: .7mm 1.6mm; }
+.rs-j-box { display: inline-block; min-width: 13mm; height: 4.4mm; line-height: 4.4mm; border: .35mm solid #111; text-align: center; font-size: 9pt; font-weight: 800; }
+.rs-j-next { display: grid; gap: .3mm; background: #eef3fb; padding: .6mm 1.6mm .8mm; }
+.rs-j-next span:last-child { padding-left: 10mm; }
+.rs-j-next b { font-size: 8pt; }
+.rs-blank { display: inline-block; width: 12mm; }
+
+.rs-chart { display: block; width: 100%; height: auto; }
+.rs-gl { stroke: #dfe3e8; stroke-width: .6; fill: none; }
+.rs-gl-50 { stroke: #b4bac2; }
+.rs-ax { font-size: 7.2px; fill: #444; }
+.rs-ax-label { font-size: 8.5px; fill: #222; font-weight: 600; }
+.rs-bar { fill: #6da7ec; }
+.rs-bar-mine { fill: #1c5cab; }
+.rs-mine-label { font-size: 7.5px; font-weight: 700; fill: #1c5cab; }
+.rs-legend-svg text { font-size: 7.5px; fill: #333; }
+.rs-radar-ring { fill: none; }
+.rs-radar-avg { fill: none; stroke: #52514e; stroke-width: 1.2; stroke-dasharray: 3 2; }
+.rs-radar-mine { fill: rgba(42, 120, 214, .12); stroke: #2a78d6; stroke-width: 1.6; stroke-linejoin: round; }
+.rs-radar-mine-line { stroke: #2a78d6; stroke-width: 1.6; }
+.rs-radar-dot { fill: #2a78d6; stroke: #fff; stroke-width: 1; }
+.rs-trend-chart { border: .2mm solid #c4c4c4; margin: 2mm 0 0; }
+
+.rs-q { width: 100%; border-collapse: collapse; font-size: 6.3pt; margin-top: 1.5mm; table-layout: fixed; }
+.rs-q th, .rs-q td { border: .2mm solid #9a9a9a; padding: .2mm 1mm; height: 3.25mm; line-height: 1.1; }
+.rs-q thead th { background: #4fc6db; font-weight: 700; text-align: center; }
+.rs-q-c1 { width: 9mm; }
+.rs-q-c3 { width: 8mm; }
+.rs-q-c5 { width: 10mm; }
+.rs-q-c6 { width: 10mm; }
+.rs-q thead th.rs-q-title { text-align: left; }
+.rs-q thead th { white-space: nowrap; }
+.rs-q tbody th { text-align: left; vertical-align: top; font-weight: 400; background: #fff; }
+.rs-q tbody td { text-align: right; font-variant-numeric: tabular-nums; }
+.rs-q td.rs-q-topic { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #eefafc; }
+.rs-q .rs-q-rate { background: #dbe7f7; }
+.rs-q .rs-q-rate.low { color: #d40000; }
+.rs-q tr.rs-q-first th, .rs-q tr.rs-q-first td { border-top: .35mm solid #555; }
+
+.rs-trend { width: 100%; border-collapse: collapse; font-size: 6.6pt; table-layout: fixed; }
+.rs-trend th, .rs-trend td { border: .25mm solid #333; height: 3.6mm; padding: 0 .8mm; }
+.rs-trend thead th { font-weight: 400; text-align: left; }
+.rs-trend tbody th { font-weight: 400; text-align: left; width: 10.5mm; white-space: nowrap; }
+.rs-trend tr.rs-ken th, .rs-trend tr.rs-ken td { background: #f4f7fb; }
+.rs-trend thead th:first-child { width: 10.5mm; }
+.rs-trend tbody td { text-align: right; font-variant-numeric: tabular-nums; }
+.rs-trend tr.rs-cur td, .rs-trend tr.rs-cur th { font-weight: 700; }
+.rs-comment { flex: 1; min-height: 16mm; border: .3mm solid #6b6b6b; padding: 1.5mm 2mm; font-size: 7.6pt; line-height: 1.5; white-space: pre-wrap; }
+.rs-foot { grid-column: 1 / -1; font-size: 5.8pt; color: #444; padding-top: 1.2mm; }
+
+@media print {
+  .rs-fit { overflow: visible; }
+  .rs-fit-inner { zoom: 1 !important; padding: 0; box-shadow: none; width: auto; }
+  .ms-page .rs-sheet { break-inside: avoid; }
+}
+
+/* 本番レベル模試：県一斉模試の取り込み（/moshi/import） */
+.ms-import-sec { margin: 0 0 18px; padding: 12px 16px 14px; background: #fff; border: 1px solid #e2e6ea; border-radius: 10px; }
+.ms-import-sec .ms-h2 { margin-top: 2px; }
+.ms-import-sec > .ms-fine { margin: 2px 0 10px; line-height: 1.6; }
+.ms-import-sec input[type='file'] { padding: 6px 8px; font-size: 13px; background: #fafbfc; }
+.ms-import-preview { margin: 4px 0 0; padding: 8px 12px; font-size: 13px; background: #f6f8fa; border-radius: 8px; line-height: 1.7; }
+.ms-import-preview p { margin: 0; }
+.ms-import-preview .warn { color: #8a5a00; }
+.ms-import .ms-bar { margin: 0 0 10px; }
