@@ -130,14 +130,14 @@ if (!SILENT) {
   audioFilter = ['-af', 'loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000', '-ac', '2'];
 }
 
-// 画質は crf 24、音声は 96k（ログインの動画と同じ。ナレーション入り3分ほどで5MB前後）
+// 画質は crf 27、音声は 96k（画面写真が細かく、crf 24 だと字幕だけでも7MBになるため。静止したコマの字は crf 27 でも読める）
 const mp4 = path.join(OUT, 'seiseki-student.mp4');
 ff([
   '-f', 'concat', '-safe', '0', '-i', path.join(OUT, 'frames.txt'),
   ...audioIn,
   '-map', '0:v', '-map', '1:a',
   '-vf', `fps=${FPS},format=yuv420p`,
-  '-c:v', 'libx264', '-preset', 'slow', '-crf', '24', '-tune', 'stillimage',
+  '-c:v', 'libx264', '-preset', 'slow', '-crf', '27', '-tune', 'stillimage',
   ...audioFilter,
   '-c:a', 'aac', '-b:a', SILENT ? '64k' : '96k', '-shortest',
   '-movflags', '+faststart',

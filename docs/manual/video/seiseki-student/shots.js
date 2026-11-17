@@ -1,6 +1,7 @@
 // 動画「成績管理 生徒の追加」の画面写真を撮る（赤枠なし。強調する枠の位置は shots/<名前>.json）。
 // 使い方：アプリの写しを手元で起動し（.data/moshi.json に架空の回と名簿＝日野校 0001〜0005 を入れておく）、
 //   node docs/manual/video/seiseki-student/shots.js http://localhost:3125
+// （架空の回には時間割の時刻も入れておく。入っていないと、受験票の画面に「時刻が入っていません」の知らせが写る）
 // 写真は2倍の解像度、.json の w・h・boxes は CSS の px（slides.html がそのまま使う）。職員は架空（智翔 花子・小中等部）。
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -84,23 +85,16 @@ async function shot(page, name, marks, clip) {
     [6, `${last} input[data-c="0"]`, 4],
   ], clip);
 
-  await page.goto(BASE + '/moshi/import', { waitUntil: 'networkidle' });
-  await page.waitForSelector('.ms-import-sec');
-  await page.waitForTimeout(400);
-  const sec = '.ms-import > section:nth-of-type(2)';
-  const top = (await page.locator('.ms-bar').boundingBox()).y - 24;
-  const sb = await page.locator(sec).boundingBox();
-  await page.evaluate((y) => window.scrollTo(0, y), Math.max(0, top));
-  await page.waitForTimeout(300);
-  const sy = await page.evaluate(() => window.scrollY);
-  const iclip = { x: 0, y: 0, width: 1280, height: Math.min(800, Math.round(sb.y + sb.height + 20 - sy)) };
-  const boxes = [];
-  for (const [n, sel, pad] of [[1, '.ms-bar', 5], [2, `${sec} input[type=file]`, 5], [3, `${sec} select`, 5], [4, `${sec} button:has-text("名簿に入れる")`, 6]]) {
-    const b = await box(page, sel, pad);
-    boxes.push({ n, x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.w), h: Math.round(b.h) });
-  }
-  await page.screenshot({ path: path.join(OUT, 'v05_import.png'), clip: iclip });
-  fs.writeFileSync(path.join(OUT, 'v05_import.json'), JSON.stringify({ w: iclip.width, h: iclip.height, boxes }, null, 1));
-  console.log('v05_import', boxes.length);
+  // 受験票：回・校舎・生徒の一覧（足した 0301 の生徒も並ぶ）・印刷する
+  await page.goto(BASE + '/moshi/ticket', { waitUntil: 'networkidle' });
+  await page.waitForSelector('.ms-bar');
+  await page.selectOption('.ms-bar label:nth-child(2) select', '日野校');
+  await page.waitForTimeout(800);
+  await shot(page, 'v06_ticket', [
+    [1, '.ms-bar label:nth-child(1) select', 5],
+    [2, '.ms-bar label:nth-child(2) select', 5],
+    [3, '.ms-ticket-pick', 5],
+    [4, 'button:has-text("印刷する")', 6],
+  ], { x: 0, y: 0, width: 1280, height: 720 });
   await browser.close();
 })().catch((e) => { console.error(e); process.exit(1); });

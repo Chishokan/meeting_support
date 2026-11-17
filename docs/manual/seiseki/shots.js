@@ -1,5 +1,5 @@
 // 成績管理「生徒の追加」マニュアルの写真を撮る（架空の生徒・架空の職員）。
-// 使い方：アプリを手元で起動し（.data/moshi.json に架空の回と名簿を入れておく）、
+// 使い方：アプリを手元で起動し（.data/moshi.json に架空の回（時間割の時刻も）と名簿＝日野校 0001〜0005 を入れておく）、
 //   node docs/manual/seiseki/shots.js 出力フォルダ http://localhost:3125
 // 出力フォルダに写真（2倍）と boxes.json（赤枠の位置）ができる。赤枠は annotate.py で付ける。
 const { chromium } = require('playwright');
@@ -83,26 +83,17 @@ async function shot(page, name, marks, opts = {}) {
     [5, `${last} button.ms-x`, 3],
   ], { clip: { x: 0, y: 0, width: 1280, height: 620 } });
 
-  // 4. 県一斉模試の取り込み：2. 名簿
-  await page.goto(BASE + '/moshi/import', { waitUntil: 'networkidle' });
-  await page.waitForSelector('.ms-import-sec');
-  await page.waitForTimeout(400);
-  const sec = '.ms-import > section:nth-of-type(2)';
-  const b = await page.locator(sec).boundingBox();
-  await page.evaluate((y) => window.scrollTo(0, y), Math.max(0, b.y - 120));
-  await page.waitForTimeout(300);
-  const scrollY = await page.evaluate(() => window.scrollY);
-  const marks = [];
-  for (const [n, sel, pad] of [
-    [1, '.ms-bar', 4],
-    [2, `${sec} input[type=file]`, 4],
-    [3, `${sec} select`, 4],
-    [4, `${sec} button:has-text("名簿に入れる")`, 5],
-  ]) { const m = await box(page, sel, pad); marks.push({ n, ...m, y: m.y + scrollY }); }
-  const sb = await page.locator(sec).boundingBox();
-  const clip = { x: 0, y: 0, width: 1280, height: Math.min(800, sb.y + sb.height + 16) };
-  await page.screenshot({ path: `${OUT}/seiseki_05_import.png`, clip });
-  boxes.seiseki_05_import = { marks: marks.map((m) => ({ ...m, y: m.y - scrollY })), clip: null };
+  // 4. 受験票：回・校舎・生徒の一覧・印刷する
+  await page.goto(BASE + '/moshi/ticket', { waitUntil: 'networkidle' });
+  await page.waitForSelector('.ms-bar');
+  await page.selectOption('.ms-bar label:nth-child(2) select', '日野校');
+  await page.waitForTimeout(600);
+  await shot(page, 'seiseki_05_ticket', [
+    [1, '.ms-bar label:nth-child(1) select', 4],
+    [2, '.ms-bar label:nth-child(2) select', 4],
+    [3, '.ms-ticket-pick', 4],
+    [4, 'button:has-text("印刷する")', 5],
+  ], { clip: { x: 0, y: 0, width: 1280, height: 700 } });
 
   fs.writeFileSync(`${OUT}/boxes.json`, JSON.stringify(boxes, null, 2));
   await browser.close();

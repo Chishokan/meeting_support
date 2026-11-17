@@ -18,7 +18,7 @@ export const SLIDES = [
     id: 'rule', dur: 10,
     html: `<h2 data-d="0.2">受験番号のきまり（校舎ごと）</h2>
       <div class="flow">
-        <div class="card" data-d="0.6"><span class="k">県一斉模試を受けた生徒</span><b>管理部門が入れます</b><span>県一斉模試の番号<br>（0001 から）で<br>名簿に入れます</span></div>
+        <div class="card" data-d="0.6"><span class="k">県一斉模試を受けた生徒</span><b>管理部門が入力</b><span>県一斉模試の番号<br>（0001 から）で<br>名簿に入れます</span></div>
         <div class="card" data-d="1.0"><span class="k">受けていない生徒</span><b>${B('＋ 生徒を追加')}</b><span>0301 から、校舎ごとに<br>自動で番号が付きます</span></div>
       </div>
       <p data-d="1.4">番号は、あとから直すこともできます</p>`,
