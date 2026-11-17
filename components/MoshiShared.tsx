@@ -6,7 +6,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { CAMPUS_NAMES, campusInfo, round1, sortExams, type KenitsuResult, type MoshiExam, type MoshiResult } from '@/lib/moshi/model';
+import { CAMPUS_NAMES, SUBJECT_KEYS, campusInfo, round1, sortExams, type KenitsuExam, type KenitsuResult, type MoshiExam, type MoshiResult } from '@/lib/moshi/model';
 import { MOSHI_DEPTS } from '@/lib/moshi/access';
 
 // ---- 失敗の理由 ------------------------------------------------------------
@@ -113,6 +113,85 @@ export function useExamCampus(exams: MoshiExam[], { allowAll, withData }: { allo
   const pickCampus = (c: string) => { setCampus(c); try { localStorage.setItem(CAMPUS_KEY, c); } catch {} };
   const exam = exams.find((e) => e.id === examId) ?? null;
   return { exam, examId, campus, pickExam, pickCampus };
+}
+
+// ---- 本番レベル模試／県一斉模試の切り替え（成績表・面談） ----------------------------
+
+export type MoshiKind = 'honban' | 'ken';
+const KIND_KEY = 'moshi.kind';
+const KEN_KEY = 'moshi.ken';
+
+/** 本番レベル模試の得点が1つでも入っているか（無ければ、成績表・面談は県一斉模試から開く）。 */
+export function hasHonbanScores(results: MoshiResult[]): boolean {
+  return results.some((r) => SUBJECT_KEYS.some((k) => (r.scores[k] ?? []).some((v) => v != null)));
+}
+
+/**
+ * 成績表・面談で見る模試の種類と、県一斉模試の回（端末ごとに覚える）。
+ * まだ選んでいなければ、本番レベル模試の得点が無く県一斉模試があるときは県一斉模試から開く。
+ */
+export function useKind(hasHonban: boolean, kenList: KenitsuExam[]) {
+  const [kind, setKind] = useState<MoshiKind | ''>('');
+  const [kenId, setKenId] = useState('');
+  useEffect(() => {
+    try {
+      const k = localStorage.getItem(KIND_KEY);
+      if (k === 'honban' || k === 'ken') setKind(k);
+      setKenId(localStorage.getItem(KEN_KEY) ?? '');
+    } catch {}
+  }, []);
+  const now: MoshiKind = kind || (!hasHonban && kenList.length ? 'ken' : 'honban');
+  const kenExam = kenList.find((e) => e.id === kenId) ?? kenList[0] ?? null;
+  const pickKind = (k: MoshiKind) => { setKind(k); try { localStorage.setItem(KIND_KEY, k); } catch {} };
+  const pickKen = (id: string) => { setKenId(id); try { localStorage.setItem(KEN_KEY, id); } catch {} };
+  return { kind: now, pickKind, kenExam, pickKen };
+}
+
+export function KindSwitch({ kind, onKind, kenCount }: { kind: MoshiKind; onKind: (k: MoshiKind) => void; kenCount: number }) {
+  return (
+    <div className="ms-kind ms-noprint">
+      <span className="ms-kind-label">見る模試</span>
+      <div className="ms-seg" role="tablist">
+        <button type="button" className={kind === 'honban' ? 'on' : ''} onClick={() => onKind('honban')}>本番レベル模試</button>
+        <button type="button" className={kind === 'ken' ? 'on' : ''} onClick={() => onKind('ken')}>県一斉模試{kenCount ? `（${kenCount}回）` : ''}</button>
+      </div>
+    </div>
+  );
+}
+
+/** 県一斉模試の回と校舎の選択。 */
+export function KenBar({ kenList, kenId, campus, onKen, onCampus, children }: {
+  kenList: KenitsuExam[]; kenId: string; campus: string; onKen: (id: string) => void; onCampus: (c: string) => void; children?: ReactNode;
+}) {
+  return (
+    <div className="ms-bar ms-noprint">
+      <label>
+        <span>回</span>
+        <select value={kenId} onChange={(e) => onKen(e.target.value)}>
+          {kenList.map((e) => <option key={e.id} value={e.id}>{e.name}（{e.date.slice(5).replace('-', '/')}）</option>)}
+        </select>
+      </label>
+      <label>
+        <span>校舎</span>
+        <select value={campus} onChange={(e) => onCampus(e.target.value)}>
+          <option value={ALL_CAMPUSES}>すべての校舎</option>
+          {CAMPUS_NAMES.map((c) => <option key={c} value={c}>{campusInfo(c)?.label ?? c}</option>)}
+        </select>
+      </label>
+      {children}
+      <Link className="ms-bar-link" href="/moshi/import">県一斉模試の取り込み</Link>
+    </div>
+  );
+}
+
+/** 県一斉模試がまだ取り込まれていないとき。 */
+export function NoKenNote() {
+  return (
+    <div className="ms-note">
+      <p>県一斉模試の成績がまだありません。「県一斉模試の取り込み」で、集計結果の成績と名簿を取り込んでください。</p>
+      <Link className="ms-btn" href="/moshi/import">県一斉模試の取り込みを開く</Link>
+    </div>
+  );
 }
 
 export function examOptionLabel(e: MoshiExam): string {

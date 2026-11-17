@@ -1,6 +1,7 @@
 'use client';
 
-// 本番レベル模試：面談（個人成績）（/moshi/interview）。生徒を1人選んで、面談でそのまま見せられる画面に出す。
+// 成績管理：面談（個人成績）（/moshi/interview）。生徒を1人選んで、面談でそのまま見せられる画面に出す。
+// 上の「見る模試」で本番レベル模試と県一斉模試を切り替える（県一斉模試は components/MoshiKenUI.tsx の KenInterviewView）。
 //   - 合計・偏差値・順位、教科ごとの得点と平均、大問別の得点率、よくできた／伸ばしたい分野、志望者内の順位、これまでの推移
 //   - 前の回との差（合計・偏差値・順位）
 //   - 「大きく表示」で左の一覧とメニューを隠す（ほかの生徒の名前を見せないため）
@@ -9,14 +10,15 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  MAX_COMMENT, SUBJECT_KEYS, byExamNo, campusInfo, computeStats, dev5Of, historyOf,
+  MAX_COMMENT, SUBJECT_KEYS, byExamNo, campusInfo, computeStats, dev5Of, historyOf, kenExams,
   type MoshiResult, type RowStat,
 } from '@/lib/moshi/model';
 import {
-  ExamCampusBar, PageHead, StateNote, fmt1, printLandscape, reasonText, shortExamName,
-  NO_KEN, useExamCampus, useMoshiData,
+  ExamCampusBar, KindSwitch, PageHead, StateNote, fmt1, hasHonbanScores, printLandscape, reasonText, shortExamName,
+  NO_KEN, useExamCampus, useKind, useMoshiData,
 } from './MoshiShared';
 import { FitSheet, ReportSheet } from './MoshiReportSheet';
+import { KenInterviewView } from './MoshiKenUI';
 
 export default function MoshiInterviewUI({ name }: { name: string }) {
   const { state, reload, setResults } = useMoshiData();
@@ -30,6 +32,9 @@ export default function MoshiInterviewUI({ name }: { name: string }) {
   const [sel, setSel] = useState('');
   const [big, setBig] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const kenList = useMemo(() => kenExams(kenitsu), [kenitsu]);
+  const hasHonban = useMemo(() => hasHonbanScores(results), [results]);
+  const { kind, pickKind, kenExam, pickKen } = useKind(hasHonban, kenList);
 
   const list = useMemo(() => {
     if (!stats) return [] as RowStat[];
@@ -51,11 +56,20 @@ export default function MoshiInterviewUI({ name }: { name: string }) {
     return () => { window.removeEventListener('keydown', h); document.body.classList.remove('ms-focus'); };
   }, [big]);
 
-  if (state.status !== 'ready' || !exams.length || !exam || !stats) {
+  const head = <PageHead title="成績管理｜面談（個人成績）" desc="生徒を1人選んで、面談で見せる画面を出します。「大きく表示」でほかの生徒の名前を隠せます。本番レベル模試と県一斉模試を切り替えられます。" name={name} />;
+  if (state.status !== 'ready') {
+    return <div className="ms">{head}<div className="ms-body"><StateNote state={state} onRetry={reload} /></div></div>;
+  }
+  if (kind === 'ken' || !exams.length || !exam || !stats) {
     return (
       <div className="ms">
-        <PageHead title="本番レベル模試｜面談（個人成績）" desc="生徒を1人選んで、面談で見せる画面を出します。" name={name} />
-        <div className="ms-body"><StateNote state={state} onRetry={reload} /></div>
+        {head}
+        <div className="ms-body">
+          <KindSwitch kind={kind} onKind={pickKind} kenCount={kenList.length} />
+          {kind === 'ken'
+            ? <KenInterviewView kenitsu={kenitsu} kenList={kenList} kenExam={kenExam} onKen={pickKen} campus={campus} onCampus={pickCampus} exams={exams} results={results} statsList={statsList} />
+            : <StateNote state={state} onRetry={reload} />}
+        </div>
       </div>
     );
   }
@@ -66,8 +80,9 @@ export default function MoshiInterviewUI({ name }: { name: string }) {
 
   return (
     <div className={`ms ms-interview${big ? ' big' : ''}`}>
-      <PageHead title="本番レベル模試｜面談（個人成績）" desc="生徒を1人選んで、面談で見せる画面を出します。「大きく表示」でほかの生徒の名前を隠せます。" name={name} />
+      {head}
       <div className="ms-body">
+        {!big && <KindSwitch kind={kind} onKind={pickKind} kenCount={kenList.length} />}
         {!big && <ExamCampusBar exams={exams} examId={examId} campus={campus} onExam={pickExam} onCampus={pickCampus} allowAll />}
         <div className="ms-split">
           {!big && (

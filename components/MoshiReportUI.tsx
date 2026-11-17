@@ -1,22 +1,25 @@
 'use client';
 
-// 本番レベル模試：成績表・順位表（/moshi/report）。
+// 成績管理：成績表・順位表（/moshi/report）。上の「見る模試」で本番レベル模試と県一斉模試を切り替える。
+// 本番レベル模試：
 //   - 順位表：5教科合計の高い順（入力シートの「順位表」タブに当たる）。印刷・CSV
 //   - 平均点：全体と校舎ごとの平均点、大問ごとの平均得点率
 //   - 個人成績表：生徒を選んで、1人1枚（A4）で印刷する
-// 順位・偏差値は智翔館の受験者の中でのもの（lib/moshi/model.ts の computeStats）。
+//   順位・偏差値は智翔館の受験者の中でのもの（lib/moshi/model.ts の computeStats）。
+// 県一斉模試：取り込んだ成績だけで、一覧と個人成績表を出す（components/MoshiKenUI.tsx）。
 
 import { useMemo, useState } from 'react';
 import {
   SUBJECT_KEYS, SUBJECT_NAMES, SUBJECT_SHORT, byExamNo, campusInfo, computeStats, examMax, rankedRows,
-  subjectMax, subjectOf, toCsv,
+  kenExams, subjectMax, subjectOf, toCsv,
   type ExamStats, type KenitsuResult, type RowStat,
 } from '@/lib/moshi/model';
 import { schoolName } from '@/lib/moshi/schools';
 import { FitSheet, ReportSheet } from './MoshiReportSheet';
+import { KenReportView } from './MoshiKenUI';
 import {
-  ExamCampusBar, PageHead, StateNote, campusLabel, downloadCsv, fmt1, pct, printLandscape, printPortrait,
-  NO_KEN, useExamCampus, useMoshiData,
+  ExamCampusBar, KindSwitch, PageHead, StateNote, campusLabel, downloadCsv, fmt1, hasHonbanScores, pct, printLandscape, printPortrait,
+  NO_KEN, useExamCampus, useKind, useMoshiData,
 } from './MoshiShared';
 
 type Tab = 'rank' | 'avg' | 'cards';
@@ -30,20 +33,33 @@ export default function MoshiReportUI({ name }: { name: string }) {
   const [tab, setTab] = useState<Tab>('rank');
   const statsList = useMemo(() => exams.map((e) => computeStats(e, results)), [exams, results]);
   const stats = statsList.find((s) => s.exam.id === examId) ?? null;
+  const kenList = useMemo(() => kenExams(kenitsu), [kenitsu]);
+  const hasHonban = useMemo(() => hasHonbanScores(results), [results]);
+  const { kind, pickKind, kenExam, pickKen } = useKind(hasHonban, kenList);
+  const head = <PageHead title="成績管理｜成績表・順位表" desc="順位表・平均点・個人成績表（1人1枚）を画面で見て、印刷やCSVで出します。本番レベル模試と県一斉模試を切り替えられます。" name={name} />;
 
-  if (state.status !== 'ready' || !exams.length || !exam || !stats) {
+  if (state.status !== 'ready') {
+    return <div className="ms">{head}<div className="ms-body"><StateNote state={state} onRetry={reload} /></div></div>;
+  }
+  if (kind === 'ken' || !exams.length || !exam || !stats) {
     return (
       <div className="ms">
-        <PageHead title="本番レベル模試｜成績表・順位表" desc="順位表・平均点・個人成績表を出します。" name={name} />
-        <div className="ms-body"><StateNote state={state} onRetry={reload} /></div>
+        {head}
+        <div className="ms-body">
+          <KindSwitch kind={kind} onKind={pickKind} kenCount={kenList.length} />
+          {kind === 'ken'
+            ? <KenReportView kenitsu={kenitsu} kenList={kenList} kenExam={kenExam} onKen={pickKen} campus={campus} onCampus={pickCampus} exams={exams} results={results} statsList={statsList} />
+            : <StateNote state={state} onRetry={reload} />}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="ms">
-      <PageHead title="本番レベル模試｜成績表・順位表" desc="順位表・平均点・個人成績表（1人1枚）を画面で見て、印刷やCSVで出します。" name={name} />
+      {head}
       <div className="ms-body">
+        <KindSwitch kind={kind} onKind={pickKind} kenCount={kenList.length} />
         <ExamCampusBar exams={exams} examId={examId} campus={campus} onExam={pickExam} onCampus={pickCampus} allowAll />
         <div className="ms-toolbar ms-noprint">
           <div className="ms-seg" role="tablist">

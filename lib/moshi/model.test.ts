@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   choiceRanks, cleanExam, cleanResult, computeStats, DEFAULT_JUDGE_OPTIONS, DEFAULT_SUBJECTS, devBins, judgeOf, parseRule, reportFigures, ruleMax,
   scoreBins, trendRows, yearExams, emptyOutside, emptyScores, examMax, fitScores, historyOf,
-  campusOfVenue, cleanKenItem, kenExams, kenGuessFromFileName, kenIdMap, kenRoster, kenScores, kenTable, parseCsv, inputSheetRows, jpDate, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
+  campusOfVenue, cleanKenItem, devBinsOf, kenChoiceRank, kenExamRef, kenNames, kenStatsOf, scoreBinsOf, kenExams, kenGuessFromFileName, kenIdMap, kenRoster, kenScores, kenTable, parseCsv, inputSheetRows, jpDate, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
   scoresToCell, subjectMax,
   type MoshiExam, type MoshiResult, type Scores,
 } from './model.ts';
@@ -536,4 +536,64 @@ test('教科別偏差値推移に県一斉模試の回を日付順で混ぜる�
   // 受験番号が無ければ県一斉は空（氏名では結ばない）
   const t2 = trendRows(list, e11, { ...me, examNo: '' }, ken);
   assert.equal(t2[0].dev.k5, null);
+});
+
+test('県一斉模試の成績表：名簿から氏名、塾内順位・塾内平均、志望者の中の順位', () => {
+  const csv = [KEN_HEAD,
+    kenRow('M1', '智翔館　日野校', '0001', 'x', '300'),
+    kenRow('M2', '智翔館　日野校', '0002', 'x', '250'),
+    kenRow('M3', '智翔館　大野校', '0001', 'x', '250'),
+  ].join('\n');
+  const items = kenScores(kenTable(csv), META).items;
+  items[2].choices[0] = { code: '608-01', name: '西海学園', judge: 'B', prob: '60%' };
+  // 名簿：同じ人が2つの回にいれば新しい回の氏名。校舎がちがえば同じ受験番号でも別の人
+  const e7 = exam({ id: 'e7', date: '2026-07-12' });
+  const e11 = exam({ id: 'e11', date: '2026-11-22' });
+  const names = kenNames([
+    res({ examId: 'e11', campus: '日野校', examNo: '0001', name: '山田　太郎' }, e11),
+    res({ examId: 'e7', campus: '日野校', examNo: '0001', name: '山田　太' }, e7),
+    res({ examId: 'e11', campus: '大野校', examNo: '0001', name: '鈴木　花子' }, e11),
+  ], [e7, e11]);
+  assert.equal(names.get('日野校|0001'), '山田　太郎');
+  const ks = kenStatsOf(items, META.examId, names)!;
+  assert.equal(ks.rows.length, 3);
+  assert.equal(ks.n.k5, 3);
+  assert.equal(Math.round(ks.mean.k5! * 10) / 10, 266.7);
+  const [a, b, c] = ks.rows;
+  assert.deepEqual([a.name, b.name, c.name], ['山田　太郎', '', '鈴木　花子']);
+  assert.deepEqual([a.inside.k5, b.inside.k5, c.inside.k5], [1, 2, 2]); // 同点は同じ順位
+  // 518-01 は3人とも書いている（kenRow の公立第1）。608-01 は大野校の1人だけ
+  assert.deepEqual(kenChoiceRank(ks, b, '518-01'), { n: 2, rank: 2 }); // c は第1を 608-01 に変えた
+  assert.deepEqual(kenChoiceRank(ks, c, '608-01'), { n: 1, rank: 1 });
+  assert.equal(kenChoiceRank(ks, a, ''), null);
+  assert.equal(kenStatsOf(items, 'ken-none', names), null);
+});
+
+test('分布：得点（25点きざみ）と偏差値（2.5きざみ）は本番レベル模試と同じ作り', () => {
+  const sb = scoreBinsOf([500, 250, 251, 0], 251, 500);
+  assert.equal(sb.length, 20);
+  assert.equal(sb[0].label, '476～500');
+  assert.equal(sb[0].count, 1);
+  assert.equal(sb.find((x) => x.label === '251～275')!.mine, true);
+  assert.equal(sb[sb.length - 1].count, 1);
+  const db = devBinsOf([80, 50, 51, 20], 51);
+  assert.equal(db[0].label, '75.0以上');
+  assert.equal(db[0].count, 1);
+  assert.equal(db.find((x) => x.label === '50.0')!.count, 2);
+  assert.equal(db.find((x) => x.label === '50.0')!.mine, true);
+  assert.equal(db[db.length - 1].count, 1);
+});
+
+test('県一斉模試の回を「この回」にした推移：同じ年度の本番レベル模試の回も並び、県一斉の回が current', () => {
+  const e11 = exam({ id: 'e11', name: '11月', date: '2026-11-22' });
+  const me = res({ name: '山田　太郎', campus: '日野校', examNo: '0012', s: full([70, 70, 70, 70, 70]) }, e11);
+  const list = [computeStats(e11, [me])];
+  const csv = [KEN_HEAD, kenRow('M1', '智翔館　日野校', '0012', 'x', '250')].join('\n');
+  const ken = [
+    ...kenScores(kenTable(csv), { examId: 'ken-2026-08-23', examName: '長崎県一斉模試 2026年8月', date: '2026-08-23' }).items,
+    ...kenScores(kenTable(csv), { examId: 'ken-2026-10-18', examName: '長崎県一斉模試 2026年10月', date: '2026-10-18' }).items,
+  ];
+  const t = trendRows(list, kenExamRef({ id: 'ken-2026-10-18', name: '長崎県一斉模試 2026年10月', date: '2026-10-18' }), { name: '山田　太郎', campus: '日野校', examNo: '0012' }, ken);
+  assert.deepEqual(t.map((x) => [x.kind, x.label, x.current]), [['ken', '8月', false], ['ken', '10月', true], ['honban', '11月', false]]);
+  assert.equal(t[2].dev.k5, 50); // 本番は氏名＋受験番号で同じ生徒を見つける
 });
