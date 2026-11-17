@@ -109,3 +109,35 @@ test('textsWithoutGlyph：文書の画像に出ない日本語の文字を拾う
   const q = parseFigure('{"range":[0,0,5,5],"points":{"A":[0,0],"B":[1,1]},"shapes":[{"length":["A","B"],"label":"√2"}]}');
   if (q.ok) assert.deepEqual(textsWithoutGlyph(q.spec), []);
 });
+
+// --- 縦横の単位が違うグラフ・目盛り・Word の前の確かめ（2026-11-17：速さのグラフが細い棒になり、日本語の文字が□になった） ---
+import { checkDocFigures, figureAspect } from './figure.ts';
+
+test('figureAspect：グラフで縦横の比が極端なら x と y の縮尺を別にする（図形はそのまま）', () => {
+  assert.deepEqual(figureAspect({ range: [0, -200, 32, 2200], axes: true }), { aspect: 0.9, stretched: true });
+  assert.deepEqual(figureAspect({ range: [0, 0, 100, 5], axes: true }), { aspect: 0.6, stretched: true });
+  assert.equal(figureAspect({ range: [-7, 0, 7, 13], axes: true }).stretched, false);
+  assert.equal(figureAspect({ range: [0, 0, 2, 20] }).stretched, false);
+});
+
+test('速さのグラフ：細い棒にならず、目盛りの数が出る', () => {
+  const p = parseFigure({
+    range: [0, 0, 32, 2200], axes: true,
+    points: { p1: [15, 1200], p3: [28, 2000] },
+    ticks: { x: [15, 28, 0, 99, 'a'], y: [1200, 2000] },
+    shapes: [{ segment: [[0, 0], 'p1'] }, { segment: ['p1', 'p3'] }],
+  });
+  assert.ok(p.ok);
+  if (!p.ok) return;
+  assert.deepEqual(p.spec.ticks, { x: [15, 28], y: [1200, 2000] });
+  const { svg, width, height } = renderFigureSvg(p.spec);
+  assert.ok(width > 300 && height > 250 && height < width * 1.2, `${width}x${height}`);
+  for (const t of ['>15<', '>28<', '>1200<', '>2000<']) assert.ok(svg.includes(t), t);
+});
+
+test('checkDocFigures：描けない図と、画像に出ない日本語の文字を返す', () => {
+  const graph = { range: [0, 0, 32, 2200], axes: true, points: { p: [15, 1200] }, shapes: [{ segment: [[0, 0], 'p'], label: '太郎' }] };
+  assert.match(checkDocFigures([{ where: '大問1の図1', figure: graph }]) ?? '', /大問1の図1：図の中の「太郎」は Word の画像では文字が出ない/);
+  assert.match(checkDocFigures([{ where: '大問2の問10の図', figure: { shapes: [] } }]) ?? '', /大問2の問10の図：range は/);
+  assert.equal(checkDocFigures([{ where: 'x', figure: { ...graph, shapes: [{ segment: [[0, 0], 'p'], label: 'A' }] } }]), null);
+});
