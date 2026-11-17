@@ -478,16 +478,14 @@ WAV は圧縮しないので通信量は増える（1時間の会議でおよそ
 
 - 型と計算（集計・順位・偏差値・貼り付けの読み取り・CSV）: lib/moshi/model.ts（テスト: lib/moshi/model.test.ts）
 - 志望校コード表: lib/moshi/schools.ts（県一斉模試のコード＝reference.ts の判定基準一覧。前の入力シートの5桁のコードは読み替え用に残す）
-- 保存: lib/moshi/store.ts → apps_script/Code.gs の listMoshi_ / saveMoshiExam_ / deleteMoshiExam_ /
-  saveMoshiResults_ / deleteMoshiResults_ / saveMoshiKenitsu_ / deleteMoshiKenitsu_ → スプレッドシート「本番レベル模試 成績」
+- 保存: lib/moshi/store.ts → **成績管理専用の Apps Script（apps_script/seiseki.gs）** → スプレッドシート「成績管理DB」
+  （会議DXの Apps Script・会議サポートアプリログとは別のプロジェクト・別のファイル。門配管理の monpai.gs と同じ形。下の「成績管理のDB」）
   - 「模試の回」タブ：1行＝1回（配点・分野・時間割などは「設定」列に JSON）
   - 「模試成績」タブ：1行＝1回×1人。大問ごとの得点は教科ごとに「29,15,32,18」（空欄は「29,,32,18」）。
     「国語計」〜「合計」はシートで見るための列で、保存のたびに Apps Script が計算し直す（アプリは使わない）
   - 「県一斉成績」タブ：1行＝取り込んだ県一斉模試の1回×1人（回ID・校舎・受験番号・性別・内申点・教科ごとの得点/偏差値/順位・
     志望校4つのコード/名称/判定/合格確率）。**氏名の列は無い**。初めて取り込んだときにできる。取り込み直すとその回の行を入れかえる
-  - ファイルは初めて使うときに Apps Script が作り、会議サポートアプリログと同じフォルダに置く（共有は持ち主だけ。
-    ID はスクリプトのプロパティ MOSHI_SPREADSHEET_ID。既存のファイルを使うときは Code.gs の MOSHI_SPREADSHEET_ID に入れる）
-  - APPS_SCRIPT_URL が無いローカル開発では .data/moshi.json に保存する
+  - SEISEKI_SCRIPT_URL が無いローカル開発では .data/moshi.json に保存する
 - 画面: components/MoshiEntryUI.tsx・MoshiReportUI.tsx・MoshiTicketUI.tsx・MoshiInterviewUI.tsx・MoshiSettingsUI.tsx、
   個人成績表（帳票）は components/MoshiReportSheet.tsx、共通の部品（読み込み・回と校舎の選択・印刷）は components/MoshiShared.tsx
 - API: app/api/moshi（GET＝すべての回と成績と県一斉模試）・app/api/moshi/exams（回の作成・更新・削除）・app/api/moshi/results（成績の保存・削除）・
@@ -538,11 +536,30 @@ WAV は圧縮しないので通信量は増える（1時間の会議でおよそ
   ［志望校も入れる］で県一斉模試の回を選ぶと、志望校が空の人にだけ、その回の志望校（公立第1・第2 → 第1・第2志望、国私立第1・第2 → 第3・第4志望）を入れる
 - 文字コードは UTF-8 か Shift_JIS（自動で見分ける）
 
-### セットアップ
-1. apps_script/Code.gs を最新にして再デプロイする（action:'listMoshi'・'saveMoshiKenitsu' などが増えている）。
-   **再デプロイするまでは画面に「保存先のスクリプトが古いまま」と出て使えない**（古いスクリプトは知らない action を
-   会話ログとして扱うため、画面を開くたびに「会話ログ」に空の行も残る）。使う人に案内する前に済ませること
-2. 初めて画面を開くと「本番レベル模試 成績」ができる。共有は持ち主だけなので、シートで見たい人がいればファイルの共有で足す
+### セットアップ（成績管理DB。本番用と dev 用で2回行う）
+手順の詳細は apps_script/seiseki.gs の先頭に書いてある。
+1. 新しいスプレッドシート「成績管理DB（本番）」（dev 用は「成績管理DB（dev）」）を作る。共有は必要な人だけ（リンクの共有はしない）
+2. 拡張機能 → Apps Script に apps_script/seiseki.gs を貼り、TOKEN を決める（本番と dev で別の値。会議DXの合言葉とも別）
+3. エディタで setupSeiseki を1回実行（シートができる・権限の承認）→ デプロイ（ウェブアプリ・実行は自分・アクセスは全員）
+4. Vercel の環境変数 SEISEKI_SCRIPT_URL（/exec の URL）と SEISEKI_SCRIPT_TOKEN（2. の合言葉）を入れて再デプロイ
+   （本番用は Production、dev 用は Preview と Development）
+5. 未設定のあいだは、成績管理の画面に「成績管理の保存先が未設定」と出る（ほかのアプリには影響しない）
+
+### 成績管理のDB（スプレッドシートの形と、DB に移すとき）
+成績管理DB のシートは、1枚＝1つの表として作ってある（1行目が見出し、読み書きは見出しの名前で引く）。
+DB（Supabase など）に移すときは、この表をそのままテーブルにし、**lib/moshi/store.ts に保存先を足すだけ**でよい
+（画面と API は store.ts の公開 API だけを使う。門配管理の lib/monpai/store.ts が、Supabase → 専用の Apps Script → 手元 の順で選ぶ形の手本）。
+
+| シート（テーブル） | 1行 | 主キー | ほかの表とのつながり | DB に移すときに型を変える列 |
+|---|---|---|---|---|
+| 模試の回 | 1回 | ID | ― | 設定（JSON の文字列 → jsonb） |
+| 模試成績 | 1回×1人 | ID | 模試ID → 模試の回.ID。生徒は「校舎＋受験番号」 | 国語〜理科（「29,,32,18」→ 大問ごとの整数の配列）、第一〜第四志望（県一斉のコード） |
+| 県一斉成績 | 取り込んだ県一斉模試の1回×1人 | 回ID＋校舎＋受験番号 | 校舎＋受験番号 → 模試成績の生徒（**氏名は持たない**） | 得点・偏差値・順位（文字列 → 数） |
+
+- どの表にも 作成日時・作成者・更新日時・更新者（「2026/11/17 09:30」日本時間の文字列）がある。DB では timestamptz にする
+- 「削除」列（1＝消した）は、DB では deleted_at にする。県一斉成績は回ごとに入れかえるので削除列は無い
+- 「国語計」〜「合計」はシートで見るための列。DB では持たない（アプリは大問の得点から計算する）
+- 氏名は「模試成績」にだけある。成績と氏名を分けて持ちたくなったら、模試成績の 校舎・受験番号・氏名 を「生徒」の表に出せばよい
 
 ### 触るときの注意
 - 回の大問の数を、成績が入ったあとで変えると、入っている得点は前から順に新しい大問に当てはめる（設定画面で確かめが出る）

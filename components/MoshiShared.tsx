@@ -12,8 +12,9 @@ import { MOSHI_DEPTS } from '@/lib/moshi/access';
 // ---- 失敗の理由 ------------------------------------------------------------
 
 const REASONS: Record<string, string> = {
-  not_configured: '保存先（スプレッドシート連携の Apps Script）が未設定です。管理者に伝えてください。',
-  not_deployed: '保存先のスクリプトが古いままです。管理者に Apps Script の再デプロイを依頼してください。',
+  not_configured: '成績管理の保存先（成績管理DB の Apps Script。環境変数 SEISEKI_SCRIPT_URL）が未設定です。管理者に伝えてください。',
+  not_deployed: '成績管理の保存先のスクリプトが古いか、別のスクリプトを指しています。管理者に、成績管理DB の Apps Script（apps_script/seiseki.gs）の出し直しと SEISEKI_SCRIPT_URL を確かめてもらってください。',
+  invalid_token: '成績管理の保存先の合言葉（SEISEKI_SCRIPT_TOKEN）が、Apps Script の TOKEN と合っていません。管理者に伝えてください。',
   forbidden: `${MOSHI_DEPTS.join('・')}の職員だけが使えます。`,
   unauthorized: 'ログインが切れました。ページを読み込み直して、ログインし直してください。',
   upstream_error: 'スプレッドシートの読み書きに失敗しました。少し待ってからもう一度試してください。',
