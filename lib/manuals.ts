@@ -101,4 +101,14 @@ export const MANUALS: ManualDoc[] = [
     downloadName: '成績管理_生徒の追加マニュアル_v1.1.0.pdf',
     meta: 'v1.1.0｜PDF・A4・7ページ｜約1.7MB',
   },
+  {
+    id: 'seiseki-student-video',
+    title: '動画：成績管理 生徒の追加',
+    desc: '受験票を作るために、成績入力の［＋ 生徒を追加］で生徒を足し、受験票を印刷するまでを、画面と音声で説明します（成績管理を使う職員向け）',
+    kind: 'video',
+    href: '/manual/seiseki-student.mp4',
+    downloadName: '成績管理_生徒の追加_動画マニュアル.mp4',
+    meta: '約2分半｜MP4｜約7.6MB',
+    poster: '/manual/seiseki-student-poster.jpg',
+  },
 ];
