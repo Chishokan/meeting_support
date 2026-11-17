@@ -3,13 +3,14 @@
 // 本番レベル模試の個人成績表（A4 横1枚）。元の帳票「公立高校・高専本番レベル模試」と同じ並びにしている。
 //   左：表題・受験番号・氏名・所属 ／ 得点表（国英数社理・三教科・五教科 × 得点・平均点・偏差値・順位・母数）／ 志望校判定（第1〜第4）
 //   中：得点の分布 ／ 教科のバランス ／ 設問別得点
-//   右：教科別偏差値推移（表とグラフ） ／ 偏差値の分布 ／ 先生から
+//   右：教科別偏差値推移（表とグラフ） ／ 偏差値の分布 ／ 前回との比較（前回＝この回より前のいちばん新しい回。11月なら10月の県一斉模試）／ 成績のポイント
+//   （「先生から」の欄は置かない。県一斉模試の成績表と同じ）
 // 印刷も画面（成績表の画面・面談の画面）もこの1つを使う。画面では FitSheet で幅に合わせて縮める。
 // 数字の計算は lib/moshi/model.ts（reportFigures・judgeOf・scoreBins・devBins・trendRows）。
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  SUBJECT_KEYS, SUBJECT_NAMES, STAT_KEYS, STAT_NAMES, campusInfo, choiceRanks, devBins, judgeOf, reportFigures,
+  SUBJECT_KEYS, SUBJECT_NAMES, STAT_KEYS, STAT_NAMES, campusInfo, choiceKey, choiceRanks, devBins, judgeOf, pointsOf, prevRecordFor, reportFigures,
   scoreBins, subjectMax, subjectOf, trendRows,
   type Bin, type ExamStats, type KenitsuResult, type MoshiExam, type RowStat, type StatKey, type TrendRow,
 } from '@/lib/moshi/model';
@@ -73,6 +74,12 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
   const hasKen = trend.some((t) => t.kind === 'ken');
   const anyOutside = figs.some((f) => f.outside);
   const k5 = figs.find((f) => f.key === 'k5')!;
+  // 前回（この回より前のいちばん新しい回。11月なら10月の県一斉模試）
+  const prev = useMemo(() => prevRecordFor(statsList, kenitsu, exam, r), [statsList, kenitsu, exam, r]);
+  const now = Object.fromEntries(figs.map((f) => [f.key, { score: f.score, dev: f.dev }]));
+  const points = pointsOf(now, prev?.stats ?? null, k5.mean);
+  const first = r.choices.map((c, i) => ({ c, i })).find((x) => x.c) ?? null;
+  const firstJudge = first ? judgeOf(stats, row, first.c) : null;
 
   return (
     <article className="rs-sheet">
@@ -134,6 +141,10 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
               </table>
               <div className="rs-j-grade">
                 <span>判定</span><span className="rs-j-box">{j.grade ?? ''}</span>
+                {(() => {
+                  const pc = choice && prev?.choices?.find((x) => x.code && choiceKey(x.code) === choiceKey(choice));
+                  return pc ? <span className="rs-j-prev">{prev!.label} {pc.judge}{pc.prob ? `（${pc.prob}）` : ''}</span> : null;
+                })()}
                 {cr?.any && <span className="rs-j-inside">塾内の志望者 {cr.any.n}人中 {cr.any.rank}位</span>}
               </div>
               <div className="rs-j-next">
@@ -197,8 +208,32 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
         <TrendLines trend={trend} />
         <div className="rs-pill rs-pill-pink">偏差値の分布</div>
         <DevDist bins={devBins(stats, row)} />
-        <div className="rs-h rs-h-sm">先生から</div>
-        <div className="rs-comment">{r.comment}</div>
+        <div className="rs-h rs-h-sm">前回との比較{prev && <small className="rs-h-note">{prev.name}</small>}</div>
+        {prev ? (
+          <table className="rs-cmp rs-cmp-sm">
+            <thead><tr><th></th>{STAT_KEYS.map((k) => <th key={k}>{k === 'k3' ? '3教科' : k === 'k5' ? '5教科' : STAT_NAMES[k]}</th>)}</tr></thead>
+            <tbody>
+              <tr><th>得点（{prev.label}）</th>{STAT_KEYS.map((k) => <td key={k}>{prev.stats[k]?.score ?? ''}</td>)}</tr>
+              <tr><th>得点（今回）</th>{figs.map((f) => <td key={f.key}>{f.score ?? ''}</td>)}</tr>
+              <tr><th>偏差値（{prev.label}）</th>{STAT_KEYS.map((k) => <td key={k}>{f1(prev.stats[k]?.dev)}</td>)}</tr>
+              <tr><th>偏差値（今回）</th>{figs.map((f) => <td key={f.key}>{f1(f.dev)}</td>)}</tr>
+              <tr className="rs-cmp-diff"><th>偏差値の差</th>{figs.map((f) => {
+                const a = prev.stats[f.key]?.dev;
+                const d = a == null || f.dev == null ? null : Math.round((f.dev - a) * 10) / 10;
+                return <td key={f.key} className={d == null ? '' : d > 0 ? 'up' : d < 0 ? 'down' : ''}>{d == null ? '' : d === 0 ? '±0.0' : `${d > 0 ? '+' : ''}${d.toFixed(1)}`}</td>;
+              })}</tr>
+            </tbody>
+          </table>
+        ) : <p className="rs-cmp-none">これより前の回（県一斉模試・本番レベル模試）の成績はありません。</p>}
+        <div className="rs-pill rs-pill-green">成績のポイント</div>
+        <ul className="rs-points rs-points-sm">
+          {points.strong.length > 0 && <li><b>得意な教科</b>{points.strong.map((x) => `${SUBJECT_NAMES[x.key]} ${f1(x.dev)}`).join('・')}</li>}
+          {points.weak.length > 0 && <li><b>のばしたい教科</b>{points.weak.map((x) => `${SUBJECT_NAMES[x.key]} ${f1(x.dev)}`).join('・')}</li>}
+          {prev && <li><b>{prev.label}から上がった</b>{points.up.length ? points.up.map((x) => `${SUBJECT_NAMES[x.key]} +${x.diff.toFixed(1)}`).join('・') : 'なし（＋1.0 以上）'}</li>}
+          {prev && <li><b>{prev.label}から下がった</b>{points.down.length ? points.down.map((x) => `${SUBJECT_NAMES[x.key]} ${x.diff.toFixed(1)}`).join('・') : 'なし（−1.0 以下）'}</li>}
+          {points.vsMean != null && <li><b>5教科と{anyOutside ? '県平均' : '平均'}</b>{points.vsMean >= 0 ? `${anyOutside ? '県平均' : '平均'}より ${points.vsMean.toFixed(1)}点 上` : `${anyOutside ? '県平均' : '平均'}まで あと ${(-points.vsMean).toFixed(1)}点`}</li>}
+          {first && firstJudge?.grade && <li><b>第{first.i + 1}志望まで</b>{schoolName(first.c)}：{firstJudge.next ? `次の判定（${firstJudge.next.grade}）まで あと ${firstJudge.next.gap}点` : 'いちばん上の判定です'}</li>}
+        </ul>
       </section>
 
       <footer className="rs-foot">
@@ -206,7 +241,7 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
           ? `平均点・偏差値は${exam.outside?.source || '県全体の模試'}の平均点・標準偏差で換算した参考値（偏差値は25.0〜75.0）。順位・設問別の平均・得点の分布は智翔館の受験者（五教科 ${k5.rankN}人）。`
           : `平均点・偏差値・母数・分布は、この回を受けた智翔館の中3生の中でのもの（五教科 ${k5.n}人）。`}
         {(exam.judges ?? []).length > 0 && `判定は${exam.outside?.source ? `${exam.outside.source}の` : ''}志望校別判定基準（B判定基準）による目安。仮想順位は定員の中での入学後のおよその順位。`}
-        得点率が平均より低い設問は赤字。
+        得点率が平均より低い設問は赤字。{prev && `前回は${prev.name}（${prev.kind === 'ken' ? '県一斉模試の得点・偏差値' : '本番レベル模試'}）。`}
       </footer>
     </article>
   );

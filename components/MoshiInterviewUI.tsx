@@ -2,26 +2,26 @@
 
 // 成績管理：面談（個人成績）（/moshi/interview）。生徒を1人選んで、面談でそのまま見せられる画面に出す。
 // 上の「見る模試」で本番レベル模試と県一斉模試を切り替える（県一斉模試は components/MoshiKenUI.tsx の KenInterviewView）。
-//   - 合計・偏差値・順位、教科ごとの得点と平均、大問別の得点率、よくできた／伸ばしたい分野、志望者内の順位、これまでの推移
-//   - 前の回との差（合計・偏差値・順位）
-//   - 「大きく表示」で左の一覧とメニューを隠す（ほかの生徒の名前を見せないため）
-//   - 成績表のコメント（先生から）をここで書いて保存し、成績表に印刷する
-// 中身は個人成績表（components/MoshiReportSheet.tsx）と同じものを、画面の幅に合わせて出す。
+// どちらも業者の成績の画面と同じ形の詳しい画面（本番レベル模試は components/MoshiHonbanDetail.tsx）。
+//   - 前回との比較：前回＝この回より前のいちばん新しい回（県一斉模試も含む。11月なら10月の県一斉模試。lib/moshi/model.ts の prevRecordFor）
+//   - 「大きく表示」で左の一覧とメニューを隠す（ほかの生徒の名前を見せないため）。印刷は個人成績表（A4 横）
+//   - 過去テスト一覧で回を選ぶと、その回（本番レベル模試・県一斉模試）に切り替わる
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  MAX_COMMENT, SUBJECT_KEYS, byExamNo, campusInfo, computeStats, dev5Of, historyOf, kenExams,
-  type MoshiResult, type RowStat,
+  SUBJECT_KEYS, byExamNo, computeStats, kenExams, prevRecordFor, reportFigures,
+  type PrevRecord, type RowStat,
 } from '@/lib/moshi/model';
 import {
-  ExamCampusBar, KindSwitch, PageHead, StateNote, fmt1, hasHonbanScores, printLandscape, reasonText, shortExamName,
+  ExamCampusBar, KindSwitch, PageHead, StateNote, fmt1, hasHonbanScores, printLandscape,
   NO_KEN, useExamCampus, useKind, useMoshiData,
 } from './MoshiShared';
-import { FitSheet, ReportSheet } from './MoshiReportSheet';
+import { ReportSheet } from './MoshiReportSheet';
 import { KenInterviewView } from './MoshiKenUI';
+import { HonbanDetail } from './MoshiHonbanDetail';
 
 export default function MoshiInterviewUI({ name }: { name: string }) {
-  const { state, reload, setResults } = useMoshiData();
+  const { state, reload } = useMoshiData();
   const exams = state.status === 'ready' ? state.exams : [];
   const results = state.status === 'ready' ? state.results : [];
   const kenitsu = state.status === 'ready' ? state.kenitsu : NO_KEN;
@@ -46,7 +46,11 @@ export default function MoshiInterviewUI({ name }: { name: string }) {
   }, [stats, campus, q]);
   const takers = list.filter((x) => SUBJECT_KEYS.some((k) => x.sub[k] != null));
   const row = list.find((x) => x.r.id === sel) ?? takers[0] ?? null;
-  const history = useMemo(() => (row ? historyOf(statsList, row.r) : []), [statsList, row]);
+  const prev = useMemo(() => (row && stats ? prevRecordFor(statsList, kenitsu, stats.exam, row.r) : null), [row, stats, statsList, kenitsu]);
+  // 過去テスト一覧で選んだ回へ切り替える（県一斉模試なら「見る模試」も切り替える）
+  const onPick = (k: 'honban' | 'ken', id: string) => {
+    if (k === 'ken') { pickKind('ken'); pickKen(id); } else { pickKind('honban'); pickExam(id); }
+  };
 
   // 大きく表示：左のメニューと生徒の一覧を隠す（Esc で戻る）
   useEffect(() => {
@@ -67,7 +71,7 @@ export default function MoshiInterviewUI({ name }: { name: string }) {
         <div className="ms-body">
           <KindSwitch kind={kind} onKind={pickKind} kenCount={kenList.length} />
           {kind === 'ken'
-            ? <KenInterviewView kenitsu={kenitsu} kenList={kenList} kenExam={kenExam} onKen={pickKen} campus={campus} onCampus={pickCampus} exams={exams} results={results} statsList={statsList} />
+            ? <KenInterviewView kenitsu={kenitsu} kenList={kenList} kenExam={kenExam} onKen={pickKen} onPick={onPick} campus={campus} onCampus={pickCampus} exams={exams} results={results} statsList={statsList} />
             : <StateNote state={state} onRetry={reload} />}
         </div>
       </div>
@@ -75,8 +79,6 @@ export default function MoshiInterviewUI({ name }: { name: string }) {
   }
 
   const idx = row ? takers.findIndex((x) => x.r.id === row.r.id) : -1;
-  const at = history.findIndex((h) => h.exam.id === exam.id);
-  const before = at > 0 ? history[at - 1] : null;
 
   return (
     <div className={`ms ms-interview${big ? ' big' : ''}`}>
@@ -115,16 +117,10 @@ export default function MoshiInterviewUI({ name }: { name: string }) {
                   <button type="button" className="ms-btn ms-btn-sub" onClick={() => setBig((b) => !b)}>{big ? '一覧に戻る（Esc）' : '大きく表示'}</button>
                   <button type="button" className="ms-btn" onClick={() => printLandscape(() => setPrinting(true))}>成績表を印刷</button>
                 </div>
-                {before && (
-                  <Compare
-                    before={before.row} now={row} label={shortExamName(before.exam)} beforeN={before.n} nowN={stats.complete}
-                    beforeDev={dev5Of(before.exam, before.row)} nowDev={dev5Of(exam, row)}
-                  />
-                )}
-                <div className="ms-noprint ms-interview-card">
-                  <FitSheet max={1.6}><ReportSheet stats={stats} statsList={statsList} row={row} kenitsu={kenitsu} /></FitSheet>
+                {prev && <PrevCompare prev={prev} stats={stats} row={row} />}
+                <div className="ms-noprint">
+                  <HonbanDetail stats={stats} statsList={statsList} row={row} kenitsu={kenitsu} prev={prev} onPick={onPick} />
                 </div>
-                <CommentEditor key={row.r.id} r={row.r} examId={exam.id} onSaved={(c) => setResults((rs) => rs.map((x) => (x.id === row.r.id ? { ...x, comment: c } : x)))} />
                 {printing && (
                   <div className="ms-print-only">
                     <div className="ms-page"><ReportSheet stats={stats} statsList={statsList} row={row} kenitsu={kenitsu} /></div>
@@ -145,56 +141,18 @@ function diffText(n: number, unit: string, digits = 0): string {
   return `${v > 0 ? '+' : ''}${digits ? v.toFixed(1) : v}${unit}`;
 }
 
-// 偏差値は成績表と同じ計算（業者の平均点・標準偏差があればその値。lib/moshi/model.ts の dev5Of）
-function Compare({ before, now, label, beforeN, nowN, beforeDev, nowDev }: {
-  before: RowStat; now: RowStat; label: string; beforeN: number; nowN: number; beforeDev: number | null; nowDev: number | null;
-}) {
-  if (before.total == null || now.total == null) return null;
-  const up = now.total - before.total;
+/** 前回（11月なら10月の県一斉模試）との比較：5教科の得点・偏差値（偏差値は成績表と同じ換算）。 */
+function PrevCompare({ prev, stats, row }: { prev: PrevRecord; stats: Parameters<typeof reportFigures>[0]; row: RowStat }) {
+  const k5 = reportFigures(stats, row).find((f) => f.key === 'k5');
+  const b = prev.stats.k5;
+  if (!k5 || k5.score == null || b?.score == null) return null;
+  const up = k5.score - b.score;
   return (
     <div className="ms-compare ms-noprint">
-      <span className="ms-compare-h">前回（{label}）との比較</span>
-      <span>合計 <b className={up > 0 ? 'up' : up < 0 ? 'down' : ''}>{diffText(up, '点')}</b>（{before.total} → {now.total}）</span>
-      {beforeDev != null && nowDev != null && <span>偏差値 <b>{diffText(nowDev - beforeDev, '', 1)}</b>（{fmt1(beforeDev)} → {fmt1(nowDev)}）</span>}
-      {before.rank != null && now.rank != null && <span>順位 {before.rank}位／{beforeN}人 → <b>{now.rank}位</b>／{nowN}人</span>}
-    </div>
-  );
-}
-
-function CommentEditor({ r, examId, onSaved }: { r: MoshiResult; examId: string; onSaved: (c: string) => void }) {
-  const [text, setText] = useState(r.comment);
-  const [msg, setMsg] = useState('');
-  const [busy, setBusy] = useState(false);
-  const changed = text !== r.comment;
-  async function save() {
-    setBusy(true);
-    setMsg('保存中…');
-    try {
-      const res = await fetch('/api/moshi/results', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          examId,
-          rows: [{ row: { id: r.id, campus: r.campus, examNo: r.examNo, name: r.name, gender: r.gender, choices: r.choices, scores: r.scores, comment: text }, fields: ['comment'] }],
-        }),
-      });
-      const j = await res.json().catch(() => null);
-      if (!j?.ok) { setMsg(reasonText(j?.reason, j?.detail)); return; }
-      onSaved(text);
-      setMsg('保存しました。成績表の「先生から」に出ます。');
-    } catch {
-      setMsg(reasonText('network_error'));
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <div className="ms-comment-edit ms-noprint">
-      <label htmlFor="ms-comment">成績表のコメント（先生から）<small>{text.length}/{MAX_COMMENT}字・{campusInfo(r.campus)?.label} {r.name} さん</small></label>
-      <textarea id="ms-comment" value={text} maxLength={MAX_COMMENT} rows={3} onChange={(e) => setText(e.target.value)} placeholder="面談で伝えたこと・次の回までにやること" />
-      <div className="ms-actions">
-        <button type="button" className="ms-btn" disabled={busy || !changed} onClick={save}>コメントを保存</button>
-        {msg && <span className="ms-msg">{msg}</span>}
-      </div>
+      <span className="ms-compare-h">前回（{prev.name}）との比較</span>
+      <span>5教科 <b className={up > 0 ? 'up' : up < 0 ? 'down' : ''}>{diffText(up, '点')}</b>（{b.score} → {k5.score}）</span>
+      {b.dev != null && k5.dev != null && <span>偏差値 <b>{diffText(k5.dev - b.dev, '', 1)}</b>（{fmt1(b.dev)} → {fmt1(k5.dev)}）</span>}
+      {b.rank != null && <span>前回の{prev.rankLabel} {b.rank.toLocaleString('ja-JP')}位</span>}
     </div>
   );
 }

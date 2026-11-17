@@ -92,4 +92,13 @@ export const MANUALS: ManualDoc[] = [
     meta: '約5分｜MP4｜約14MB',
     poster: '/manual/dept-meeting-poster.jpg',
   },
+  {
+    id: 'seiseki-student',
+    title: '成績管理 生徒の追加 マニュアル',
+    desc: '成績管理（本番レベル模試）の名簿に生徒を足す方法。［＋ 生徒を追加］での1人ずつの追加（受験番号は 0301 から自動）、県一斉模試の名簿からのまとめての取り込み、困ったとき。成績管理を使う職員（総務・人事・支援・管理、小中等部の職員）向け。画面の写真つき',
+    kind: 'pdf',
+    href: '/manual/seiseki-student-manual-v1.0.0.pdf',
+    downloadName: '成績管理_生徒の追加マニュアル_v1.0.0.pdf',
+    meta: 'v1.0.0｜PDF・A4・7ページ｜約1.6MB',
+  },
 ];

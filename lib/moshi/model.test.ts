@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   choiceRanks, cleanExam, cleanResult, computeStats, DEFAULT_JUDGE_OPTIONS, DEFAULT_SUBJECTS, devBins, judgeOf, parseRule, reportFigures, ruleMax,
   scoreBins, trendRows, yearExams, emptyOutside, emptyScores, examMax, fitScores, historyOf,
-  campusOfVenue, cleanKenItem, devBinsOf, kenFitOf, kenFits, kenJudgeDetail, kenSchoolGroup, kenFirstChoiceMean, kenHistory, kenPoints, kenChoiceRank, kenExamRef, kenNames, kenStatsOf, scoreBinsOf, kenExams, kenGuessFromFileName, kenIdMap, kenRoster, kenScores, kenTable, parseCsv, inputSheetRows, jpDate, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
+  campusOfVenue, cleanKenItem, devBinsOf, kenFitOf, kenFits, kenJudgeDetail, kenSchoolGroup, kenFirstChoiceMean, kenHistory, kenPoints, prevRecordFor, studentHistory, honbanFirstChoiceMean, pointsOf, kenChoiceRank, kenExamRef, kenNames, kenStatsOf, scoreBinsOf, kenExams, kenGuessFromFileName, kenIdMap, kenRoster, kenScores, kenTable, parseCsv, inputSheetRows, jpDate, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
   scoresToCell, subjectMax,
   type MoshiExam, type MoshiResult, type Scores,
 } from './model.ts';
@@ -680,4 +680,40 @@ test('成績のポイント：得意・のばしたい教科、前回からの�
   assert.equal(p.vsMean, 37.7);
   const first = kenPoints(now, null, fits);
   assert.deepEqual([first.up.length, first.down.length], [0, 0]);
+});
+
+test('本番レベル模試の前回：この回より前のいちばん新しい回（11月なら10月の県一斉模試）', () => {
+  const e7 = exam({ id: 'e7', name: '7月', date: '2026-07-12' });
+  const e11 = exam({ id: 'e11', name: '2026 本番レベル模試 11月', date: '2026-11-22' });
+  const me7 = res({ name: '山田　太郎', campus: '日野校', examNo: '0012', s: full([60, 60, 60, 60, 60]) }, e7);
+  const me11 = res({ name: '山田　太郎', campus: '日野校', examNo: '0012', choices: ['518-01', '', '', ''], s: full([70, 70, 70, 70, 70]) }, e11);
+  const list = [computeStats(e7, [me7]), computeStats(e11, [me11])];
+  const ken = [
+    { ...kenItem('ken-2026-10-18', '日野校', '0012', { ja: [52, 46.2], k5: [302, 54.2] }, ['518-01']), examName: '長崎県一斉模試 2026年10月', date: '2026-10-18' },
+    { ...kenItem('ken-2026-08-23', '日野校', '0012', { k5: [290, 52.0] }), examName: '長崎県一斉模試 2026年8月', date: '2026-08-23' },
+    { ...kenItem('ken-2026-10-18', '大野校', '0012', { k5: [100, 30] }), date: '2026-10-18' }, // 別の校舎の同じ番号は別の人
+  ];
+  ken[0].choices[0] = { code: '518-01', name: '県立佐世保北 普通科', judge: 'B-', prob: '64%' };
+  const p = prevRecordFor(list, ken, e11, me11)!;
+  assert.deepEqual([p.kind, p.label, p.rankLabel, p.stats.k5.score, p.stats.k5.dev, p.stats.ja.dev], ['ken', '10月県', '県内順位', 302, 54.2, 46.2]);
+  assert.equal(p.choices?.[0].judge, 'B-');
+  // 10月の県一斉が無ければ、その前の回（8月の県一斉）
+  assert.equal(prevRecordFor(list, ken.slice(1), e11, me11)!.label, '8月県');
+  // 県一斉模試が無ければ本番レベル模試の前の回
+  const ph = prevRecordFor(list, [], e11, me11)!;
+  assert.deepEqual([ph.kind, ph.label, ph.rankLabel, ph.stats.k5.score], ['honban', '7月', '塾内順位', 300]);
+  assert.equal(prevRecordFor(list, ken, e7, me7), null); // 7月より前は無い
+  // 過去テスト一覧：新しい順に県一斉と本番が並ぶ
+  const h = studentHistory(list, ken, me11, (c) => c);
+  assert.deepEqual(h.map((x) => `${x.kind}:${x.date}`), ['honban:2026-11-22', 'ken:2026-10-18', 'ken:2026-08-23', 'honban:2026-07-12']);
+  assert.equal(h[1].rank, '');
+  assert.equal(h[0].score5, 350);
+  // 第1志望者の平均（本番）
+  assert.deepEqual([honbanFirstChoiceMean(list[1], '518-01').n, honbanFirstChoiceMean(list[1], '518-01').mean.ja], [1, 70]);
+  // 成績のポイント（本番の数字で）
+  const pts = pointsOf({ ja: { dev: 60 }, en: { dev: 40 }, ma: { dev: 55 }, so: { dev: 50 }, sc: { dev: 45 }, k5: { score: 300 } }, { ja: { dev: 50 }, en: { dev: 45 } }, 264.3);
+  assert.deepEqual(pts.strong.map((x) => x.key), ['ja', 'ma']);
+  assert.deepEqual(pts.up, [{ key: 'ja', diff: 10 }]);
+  assert.deepEqual(pts.down, [{ key: 'en', diff: -5 }]);
+  assert.equal(pts.vsMean, 35.7);
 });

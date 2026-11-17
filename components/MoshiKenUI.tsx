@@ -17,6 +17,7 @@ import { KenDetail } from './MoshiKenDetail';
 import { KenBar, NoKenNote, campusLabel, downloadCsv, fmt1, printLandscape, printPortrait } from './MoshiShared';
 
 type Common = {
+  onPick?: (kind: 'honban' | 'ken', id: string) => void; // 過去テスト一覧で回を選んだとき（面談の画面）
   kenitsu: KenitsuResult[];
   kenList: KenitsuExam[];
   kenExam: KenitsuExam | null;
@@ -240,7 +241,7 @@ export function KenInterviewView(p: Common) {
               </div>
               {before && <KenCompare before={before} now={row.k} />}
               <div className="ms-noprint">
-                <KenDetail ks={ks} row={row} kenitsu={p.kenitsu} statsList={p.statsList} onPickExam={p.onKen} />
+                <KenDetail ks={ks} row={row} kenitsu={p.kenitsu} statsList={p.statsList} onPick={p.onPick ?? ((kind, id) => { if (kind === 'ken') p.onKen(id); })} />
               </div>
               {!row.name && (
                 <p className="ms-fine ms-noprint">
