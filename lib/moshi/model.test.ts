@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   choiceRanks, cleanExam, cleanResult, computeStats, DEFAULT_JUDGE_OPTIONS, DEFAULT_SUBJECTS, devBins, judgeOf, parseRule, reportFigures, ruleMax,
   scoreBins, trendRows, yearExams, emptyOutside, emptyScores, examMax, fitScores, historyOf,
-  campusOfVenue, cleanKenItem, devBinsOf, kenFitOf, kenFits, kenJudgeDetail, kenSchoolGroup, kenFirstChoiceMean, kenHistory, kenChoiceRank, kenExamRef, kenNames, kenStatsOf, scoreBinsOf, kenExams, kenGuessFromFileName, kenIdMap, kenRoster, kenScores, kenTable, parseCsv, inputSheetRows, jpDate, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
+  campusOfVenue, cleanKenItem, devBinsOf, kenFitOf, kenFits, kenJudgeDetail, kenSchoolGroup, kenFirstChoiceMean, kenHistory, kenPoints, kenChoiceRank, kenExamRef, kenNames, kenStatsOf, scoreBinsOf, kenExams, kenGuessFromFileName, kenIdMap, kenRoster, kenScores, kenTable, parseCsv, inputSheetRows, jpDate, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
   scoresToCell, subjectMax,
   type MoshiExam, type MoshiResult, type Scores,
 } from './model.ts';
@@ -72,8 +72,13 @@ test('氏名：名字と名前の間は全角の空白1つ', () => {
 });
 
 test('受験番号：県一斉模試と同じ校舎ごとの4桁。次の番号は校舎の中の最大＋1', () => {
-  assert.equal(nextExamNo('日宇校', ['0001', '0016', '0003']), '0017');
-  assert.equal(nextExamNo('駅前校', []), '0001');
+  // こちらで付ける番号は 300番台（県一斉模試の 0001〜 と重ならない）
+  assert.equal(nextExamNo('日宇校', ['0001', '0016', '0003']), '0301');
+  assert.equal(nextExamNo('日宇校', ['0001', '0301', '0305']), '0306');
+  assert.equal(nextExamNo('駅前校', []), '0301');
+  const full = Array.from({ length: 100 }, (_, i) => String(300 + i).padStart(4, '0'));
+  assert.equal(nextExamNo('日野校', full.filter((n) => n !== '0342')), '0342'); // 399 まで使っていれば空き
+  assert.equal(nextExamNo('日野校', [...full, '0012']), '0400');
   assert.equal(normalizeExamNo('10'), '0010');
   assert.equal(normalizeExamNo('０００５'), '0005');
   assert.equal(normalizeExamNo('514410'), '0010'); // 前の入力シートの番号（日宇校の10番）
@@ -661,4 +666,18 @@ test('塾内の志望者・第1志望者の平均・これまでの回', () => {
   assert.equal(fc.mean.en, 50);
   assert.equal(kenFirstChoiceMean(ks, '608-01').n, 1);
   assert.deepEqual(kenHistory(items, '日野校', '0001').map((x) => x.examId), ['ken-b', 'ken-a']);
+});
+
+test('成績のポイント：得意・のばしたい教科、前回からの上がり下がり、5教科の県平均との差', () => {
+  const now = kenItem('ken-b', '日野校', '0001', { ja: [52, 46.2], en: [55, 52.7], ma: [81, 63.7], so: [34, 41.8], sc: [80, 62.2], k5: [302, 54.2] });
+  const before = kenItem('ken-a', '日野校', '0001', { ja: [60, 53.0], en: [50, 49.0], ma: [75, 59.3], so: [60, 55.4], sc: [80, 62.0], k5: [320, 56.7] });
+  const fits = { ja: null, en: null, ma: null, so: null, sc: null, k3: null, k5: { mean: 264.3, sd: 88.8, n: 99 } };
+  const p = kenPoints(now, before, fits);
+  assert.deepEqual(p.strong.map((x) => x.key), ['ma', 'sc']);
+  assert.deepEqual(p.weak.map((x) => x.key), ['so', 'ja']);
+  assert.deepEqual(p.up, [{ key: 'ma', diff: 4.4 }, { key: 'en', diff: 3.7 }]);
+  assert.deepEqual(p.down, [{ key: 'so', diff: -13.6 }, { key: 'ja', diff: -6.8 }]); // 理科 +0.2 はどちらにも入れない
+  assert.equal(p.vsMean, 37.7);
+  const first = kenPoints(now, null, fits);
+  assert.deepEqual([first.up.length, first.down.length], [0, 0]);
 });

@@ -505,15 +505,22 @@ function cleanOutside(raw: unknown): OutsideStats | null {
 // ---- 受験番号 -------------------------------------------------------------
 
 /** その校舎の次の受験番号（校舎の中の4桁の番号の最大＋1）。used はその校舎の受験番号だけを渡す。 */
+/**
+ * こちらで受験番号を付けるとき（成績入力の［＋ 生徒を追加］、受験番号の無い行の貼り付け）の次の番号。
+ * 県一斉模試の番号（0001 から順に業者が付ける）と重ならないよう、校舎ごとに 300番台（0301 から）を使う。
+ * 300番台の最大＋1。399 まで埋まっていれば 300番台の空き、それも無ければ校舎の最大＋1。
+ */
+export const MANUAL_NO_FROM = 301;
 export function nextExamNo(campus: string, used: string[]): string {
   if (!campusInfo(campus)) return '';
-  let max = 0;
-  for (const no of used) {
-    if (!/^\d{1,4}$/.test(no)) continue;
-    const n = Number(no);
-    if (n > max) max = n;
-  }
-  return String(max + 1).padStart(4, '0');
+  const nums = used.filter((no) => /^\d{1,4}$/.test(no)).map(Number);
+  const pad = (n: number) => String(n).padStart(4, '0');
+  const manual = nums.filter((n) => n >= 300 && n <= 399);
+  if (!manual.length) return pad(MANUAL_NO_FROM);
+  const next = Math.max(...manual) + 1;
+  if (next <= 399) return pad(next);
+  for (let n = 300; n <= 399; n++) if (!manual.includes(n)) return pad(n);
+  return pad(Math.max(...nums) + 1);
 }
 
 // ---- 集計 -----------------------------------------------------------------
@@ -1517,6 +1524,36 @@ export function kenFirstChoiceMean(ks: KenStats, code: string): { n: number; mea
     mean[key] = v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
   }
   return { n: group.length, mean };
+}
+
+export type KenPoints = {
+  strong: { key: SubjectKey; dev: number }[]; // 得意な教科（偏差値の高い順に2つ）
+  weak: { key: SubjectKey; dev: number }[];   // のばしたい教科（低い順に2つ。得意と重ならない）
+  up: { key: SubjectKey; diff: number }[];    // 前回から上がった教科（+1.0 以上を大きい順に2つ）
+  down: { key: SubjectKey; diff: number }[];  // 前回から下がった教科（−1.0 以下を大きい順に2つ）
+  vsMean: number | null;                      // 5教科の得点 − 県平均
+};
+
+/** 成績表の「成績のポイント」：得意・のばしたい教科、前回からの上がり下がり、5教科の県平均との差（決まった計算だけ。AI は使わない）。 */
+export function kenPoints(k: KenitsuResult, before: KenitsuResult | null, fits: Record<StatKey, KenFit | null>): KenPoints {
+  const devs = SUBJECT_KEYS.map((key) => ({ key, dev: k.stats[key]?.dev })).filter((x): x is { key: SubjectKey; dev: number } => x.dev != null);
+  const strong = [...devs].sort((a, b) => b.dev - a.dev).slice(0, 2);
+  const weak = [...devs].sort((a, b) => a.dev - b.dev).filter((x) => !strong.some((s) => s.key === x.key)).slice(0, 2);
+  const diffs = before
+    ? SUBJECT_KEYS.map((key) => {
+      const a = before.stats[key]?.dev;
+      const b = k.stats[key]?.dev;
+      return { key, diff: a == null || b == null ? null : round1(b - a) };
+    }).filter((x): x is { key: SubjectKey; diff: number } => x.diff != null)
+    : [];
+  const sc = k.stats.k5?.score;
+  const m = fits.k5?.mean;
+  return {
+    strong, weak,
+    up: diffs.filter((x) => x.diff >= 1).sort((a, b) => b.diff - a.diff).slice(0, 2),
+    down: diffs.filter((x) => x.diff <= -1).sort((a, b) => a.diff - b.diff).slice(0, 2),
+    vsMean: sc == null || m == null ? null : round1(sc - m),
+  };
 }
 
 /** 同じ生徒（校舎＋受験番号）の、取り込んだ県一斉模試の全部の回（古い順）。 */
