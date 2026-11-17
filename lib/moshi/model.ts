@@ -1519,6 +1519,36 @@ export function kenFirstChoiceMean(ks: KenStats, code: string): { n: number; mea
   return { n: group.length, mean };
 }
 
+export type KenPoints = {
+  strong: { key: SubjectKey; dev: number }[]; // 得意な教科（偏差値の高い順に2つ）
+  weak: { key: SubjectKey; dev: number }[];   // のばしたい教科（低い順に2つ。得意と重ならない）
+  up: { key: SubjectKey; diff: number }[];    // 前回から上がった教科（+1.0 以上を大きい順に2つ）
+  down: { key: SubjectKey; diff: number }[];  // 前回から下がった教科（−1.0 以下を大きい順に2つ）
+  vsMean: number | null;                      // 5教科の得点 − 県平均
+};
+
+/** 成績表の「成績のポイント」：得意・のばしたい教科、前回からの上がり下がり、5教科の県平均との差（決まった計算だけ。AI は使わない）。 */
+export function kenPoints(k: KenitsuResult, before: KenitsuResult | null, fits: Record<StatKey, KenFit | null>): KenPoints {
+  const devs = SUBJECT_KEYS.map((key) => ({ key, dev: k.stats[key]?.dev })).filter((x): x is { key: SubjectKey; dev: number } => x.dev != null);
+  const strong = [...devs].sort((a, b) => b.dev - a.dev).slice(0, 2);
+  const weak = [...devs].sort((a, b) => a.dev - b.dev).filter((x) => !strong.some((s) => s.key === x.key)).slice(0, 2);
+  const diffs = before
+    ? SUBJECT_KEYS.map((key) => {
+      const a = before.stats[key]?.dev;
+      const b = k.stats[key]?.dev;
+      return { key, diff: a == null || b == null ? null : round1(b - a) };
+    }).filter((x): x is { key: SubjectKey; diff: number } => x.diff != null)
+    : [];
+  const sc = k.stats.k5?.score;
+  const m = fits.k5?.mean;
+  return {
+    strong, weak,
+    up: diffs.filter((x) => x.diff >= 1).sort((a, b) => b.diff - a.diff).slice(0, 2),
+    down: diffs.filter((x) => x.diff <= -1).sort((a, b) => a.diff - b.diff).slice(0, 2),
+    vsMean: sc == null || m == null ? null : round1(sc - m),
+  };
+}
+
 /** 同じ生徒（校舎＋受験番号）の、取り込んだ県一斉模試の全部の回（古い順）。 */
 export function kenHistory(items: KenitsuResult[], campus: string, examNo: string): KenitsuResult[] {
   return items.filter((x) => x.campus === campus && x.examNo === examNo).sort((a, b) => a.date.localeCompare(b.date));

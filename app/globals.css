@@ -3161,6 +3161,20 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .rs-cmp-diff td.up { color: #1c5cab; }
 .rs-cmp-diff td.down { color: #d40000; }
 .rs-cmp-none { font-size: 6.6pt; color: #555; margin: 1mm 0 0; }
+.rs-pill-yellow { background: #f6dc6b; }
+.rs-kj-table { border-top: none; }
+.rs-kj-table th { font-size: 5.8pt; height: 3mm !important; }
+.rs-kj-table td { height: 4.6mm !important; font-size: 7pt; }
+.rs-kj-grade { font-size: 9.5pt !important; font-weight: 800; }
+.rs-kj-prob { font-size: 8.5pt !important; font-weight: 700; }
+.rs-kj-next { display: flex !important; align-items: center; gap: 2mm; }
+.rs-kj-next span:last-child { padding-left: 0 !important; }
+.rs-ken-sheet .rs-cmp { margin-top: .5mm; }
+.rs-bar-val { font-size: 7.2px; fill: #222; font-weight: 600; }
+.rs-prev-mark { stroke: #111; stroke-width: 1.4; }
+.rs-points { list-style: none; margin: 0; padding: 1.5mm 2mm; border: .3mm solid #6b6b6b; font-size: 7pt; line-height: 1.55; }
+.rs-points li { display: grid; grid-template-columns: 22mm 1fr; gap: 1.5mm; }
+.rs-points b { font-weight: 700; color: #333; }
 
 @media print {
   .rs-fit { overflow: visible; }
