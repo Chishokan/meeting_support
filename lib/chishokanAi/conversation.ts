@@ -183,6 +183,8 @@ export function statusFor(tool: string, input: Record<string, unknown>): string 
       return `📐 数学の教材を Word にしています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
     case 'create_google_doc':
       return `📝 Google ドキュメントを作っています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
+    case 'get_task_evaluation':
+      return `📊 重要タスク評価を読んでいます${s(input.school) ? `（${s(input.school)}）` : ''}`;
     case 'propose_context_edit':
       return `📌 コンテキストの直し案を作っています${s(input.name) ? `（${s(input.name).slice(0, 40)}）` : ''}`;
     default:

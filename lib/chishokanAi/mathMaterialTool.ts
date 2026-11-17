@@ -20,11 +20,13 @@ export const MATH_MATERIAL_TOOL: Anthropic.Tool = {
   description:
     '数学の教材を、社内の仕上がりの書式（B4縦・ＭＳ明朝・大問の番号を□で囲む・小問は（１）か「問１」・図と表は問題文の右）の Word ファイルにして、ドライブに保存する。' +
     '「問題」と「解答・解説」の2つのファイルができる。職員が「ファイルにして」「Word で」「印刷できる形で」と頼んだときだけ使う。' +
-    '番号（□1・（１）・問１）はアプリが付けるので、文には書かない。数式は $ … $ の中に書く（分数 \\frac{1}{2}、根号 \\sqrt{3}、累乗 x^2、×は \\times、πは \\pi）。',
+    '番号（□1・（１）・問１）はアプリが付けるので、文には書かない。数式は $ … $ の中に書く（分数 \\frac{1}{2}、根号 \\sqrt{3}、累乗 x^2、×は \\times、πは \\pi）。' +
+    '小学校・中学校の教材では、高校で習う書き方・方法（点と傾きの式 y－b＝a(x－c)、絶対値の記号 | |、f(x)、三角比、判別式 など）を使わない（見つかると保存せずに理由を返す）。',
   input_schema: {
     type: 'object',
     properties: {
       title: { type: 'string', description: 'ファイル名と解答の題名（例：中3 関数 思考力問題 第1回）。40字まで' },
+      level: { type: 'string', enum: ['小学校', '中学校', '高校'], description: '対象の学校。高校の教材のときだけ「高校」。省くと題名から決める（公立高校入試の対策は中学校）' },
       booklet: {
         type: 'boolean',
         description: '模試の形にする（表紙〔受験番号・題名・時間・注意〕と「問題」の扉を付ける）。「模試の形で」「表紙を付けて」と頼まれたときだけ true',
@@ -87,6 +89,8 @@ export type MathItem = { text: string; sub: string[]; side?: Side };
 export type MathProblem = { intro: string; numbering: 'kakko' | 'toi'; side: Side[]; items: MathItem[] };
 export type MathMaterial = {
   title: string;
+  /** 対象の学校（小学校・中学校・高校）。省くと題名から決める（mathScope.ts） */
+  level?: string;
   booklet: boolean;
   cover: { name: string; minutes: number };
   problems: MathProblem[];
@@ -147,10 +151,11 @@ export function checkMathMaterialInput(input: unknown): { ok: true; value: MathM
   if (answers.every((a) => !a.length)) return { ok: false, message: 'answers（答え）がありません。大問ごとに、小問の順で答えを入れてください。' };
   const rawEx = Array.isArray(o.explanations) ? o.explanations : [];
   const explanations = problems.map((_, p) => str((rawEx[p] as Record<string, unknown> | undefined)?.text, LIMITS.explanation));
+  const level = typeof o.level === 'string' && ['小学校', '中学校', '高校'].includes(o.level) ? o.level : undefined;
   const cover = (o.cover && typeof o.cover === 'object' ? o.cover : {}) as Record<string, unknown>;
   const minutes = typeof cover.minutes === 'number' && cover.minutes > 0 && cover.minutes <= 180 ? Math.round(cover.minutes) : 50;
   return {
     ok: true,
-    value: { title, booklet: o.booklet === true, cover: { name: str(cover.name, 40) || title, minutes }, problems, answers, explanations },
+    value: { title, level, booklet: o.booklet === true, cover: { name: str(cover.name, 40) || title, minutes }, problems, answers, explanations },
   };
 }
