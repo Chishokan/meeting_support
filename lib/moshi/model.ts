@@ -505,15 +505,22 @@ function cleanOutside(raw: unknown): OutsideStats | null {
 // ---- 受験番号 -------------------------------------------------------------
 
 /** その校舎の次の受験番号（校舎の中の4桁の番号の最大＋1）。used はその校舎の受験番号だけを渡す。 */
+/**
+ * こちらで受験番号を付けるとき（成績入力の［＋ 生徒を追加］、受験番号の無い行の貼り付け）の次の番号。
+ * 県一斉模試の番号（0001 から順に業者が付ける）と重ならないよう、校舎ごとに 300番台（0301 から）を使う。
+ * 300番台の最大＋1。399 まで埋まっていれば 300番台の空き、それも無ければ校舎の最大＋1。
+ */
+export const MANUAL_NO_FROM = 301;
 export function nextExamNo(campus: string, used: string[]): string {
   if (!campusInfo(campus)) return '';
-  let max = 0;
-  for (const no of used) {
-    if (!/^\d{1,4}$/.test(no)) continue;
-    const n = Number(no);
-    if (n > max) max = n;
-  }
-  return String(max + 1).padStart(4, '0');
+  const nums = used.filter((no) => /^\d{1,4}$/.test(no)).map(Number);
+  const pad = (n: number) => String(n).padStart(4, '0');
+  const manual = nums.filter((n) => n >= 300 && n <= 399);
+  if (!manual.length) return pad(MANUAL_NO_FROM);
+  const next = Math.max(...manual) + 1;
+  if (next <= 399) return pad(next);
+  for (let n = 300; n <= 399; n++) if (!manual.includes(n)) return pad(n);
+  return pad(Math.max(...nums) + 1);
 }
 
 // ---- 集計 -----------------------------------------------------------------

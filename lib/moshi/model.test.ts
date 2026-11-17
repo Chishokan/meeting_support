@@ -72,8 +72,13 @@ test('氏名：名字と名前の間は全角の空白1つ', () => {
 });
 
 test('受験番号：県一斉模試と同じ校舎ごとの4桁。次の番号は校舎の中の最大＋1', () => {
-  assert.equal(nextExamNo('日宇校', ['0001', '0016', '0003']), '0017');
-  assert.equal(nextExamNo('駅前校', []), '0001');
+  // こちらで付ける番号は 300番台（県一斉模試の 0001〜 と重ならない）
+  assert.equal(nextExamNo('日宇校', ['0001', '0016', '0003']), '0301');
+  assert.equal(nextExamNo('日宇校', ['0001', '0301', '0305']), '0306');
+  assert.equal(nextExamNo('駅前校', []), '0301');
+  const full = Array.from({ length: 100 }, (_, i) => String(300 + i).padStart(4, '0'));
+  assert.equal(nextExamNo('日野校', full.filter((n) => n !== '0342')), '0342'); // 399 まで使っていれば空き
+  assert.equal(nextExamNo('日野校', [...full, '0012']), '0400');
   assert.equal(normalizeExamNo('10'), '0010');
   assert.equal(normalizeExamNo('０００５'), '0005');
   assert.equal(normalizeExamNo('514410'), '0010'); // 前の入力シートの番号（日宇校の10番）
