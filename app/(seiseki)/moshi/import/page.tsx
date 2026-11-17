@@ -6,7 +6,7 @@ import MoshiImportUI from '@/components/MoshiImportUI';
 
 export const dynamic = 'force-dynamic';
 
-// 県一斉模試の成績・名簿の取り込み。生徒の氏名・成績を扱うので、小中等部の職員だけが開ける（API でも確かめる）。
+// 県一斉模試の成績・名簿の取り込み。生徒の氏名・成績を扱うので、使える部門（lib/moshi/access.ts。いまは管理部門）の職員だけが開ける（レイアウトと API でも確かめる）。
 export default function Page() {
   const s = getSession();
   if (!s) redirect('/login');

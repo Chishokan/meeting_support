@@ -5,7 +5,7 @@ import { canUseMoshi } from './access';
 import { loadAll } from './store';
 import type { MoshiExam } from './model';
 
-/** ログインしていて、小中等部の職員なら Session。そうでなければ返す Response。 */
+/** ログインしていて、使える部門（./access.ts）の職員なら Session。そうでなければ返す Response。 */
 export function guard(): { session: Session } | { res: Response } {
   const session = getSession();
   if (!session) return { res: Response.json({ ok: false, reason: 'unauthorized' }, { status: 401 }) };

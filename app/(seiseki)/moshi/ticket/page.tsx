@@ -6,7 +6,7 @@ import MoshiTicketUI from '@/components/MoshiTicketUI';
 
 export const dynamic = 'force-dynamic';
 
-// 生徒の氏名・成績を扱うので、小中等部の職員だけが開ける（API でも確かめる）。
+// 生徒の氏名・成績を扱うので、使える部門（lib/moshi/access.ts。いまは管理部門）の職員だけが開ける（レイアウトと API でも確かめる）。
 export default function Page() {
   const s = getSession();
   if (!s) redirect('/login');
