@@ -127,7 +127,7 @@ table.tm td.v { font-weight: 700; color: var(--navy); }
 <script src="data.js"></script>
 <script>
 // data.js が SLIDES（台本）と SHOTS（画面写真の大きさと枠の位置）を入れる。
-const STEPS = ['成績管理を開く', '生徒を追加する', '県一斉模試の名簿'];
+const STEPS = ['成績管理を開く', '生徒を追加する', '受験票を印刷する'];
 const host = document.getElementById('slides');
 const ease = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : 1 - Math.pow(1 - x, 3));
 const clamp = (x) => Math.max(0, Math.min(1, x));
