@@ -8,7 +8,7 @@
 //
 // 回答は 1行1つの JSON で届く（lib/chishokanAi/conversation.ts）。文章・作業中の表示・読んだ資料・注意・途中で切れた知らせを分けて表示する。
 // 会話の持ち越し：AI が読んだナレッジのパスと、文字にした資料（Word・Excel・PowerPoint・テキストの添付、ドライブの資料）を覚えておき、
-// 次の質問と一緒に送る。PDF・画像は大きいので持ち越さない（続けて聞くときは付け直してもらう）。
+// 次の質問と一緒に送る。PDF・画像は画面で覚えておき、次の質問にも付け直す（3つ・大きさの上限まで。× で外せる。保存した会話には入らない）。
 // 作業の手順書：「よく使う作業」ボタン（knowledge/05_作業/ から作る）で選ぶと、手順書と資料を AI に先に渡す。
 // AI が ```選択肢 で聞き返したら、ボタンで答えられる。回答には 👍👎 を付けられる（会話ログに残る）。
 
@@ -19,6 +19,7 @@ import AiContextDiffDialog from '@/components/AiContextDiffDialog';
 import AiReportDialog from '@/components/AiReportDialog';
 import AiRequestDialog from '@/components/AiRequestDialog';
 import { imageToBase64 } from '@/lib/chishokanAi/clientImage';
+import { attachOnlyQuestion, carryForSend, isHeavy, nextCarry, type HeavyAttach } from '@/lib/chishokanAi/attachCarry';
 import type { ReportContext } from '@/lib/chishokanAi/report';
 import { toPlainText } from '@/lib/chishokanAi/markdown';
 import {
@@ -26,6 +27,7 @@ import {
   EMPTY_CONTEXT,
   LONG_CONVERSATION_CHARS,
   SUMMARY_PROMPT,
+  choiceNeedsInput,
   mergeContext,
   normalizeContext,
   parseEvents,
@@ -172,6 +174,13 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   const [busy, setBusy] = useState(false);
   const [attachments, setAttachments] = useState<Attach[]>([]);
   const [attachNote, setAttachNote] = useState('');
+  // 前の質問で添付した PDF・画像（次の質問にも付け直す。× で外せる。lib/chishokanAi/attachCarry.ts）
+  const [carriedFiles, setCarriedFiles] = useState<HeavyAttach[]>([]);
+  const carriedRef = useRef<HeavyAttach[]>([]);
+  const updateCarried = (v: HeavyAttach[]) => {
+    carriedRef.current = v;
+    setCarriedFiles(v);
+  };
   // この会話で読んだ資料（次の質問と一緒に送る）
   const [context, setContext] = useState<CarryContext>(EMPTY_CONTEXT);
   const contextRef = useRef<CarryContext>(EMPTY_CONTEXT);
@@ -469,6 +478,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     setMessages(v.messages as Msg[]);
     convoIdRef.current = v.conversationId || newConversationId();
     updateContext(normalizeContext(v.carry));
+    updateCarried([]);
     updatePinned(pins);
     pinUsedRef.current = Math.max(v.pinUsed, nextPinId(pins).used - 1);
     setProposals([]);
@@ -628,7 +638,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   async function run(
     apiMessages: { role: 'user' | 'assistant'; content: string }[],
     index: number,
-    opts: { attachments?: Attach[]; continuation?: boolean; task?: string; start: Msg },
+    opts: { attachments?: Attach[]; carried?: HeavyAttach[]; continuation?: boolean; task?: string; start: Msg },
   ) {
     const ac = new AbortController();
     abortRef.current = ac;
@@ -646,6 +656,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
         body: JSON.stringify({
           messages: apiMessages,
           attachments: opts.attachments ?? [],
+          carried: opts.carried ?? [],
           context: contextRef.current,
           pinned: pinnedRef.current.map(({ id, name, text }) => ({ id, name, text })),
           continuation: !!opts.continuation,
@@ -710,9 +721,10 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   async function ask(text: string) {
     const q = text.trim();
     if ((!q && attachments.length === 0) || busy) return;
-    const content = q || '添付した資料が、会社の方針に沿っているかチェックしてください。';
     const sending = attachments;
     const chosen = task;
+    // 質問を書かずに添付だけを送ったとき：作業・会話の続き・はじめて で質問を変える（方針チェックに決め打ちしない）
+    const content = q || attachOnlyQuestion({ task: chosen?.button, ongoing: messages.some((m) => m.role === 'user') });
     const label = [
       chosen ? `🧭 ${chosen.button}` : '',
       content,
@@ -728,18 +740,22 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     ensureConvoId();
     const base: Msg[] = [...messages, { role: 'user', content: label, api: content }];
     const turn = base.filter((m) => m.role === 'user').length;
-    // 文字にした添付は、次の質問からも AI に渡す。PDF・画像は持ち越さない。
+    // 文字にした添付は、次の質問からも AI に渡す（コンテキスト）。
     const texts = sending.filter((a) => a.kind === 'text').map((a) => ({ name: a.name, text: a.data }));
-    const heavy = sending.filter((a) => a.kind !== 'text').map((a) => a.name);
+    // PDF・画像は画面で覚えておき、次の質問からも付け直す（送る大きさの上限まで。古いものから外す）
+    const re = carryForSend(carriedRef.current, sending, MAX_TOTAL_BYTES);
+    const next = nextCarry(re.send, sending.filter(isHeavy) as HeavyAttach[]);
+    updateCarried(next.keep);
+    const dropped = [...new Set([...re.dropped, ...next.dropped])];
     const start: Msg = {
       role: 'assistant',
       content: '',
       turn,
       taskLabel: chosen?.button,
-      notices: heavy.length ? [`PDF・画像（${heavy.join('、')}）は、次の質問には持ち越しません。続けて聞くときは付け直してください。`] : undefined,
+      notices: dropped.length ? [`前の添付（${dropped.join('、')}）は、大きさの都合でこの質問から外しました。要るときは付け直してください。`] : undefined,
     };
     setMessages([...base, start]);
-    await run(toApi(base), base.length, { attachments: sending, task: chosen?.id, start });
+    await run(toApi(base), base.length, { attachments: sending, carried: re.send, task: chosen?.id, start });
     if (texts.length) updateContext(mergeContext(contextRef.current, { texts }));
   }
 
@@ -748,17 +764,26 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     const last = messages[messages.length - 1];
     if (busy || !last || last.role !== 'assistant' || !last.cut) return;
     const apiMessages = [...toApi(messages), { role: 'user' as const, content: CONTINUE_PROMPT }];
-    await run(apiMessages, messages.length - 1, { continuation: true, start: { ...last, cut: null } });
+    await run(apiMessages, messages.length - 1, { continuation: true, carried: carriedRef.current, start: { ...last, cut: null } });
   }
 
-  // いちばん新しい回答を作り直す（添付の PDF・画像は付け直されない）。
+  // 選択肢を押したとき。添付・書き込みが要るもの（「画像を添付し直す」など）は送らずに入力欄へ入れ、続きを促す。
+  function chooseOption(label: string) {
+    const need = choiceNeedsInput(label);
+    if (!need) { ask(label); return; }
+    setInput(need === 'write' ? `${label}：\n` : label);
+    setAttachNote(need === 'attach' ? '📎「資料を添付」で資料を付けてから、送信してください。' : '続けて内容を書いてから、送信してください。');
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  // いちばん新しい回答を作り直す（覚えている PDF・画像は付け直す）。
   async function regenerate() {
     const last = messages[messages.length - 1];
     if (busy || !last || last.role !== 'assistant') return;
     const base = messages.slice(0, -1);
     const start: Msg = { role: 'assistant', content: '', turn: last.turn, taskLabel: last.taskLabel };
     setMessages([...base, start]);
-    await run(toApi(base), base.length, { start });
+    await run(toApi(base), base.length, { carried: carriedRef.current, start });
   }
 
   function stop() {
@@ -778,6 +803,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     setMessages([]);
     convoIdRef.current = '';
     updateContext(EMPTY_CONTEXT);
+    updateCarried([]);
     if (!keepPins) {
       updatePinned([]);
       pinUsedRef.current = 0;
@@ -999,7 +1025,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
                 <div>
                   <div className={`bubble md-bubble${m.error ? ' ai-error' : ''}`}>
                     {m.content ? (
-                      <AiMarkdown text={m.content} onChoose={isLast && !busy ? (c) => ask(c) : undefined} streaming={streaming} />
+                      <AiMarkdown text={m.content} onChoose={isLast && !busy ? chooseOption : undefined} streaming={streaming} />
                     ) : (
                       <span className="ai-status">{m.status || '考えています…'}</span>
                     )}
@@ -1181,6 +1207,12 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
             <span key={i} className="attach-chip">
               {a.name}
               <button onClick={() => setAttachments((v) => v.filter((_, j) => j !== i))} aria-label="外す">×</button>
+            </span>
+          ))}
+          {carriedFiles.map((a) => (
+            <span key={`carry-${a.name}`} className="attach-chip carry-chip" title="前の質問で添付した資料です。次の質問にも付けます。要らなければ × で外してください">
+              📎 前の添付：{a.name}
+              <button onClick={() => updateCarried(carriedRef.current.filter((x) => x.name !== a.name))} disabled={busy} aria-label={`前の添付 ${a.name} を外す`}>×</button>
             </span>
           ))}
           {attachNote && <span className="attach-note">{attachNote}</span>}

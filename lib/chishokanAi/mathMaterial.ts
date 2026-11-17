@@ -3,7 +3,7 @@
 
 import { callGas } from './gas';
 import type { CreatedDoc } from './createDoc';
-import { parseFigure, textsWithoutGlyph } from './figure';
+import { checkDocFigures, parseFigure, textsWithoutGlyph } from './figure';
 import { renderFigurePng } from './figurePng';
 import { buildAnswerDocx, buildProblemDocx, type FigureRenderer } from './mathDoc';
 import { checkMathMaterialInput } from './mathMaterialTool';
@@ -94,6 +94,11 @@ export async function runCreateMathQuiz(
   // 小学校・中学校の小テストに、高校で習う書き方・方法が無いか（入力の誤りとして返し、書き直してもらう）
   const scopeQ = quizScopeMessage(q);
   if (scopeQ) return { toolResult: scopeQ, created: [{ ok: false, title: `小テスト：${q.title}`, note: `中学の範囲外の書き方で作り直し（${scopeQ.slice(0, 80)}）` }], inputError: true };
+  // 図を先に確かめる（描けない図・□になる日本語の文字のまま保存しない）
+  const figQ = checkDocFigures(
+    q.sheets.flatMap((sh, s) => sh.sections.flatMap((sec) => sec.items.flatMap((it, k) => (it.side?.figure ? [{ where: `${s + 1}枚目の(${k + 1})の図`, figure: it.side.figure }] : [])))),
+  );
+  if (figQ) return { toolResult: figQ, created: [{ ok: false, title: `小テスト：${q.title}`, note: `図を直して作り直し（${figQ.slice(0, 80)}）` }], inputError: true };
   const notes: string[] = [];
   const render = figureRenderer(notes);
   let quiz: Buffer;
@@ -161,6 +166,14 @@ export async function runCreateMathMaterial(
   // 小学校・中学校の教材に、高校で習う書き方・方法が無いか（2026-11-16：模試の解説に点と傾きの式・絶対値の記号が出た）
   const scopeM = materialScopeMessage(m);
   if (scopeM) return { toolResult: scopeM, created: [{ ok: false, title: `数学の教材：${m.title}`, note: `中学の範囲外の書き方で作り直し（${scopeM.slice(0, 80)}）` }], inputError: true };
+  // 図を先に確かめる（2026-11-17：作図の図が描けないまま Word ができた・グラフの日本語の文字が□になった）
+  const figM = checkDocFigures(
+    m.problems.flatMap((p, i) => [
+      ...p.side.flatMap((sd, k) => (sd.figure ? [{ where: `大問${i + 1}の図${k + 1}`, figure: sd.figure }] : [])),
+      ...p.items.flatMap((it, k) => (it.side?.figure ? [{ where: `大問${i + 1}の問${k + 1}の図`, figure: it.side.figure }] : [])),
+    ]),
+  );
+  if (figM) return { toolResult: figM, created: [{ ok: false, title: `数学の教材：${m.title}`, note: `図を直して作り直し（${figM.slice(0, 80)}）` }], inputError: true };
   const notes: string[] = [];
   const render = figureRenderer(notes);
   let problem: Buffer;
