@@ -16,6 +16,7 @@ export type RefSchool = { ref: string; name: string; bDev: number; rule: string;
 export type Reference = {
   id: string;
   label: string;
+  month: string; // 資料の回の年月（YYYY-MM）。取り込んだ県一斉模試の回と結ぶ（同じ年月の回だけ、判定偏差値・基準まであと何点を出す）
   mean: Record<StatKey, number>;
   sd: Record<StatKey, number>;
   schools: RefSchool[];
@@ -214,6 +215,7 @@ export const REFERENCES: Reference[] = [
   {
     id: 'kenitsu-2026-10',
     label: '第2回 長崎県一斉模試 2026年10月',
+    month: '2026-10',
     mean: { ja: 57.8, en: 49.0, ma: 52.7, so: 50.9, sc: 53.7, k3: 159.6, k5: 264.3 },
     sd: { ja: 15.2, en: 22.3, ma: 20.6, so: 20.7, sc: 21.5, k3: 51.9, k5: 88.8 },
     schools: parseSchools(KENITSU_2026_10),
@@ -274,11 +276,23 @@ export const TO_REF: Record<string, string> = {
   '90150': '063-01', '90450': '066-01', '92130': '820-01', '92342': '854-43', '92344': '854-52', '92580': '888-01',
 };
 
+/** 取り込んだ県一斉模試の回（実施日 YYYY-MM-DD）と同じ年月の参考データ。無ければ undefined。 */
+export function referenceForDate(date: string): Reference | undefined {
+  const ym = String(date ?? '').slice(0, 7);
+  return ym ? REFERENCES.find((r) => r.month === ym) : undefined;
+}
+
 export function referenceById(id: string): Reference | undefined {
   return REFERENCES.find((r) => r.id === id);
 }
 
 /** 入力シートの志望校コードに当たる、参考データの学校（対応が分からなければ undefined）。 */
+/** 県一斉模試の学校コード（518-01 など）で引く。前の入力シートの5桁のコードなら TO_REF で読み替えて引く。 */
+export function refSchoolByCode(ref: Reference, code: string): RefSchool | undefined {
+  const c = String(code ?? '').trim();
+  return ref.schools.find((s) => s.ref === c) ?? refSchoolFor(ref, c);
+}
+
 export function refSchoolFor(ref: Reference, code: string): RefSchool | undefined {
   const r = TO_REF[String(code ?? '').trim()];
   return r ? ref.schools.find((s) => s.ref === r) : undefined;
