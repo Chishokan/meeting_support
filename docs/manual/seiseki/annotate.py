@@ -18,9 +18,8 @@ for name, v in boxes.items():
     im.save(os.path.join(out, name + '.png'), optimize=True)
 def crop(name, top, bottom):
     im = Image.open(os.path.join(out, name + '.png')); im.crop((0, top * S, im.size[0], min(im.size[1], bottom * S))).save(os.path.join(out, name + '.png'), optimize=True)
-# 県一斉模試の取り込み：回と校舎の欄から「2. 名簿」の終わりまで
-b = boxes['seiseki_05_import']['marks']
-crop('seiseki_05_import', max(0, min(m['y'] for m in b) - 30), max(m['y'] + m['h'] for m in b) + 28)
+# 受験票：見出しの下から、生徒の一覧と受験票のはじめまで
+crop('seiseki_05_ticket', 92, 640)
 # 成績入力：上の欄とボタン・名簿のはじめ（図2）、追加した行のまわり（図3）、保存の表示から追加した行まで（図4）
 crop('seiseki_02_entry', 0, 420)
 crop('seiseki_03_added', 236, 620)
