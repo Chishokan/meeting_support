@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  autoPriority, buildRows, campusList, cleanTrackFields, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
+  addedFromSheet, appLabel, autoPriority, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
   normCampus, normGrade, normName, parseApplications, parseRoster, shortDay, sortRows, summarize, trackFromSheet,
   type Student, type Track,
 } from './model.ts';
@@ -82,7 +82,7 @@ test('trackFromSheet：シートが日付に読み替えた値もそろえる', 
 
 test('mapFormColumns：質問の文言から列を当てる', () => {
   const c = mapFormColumns(['タイムスタンプ', 'メールアドレス', '生徒氏名', 'ふりがな', '学年', '通っている校舎', '学校名', '保護者の参加人数', '保護者氏名']);
-  assert.deepEqual(c, { at: 0, name: 2, parentName: 8, campus: 5, grade: 4, school: 6, who: -1, parentFlags: [7] });
+  assert.deepEqual(c, { at: 0, name: 2, parentName: 8, campus: 5, grade: 4, school: 6, who: -1, parentFlags: [7], interest: -1 });
   const d = mapFormColumns(['タイムスタンプ', 'お名前', 'お名前（フリガナ）', '参加される方', '学年']);
   assert.equal(d.name, 1);
   assert.equal(d.who, 3);
@@ -106,6 +106,52 @@ test('parseApplications：生徒・保護者の参加を読む', () => {
     ['t1', '青空 花', '生徒と保護者'], ['t2', '森 一', '保護者のみ'], ['t3', '海 二', '生徒のみ'],
   ]);
   assert.deepEqual(who.map((a) => [a.student, a.parent]), [[true, true], [false, true], [true, false]]);
+});
+
+// いまのフォーム（東進 トップリーダーと学ぶワークショップ2026 参加申し込み）の見出し
+const FORM_HEADERS = [
+  'タイムスタンプ', 'メールアドレス', 'お名前', '学校名', '学年', '所属校舎', '連絡先（電話番号をお書きください）', '一緒に参加される方の人数',
+  '現在の希望進路・興味のある分野', '薬学（薬学部や薬剤師の仕事）にどのくらい興味がありますか',
+  '神田先生への質問（講演①「資格はゴールじゃない。未来へのスタートライン」）', '中村先生への質問（講演②「佐世保の高校から薬学部へ」）',
+];
+
+test('いまのフォームの見出しから列を当て、同伴の人数と希望進路を読む', () => {
+  const c = mapFormColumns(FORM_HEADERS);
+  assert.deepEqual(c, { at: 0, name: 2, parentName: -1, campus: 5, grade: 4, school: 3, who: -1, parentFlags: [7], interest: 8 });
+  const apps = parseApplications(FORM_HEADERS, [
+    ['2026/11/14 19:51:01', 'a@example.com', '青空 花', '北中学校', '中学3年生', 'RED広田', '000', '1人', '薬学部, 養護教諭', 'とても興味がある', '', '質問です'],
+    ['2026/11/15 08:00:00', 'b@example.com', '森一', '南中学校', '中学1年生', '駅前校', '000', '0人', '', '', '', ''],
+    ['2026/11/15 09:00:00', 'c@example.com', '海 二', '西高校', '高校2年生', '', '000', '', '', '', '', ''],
+  ]);
+  assert.deepEqual(apps.map((a) => [a.grade, a.student, a.parent, a.companions]), [['中3', true, true, 1], ['中1', true, false, 0], ['高2', true, false, 0]]);
+  assert.deepEqual([apps[0].campus, apps[0].school, apps[0].interest], ['RED広田', '北中学校', '薬学部, 養護教諭']);
+  assert.deepEqual(apps.map(appLabel), ['生徒＋同伴1人', '生徒', '生徒']);
+});
+
+test('companionsOf', () => {
+  assert.deepEqual(['1人', '２名', '0人', 'なし', '', '保護者と参加', '0'].map(companionsOf), [1, 2, 0, 0, 0, 1, 0]);
+});
+
+test('アプリで足した生徒：入力を整え、名簿に合わせ、同じ氏名を見つける', () => {
+  assert.deepEqual(
+    cleanStudentInput({ campus: ' RED広田 ', school: '広田中', grade: '中学3年生', name: '青空　花', dream: '薬学部', hope: '', x: 1 }),
+    { campus: 'RED広田', school: '広田中', grade: '中3', name: '青空 花', dream: '薬学部', hope: '' },
+  );
+  assert.equal(cleanStudentInput({ campus: '', name: '青空 花' }), null);
+  assert.equal(cleanStudentInput({ campus: '駅前校', name: ' ' }), null);
+  const added = addedFromSheet({ ID: 'A-1', 校舎: 'RED広田', 中学校: '広田中', 学年: '中３', 氏名: '青空 花', '夢・志': '薬学部', 志望校: '' });
+  assert.deepEqual(added, { key: 'A-1', studentId: '', campus: 'RED広田', school: '広田中', grade: '中3', name: '青空 花', dream: '薬学部', hope: '', added: true });
+  assert.equal(addedFromSheet({ ID: '', 氏名: 'x' }), null);
+  const roster = [st('S1', '髙橋 花子'), st('A-1', '名簿 優先')];
+  const all = mergeStudents(roster, [added!, st('A-2', '高橋花子', 'RED広田')]);
+  assert.deepEqual(all.map((x) => x.key), ['S1', 'A-1', 'A-2']);
+  assert.equal(all[1].name, '名簿 優先');
+  assert.deepEqual(sameNameStudents(all, '高橋　花子').map((x) => x.key), ['S1', 'A-2']);
+  assert.deepEqual(sameNameStudents(all, '高橋　花子', 'A-2').map((x) => x.key), ['S1']);
+  // 足した生徒も、申込と氏名で結び付き、重点が付く
+  const { rows, unmatched } = buildRows([added!], [], parseApplications(FORM_HEADERS, [['t1', '', '青空花', '', '中学3年生', 'RED広田', '', '2人', '', '', '', '']]), WORDS);
+  assert.equal(unmatched.length, 0);
+  assert.deepEqual([rows[0].priority, rows[0].stage, rows[0].studentApplied, rows[0].parentApplied, rows[0].companions], ['pharma', 'applied', true, true, 2]);
 });
 
 test('matchApplications：氏名で結び、同姓同名は校舎・学年で決め、決まらなければ名簿外', () => {

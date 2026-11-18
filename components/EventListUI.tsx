@@ -3,16 +3,17 @@
 // イベント申込管理（/event）。イベントの声掛け名簿と申込状況を、教室担当と管理担当が同じ画面で見る。
 //   校舎ごとの進み具合 … 管理担当向け。校舎ごとの チラシ配布・声掛け・申込・重点（薬剤師・医療系）の進み具合
 //   声掛け名簿         … 教室担当向け。生徒ごとの「次にすること」。チラシ・声掛け・反応・保護者への案内をその場で記録する
-//   名簿外の申込       … フォームの回答のうち、名簿の誰とも結び付かなかったもの（高校生・小学生・外部生・氏名の書き方が違う人）
+//   名簿外の申込       … フォームの回答のうち、名簿の誰とも結び付かなかったもの（RED個別・高校生・外部生・氏名の書き方が違う人）
+//   生徒の追加         … 名簿に無い生徒を足す（声掛け名簿の［＋ 生徒を追加］、名簿外の申込の［名簿に足す］）。足した生徒は直す・外すができる
 // 申込は Google フォームの回答を氏名で名簿に結び付けて出す（手入力の申込も付けられる）。
 // 決まりと計算は lib/eventList/model.ts、イベントの中身は lib/eventList/event.ts、読み書きは lib/eventList/store.ts。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CAMPUS_ORDER, EVENT, NO_CAMPUS, PRIORITY_WORDS } from '@/lib/eventList/event';
 import {
-  PRIORITY_LABEL, REACTIONS, STAGE_LABEL, autoPriority, buildRows, campusList, daysUntil, emptyTrack, linkIds, normCampus, pct, shortDay,
-  sortRows, summarize, todayJp,
-  type Application, type Reaction, type Student, type StudentRow, type Summary, type Track, type TrackField,
+  GRADES, PRIORITY_LABEL, REACTIONS, STAGE_LABEL, appLabel, autoPriority, buildRows, campusList, daysUntil, emptyTrack, linkIds, normCampus,
+  normGrade, normName, pct, sameNameStudents, shortDay, sortRows, summarize, todayJp,
+  type Application, type Reaction, type Student, type StudentInput, type StudentRow, type Summary, type Track, type TrackField,
 } from '@/lib/eventList/model';
 
 const REASONS: Record<string, string> = {
@@ -26,6 +27,8 @@ const REASONS: Record<string, string> = {
   network_error: '通信エラーが起きました。もう一度試してください。',
   timeout: 'スプレッドシートの応答が遅く、途中で止まりました。もう一度試してください。',
   bad_request: '送った内容を読めませんでした。ページを読み込み直してください。',
+  no_name: '校舎と氏名を入れてください。',
+  not_found: '見つかりませんでした（他の人が外したかもしれません）。［最新にする］を押してください。',
 };
 const reasonText = (r: unknown) => REASONS[String(r ?? '')] ?? `うまくいきませんでした（${String(r || '不明')}）。`;
 
@@ -34,6 +37,8 @@ type State = { status: 'loading' } | { status: 'error'; message: string } | ({ s
 type View = 'overview' | 'list' | 'outside';
 type Filter = 'todo' | 'urgent' | 'none' | 'thinking' | 'applied' | 'declined' | 'all';
 type Change = { row: StudentRow; fields: Partial<Record<TrackField, string>> };
+// 生徒を足す・直す窓：student＝直す生徒（足すときは無し）、app＝名簿外の申込から足すとき、init＝最初に入れておく値
+type Editing = { student?: Student; app?: Application; init: StudentInput };
 
 const FILTERS: { key: Filter; label: string; test: (r: StudentRow) => boolean }[] = [
   { key: 'todo', label: 'することがある', test: (r) => r.todo !== '' },
@@ -56,6 +61,8 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   const [busy, setBusy] = useState(0);
   const [error, setError] = useState('');
   const [detail, setDetail] = useState<{ app: Application; row: StudentRow | null } | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const [rev, setRev] = useState(0); // 生徒を足す・直す・外すたびに増やす（名簿の並びを決め直す）
 
   const load = useCallback(async () => {
     try {
@@ -122,6 +129,47 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
     }
   }, []);
 
+  // 生徒を足す（student なし）・足した生徒を直す。失敗したら理由の文を返す（窓に出す）
+  const saveStudent = useCallback(async (ed: Editing, input: StudentInput): Promise<string> => {
+    try {
+      const res = await fetch('/api/event/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: ed.student?.key ?? '', ...input }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!j?.ok) return reasonText(j?.reason);
+      const st = j.student as Student;
+      setState((s) => (s.status === 'ready' ? { ...s, students: [...s.students.filter((x) => x.key !== st.key), st] } : s));
+      setRev((n) => n + 1);
+      // 名簿外の申込から足したのに氏名を変えたときは、氏名では結び付かないので、その申込を結び付けておく
+      if (ed.app && normName(st.name) !== normName(ed.app.name)) {
+        const row = { student: st, track: emptyTrack(st.key) } as StudentRow;
+        await save([{ row, fields: { link: ed.app.id } }]);
+      }
+      return '';
+    } catch {
+      return reasonText('network_error');
+    }
+  }, [save]);
+
+  const removeStudent = useCallback(async (st: Student): Promise<string> => {
+    try {
+      const res = await fetch('/api/event/students', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: st.key }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!j?.ok) return reasonText(j?.reason);
+      setState((s) => (s.status === 'ready' ? { ...s, students: s.students.filter((x) => x.key !== st.key) } : s));
+      setRev((n) => n + 1);
+      return '';
+    } catch {
+      return reasonText('network_error');
+    }
+  }, []);
+
   if (state.status === 'loading') return <div className="ev"><p className="ev-note">名簿と申込状況を読み込んでいます…</p></div>;
   if (state.status === 'error') {
     return (
@@ -136,6 +184,12 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   const { rows, unmatched } = built;
   const inCampus = activeCampus ? rows.filter((r) => r.student.campus === activeCampus) : rows;
   const openCampus = (c: string) => { setCampus(c); setView('list'); setFilter('todo'); setGrade(''); setQ(''); };
+  const blank = (c: string): StudentInput => ({ campus: c, school: '', grade: '', name: '', dream: '', hope: '' });
+  const fromApp = (a: Application): Editing => ({
+    app: a,
+    init: { campus: a.campus, school: a.school, grade: GRADES.includes(a.grade) ? a.grade : '', name: a.name, dream: a.interest, hope: '' },
+  });
+  const edit = (st: Student): Editing => ({ student: st, init: { campus: st.campus, school: st.school, grade: st.grade, name: st.name, dream: st.dream, hope: st.hope } });
 
   return (
     <div className="ev">
@@ -177,14 +231,22 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
             ))}
           </div>
           <CampusList
-            rows={inCampus} scope={`${activeCampus}|${state.fetchedAt}`} showCampus={activeCampus === ''} filter={filter} onFilter={setFilter} grade={grade} onGrade={setGrade} q={q} onQ={setQ}
+            rows={inCampus} scope={`${activeCampus}|${state.fetchedAt}|${rev}`} showCampus={activeCampus === ''} filter={filter} onFilter={setFilter} grade={grade} onGrade={setGrade} q={q} onQ={setQ}
             onSave={save} onDetail={(app, row) => setDetail({ app, row })}
+            onAdd={() => setEditing({ init: blank(activeCampus) })} onEdit={(st) => setEditing(edit(st))}
           />
         </>
       )}
 
       {view === 'outside' && (
-        <Outside apps={unmatched} rows={rows} campuses={campuses} onLink={(app, row) => save([{ row, fields: { link: [...linkIds(row.track.link), app.id].join('\n') } }])} onDetail={(app) => setDetail({ app, row: null })} />
+        <Outside apps={unmatched} rows={rows} campuses={campuses} onLink={(app, row) => save([{ row, fields: { link: [...linkIds(row.track.link), app.id].join('\n') } }])} onDetail={(app) => setDetail({ app, row: null })} onAdd={(app) => setEditing(fromApp(app))} />
+      )}
+
+      {editing && (
+        <StudentDialog
+          editing={editing} campuses={campuses} students={state.students} onClose={() => setEditing(null)}
+          onSave={(input) => saveStudent(editing, input)} onRemove={editing.student ? () => removeStudent(editing.student!) : undefined}
+        />
       )}
 
       {detail && (
@@ -241,7 +303,7 @@ function Overview({ rows, campuses, unmatched, onOpen }: { rows: StudentRow[]; c
       <td><Bar n={s.flyer} total={s.total} /></td>
       <td><Bar n={s.talked} total={s.total} /></td>
       <td><Bar n={s.applied} total={s.total} tone="ok" /></td>
-      <td className="num">{s.studentApplied}<small>／保護者 {s.parentApplied}</small></td>
+      <td className="num">{s.studentApplied}<small>／同伴 {s.companions}人</small></td>
       <td><Bar n={s.priorityApplied} total={s.priority} tone="ok" /></td>
       <td className={`num ${s.priorityOpen > 0 ? 'ev-hot' : ''}`}>{s.priorityOpen}</td>
       <td className="num">{s.wants + s.considering}</td>
@@ -256,7 +318,7 @@ function Overview({ rows, campuses, unmatched, onOpen }: { rows: StudentRow[]; c
         <div className="ev-card"><span>対象の生徒</span><b>{all.total}</b><small>うち重点 {all.priority} 名</small></div>
         <div className="ev-card"><span>チラシ配布</span><b>{pct(all.flyer, all.total)}<i>%</i></b><small>{all.flyer} / {all.total} 名</small></div>
         <div className="ev-card"><span>声掛け</span><b>{pct(all.talked, all.total)}<i>%</i></b><small>{all.talked} / {all.total} 名</small></div>
-        <div className="ev-card ok"><span>申込（名簿の生徒）</span><b>{all.applied}</b><small>生徒 {all.studentApplied}・保護者 {all.parentApplied}／名簿外 {unmatched} 件</small></div>
+        <div className="ev-card ok"><span>申込（名簿の生徒）</span><b>{all.applied}</b><small>生徒 {all.studentApplied}・同伴 {all.companions}人／名簿外 {unmatched} 件</small></div>
         <div className="ev-card ok"><span>重点の申込</span><b>{all.priorityApplied}<i> / {all.priority}</i></b><small>薬剤師・医療系を目指す生徒</small></div>
         <div className={`ev-card ${all.priorityOpen > 0 ? 'hot' : ''}`}><span>重点で未決</span><b>{all.priorityOpen}</b><small>申込も不参加も決まっていない</small></div>
       </div>
@@ -264,7 +326,7 @@ function Overview({ rows, campuses, unmatched, onOpen }: { rows: StudentRow[]; c
         <table className="ev-table ev-overview">
           <thead>
             <tr>
-              <th>校舎</th><th>対象</th><th>チラシ配布</th><th>声掛け</th><th>申込</th><th>申込の内訳（生徒）</th>
+              <th>校舎</th><th>対象</th><th>チラシ配布</th><th>声掛け</th><th>申込</th><th>申込の内訳（生徒／同伴の方）</th>
               <th>重点の申込</th><th>重点で未決</th><th>参加したい・検討中</th><th>不参加</th><th>未着手</th><th>最終更新</th>
             </tr>
           </thead>
@@ -285,10 +347,11 @@ function Overview({ rows, campuses, unmatched, onOpen }: { rows: StudentRow[]; c
 // ---- 声掛け名簿（教室担当） --------------------------------------------------
 
 function CampusList({
-  rows, scope, showCampus, filter, onFilter, grade, onGrade, q, onQ, onSave, onDetail,
+  rows, scope, showCampus, filter, onFilter, grade, onGrade, q, onQ, onSave, onDetail, onAdd, onEdit,
 }: {
   rows: StudentRow[]; scope: string; showCampus: boolean; filter: Filter; onFilter: (f: Filter) => void; grade: string; onGrade: (g: string) => void;
   q: string; onQ: (v: string) => void; onSave: (c: Change[]) => void; onDetail: (app: Application, row: StudentRow) => void;
+  onAdd: () => void; onEdit: (st: Student) => void;
 }) {
   const grades = useMemo(() => [...new Set(rows.map((r) => r.student.grade).filter(Boolean))].sort(), [rows]);
   const scoped = rows.filter((r) => !grade || r.student.grade === grade);
@@ -329,6 +392,7 @@ function CampusList({
           {grades.map((g) => <option key={g} value={g}>{g}</option>)}
         </select>
         <input value={q} onChange={(e) => onQ(e.target.value)} placeholder="氏名で探す" aria-label="氏名で探す" />
+        <button type="button" className="ev-btn" onClick={onAdd}>＋ 生徒を追加</button>
         <span className="ev-spacer" />
         <button type="button" className="ev-btn ev-btn-sub" disabled={!noFlyer.length} onClick={bulkFlyer}>
           表示中の {noFlyer.length} 名にチラシ配布済を付ける
@@ -343,7 +407,7 @@ function CampusList({
             </tr>
           </thead>
           <tbody>
-            {shown.map((r) => <Row key={r.student.key} row={r} showCampus={showCampus} today={today} onSave={onSave} onDetail={onDetail} />)}
+            {shown.map((r) => <Row key={r.student.key} row={r} showCampus={showCampus} today={today} onSave={onSave} onDetail={onDetail} onEdit={onEdit} />)}
             {!shown.length && <tr><td colSpan={10} className="ev-empty">この条件の生徒はいません。</td></tr>}
           </tbody>
         </table>
@@ -357,8 +421,9 @@ function CampusList({
   );
 }
 
-function Row({ row, showCampus, today, onSave, onDetail }: {
+function Row({ row, showCampus, today, onSave, onDetail, onEdit }: {
   row: StudentRow; showCampus: boolean; today: string; onSave: (c: Change[]) => void; onDetail: (app: Application, row: StudentRow) => void;
+  onEdit: (st: Student) => void;
 }) {
   const { student: st, track: t } = row;
   const set = (fields: Partial<Record<TrackField, string>>) => onSave([{ row, fields }]);
@@ -382,7 +447,10 @@ function Row({ row, showCampus, today, onSave, onDetail }: {
         </button>
       </td>
       <td className="ev-name">
-        <b>{st.name}</b>
+        <b>
+          {st.name}
+          {st.added && <button type="button" className="ev-added" onClick={() => onEdit(st)} title="アプリで足した生徒です。押すと直す・外すができます">追加 ✎</button>}
+        </b>
         <small>{showCampus ? `${st.campus}・` : ''}{st.grade}{st.school ? `・${st.school}` : ''}</small>
         {/* スマホでは「次にすること」の列が右に隠れるので、氏名の下にも出す */}
         {row.todo && <em className="ev-name-todo">{row.todo}</em>}
@@ -407,7 +475,7 @@ function Row({ row, showCampus, today, onSave, onDetail }: {
         <div className="ev-apply">
           {row.apps.map((a) => (
             <button key={a.id} type="button" className="ev-badge ok" onClick={() => onDetail(a, row)} title="フォームの回答を見る">
-              {a.student && a.parent ? '生徒＋保護者' : a.parent ? '保護者' : '生徒'}
+              {appLabel(a)}
             </button>
           ))}
           {t.applied === '1'
@@ -436,28 +504,31 @@ function Memo({ value, onSave }: { value: string; onSave: (v: string) => void })
 
 // ---- 名簿外の申込 -----------------------------------------------------------
 
-function Outside({ apps, rows, campuses, onLink, onDetail }: {
+function Outside({ apps, rows, campuses, onLink, onDetail, onAdd }: {
   apps: Application[]; rows: StudentRow[]; campuses: string[]; onLink: (app: Application, row: StudentRow) => void; onDetail: (app: Application) => void;
+  onAdd: (app: Application) => void;
 }) {
   const [pick, setPick] = useState<Record<string, string>>({});
   if (!apps.length) return <p className="ev-note">名簿の誰とも結び付いていない申込はありません。</p>;
   return (
     <section>
       <p className="ev-hint">
-        フォームの回答のうち、名簿の生徒と氏名が合わなかったものです（高校生・小学生・外部の方、氏名の書き方が違う方、同姓同名で決められなかった方）。
+        フォームの回答のうち、名簿の生徒と氏名が合わなかったものです（RED個別・高校生・小学生・外部の方、氏名の書き方が違う方、同姓同名で決められなかった方）。
         名簿の生徒の申込なら、生徒を選んで［結び付ける］を押すと、その生徒の「申込」に入ります。
+        名簿にいない生徒は［名簿に足す］で声掛け名簿に足せます（申込済として入ります）。
       </p>
       <div className="ev-scroll">
         <table className="ev-table">
-          <thead><tr><th>回答日時</th><th>氏名</th><th>学年</th><th>校舎</th><th>参加</th><th>名簿の生徒に結び付ける</th><th /></tr></thead>
+          <thead><tr><th>回答日時</th><th>氏名</th><th>学年</th><th>学校</th><th>校舎</th><th>参加</th><th>名簿の生徒に結び付ける</th><th /></tr></thead>
           <tbody>
             {apps.map((a) => (
               <tr key={a.id}>
                 <td className="ev-updated">{a.at}</td>
                 <td className="ev-name"><b>{a.name}</b>{a.parentName && a.parentName !== a.name && <small>保護者：{a.parentName}</small>}</td>
                 <td>{a.grade}</td>
+                <td>{a.school}</td>
                 <td>{a.campus}</td>
-                <td>{a.student && a.parent ? '生徒＋保護者' : a.parent ? '保護者' : '生徒'}</td>
+                <td>{appLabel(a)}</td>
                 <td className="ev-linker">
                   <select value={pick[a.id] ?? ''} onChange={(e) => setPick((p) => ({ ...p, [a.id]: e.target.value }))} aria-label="名簿の生徒">
                     <option value="">生徒を選ぶ</option>
@@ -474,7 +545,10 @@ function Outside({ apps, rows, campuses, onLink, onDetail }: {
                     onClick={() => { const row = rows.find((r) => r.student.key === pick[a.id]); if (row) onLink(a, row); }}
                   >結び付ける</button>
                 </td>
-                <td><button type="button" className="ev-btn ev-btn-sub" onClick={() => onDetail(a)}>回答を見る</button></td>
+                <td className="ev-linker">
+                  <button type="button" className="ev-btn" onClick={() => onAdd(a)}>名簿に足す</button>
+                  <button type="button" className="ev-btn ev-btn-sub" onClick={() => onDetail(a)}>回答を見る</button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -510,6 +584,86 @@ function AppDetail({ app, row, onClose, onUnlink }: {
           <button type="button" className="ev-btn" onClick={onClose}>閉じる</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---- 生徒を足す・直す --------------------------------------------------------
+
+function StudentDialog({ editing, campuses, students, onClose, onSave, onRemove }: {
+  editing: Editing; campuses: string[]; students: Student[]; onClose: () => void;
+  onSave: (input: StudentInput) => Promise<string>; onRemove?: () => Promise<string>;
+}) {
+  const [v, setV] = useState<StudentInput>(editing.init);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onClose, busy]);
+  const set = (k: keyof StudentInput) => (e: { target: { value: string } }) => setV((x) => ({ ...x, [k]: e.target.value }));
+  const same = sameNameStudents(students, v.name, editing.student?.key);
+  const ready = v.campus.trim() !== '' && v.name.trim() !== '';
+  const run = async (f: () => Promise<string>) => {
+    setBusy(true);
+    setErr('');
+    const msg = await f();
+    setBusy(false);
+    if (msg) setErr(msg); else onClose();
+  };
+  const grades = v.grade && !GRADES.includes(normGrade(v.grade)) ? [...GRADES, v.grade] : GRADES;
+  return (
+    <div className="ev-modal" role="dialog" aria-modal="true" aria-label={editing.student ? '生徒を直す' : '生徒を追加'} onClick={() => { if (!busy) onClose(); }}>
+      <form className="ev-modal-body ev-form" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); if (ready && !busy) run(() => onSave(v)); }}>
+        <h2>{editing.student ? '足した生徒を直す' : '生徒を追加'}{editing.app && <small>（フォームの回答から）</small>}</h2>
+        <p className="ev-hint">
+          名簿のスプレッドシートに無い生徒（RED個別・高校生・外部の生徒など）を、このイベントの声掛け名簿に足します。
+          名簿のスプレッドシートには書き込みません。
+        </p>
+        <div className="ev-form-grid">
+          <label>校舎（必須）
+            <input value={v.campus} onChange={set('campus')} list="ev-campus-list" maxLength={30} placeholder="例：駅前校、RED広田" required />
+            <datalist id="ev-campus-list">{campuses.map((c) => <option key={c} value={c} />)}</datalist>
+          </label>
+          <label>学年
+            <select value={v.grade} onChange={set('grade')}>
+              <option value="">—</option>
+              {grades.map((g) => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </label>
+          <label>氏名（必須）
+            <input value={v.name} onChange={set('name')} maxLength={40} placeholder="例：智翔 花子" required autoFocus={!editing.student && !editing.app} />
+          </label>
+          <label>学校
+            <input value={v.school} onChange={set('school')} maxLength={40} placeholder="例：広田中" />
+          </label>
+          <label className="wide">夢・志（薬剤師・医療系の言葉があると重点になります）
+            <input value={v.dream} onChange={set('dream')} maxLength={200} placeholder="例：薬剤師" />
+          </label>
+          <label className="wide">志望校
+            <input value={v.hope} onChange={set('hope')} maxLength={200} />
+          </label>
+        </div>
+        {same.length > 0 && (
+          <p className="ev-warn">
+            同じ氏名の生徒がすでに名簿にいます：{same.map((st) => `${st.campus} ${st.grade} ${st.name}`).join('、')}。
+            同じ生徒なら足さずに、名簿外の申込の［結び付ける］を使ってください。
+          </p>
+        )}
+        {err && <p className="ev-alert" role="alert">{err}</p>}
+        <div className="ev-modal-foot">
+          {onRemove && (
+            <button
+              type="button" className="ev-btn ev-btn-danger" disabled={busy}
+              onClick={() => { if (window.confirm(`${editing.student?.name} さんを声掛け名簿から外します。よろしいですか？`)) run(onRemove); }}
+            >名簿から外す</button>
+          )}
+          <span className="ev-spacer" />
+          <button type="button" className="ev-btn ev-btn-sub" disabled={busy} onClick={onClose}>やめる</button>
+          <button type="submit" className="ev-btn" disabled={!ready || busy}>{busy ? '保存中…' : editing.student ? '保存する' : '追加する'}</button>
+        </div>
+      </form>
     </div>
   );
 }

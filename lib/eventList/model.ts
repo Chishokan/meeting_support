@@ -18,7 +18,12 @@ export type Student = {
   name: string;
   dream: string;     // 夢・志
   hope: string;      // 志望校
+  added?: boolean;   // アプリで足した生徒（名簿のスプレッドシートには無い。画面で直す・外すができる）
 };
+
+// アプリで足す生徒の入力（校舎・氏名は必須）
+export type StudentInput = { campus: string; school: string; grade: string; name: string; dream: string; hope: string };
+export const GRADES = ['小1', '小2', '小3', '小4', '小5', '小6', '中1', '中2', '中3', '高1', '高2', '高3'];
 
 export type Reaction = '' | '参加したい' | '検討中' | '不参加';
 export const REACTIONS: Reaction[] = ['', '参加したい', '検討中', '不参加'];
@@ -49,7 +54,9 @@ export type Application = {
   school: string;
   parentName: string;
   student: boolean;    // 生徒が参加する
-  parent: boolean;     // 保護者が参加する
+  parent: boolean;     // 保護者・同伴の方が参加する
+  companions: number;  // 一緒に参加する方の人数（分からなければ 0）
+  interest: string;    // 希望進路・興味のある分野（名簿に足すとき「夢・志」に入れる）
   answers: [string, string][]; // 見出しと回答（詳細に出す。メール・電話なども入る）
 };
 
@@ -69,7 +76,8 @@ export type StudentRow = {
   priority: PriorityKind;
   apps: Application[];       // この生徒に結び付いた申込
   studentApplied: boolean;   // 生徒の申込（フォーム or 手入力）
-  parentApplied: boolean;    // 保護者の申込（フォーム）
+  parentApplied: boolean;    // 保護者・同伴の方の申込（フォーム）
+  companions: number;        // 一緒に参加する方の人数
   stage: Stage;
   todo: string;              // 次にすること（無ければ空）
   urgent: boolean;           // 重点で、まだ申込も不参加も決まっていない
@@ -183,6 +191,46 @@ export function parseRoster(rows: Record<string, unknown>[], col: RosterColumns,
   return out;
 }
 
+// ---- アプリで足した生徒 -------------------------------------------------------
+
+/** 足す・直す生徒の入力を整える。校舎か氏名が無ければ null。 */
+export function cleanStudentInput(input: unknown): StudentInput | null {
+  const o = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const one = (v: unknown, max: number) => s(v).replace(/\s+/g, ' ').slice(0, max);
+  const v: StudentInput = {
+    campus: one(o.campus, 30), school: one(o.school, 40), grade: normGrade(o.grade).slice(0, 10), name: one(o.name, 40),
+    dream: one(o.dream, 200), hope: one(o.hope, 200),
+  };
+  return v.campus && v.name ? v : null;
+}
+
+// シート「イベント追加生徒」の見出し（apps_script/event.gs の EVENT_ADDED_HEADERS と同じ名前）
+export const ADDED_HEADERS: Record<keyof StudentInput, string> = {
+  campus: '校舎', school: '中学校', grade: '学年', name: '氏名', dream: '夢・志', hope: '志望校',
+};
+
+export function addedFromSheet(o: Record<string, unknown>): Student | null {
+  const key = s(o['ID']);
+  const name = s(o['氏名']);
+  if (!key || !name) return null;
+  return {
+    key, studentId: '', campus: s(o['校舎']), school: s(o['中学校']), grade: normGrade(o['学年']), name,
+    dream: s(o['夢・志']), hope: s(o['志望校']), added: true,
+  };
+}
+
+/** 名簿の生徒に、アプリで足した生徒を合わせる（同じ鍵は名簿を優先）。 */
+export function mergeStudents(roster: Student[], added: Student[]): Student[] {
+  const keys = new Set(roster.map((st) => st.key));
+  return [...roster, ...added.filter((st) => !keys.has(st.key))];
+}
+
+/** 同じ氏名（空白・異体字をそろえて）の生徒。足す前の確かめに使う。 */
+export function sameNameStudents(students: Student[], name: string, exceptKey = ''): Student[] {
+  const k = normName(name);
+  return k ? students.filter((st) => st.key !== exceptKey && normName(st.name) === k) : [];
+}
+
 /** 夢・志／志望校から重点を見分ける（手入力は別。effectivePriority）。 */
 export function autoPriority(st: Pick<Student, 'dream' | 'hope'>, words: PriorityWords): PriorityKind {
   const text = `${st.dream}\n${st.hope}`;
@@ -213,7 +261,8 @@ export function campusList(students: Student[], order: string[], noCampus: strin
 export type FormColumns = {
   at: number; name: number; parentName: number; campus: number; grade: number; school: number;
   who: number;          // 「参加される方」「申込者」など（生徒／保護者）
-  parentFlags: number[]; // 「保護者の参加」「保護者の参加人数」など
+  parentFlags: number[]; // 「一緒に参加される方の人数」「保護者の参加」など
+  interest: number;     // 「現在の希望進路・興味のある分野」など
 };
 
 const KANA = /(ふりがな|フリガナ|ﾌﾘｶﾞﾅ|カナ|かな|よみ|ヨミ)/;
@@ -221,7 +270,9 @@ const KANA = /(ふりがな|フリガナ|ﾌﾘｶﾞﾅ|カナ|かな|よみ|�
 /**
  * フォームの回答シートの見出しから、どの列が何かを当てる。
  * ★フォームの質問の文言で決まる。当たらないときは、質問の文言をここの決まりに合わせるか、決まりを足す。
- *   生徒の氏名＝「生徒／お子／参加者／受講者」＋「氏名／名前」。無ければ、保護者・ふりがなでない「氏名／名前」
+ *   生徒の氏名＝「生徒／お子／参加者／受講者」＋「氏名／名前」。無ければ、保護者・ふりがなでない「氏名／名前／お名前」
+ *   いまのフォーム（東進 トップリーダーと学ぶワークショップ2026 参加申し込み）の見出し：
+ *   タイムスタンプ／メールアドレス／お名前／学校名／学年／所属校舎／連絡先…／一緒に参加される方の人数／現在の希望進路・興味のある分野／…
  */
 export function mapFormColumns(headers: string[]): FormColumns {
   const h = headers.map((x) => s(x).normalize('NFKC'));
@@ -232,7 +283,11 @@ export function mapFormColumns(headers: string[]): FormColumns {
   const at = find((t) => /タイムスタンプ|回答日時|送信日時/.test(t));
   const who = find((t) => !isName(t) && /(参加(される|する)(方|人)|参加者|申込者|申し込み者|どなた|参加形態|参加区分)/.test(t) && !/人数/.test(t));
   const parentFlags = h
-    .map((t, i) => (/保護者/.test(t) && /(参加|人数|同伴|出席)/.test(t) && !isName(t) && i !== who ? i : -1))
+    .map((t, i) => {
+      const parent = /保護者/.test(t) && /(参加|人数|同伴|出席)/.test(t);
+      const together = /(一緒に|同伴|同行|付き添|付添)/.test(t) && /(参加|人数|方|者)/.test(t);
+      return (parent || together) && !isName(t) && i !== who ? i : -1;
+    })
     .filter((i) => i >= 0);
   return {
     at: at < 0 ? 0 : at,
@@ -243,10 +298,19 @@ export function mapFormColumns(headers: string[]): FormColumns {
     school: find((t) => /学校/.test(t) && !/学年/.test(t)),
     who,
     parentFlags,
+    interest: find((t) => /(進路|興味のある分野|将来の夢)/.test(t)),
   };
 }
 
-const NO_WORDS = /^(0|０|なし|無し|しない|参加しない|不参加|いいえ|no|×|✕|-|ー|―)?$/i;
+const NO_WORDS = /^(0\s*(人|名)?|なし|無し|いない|しない|参加しない|不参加|本人のみ|生徒のみ|いいえ|no|×|✕|-|ー|―)?$/i;
+
+/** 「一緒に参加される方の人数」などの答え → 人数。「1人」→1、「0人」「なし」→0、数の無い答え（「参加する」など）は 1。 */
+export function companionsOf(v: unknown): number {
+  const t = s(v).normalize('NFKC');
+  if (NO_WORDS.test(t)) return 0;
+  const m = t.match(/\d+/);
+  return m ? Number(m[0]) : 1;
+}
 
 /** フォームの回答（見出しと行）を申込にする。氏名の無い行は捨てる。 */
 export function parseApplications(headers: string[], rows: unknown[][]): Application[] {
@@ -259,7 +323,8 @@ export function parseApplications(headers: string[], rows: unknown[][]): Applica
     const name = (cell(c.name) || parentName).replace(/\s+/g, ' ');
     if (!name) continue;
     const who = cell(c.who);
-    let parent = c.parentFlags.some((i) => !NO_WORDS.test(cell(i)));
+    const companions = c.parentFlags.reduce((n, i) => n + companionsOf(cell(i)), 0);
+    let parent = companions > 0;
     let student = cell(c.name) !== '';
     if (who) {
       const p = /(保護者|親|父|母|家族)/.test(who);
@@ -275,11 +340,17 @@ export function parseApplications(headers: string[], rows: unknown[][]): Applica
     if (n > 1) id = `${id}#${n}`;
     out.push({
       id, at, name, campus: cell(c.campus), grade: normGrade(cell(c.grade)), school: cell(c.school), parentName,
-      student, parent,
+      student, parent, companions, interest: cell(c.interest),
       answers: headers.map((hd, i) => [s(hd), s(r[i])] as [string, string]).filter(([hd, v]) => hd !== '' && v !== ''),
     });
   }
   return out;
+}
+
+/** 申込の印の文言：「生徒」「生徒＋同伴1人」「保護者」。 */
+export function appLabel(a: Pick<Application, 'student' | 'parent' | 'companions'>): string {
+  const with_ = a.companions > 0 ? `同伴${a.companions}人` : '保護者';
+  return a.student && a.parent ? `生徒＋${with_}` : a.parent ? '保護者' : '生徒';
 }
 
 export type MatchResult = {
@@ -338,6 +409,7 @@ export function buildRows(students: Student[], tracks: Track[], apps: Applicatio
     const stage = stageOf(track, studentApplied || parentApplied);
     return {
       student, track, priority, apps: mine, studentApplied, parentApplied, stage,
+      companions: mine.reduce((n, a) => n + a.companions, 0),
       todo: todoOf(stage, track, priority, studentApplied, parentApplied),
       urgent: priority !== '' && stage !== 'applied' && stage !== 'declined',
     };
@@ -403,7 +475,8 @@ export type Summary = {
   declined: number;
   applied: number;        // 申込済（生徒 or 保護者）
   studentApplied: number;
-  parentApplied: number;
+  parentApplied: number;  // 保護者・同伴の方がいる申込の数
+  companions: number;     // 一緒に参加する方の人数の合計
   untouched: number;      // 未着手
   todo: number;           // することが残っている人数
   priority: number;       // 重点の人数
@@ -428,6 +501,7 @@ export function summarize(campus: string, rows: StudentRow[]): Summary {
     applied: c((r) => r.stage === 'applied'),
     studentApplied: c((r) => r.studentApplied),
     parentApplied: c((r) => r.parentApplied),
+    companions: rows.reduce((n, r) => n + r.companions, 0),
     untouched: c((r) => r.stage === 'none'),
     todo: c((r) => r.todo !== ''),
     priority: c((r) => r.priority !== ''),

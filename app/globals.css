@@ -3425,6 +3425,13 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .ev-modal-body dt { color: #667; font-size: 12.5px; }
 .ev-modal-body dd { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .ev-modal-foot { display: flex; gap: 8px; margin-top: 14px; }
+.ev-added { margin-left: 6px; border: 1px solid #c5d5e6; background: #eef3f9; color: var(--navy); border-radius: 10px; padding: 1px 7px; font-size: 11px; font-weight: 700; cursor: pointer; vertical-align: 1px; }
+.ev-btn-danger { background: #fff; color: #b0302a; border-color: #e0a59f; }
+.ev-form .ev-hint { margin: 0 0 12px; }
+.ev-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.ev-form-grid label { margin: 0; font-size: 12.5px; color: #445; }
+.ev-form-grid label.wide { grid-column: 1 / -1; }
+.ev-form-grid input, .ev-form-grid select { margin-top: 4px; padding: 8px 10px; font-size: 14px; }
 
 @media (max-width: 720px) {
   .ev { padding: 10px 10px 32px; }
@@ -3433,4 +3440,5 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
   .ev-tabs button { padding: 9px 10px; font-size: 13.5px; }
   .ev-modal-body dl > div { grid-template-columns: 1fr; gap: 2px; }
   .ev-name-todo { display: block; }
+  .ev-form-grid { grid-template-columns: 1fr; }
 }
