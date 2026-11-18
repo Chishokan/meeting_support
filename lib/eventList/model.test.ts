@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addedFromSheet, appLabel, autoPriority, deptByCampus, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
+  addedFromSheet, appLabel, autoPriority, deptByCampus, mergeSaved, revertFields, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
   normCampus, normGrade, normName, parseApplications, parseRoster, scopeData, shortDay, sortRows, summarize, trackFromSheet,
   type Student, type Track,
 } from './model.ts';
@@ -155,6 +155,24 @@ test('アプリで足した生徒：入力を整え、名簿に合わせ、同�
   const { rows, unmatched } = buildRows([added!], [], parseApplications(FORM_HEADERS, [['t1', '', '青空花', '', '中学3年生', 'RED広田', '', '2人', '', '', '', '']]), WORDS);
   assert.equal(unmatched.length, 0);
   assert.deepEqual([rows[0].priority, rows[0].stage, rows[0].studentApplied, rows[0].parentApplied, rows[0].companions], ['pharma', 'applied', true, true, 2]);
+});
+
+test('mergeSaved・revertFields：保存の途中の項目は、返事や失敗で元に戻さない', () => {
+  // チラシを押した直後に声掛けも押した。先に返ってきたチラシの保存の返事には、声掛けがまだ入っていない
+  const local = tr('S1', { flyer: '2026-11-18', talk: '2026-11-18' });
+  const reply1 = tr('S1', { flyer: '2026-11-18', updatedAt: '2026/11/18 10:00', updatedBy: '太田' });
+  const m1 = mergeSaved(local, reply1, new Set(['talk']));
+  assert.deepEqual([m1.flyer, m1.talk, m1.updatedBy], ['2026-11-18', '2026-11-18', '太田']);
+  // 途中の項目が無ければ、返事のとおりにする（ほかの人が入れた反応も入る）
+  const reply2 = tr('S1', { flyer: '2026-11-18', talk: '2026-11-18', reaction: '検討中' });
+  assert.deepEqual(mergeSaved(m1, reply2, new Set()), reply2);
+  assert.deepEqual(mergeSaved(undefined, reply2, new Set(['talk'])), reply2);
+  // 声掛けの保存が失敗：声掛けだけを前に戻す。チラシ（保存済み）と、まだ途中のメモはそのまま
+  const now = tr('S1', { flyer: '2026-11-18', talk: '2026-11-18', memo: '入力中' });
+  const r = revertFields(now, tr('S1'), ['talk'], new Set(['memo']));
+  assert.deepEqual([r.flyer, r.talk, r.memo], ['2026-11-18', '', '入力中']);
+  // 同じ項目の次の保存がまだ途中なら、戻さない
+  assert.equal(revertFields(now, tr('S1'), ['talk'], new Set(['talk'])).talk, '2026-11-18');
 });
 
 test('deptByCampus：部門の無い追加生徒は、同じ校舎の名簿の生徒の部門に入る', () => {

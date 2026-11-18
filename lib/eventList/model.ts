@@ -148,6 +148,25 @@ function sheetDay(v: unknown): string {
   return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : '';
 }
 
+// ---- 保存の途中の項目 --------------------------------------------------------
+// 画面は押したらすぐ書き換え、保存の返事を待つ。同じ生徒の別の項目を続けて押すと、先の保存の返事には後の項目がまだ入っていないので、
+// 返事をそのまま画面に入れると後の項目が元に戻って見える（→ もう一度押してしまう）。保存の途中の項目は、画面の値を残す。
+
+/** 保存の返事（saved）を画面の記録に入れる。まだ保存の途中の項目（pending）は、画面の値のまま。 */
+export function mergeSaved(local: Track | undefined, saved: Track, pending: ReadonlySet<TrackField>): Track {
+  if (!local) return saved;
+  const out: Track = { ...saved };
+  for (const f of pending) (out as Record<TrackField, string>)[f] = local[f];
+  return out;
+}
+
+/** 保存に失敗したとき：その保存で変えた項目（fields）だけを前の値に戻す。ほかの保存の途中の項目（pending）には触らない。 */
+export function revertFields(local: Track, before: Track, fields: TrackField[], pending: ReadonlySet<TrackField>): Track {
+  const out: Track = { ...local };
+  for (const f of fields) if (!pending.has(f)) (out as Record<TrackField, string>)[f] = before[f];
+  return out;
+}
+
 export function trackFromSheet(o: Record<string, unknown>): Track {
   const r = s(o['反応']);
   return {
