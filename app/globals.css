@@ -3435,6 +3435,25 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .ev-form-grid label.wide { grid-column: 1 / -1; }
 .ev-form-grid input, .ev-form-grid select { margin-top: 4px; padding: 8px 10px; font-size: 14px; }
 
+/* 読み込み中の枠（スケルトン）と、読み直しの帯 */
+.ev-sk {
+  display: inline-block; max-width: 100%; border-radius: 6px; vertical-align: middle;
+  background: linear-gradient(90deg, #e6eaee 25%, #f3f5f7 37%, #e6eaee 63%); background-size: 400% 100%;
+  animation: ev-shimmer 1.4s ease infinite;
+}
+.ev-skeleton .ev-card { gap: 8px; }
+.ev-skeleton .ev-chips, .ev-skeleton .ev-filters, .ev-skeleton .ev-tools { align-items: center; }
+.ev-skeleton .ev-chips .ev-sk { border-radius: 18px; }
+.ev-skeleton .ev-tabs button:disabled { cursor: default; }
+.ev-skeleton .ev-table td { padding-top: 13px; padding-bottom: 13px; }
+.ev-loadbar {
+  height: 3px; margin: -12px 0 9px; border-radius: 2px;
+  background: linear-gradient(90deg, #dfe6ee 25%, var(--navy) 50%, #dfe6ee 75%); background-size: 400% 100%;
+  animation: ev-shimmer 1.2s linear infinite;
+}
+@keyframes ev-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .ev-sk, .ev-loadbar { animation: none; } }
+
 @media (max-width: 720px) {
   .ev { padding: 10px 10px 32px; }
   .ev-head { flex-direction: column; align-items: stretch; gap: 10px; padding: 14px; }
