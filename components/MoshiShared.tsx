@@ -34,6 +34,7 @@ const REASONS: Record<string, string> = {
   bad_rule: '判定教科が読めません（例：5科合計・3科合計・国数のみ・国数英1.5倍・英数2倍、国理1.5倍）。',
   bad_judge_options: '判定のあいだの偏差値・入学者の偏差値のばらつきに読めない数があります。',
   has_results: 'この回には成績が入っています。',
+  need_script_update: '「受験しない」を保存できませんでした。成績管理DB の Apps Script（apps_script/seiseki.gs）を最新に貼り替えて出し直すよう、管理者に伝えてください。',
   not_found: '見つかりませんでした（他の人が消したかもしれません）。',
 };
 
