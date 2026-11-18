@@ -21,6 +21,8 @@ export type AiEvent =
   | { t: 'pin'; id: string; name: string; text: string; summary: string }
   /** 回答に書かれた作り話のリンク（道具で作っていないファイルの URL）。画面は回答の中のこの URL を消す */
   | { t: 'redact'; urls: string[] }
+  /** 作った画像（generate_image）。画面は回答の下に出し、次の質問にも「前の添付」として付け直す（lib/chishokanAi/imageGen.ts） */
+  | { t: 'image'; name: string; url: string; mime: string; data: string }
   | { t: 'error'; v: string };
 
 export function encodeEvent(ev: AiEvent): string {
@@ -183,6 +185,8 @@ export function statusFor(tool: string, input: Record<string, unknown>): string 
       return `📐 数学の教材を Word にしています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
     case 'create_google_doc':
       return `📝 Google ドキュメントを作っています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
+    case 'generate_image':
+      return `🎨 画像を作っています（30秒〜1分ほど）${s(input.name) ? `（${s(input.name).slice(0, 30)}）` : ''}`;
     case 'get_task_evaluation':
       return `📊 重要タスク評価を読んでいます${s(input.school) ? `（${s(input.school)}）` : ''}`;
     case 'propose_context_edit':

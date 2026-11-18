@@ -251,6 +251,9 @@ function doPost(e) {
 
     // 智翔館AI：アカウント別の会話ログ・会話の保存・いつものコンテキスト（スプレッドシート「智翔館AI 会話ログ」）
     if (action === 'aiLog') return json_(aiLog_(data));
+    // 智翔館AI：作った画像の保存と、1日の枚数（generate_image。2026-11-18）
+    if (action === 'aiImageQuota') return json_(aiImageQuota_(data));
+    if (action === 'aiImageSave') return json_(aiImageSave_(data));
     if (action === 'aiConvoList') return json_(aiConvoList_(data));
     if (action === 'aiConvoGet') return json_(aiConvoGet_(data));
     if (action === 'aiConvoPut') return json_(aiConvoPut_(data));
@@ -2755,7 +2758,22 @@ function aiMoveSlideToEnd_(pres, slide) {
 // 見た目を借りるスライド（base）を複製し、見出しの枠と、背景・見出しのまわりの飾りだけを残して、ほかを消してから組む。
 // 文字の大きさは、枠に入るように小さくする（Google スライドは API から「枠に合わせて縮小」を設定できないため）。
 
-var AI_SLIDE_LAYOUTS = ['title', 'section', 'message', 'bullets', 'columns', 'table'];
+var AI_SLIDE_LAYOUTS = ['title', 'section', 'message', 'bullets', 'columns', 'table', 'image'];
+
+// 智翔館AI が作った画像（spec.image の id）を、枠（x, y, w, h）の中に縦横の比を保って置く。入れられなければ null。
+function aiInsertMadeImage_(slide, id, x, y, w, h, warnings, n) {
+  var file;
+  try { file = DriveApp.getFileById(String(id)); } catch (e) { warnings.push(n + '枚目：画像（' + String(id).slice(0, 12) + '…）が見つかりません'); return null; }
+  if (!aiImageAllowed_(file)) { warnings.push(n + '枚目：入れられる画像は、智翔館AI が作った画像（AI作成/画像）だけです'); return null; }
+  var img;
+  try { img = slide.insertImage(file.getBlob()); } catch (e) { warnings.push(n + '枚目：画像を入れられませんでした（' + String(e).slice(0, 60) + '）'); return null; }
+  var r = img.getHeight() > 0 ? img.getWidth() / img.getHeight() : 1;
+  var bw = w;
+  var bh = w / r;
+  if (bh > h) { bh = h; bw = h * r; }
+  img.setWidth(bw).setHeight(bh).setLeft(x + (w - bw) / 2).setTop(y + (h - bh) / 2);
+  return img;
+}
 
 // 色を #rrggbb にする（テーマの色は、そのスライドの配色から引く）。読めなければ null。
 function aiHex_(color, slide) {
@@ -2987,7 +3005,8 @@ function aiBuildLayoutSlide_(pres, orig, spec, style, pageW, pageH, warnings, n)
   var dup = src.duplicate();
   aiMoveSlideToEnd_(pres, dup);
   var k = style.k;
-  var withHeading = layout === 'bullets' || layout === 'columns' || layout === 'table';
+  var withHeading = layout === 'bullets' || layout === 'columns' || layout === 'table' || layout === 'image';
+  var imageId = spec.image ? String(spec.image) : '';
   // 表紙は、ひな形の飾りをすべて残す（ほかは見出しのまわりの飾りだけ）
   var prep = aiPrepareBase_(dup, pageW, pageH, withHeading, layout === 'title');
   var L = prep.left;
@@ -3024,7 +3043,18 @@ function aiBuildLayoutSlide_(pres, orig, spec, style, pageW, pageH, warnings, n)
     }
     var bottom = pageH * 0.92;
     var H = bottom - top;
-    if (layout === 'bullets') {
+    if (layout === 'image') {
+      // 画像（右）と、要点（左）。要点が無ければ画像を大きく真ん中に
+      var pts0 = (spec.points || []).map(String).filter(function (p) { return p; });
+      if (pts0.length) {
+        var tw0 = W * 0.42;
+        var bx0 = aiPutText_(dup, pts0.join('\n'), L, top, tw0, H, { size: style.bodySize * 1.1, font: body.font, color: body.color });
+        try { bx0.shape.getText().getListStyle().applyListPreset(SlidesApp.ListPreset.DISC_CIRCLE_SQUARE); } catch (e) {}
+        aiInsertMadeImage_(dup, imageId, L + tw0 + pageW * 0.02, top, W - tw0 - pageW * 0.02, H, warnings, n);
+      } else {
+        aiInsertMadeImage_(dup, imageId, L, top, W, H, warnings, n);
+      }
+    } else if (layout === 'bullets') {
       var pts = (spec.points || []).map(String);
       var bx = aiPutText_(dup, pts.join('\n'), L, top, W, H, { size: style.bodySize * 1.15, font: body.font, color: body.color });
       try { bx.shape.getText().getListStyle().applyListPreset(SlidesApp.ListPreset.DISC_CIRCLE_SQUARE); } catch (e) {}
@@ -3075,6 +3105,12 @@ function aiBuildLayoutSlide_(pres, orig, spec, style, pageW, pageH, warnings, n)
     var bg = layout === 'title' ? prep.biggest : null;
     var tx = bg ? Math.max(pageW * 0.04, Math.min(bg.left, pageW * 0.5)) : L;
     var tw = bg ? Math.max(pageW * 0.45, Math.min(pageW - tx - pageW * 0.04, Math.max(bg.width, pageW * 0.6))) : W;
+    if (imageId) {
+      // 画像は右半分。文字は左に寄せて幅を狭くする
+      tx = Math.min(tx, pageW * 0.07);
+      tw = pageW * 0.46 - tx;
+      aiInsertMadeImage_(dup, imageId, pageW * 0.5, pageH * 0.12, pageW * 0.46, pageH * 0.76, warnings, n);
+    }
     var ty = bg ? Math.max(pageH * 0.08, Math.min(bg.top, pageH * 0.5)) : pageH * 0.3;
     var tsz = layout === 'title' ? style.headSize * 1.5 : style.headSize * 1.25;
     // 表紙は、ひな形の表紙の文字の色を使う（暗い背景の表紙でも読めるように）
@@ -3530,6 +3566,77 @@ function aiLog_(data) {
     aiClip_(String(data.question || '').replace(/\s+/g, ' '), 100), aiClip_(data.flags, 300),
   ]));
   return { ok: true, saved: 'aiLog' };
+}
+
+// --- 作った画像（generate_image）---------------------------------------------------
+// 画像は AI作成 の中の「画像」フォルダに保存し、「智翔館AI 会話ログ」の _画像 シートに1行ずつ記録する（1日の枚数もここで数える）。
+// スライドに入れられるのは、このフォルダの画像だけ（ほかのファイルの中身を、リンク共有のスライドに出さないため）。
+var AI_IMAGE_SHEET = '_画像';
+var AI_IMAGE_HEADERS = ['日時', '日付', '名前', 'メール', '部門', '用途', '縦横', 'ファイル名', 'リンク', 'ID', '直した元', 'モデル', '説明（プロンプト）'];
+var AI_IMAGE_FOLDER_NAME = '画像';
+
+function aiImageFolder_() {
+  var parent = aiOutputFolder_();
+  var it = parent.getFoldersByName(AI_IMAGE_FOLDER_NAME);
+  return it.hasNext() ? it.next() : parent.createFolder(AI_IMAGE_FOLDER_NAME);
+}
+
+// 日付の欄は yyyyMMdd（「2026-11-18」と書くと、シートが日付に変えてしまい数えにくい）
+function aiImageDay_() { return Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd'); }
+
+// きょう、その人が作った枚数（直近1000行だけ見る）
+function aiImageCount_(sh, user, day) {
+  var n = sh.getLastRow();
+  if (n < 2) return 0;
+  var start = Math.max(2, n - 999);
+  var vals = sh.getRange(start, 2, n - start + 1, 2).getValues();
+  var c = 0;
+  for (var i = 0; i < vals.length; i++) if (String(vals[i][0]) === day && String(vals[i][1]) === user) c++;
+  return c;
+}
+
+function aiImageQuota_(data) {
+  var limit = Number(data.limit);
+  var sh = aiSheet_(aiLogBook_(), AI_IMAGE_SHEET, AI_IMAGE_HEADERS);
+  var used = aiImageCount_(sh, String(data.user || ''), aiImageDay_());
+  return { ok: true, saved: 'aiImage', used: used, over: limit >= 0 && used >= limit };
+}
+
+function aiImageSave_(data) {
+  var b64 = String(data.base64 || '');
+  if (!b64) return { ok: false, reason: 'empty' };
+  if (b64.length > 27000000) return { ok: false, reason: 'too_large' };
+  var mime = /^image\/(png|jpeg|webp)$/.test(String(data.mime)) ? String(data.mime) : 'image/png';
+  var folder;
+  try { folder = aiImageFolder_(); } catch (e) { return { ok: false, reason: 'folder_failed', detail: String(e).slice(0, 200) }; }
+  var name = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd') + '_AI作成_' + String(data.name || '画像.png').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 100);
+  var file = null;
+  var lastErr = '';
+  for (var attempt = 0; attempt < 3 && !file; attempt++) {
+    if (attempt) Utilities.sleep(1500 * attempt);
+    try { file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(b64), mime, name)); } catch (e) { lastErr = String(e).slice(0, 200); }
+  }
+  if (!file) return { ok: false, reason: 'create_failed', detail: lastErr };
+  var shareError = aiShare_(file);
+  try {
+    var sh = aiSheet_(aiLogBook_(), AI_IMAGE_SHEET, AI_IMAGE_HEADERS);
+    sh.appendRow(asSheetText_([
+      nowIso_(), aiImageDay_(), String(data.user || ''), String(data.email || ''), String(data.campus || ''), String(data.purpose || ''), String(data.aspect || ''),
+      name, file.getUrl(), file.getId(), String(data.source || ''), String(data.model || ''), aiClip_(data.prompt, 2000),
+    ]));
+  } catch (e) {}
+  return { ok: true, saved: 'aiImage', id: file.getId(), url: file.getUrl(), name: name, shareError: shareError || '' };
+}
+
+// 智翔館AI が作った画像か（AI作成/画像 フォルダの中の画像）
+function aiImageAllowed_(file) {
+  try {
+    if (String(file.getMimeType()).indexOf('image/') !== 0) return false;
+    var fid = aiImageFolder_().getId();
+    var ps = file.getParents();
+    while (ps.hasNext()) if (ps.next().getId() === fid) return true;
+  } catch (e) {}
+  return false;
 }
 
 // --- 会話の保存 ----------------------------------------------------------------

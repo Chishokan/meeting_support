@@ -30,7 +30,8 @@ export const CREATE_SLIDES_TOOL = {
     '見本の文字はすべて書き換える。文字数は目安（max）以内。ページ番号の数字は並べた順に振り直す。内容がぴったり合う枚（表紙など）に使う。' +
     '【layout】ひな形の見た目（背景・見出しの飾り・書体・色・ロゴ）で、自由に組む。合う枚が無いときはこちらで作る（「合うひな形が無い」と止めない）。' +
     'layout：title（表紙。title・lead＝副題・points＝日付や名前）／section（章の扉。title・lead）／message（大きな一言。title・lead。承認・問いかけ・まとめ）／' +
-    'bullets（見出しと箇条書き。title・lead・points 1〜8）／columns（見出しとカード2〜4枚。title・lead・columns［{title, text}］）／table（見出しと表。title・lead・table＝行の配列、1行目が見出し）。' +
+    'bullets（見出しと箇条書き。title・lead・points 1〜8）／columns（見出しとカード2〜4枚。title・lead・columns［{title, text}］）／table（見出しと表。title・lead・table＝行の配列、1行目が見出し）／' +
+    'image（見出しと画像。title・lead・image・points＝左に並べる要点。省くと画像を大きく）。image は generate_image で作った画像の id（title・section にも付けられ、右半分に入る）。' +
     'base はどのスライドの見た目（背景・見出しの飾り）を使うか（ひな形の何枚目。省くと表紙は0枚目、ほかは見出しのある最初の枚）。文字の大きさはアプリが枠に合わせる。' +
     'notes は発表者ノート。数字・日付は資料にあるものだけ。1回の回答で1つまで。',
   input_schema: {
@@ -51,7 +52,8 @@ export const CREATE_SLIDES_TOOL = {
               description: '【from】表の key → 行の配列',
               additionalProperties: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
             },
-            layout: { type: 'string', enum: ['title', 'section', 'message', 'bullets', 'columns', 'table'], description: '【layout】組み方' },
+            layout: { type: 'string', enum: ['title', 'section', 'message', 'bullets', 'columns', 'table', 'image'], description: '【layout】組み方' },
+            image: { type: 'string', description: '【layout】generate_image で作った画像の id（image・title・section）' },
             base: { type: 'integer', description: '【layout】見た目を使うひな形の何枚目（省いてよい）' },
             title: { type: 'string', description: '【layout】見出し（message は大きな一言）' },
             lead: { type: 'string', description: '【layout】見出しの下の1〜2文（副題・リード文）' },
@@ -77,7 +79,7 @@ const MAX_ROWS = 30;
 const MAX_COLS = 10;
 const MAX_NOTES = 3000;
 
-export const SLIDE_LAYOUTS = ['title', 'section', 'message', 'bullets', 'columns', 'table'] as const;
+export const SLIDE_LAYOUTS = ['title', 'section', 'message', 'bullets', 'columns', 'table', 'image'] as const;
 export type SlideLayout = (typeof SLIDE_LAYOUTS)[number];
 
 /** ひな形のスライドをそのまま使う枚。 */
@@ -91,6 +93,8 @@ export type LayoutSlideSpec = {
   points: string[];
   columns: { title: string; text: string }[];
   table: string[][];
+  /** generate_image で作った画像の id（image・title・section） */
+  image?: string;
   notes: string;
 };
 export type SlideSpec = TemplateSlideSpec | LayoutSlideSpec;
@@ -121,6 +125,10 @@ function checkLayoutSlide(s: Record<string, unknown>, n: number): LayoutSlideSpe
   if (layout === 'bullets' && !points.length) return `${n}枚目（bullets）に points（箇条書き）がありません。`;
   if (layout === 'bullets' && points.length > LAYOUT_LIMITS.points) return `${n}枚目（bullets）の箇条書きは${LAYOUT_LIMITS.points}つまでです。分けるか、まとめてください。`;
   if (layout === 'columns' && (columns.length < 2 || columns.length > LAYOUT_LIMITS.columns)) return `${n}枚目（columns）のカードは2〜${LAYOUT_LIMITS.columns}枚にしてください。`;
+  const image = typeof s.image === 'string' ? s.image.trim() : '';
+  if (image && !/^[\w-]{20,80}$/.test(image)) return `${n}枚目の image は、generate_image の結果に出た id をそのまま入れてください。`;
+  if (layout === 'image' && !image) return `${n}枚目（image）に image（generate_image で作った画像の id）がありません。先に generate_image で作ってください。`;
+  if (image && !['image', 'title', 'section'].includes(layout)) return `${n}枚目（${layout}）には画像を入れられません（image・title・section だけ）。`;
   if (layout === 'table') {
     if (table.length < 2) return `${n}枚目（table）の表は、見出しの行と1行以上にしてください。`;
     if (table.length > LAYOUT_LIMITS.rows) return `${n}枚目（table）の表は${LAYOUT_LIMITS.rows}行までです（見出しの行を含む）。分けてください。`;
@@ -135,6 +143,7 @@ function checkLayoutSlide(s: Record<string, unknown>, n: number): LayoutSlideSpe
     points: points.slice(0, LAYOUT_LIMITS.points),
     columns,
     table,
+    ...(image ? { image } : {}),
     notes: typeof s.notes === 'string' ? s.notes.slice(0, MAX_NOTES) : '',
   };
 }
@@ -222,7 +231,7 @@ export function formatTemplateDetail(t: TemplateDetail): string {
     ...(look.length ? [`見た目：${look.join('／')}（layout の枚もこの書体・色で作る）`] : []),
     '【from で使うとき】key ごとに書き換える文字を決める。⏎ は改行（同じ枠の中で行を分けるときは \\n を入れる）。［〜字］は目安の上限。',
     '数字だけの枠（1, 2 …）はページ番号。並べた順に振り直す。見本の文字が内容と合わない枚は、from ではなく layout で作る。',
-    `【layout で組むとき】title／section／message／bullets／columns／table。base を省くと、表紙は0枚目、ほかは ${st.contentBase ?? 1} 枚目の見た目（背景・見出しの飾り）を使う。` +
+    `【layout で組むとき】title／section／message／bullets／columns／table／image（generate_image で作った画像を入れる）。base を省くと、表紙は0枚目、ほかは ${st.contentBase ?? 1} 枚目の見た目（背景・見出しの飾り）を使う。` +
       '「見出しの形」と書いた枚は base に向く（見出しの位置・飾りがそのまま残る）。',
   ];
   for (const s of t.slides) {

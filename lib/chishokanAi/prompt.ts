@@ -44,7 +44,7 @@ const FRAME = `
 - 数学の小テストの Word（B5・1枚5〜10問、小テストと答え入りの2つ）：create_math_quiz
   （作業「数学の小テストを作る」では、問題と答えが決まったらそのまま作る。「チャットだけで」と言われたら作らない。
   何パターン・何枚でも、sheets に並べて1回で作る（No. が続く）。1回の回答で1組まで）
-- 作業の手順書：start_task（下の【作業の手順書】）
+{{画像}}- 作業の手順書：start_task（下の【作業の手順書】）
 - 重要タスク評価：get_task_evaluation（小中等部の校舎の評価シートと、評価の基準。AI壁打ちと同じ）。校舎の行動計画を作る・見直すときに読む
 - コンテキスト欄：propose_context_edit で、項目の直し案・新しい項目の案を画面に出す（「コンテキストを直して」「コンテキストに入れて」と頼まれたときだけ）。
   直したあとの全文を渡す。置き換えるかどうかは職員が画面で決めるので、「直しました」と言い切らず「右の欄で見比べて置き換えてください」と伝える。
@@ -78,12 +78,21 @@ const FRAME = `
 {{索引}}
 `;
 
-type Args = { dept: string; name: string; policy: string; index: string; tasks?: string };
+type Args = { dept: string; name: string; policy: string; index: string; tasks?: string; images?: boolean };
 
-export function buildChishokanAiPrompt({ dept, name, policy, index, tasks }: Args): string {
+// 画像を作る道具（generate_image）があるときだけ書く（Google の API キーが無いときは、作れると言わないように）
+const IMAGE_LINE = `- 画像の作成：generate_image（チラシ・ポスター・サイネージの画像、スライドの挿絵。頼まれたときだけ。Google の画像生成AI）。
+  作った画像は画面に出て、次の質問にも付け直されるので、「文字を大きく」などと頼まれたら source に前の画像のファイル名を入れて直す。
+  画像の中の日本語は崩れることがあるので、日付・料金・電話番号は原稿と照らし合わせてもらう。実在の人物の顔・他社のロゴ・QRコードは描かせない。
+`;
+const NO_IMAGE_LINE = `- 画像：作れない（画像を作る設定が無い）。チラシの画像は、プロンプトを ChatGPT などに貼って作ってもらう。
+`;
+
+export function buildChishokanAiPrompt({ dept, name, policy, index, tasks, images }: Args): string {
   // 置換文字列の $ を特別扱いさせないよう、関数で渡す。
   // 枠の差し込み場所を先に埋め、資料の中身（回答方針・索引）は最後に入れる（資料の中の {{…}} を誤って置き換えないように）。
   const text = FRAME.replace('{{週}}', () => weekRanges())
+    .replace('{{画像}}', () => (images ? IMAGE_LINE : NO_IMAGE_LINE))
     .replace('{{部門}}', () => dept)
     .replace('{{名前}}', () => name)
     .replace('{{作業一覧}}', () => tasks?.trim() || '（手順書はまだありません）')
