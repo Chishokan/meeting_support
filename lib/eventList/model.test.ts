@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addedFromSheet, appLabel, autoPriority, deptByCampus, mergeSaved, revertFields, sortRowsBy, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
+  addedFromSheet, appLabel, autoPriority, bulkChanges, deptByCampus, mergeSaved, revertFields, sortRowsBy, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
   normCampus, normGrade, normName, parseApplications, parseRoster, scopeData, shortDay, sortRows, summarize, trackFromSheet,
   type Student, type Track,
 } from './model.ts';
@@ -255,6 +255,28 @@ test('buildRows：段階と次にすること', () => {
     [6, 3, 4, 1, 1, 2, 1, 1, 1, 4],
   );
   assert.deepEqual([sum.priority, sum.priorityTalked, sum.priorityApplied, sum.priorityOpen], [2, 1, 0, 1]);
+});
+
+test('bulkChanges：選んだ生徒にまとめて記録する（済みの日付は変えない・変わらない生徒は入れない）', () => {
+  const students = [st('A', 'a'), st('B', 'b'), st('C', 'c')];
+  const tracks = [tr('B', { flyer: '2026-11-10' }), tr('C', { flyer: '2026-11-10', talk: '2026-11-11', reaction: '検討中' })];
+  const { rows } = buildRows(students, tracks, [], WORDS);
+  const pick = (c: ReturnType<typeof bulkChanges>) => c.map((x) => [x.row.student.key, x.fields]);
+  // チラシ：未の A だけ。B・C の日付は変えない
+  assert.deepEqual(pick(bulkChanges(rows, { mode: 'on', items: ['flyer'], reaction: null }, '2026-11-18')), [['A', { flyer: '2026-11-18' }]]);
+  // チラシと声掛け：A は両方、B は声掛けだけ、C は変わらないので入らない
+  assert.deepEqual(pick(bulkChanges(rows, { mode: 'on', items: ['flyer', 'talk'], reaction: null }, '2026-11-18')), [
+    ['A', { flyer: '2026-11-18', talk: '2026-11-18' }], ['B', { talk: '2026-11-18' }],
+  ]);
+  // 反応：違う生徒だけ。声掛けが未なら声掛けも今日
+  assert.deepEqual(pick(bulkChanges(rows, { mode: 'on', items: [], reaction: '検討中' }, '2026-11-18')), [
+    ['A', { reaction: '検討中', talk: '2026-11-18' }], ['B', { reaction: '検討中', talk: '2026-11-18' }],
+  ]);
+  // 未に戻す：済みの項目だけ
+  assert.deepEqual(pick(bulkChanges(rows, { mode: 'off', items: ['flyer', 'talk'], reaction: '不参加' }, '2026-11-18')), [
+    ['B', { flyer: '' }], ['C', { flyer: '', talk: '' }],
+  ]);
+  assert.deepEqual(bulkChanges(rows, { mode: 'on', items: [], reaction: null }, '2026-11-18'), []);
 });
 
 test('sortRowsBy：学年・氏名・校舎・進み具合・更新の順に並べる', () => {

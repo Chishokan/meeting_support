@@ -5,6 +5,7 @@
 //   声掛け名簿         … 教室担当向け。生徒ごとの「次にすること」。チラシ・声掛け・反応・保護者への案内をその場で記録する
 //   名簿外の申込       … フォームの回答のうち、名簿の誰とも結び付かなかったもの（RED個別・高校生・外部生・氏名の書き方が違う人）
 //   部門               … 小中等部・RED個別の職員には、自分の部門の生徒だけが届く（API で絞る）。管理部門は全部門を見て、上の切り替えで部門を選べる
+//   一括で記録         … 声掛け名簿の［一括で記録］。表示中の生徒をチェックボックスで選び、チラシ配布済み・声掛け済みなどをまとめて記録する
 //   生徒の追加         … 名簿に無い生徒を足す（声掛け名簿の［＋ 生徒を追加］、名簿外の申込の［名簿に足す］）。足した生徒は直す・外すができる
 // 申込は Google フォームの回答を氏名で名簿に結び付けて出す（手入力の申込も付けられる）。
 // 決まりと計算は lib/eventList/model.ts、イベントの中身は lib/eventList/event.ts、読み書きは lib/eventList/store.ts。
@@ -12,9 +13,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CAMPUS_ORDER, DEFAULT_DEPT, DEPTS, EVENT, NO_CAMPUS, PRIORITY_WORDS } from '@/lib/eventList/event';
 import {
-  GRADES, PRIORITY_LABEL, REACTIONS, STAGE_LABEL, TRACK_FIELDS, appLabel, mergeSaved, revertFields, autoPriority, buildRows, campusList, daysUntil, emptyTrack, linkIds, normCampus,
+  DAY_FIELDS, GRADES, PRIORITY_LABEL, REACTIONS, STAGE_LABEL, TRACK_FIELDS, appLabel, bulkChanges, mergeSaved, revertFields, autoPriority, buildRows, campusList, daysUntil, emptyTrack, linkIds, normCampus,
   normGrade, normName, pct, sameNameStudents, shortDay, sortRowsBy, summarize, todayJp, SORTS,
-  type Application, type Reaction, type SortKey, type Student, type StudentInput, type StudentRow, type Summary, type Track, type TrackField,
+  type Application, type BulkAction, type DayField, type Reaction, type SortKey, type Student, type StudentInput, type StudentRow, type Summary, type Track, type TrackField,
 } from '@/lib/eventList/model';
 
 const REASONS: Record<string, string> = {
@@ -489,14 +490,8 @@ function CampusList({
   }
   const byKey = new Map(rows.map((r) => [r.student.key, r]));
   const shown = frozen.current.keys.map((k) => byKey.get(k)).filter((r): r is StudentRow => !!r);
-  const noFlyer = shown.filter((r) => !r.track.flyer);
   const today = todayJp();
-
-  const bulkFlyer = () => {
-    if (!noFlyer.length) return;
-    if (!window.confirm(`表示中の ${noFlyer.length} 名に「チラシを渡した（今日）」を付けます。よろしいですか？`)) return;
-    onSave(noFlyer.map((row) => ({ row, fields: { flyer: today } })));
-  };
+  const [bulk, setBulk] = useState(false); // ［一括で記録］の窓
 
   return (
     <section>
@@ -535,8 +530,8 @@ function CampusList({
           {scoped.filter((r) => r.urgent).length > 0 && <em>重点で未決 {scoped.filter((r) => r.urgent).length}名</em>}
         </span>
         <span className="ev-spacer" />
-        <button type="button" className="ev-btn ev-btn-sub" disabled={!noFlyer.length || marks.pending.size > 0} onClick={bulkFlyer}>
-          表示中の {noFlyer.length} 名にチラシ配布済を付ける
+        <button type="button" className="ev-btn ev-btn-sub" disabled={!shown.length || marks.pending.size > 0} onClick={() => setBulk(true)}>
+          一括で記録
         </button>
         <button type="button" className="ev-btn" onClick={onAdd}>＋ 生徒を追加</button>
       </div>
@@ -554,12 +549,106 @@ function CampusList({
           </tbody>
         </table>
       </div>
+      {bulk && <BulkDialog rows={shown} showCampus={showCampus} today={today} onRun={onSave} onClose={() => setBulk(false)} />}
       <p className="ev-hint">
         チラシ・声掛け・保護者へ案内は、スイッチを押すとオンになり今日の日付が入ります（もう一度押すとオフ）。押した所に「保存中」が出て、保存できると ✓ が出ます。申込はフォームの回答から自動で付きます。
-        口頭や紙で受けた申込は「手入力」で付けてください。★ を押すと、重点の付け外しができます。
+        クラスで配ったあとなど、何人もまとめて付けるときは［一括で記録］を使ってください。口頭や紙で受けた申込は「手入力」で付けてください。★ を押すと、重点の付け外しができます。
         記録を付けても行の並びはそのままです（上の「表示する生徒」「並び順」を選び直すか［最新にする］で並べ直します）。
       </p>
     </section>
+  );
+}
+
+// 一括で記録：表示中の生徒をチェックボックスで選び、チラシ配布済み・声掛け済みなどをまとめて記録する
+function BulkDialog({ rows, showCampus, today, onRun, onClose }: {
+  rows: StudentRow[]; showCampus: boolean; today: string; onRun: (c: Change[]) => void; onClose: () => void;
+}) {
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [mode, setMode] = useState<BulkAction['mode']>('on');
+  const [items, setItems] = useState<DayField[]>([]);
+  const [reaction, setReaction] = useState<Reaction | null>(null); // null＝変えない
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onClose]);
+  const toggle = (key: string) => setPicked((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  const toggleItem = (f: DayField) => setItems((a) => (a.includes(f) ? a.filter((x) => x !== f) : [...a, f]));
+  const chosen = rows.filter((r) => picked.has(r.student.key));
+  const action: BulkAction = { mode, items, reaction: mode === 'on' ? reaction : null };
+  const changes = bulkChanges(chosen, action, today);
+  const hasAction = items.length > 0 || (mode === 'on' && reaction != null);
+  const what = [
+    ...DAY_FIELDS.filter((d) => items.includes(d.key)).map((d) => (mode === 'on' ? d.done : `${d.label}を未に戻す`)),
+    ...(mode === 'on' && reaction != null ? [`反応を「${reaction || '未記入'}」に`] : []),
+  ].join('・');
+  return (
+    <div className="ev-modal" role="dialog" aria-modal="true" aria-label="一括で記録" onClick={onClose}>
+      <div className="ev-modal-body ev-bulk" onClick={(e) => e.stopPropagation()}>
+        <h2>一括で記録<small>（名簿に表示中の {rows.length}名から選ぶ）</small></h2>
+        <div className="ev-bulk-head">
+          <button type="button" className="ev-btn ev-btn-sub" onClick={() => setPicked(new Set(rows.map((r) => r.student.key)))}>すべて選ぶ</button>
+          <button type="button" className="ev-btn ev-btn-sub" disabled={!picked.size} onClick={() => setPicked(new Set())}>すべて外す</button>
+          <span className="ev-spacer" />
+          <span className="ev-result" role="status"><b>{chosen.length}</b>名を選択中</span>
+        </div>
+        <ul className="ev-bulk-list">
+          {rows.map((r) => {
+            const st = r.student;
+            return (
+              <li key={st.key}>
+                <label className={picked.has(st.key) ? 'on' : ''}>
+                  <input type="checkbox" checked={picked.has(st.key)} onChange={() => toggle(st.key)} />
+                  <span className="ev-bulk-name">{st.name}<small>{showCampus ? `${st.campus}・` : ''}{st.grade}</small></span>
+                  <span className="ev-bulk-now">
+                    {DAY_FIELDS.map((d) => (
+                      <span key={d.key} className={r.track[d.key] ? 'on' : ''}>{d.label}{r.track[d.key] ? `済 ${shortDay(r.track[d.key])}` : '未'}</span>
+                    ))}
+                    {r.stage === 'applied' && <span className="on">申込済</span>}
+                  </span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+        <fieldset className="ev-bulk-action">
+          <legend>選んだ生徒に記録する内容</legend>
+          <div className="ev-seg" role="radiogroup" aria-label="済みにする・未に戻す">
+            <label className={mode === 'on' ? 'on' : ''}><input type="radio" name="ev-bulk-mode" checked={mode === 'on'} onChange={() => setMode('on')} />済みにする（今日の日付）</label>
+            <label className={mode === 'off' ? 'on' : ''}><input type="radio" name="ev-bulk-mode" checked={mode === 'off'} onChange={() => setMode('off')} />未に戻す（取り消し）</label>
+          </div>
+          <div className="ev-bulk-items">
+            {DAY_FIELDS.map((d) => (
+              <label key={d.key} className={items.includes(d.key) ? 'on' : ''}>
+                <input type="checkbox" checked={items.includes(d.key)} onChange={() => toggleItem(d.key)} />
+                {mode === 'on' ? `${d.done}にする` : `${d.label}を未に戻す`}
+              </label>
+            ))}
+          </div>
+          {mode === 'on' && (
+            <Field label="反応（まとめて入れるとき）">
+              <select value={reaction == null ? '__keep' : reaction} onChange={(e) => setReaction(e.target.value === '__keep' ? null : (e.target.value as Reaction))}>
+                <option value="__keep">変えない</option>
+                {REACTIONS.filter((x) => x).map((x) => <option key={x} value={x}>{x}</option>)}
+              </select>
+            </Field>
+          )}
+        </fieldset>
+        <p className="ev-bulk-summary" role="status">
+          {!chosen.length ? '生徒を選んでください。'
+            : !hasAction ? '記録する内容を選んでください。'
+              : changes.length ? `${changes.length}名に記録します：${what}。${changes.length < chosen.length ? `（選んだ ${chosen.length}名のうち、${chosen.length - changes.length}名はすでにその状態なので変えません）` : ''}`
+                : `選んだ ${chosen.length}名は、すでにその状態です（変えるところがありません）。`}
+        </p>
+        <div className="ev-modal-foot">
+          <span className="ev-spacer" />
+          <button type="button" className="ev-btn ev-btn-sub" onClick={onClose}>やめる</button>
+          <button type="button" className="ev-btn" disabled={!changes.length} onClick={() => { onRun(changes); onClose(); }}>
+            {changes.length ? `${changes.length}名に記録する` : '記録する'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

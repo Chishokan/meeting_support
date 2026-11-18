@@ -511,6 +511,41 @@ export function sortRows(rows: StudentRow[]): StudentRow[] {
     || a.student.name.localeCompare(b.student.name, 'ja'));
 }
 
+// ---- まとめて記録 -----------------------------------------------------------
+
+export type DayField = 'flyer' | 'talk' | 'parent';
+export const DAY_FIELDS: { key: DayField; label: string; done: string }[] = [
+  { key: 'flyer', label: 'チラシ', done: 'チラシ配布済み' },
+  { key: 'talk', label: '声掛け', done: '声掛け済み' },
+  { key: 'parent', label: '保護者へ案内', done: '保護者へ案内済み' },
+];
+// mode：on＝済みにする（今日の日付）、off＝未に戻す。reaction は on のときだけ（null＝変えない）
+export type BulkAction = { mode: 'on' | 'off'; items: DayField[]; reaction: Reaction | null };
+
+/**
+ * 選んだ生徒にまとめて記録するときの、生徒ごとの変更。変えるところの無い生徒は入れない。
+ *   済みにする … まだ済みでない項目にだけ今日の日付を入れる（すでに済みの日付は変えない）
+ *   未に戻す   … 済みになっている項目だけを空にする
+ *   反応       … いまと違う生徒だけ。反応を入れたのに声掛けが未なら、声掛けも今日にする（1人ずつ入れるときと同じ）
+ */
+export function bulkChanges(rows: StudentRow[], action: BulkAction, today: string): { row: StudentRow; fields: Partial<Record<TrackField, string>> }[] {
+  const out: { row: StudentRow; fields: Partial<Record<TrackField, string>> }[] = [];
+  for (const row of rows) {
+    const t = row.track;
+    const fields: Partial<Record<TrackField, string>> = {};
+    for (const f of action.items) {
+      if (action.mode === 'on' && !t[f]) fields[f] = today;
+      if (action.mode === 'off' && t[f]) fields[f] = '';
+    }
+    if (action.mode === 'on' && action.reaction != null && action.reaction !== t.reaction) {
+      fields.reaction = action.reaction;
+      if (action.reaction && !t.talk && !fields.talk) fields.talk = today;
+    }
+    if (Object.keys(fields).length) out.push({ row, fields });
+  }
+  return out;
+}
+
 // 名簿の並び順（画面の「並び順」のプルダウン）
 export type SortKey = 'todo' | 'gradeDesc' | 'gradeAsc' | 'name' | 'campus' | 'stage' | 'updated';
 export const SORTS: { key: SortKey; label: string }[] = [
