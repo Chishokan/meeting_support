@@ -3546,6 +3546,8 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .ev input.ev-memo { min-height: 40px; width: 180px; padding: 0 10px; font-size: 13.5px; border: 1px solid var(--ev-field); border-radius: 8px; color: var(--ev-text); }
 
 .ev-badge.ok { min-height: 28px; border: 1px solid var(--ev-accent-bg); background: var(--ev-accent-bg); color: var(--ev-accent-text); font-weight: 700; border-radius: 12px; }
+.ev-badge.ok small { margin-left: 6px; font-size: 11px; font-weight: 500; }
+.ev-noapply { display: inline-block; padding: 2px 10px; border-radius: 12px; background: #eef1f5; color: var(--ev-sub2); font-size: 12px; font-weight: 500; }
 .ev-stage { border-radius: 12px; background: #eef1f5; color: var(--ev-sub2); font-weight: 500; }
 .ev-stage.applied { background: var(--ev-accent-bg); color: var(--ev-accent-text); font-weight: 700; }
 .ev-linker select, .ev-form-grid input, .ev-form-grid select { min-height: 44px; border: 1px solid var(--ev-field); border-radius: 8px; color: var(--ev-text); }
