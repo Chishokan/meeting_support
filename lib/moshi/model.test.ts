@@ -717,3 +717,18 @@ test('本番レベル模試の前回：この回より前のいちばん新し�
   assert.deepEqual(pts.down, [{ key: 'en', diff: -5 }]);
   assert.equal(pts.vsMean, 35.7);
 });
+
+test('受験しない：cleanResult で受け取り、集計（順位・平均・一覧）には入れない', () => {
+  const e = exam();
+  const a = res({ name: '山田　太郎', examNo: '0001', s: full([70, 70, 70, 70, 70]) }, e);
+  const b = res({ name: '鈴木　花子', examNo: '0002', s: full([50, 50, 50, 50, 50]) }, e);
+  const c = { ...res({ name: '佐藤　一郎', examNo: '0301' }, e), absent: true };
+  const st = computeStats(e, [a, b, c]);
+  assert.equal(st.rows.length, 2);
+  assert.ok(!st.rows.some((x) => x.r.id === c.id));
+  assert.equal(st.complete, 2);
+  const ok = cleanResult({ id: 'row-abcdefgh', campus: '日宇校', examNo: '301', name: '佐藤　一郎', absent: true, scores: {} }, e);
+  assert.ok(ok.ok && ok.value.absent === true && ok.value.examNo === '0301');
+  const off = cleanResult({ id: 'row-abcdefgh', campus: '日宇校', name: 'x', scores: {} }, e);
+  assert.ok(off.ok && off.value.absent === false);
+});
