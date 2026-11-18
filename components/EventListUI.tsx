@@ -4,12 +4,13 @@
 //   校舎ごとの進み具合 … 管理担当向け。校舎ごとの チラシ配布・声掛け・申込・重点（薬剤師・医療系）の進み具合
 //   声掛け名簿         … 教室担当向け。生徒ごとの「次にすること」。チラシ・声掛け・反応・保護者への案内をその場で記録する
 //   名簿外の申込       … フォームの回答のうち、名簿の誰とも結び付かなかったもの（RED個別・高校生・外部生・氏名の書き方が違う人）
+//   部門               … 小中等部・RED個別の職員には、自分の部門の生徒だけが届く（API で絞る）。管理部門は全部門を見て、上の切り替えで部門を選べる
 //   生徒の追加         … 名簿に無い生徒を足す（声掛け名簿の［＋ 生徒を追加］、名簿外の申込の［名簿に足す］）。足した生徒は直す・外すができる
 // 申込は Google フォームの回答を氏名で名簿に結び付けて出す（手入力の申込も付けられる）。
 // 決まりと計算は lib/eventList/model.ts、イベントの中身は lib/eventList/event.ts、読み書きは lib/eventList/store.ts。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CAMPUS_ORDER, EVENT, NO_CAMPUS, PRIORITY_WORDS } from '@/lib/eventList/event';
+import { CAMPUS_ORDER, DEFAULT_DEPT, DEPTS, EVENT, NO_CAMPUS, PRIORITY_WORDS } from '@/lib/eventList/event';
 import {
   GRADES, PRIORITY_LABEL, REACTIONS, STAGE_LABEL, appLabel, autoPriority, buildRows, campusList, daysUntil, emptyTrack, linkIds, normCampus,
   normGrade, normName, pct, sameNameStudents, shortDay, sortRows, summarize, todayJp,
@@ -38,7 +39,8 @@ type View = 'overview' | 'list' | 'outside';
 type Filter = 'todo' | 'urgent' | 'none' | 'thinking' | 'applied' | 'declined' | 'all';
 type Change = { row: StudentRow; fields: Partial<Record<TrackField, string>> };
 // 生徒を足す・直す窓：student＝直す生徒（足すときは無し）、app＝名簿外の申込から足すとき、init＝最初に入れておく値
-type Editing = { student?: Student; app?: Application; init: StudentInput };
+// dept＝足す生徒の部門（管理部門だけが選べる。ほかの職員はログインした部門になる）
+type Editing = { student?: Student; app?: Application; init: StudentInput; dept: string };
 
 const FILTERS: { key: Filter; label: string; test: (r: StudentRow) => boolean }[] = [
   { key: 'todo', label: 'することがある', test: (r) => r.todo !== '' },
@@ -62,6 +64,7 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   const [error, setError] = useState('');
   const [detail, setDetail] = useState<{ app: Application; row: StudentRow | null } | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
+  const [deptView, setDeptView] = useState(''); // 管理部門だけ：見る部門（''＝全部門）
   const [rev, setRev] = useState(0); // 生徒を足す・直す・外すたびに増やす（名簿の並びを決め直す）
 
   const load = useCallback(async () => {
@@ -83,7 +86,10 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
     () => (students && applications ? buildRows(students, [...tracks.values()], applications, PRIORITY_WORDS) : { rows: [], unmatched: [] }),
     [students, applications, tracks],
   );
-  const campuses = useMemo(() => campusList(students ?? [], CAMPUS_ORDER, NO_CAMPUS), [students]);
+  const campuses = useMemo(
+    () => campusList((students ?? []).filter((st) => !deptView || st.dept === deptView), CAMPUS_ORDER, NO_CAMPUS),
+    [students, deptView],
+  );
 
   // 教室担当は、最初に自分の校舎を開く（共通ログインの「教室」と名簿の校舎の名前が合うとき）
   const activeCampus = useMemo(() => {
@@ -130,12 +136,12 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   }, []);
 
   // 生徒を足す（student なし）・足した生徒を直す。失敗したら理由の文を返す（窓に出す）
-  const saveStudent = useCallback(async (ed: Editing, input: StudentInput): Promise<string> => {
+  const saveStudent = useCallback(async (ed: Editing, input: StudentInput, dept: string): Promise<string> => {
     try {
       const res = await fetch('/api/event/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: ed.student?.key ?? '', ...input }),
+        body: JSON.stringify({ id: ed.student?.key ?? '', dept, ...input }),
       });
       const j = await res.json().catch(() => null);
       if (!j?.ok) return reasonText(j?.reason);
@@ -181,15 +187,18 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
     );
   }
 
-  const { rows, unmatched } = built;
+  const { unmatched } = built;
+  const rows = deptView ? built.rows.filter((r) => r.student.dept === deptView) : built.rows;
+  // 足す生徒の部門の初めの値：同じ校舎の生徒がいればその部門、いなければ見ている部門
+  const deptFor = (c: string) => state.students.find((st) => st.campus === c)?.dept ?? (deptView || DEFAULT_DEPT);
   const inCampus = activeCampus ? rows.filter((r) => r.student.campus === activeCampus) : rows;
   const openCampus = (c: string) => { setCampus(c); setView('list'); setFilter('todo'); setGrade(''); setQ(''); };
   const blank = (c: string): StudentInput => ({ campus: c, school: '', grade: '', name: '', dream: '', hope: '' });
   const fromApp = (a: Application): Editing => ({
-    app: a,
+    app: a, dept: deptFor(a.campus),
     init: { campus: a.campus, school: a.school, grade: GRADES.includes(a.grade) ? a.grade : '', name: a.name, dream: a.interest, hope: '' },
   });
-  const edit = (st: Student): Editing => ({ student: st, init: { campus: st.campus, school: st.school, grade: st.grade, name: st.name, dream: st.dream, hope: st.hope } });
+  const edit = (st: Student): Editing => ({ student: st, dept: st.dept, init: { campus: st.campus, school: st.school, grade: st.grade, name: st.name, dream: st.dream, hope: st.hope } });
 
   return (
     <div className="ev">
@@ -207,6 +216,17 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
           <button type="button" className="ev-btn ev-btn-sub" onClick={load}>最新にする</button>
         </div>
       </div>
+
+      {admin && (
+        <div className="ev-chips ev-depts" role="group" aria-label="部門">
+          <span>部門</span>
+          {['', ...DEPTS].map((d) => (
+            <button key={d} type="button" className={deptView === d ? 'on' : ''} onClick={() => { setDeptView(d); setCampus(''); }}>
+              {d || 'すべて'}<small>{built.rows.filter((r) => !d || r.student.dept === d).length}</small>
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && <p className="ev-alert" role="alert">{error}</p>}
       {state.formStatus !== 'ok' && (
@@ -233,7 +253,7 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
           <CampusList
             rows={inCampus} scope={`${activeCampus}|${state.fetchedAt}|${rev}`} showCampus={activeCampus === ''} filter={filter} onFilter={setFilter} grade={grade} onGrade={setGrade} q={q} onQ={setQ}
             onSave={save} onDetail={(app, row) => setDetail({ app, row })}
-            onAdd={() => setEditing({ init: blank(activeCampus) })} onEdit={(st) => setEditing(edit(st))}
+            onAdd={() => setEditing({ init: blank(activeCampus), dept: deptFor(activeCampus) })} onEdit={(st) => setEditing(edit(st))}
           />
         </>
       )}
@@ -244,8 +264,8 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
 
       {editing && (
         <StudentDialog
-          editing={editing} campuses={campuses} students={state.students} onClose={() => setEditing(null)}
-          onSave={(input) => saveStudent(editing, input)} onRemove={editing.student ? () => removeStudent(editing.student!) : undefined}
+          editing={editing} admin={admin} campuses={campuses} students={state.students} onClose={() => setEditing(null)}
+          onSave={(input, dept) => saveStudent(editing, input, dept)} onRemove={editing.student ? () => removeStudent(editing.student!) : undefined}
         />
       )}
 
@@ -590,11 +610,12 @@ function AppDetail({ app, row, onClose, onUnlink }: {
 
 // ---- 生徒を足す・直す --------------------------------------------------------
 
-function StudentDialog({ editing, campuses, students, onClose, onSave, onRemove }: {
-  editing: Editing; campuses: string[]; students: Student[]; onClose: () => void;
-  onSave: (input: StudentInput) => Promise<string>; onRemove?: () => Promise<string>;
+function StudentDialog({ editing, admin, campuses, students, onClose, onSave, onRemove }: {
+  editing: Editing; admin: boolean; campuses: string[]; students: Student[]; onClose: () => void;
+  onSave: (input: StudentInput, dept: string) => Promise<string>; onRemove?: () => Promise<string>;
 }) {
   const [v, setV] = useState<StudentInput>(editing.init);
+  const [dept, setDept] = useState(editing.dept);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   useEffect(() => {
@@ -615,13 +636,20 @@ function StudentDialog({ editing, campuses, students, onClose, onSave, onRemove 
   const grades = v.grade && !GRADES.includes(normGrade(v.grade)) ? [...GRADES, v.grade] : GRADES;
   return (
     <div className="ev-modal" role="dialog" aria-modal="true" aria-label={editing.student ? '生徒を直す' : '生徒を追加'} onClick={() => { if (!busy) onClose(); }}>
-      <form className="ev-modal-body ev-form" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); if (ready && !busy) run(() => onSave(v)); }}>
+      <form className="ev-modal-body ev-form" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); if (ready && !busy) run(() => onSave(v, dept)); }}>
         <h2>{editing.student ? '足した生徒を直す' : '生徒を追加'}{editing.app && <small>（フォームの回答から）</small>}</h2>
         <p className="ev-hint">
           名簿のスプレッドシートに無い生徒（RED個別・高校生・外部の生徒など）を、このイベントの声掛け名簿に足します。
           名簿のスプレッドシートには書き込みません。
         </p>
         <div className="ev-form-grid">
+          {admin && !editing.student && (
+            <label className="wide">部門（この部門の職員の名簿に入ります）
+              <select value={dept} onChange={(e) => setDept(e.target.value)}>
+                {DEPTS.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </label>
+          )}
           <label>校舎（必須）
             <input value={v.campus} onChange={set('campus')} list="ev-campus-list" maxLength={30} placeholder="例：駅前校、RED広田" required />
             <datalist id="ev-campus-list">{campuses.map((c) => <option key={c} value={c} />)}</datalist>
