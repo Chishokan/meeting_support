@@ -1,0 +1,559 @@
+<title>イベント申込管理 教室担当者マニュアル</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+/* 縦1段の手引き。画面の写真に付けた赤い番号と、本文の赤い番号を対応させて読む。 */
+:root {
+  --bg: #f4f6f8;
+  --paper: #ffffff;
+  --ink: #1c2430;
+  --muted: #5b6573;
+  --navy: #1f4e78;
+  --navy-soft: #e8f0f8;
+  --line: #dde2e8;
+  --mark: #e0262f;
+  --warn-bg: #fff5e6;
+  --warn-line: #d98a1c;
+  --shot-frame: #cfd6de;
+  --font: 'BIZ UDPGothic', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+    --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+    --shot-frame: #3a4553; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+  --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+  --shot-frame: #3a4553; color-scheme: dark;
+}
+
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font); font-size: 15.5px; line-height: 1.85;
+  font-variant-numeric: tabular-nums;
+}
+.page {
+  max-width: 880px; margin: 0 auto;
+  padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px;
+}
+.sheet {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+  padding: clamp(20px, 4vw, 40px); min-width: 0;
+}
+
+/* 表紙 */
+.cover { display: grid; gap: 18px; }
+.cover .org { font-size: 13px; letter-spacing: .12em; color: var(--muted); }
+.cover h1 { margin: 0; font-size: clamp(28px, 5vw, 40px); line-height: 1.3; text-wrap: balance; color: var(--navy); }
+.cover .lead { margin: 0; max-width: 40em; }
+.cover dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 18px; font-size: 14px; }
+.cover dt { color: var(--muted); }
+.cover dd { margin: 0; }
+.note-sample { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; margin: 0; }
+
+/* 目次 */
+.toc h2 { font-size: 18px; margin: 0 0 10px; }
+.toc ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 14px; }
+.toc > ol > li > a { font-weight: 700; }
+.toc ol ol { display: grid; gap: 2px; margin-top: 4px; padding-left: 1.2em; font-size: 14px; }
+.toc a { color: var(--ink); text-decoration: none; }
+.toc a:hover, .toc a:focus-visible { color: var(--navy); text-decoration: underline; }
+
+/* 見出し */
+.chapter { display: grid; gap: 22px; }
+.chapter > header { display: grid; gap: 6px; border-bottom: 3px solid var(--navy); padding-bottom: 12px; }
+.eyebrow { font-size: 13px; letter-spacing: .14em; color: var(--navy); font-weight: 700; }
+.chapter h2 { margin: 0; font-size: clamp(22px, 3.6vw, 28px); line-height: 1.35; text-wrap: balance; }
+.chapter > header p { margin: 0; color: var(--muted); }
+section.sec { display: grid; gap: 14px; min-width: 0; }
+section.sec + section.sec { border-top: 1px solid var(--line); padding-top: 24px; }
+h3 { margin: 0; font-size: 19px; line-height: 1.45; text-wrap: balance; display: flex; gap: 10px; align-items: baseline; }
+h3 .no { color: var(--navy); font-size: 15px; flex: none; }
+h4 { margin: 6px 0 0; font-size: 16px; }
+p { margin: 0; }
+a { color: var(--navy); }
+
+/* 画面写真の赤い番号と同じ形 */
+.n {
+  display: inline-grid; place-items: center; flex: none;
+  width: 1.6em; height: 1.6em; border-radius: 50%;
+  background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 1;
+  vertical-align: .05em;
+}
+.btn {
+  display: inline-block; padding: 0 .5em; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--navy-soft); color: var(--navy); font-weight: 700; font-size: .92em; line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* 写真 */
+figure { margin: 0; display: grid; gap: 8px; break-inside: avoid; min-width: 0; }
+figure img {
+  display: block; width: 100%; max-width: 100%; height: auto;
+  border: 1px solid var(--shot-frame); border-radius: 10px; background: #fff;
+}
+figcaption { font-size: 13px; color: var(--muted); }
+.video video { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--shot-frame); background: #0e1520; }
+.print-only { display: none; }
+.fig-narrow img { max-width: 520px; }
+.fig-card img { max-width: 480px; }
+.side-by-side { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px; align-items: start; }
+.w-sidebar { width: 238px; }
+.w-side { width: 340px; }
+.phones { display: flex; flex-wrap: wrap; gap: 20px; }
+.phones figure { width: min(240px, 100%); }
+
+/* 番号の説明 */
+.legend { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.legend li { display: grid; grid-template-columns: 1.6em 1fr; gap: 10px; align-items: start; }
+.legend .n { margin-top: .2em; font-size: 13px; }
+.legend b { font-weight: 700; }
+
+/* 手順 */
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: st; display: grid; gap: 10px; }
+.steps > li { counter-increment: st; display: grid; grid-template-columns: 2em 1fr; gap: 8px; }
+.steps > li::before {
+  content: counter(st); width: 1.75em; height: 1.75em; border-radius: 6px; margin-top: .15em;
+  display: grid; place-items: center; background: var(--navy); color: var(--paper); font-weight: 700; font-size: 14px;
+}
+ul.plain { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
+
+/* 補足 */
+.box { border-radius: 10px; padding: 14px 18px; display: grid; gap: 6px; border: 1px solid var(--line); }
+.box > .box-title { font-weight: 700; font-size: 14px; letter-spacing: .04em; }
+.box.tip { background: var(--navy-soft); border-color: transparent; }
+.box.tip > .box-title { color: var(--navy); }
+.box.warn { background: var(--warn-bg); border-color: transparent; border-left: 4px solid var(--warn-line); }
+.box.warn > .box-title { color: var(--warn-line); }
+.box.recommend { border: 2px solid var(--navy); }
+.box.recommend > .box-title { color: var(--navy); font-size: 15px; }
+
+/* 流れ図 */
+.loop { display: grid; gap: 10px; }
+.loop ol { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.loop li {
+  position: relative; border: 1.5px solid var(--navy); border-radius: 10px; padding: 10px 12px;
+  display: grid; gap: 2px; background: var(--paper);
+}
+.loop li .k { font-size: 12px; color: var(--navy); font-weight: 700; letter-spacing: .08em; }
+.loop li .t { font-weight: 700; line-height: 1.4; }
+.loop li .d { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.loop li:not(:last-child)::after {
+  content: "→"; position: absolute; right: -10px; top: 50%; transform: translate(50%, -50%);
+  color: var(--navy); font-weight: 700; background: var(--paper); line-height: 1;
+}
+.loop .back {
+  border: 1.5px dashed var(--navy); border-radius: 10px; padding: 6px 12px; text-align: center;
+  color: var(--navy); font-weight: 700; font-size: 14px;
+}
+
+/* 表 */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+th { background: var(--navy-soft); color: var(--ink); font-weight: 700; }
+td.num { white-space: nowrap; font-weight: 700; }
+
+footer.end { text-align: center; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 680px) {
+  .side-by-side { grid-template-columns: minmax(0, 1fr); }
+  .w-sidebar, .w-side { width: auto; max-width: min(340px, 100%); }
+  .loop ol { grid-template-columns: 1fr 1fr; }
+  .loop li:nth-child(2)::after { content: none; }
+}
+@media (max-width: 420px) {
+  .loop ol { grid-template-columns: 1fr; }
+  .loop li::after { content: none !important; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+@media print {
+  :root { --bg: #fff; }
+  body { font-size: 10.5pt; line-height: 1.75; }
+  .page { max-width: none; padding: 0; gap: 0; }
+  .sheet { border: 0; border-radius: 0; padding: 0; }
+  .cover { min-height: 240mm; align-content: center; }
+  .toc, .chapter { break-before: page; }
+  section.sec { break-before: auto; }
+  .page, .cover, .chapter, section.sec, figure { display: block; }
+  .chapter > * + *, section.sec > * + * { margin-top: 12px; }
+  .chapter > header + * { margin-top: 18px; }
+  section.sec + section.sec { margin-top: 22px; }
+  .cover > * + * { margin-top: 14px; }
+  figcaption { margin-top: 4px; }
+  h3, h4 { break-after: avoid; }
+  figure, .box, .loop, table, .legend li { break-inside: avoid; }
+  figure img { max-height: 200mm; width: auto; max-width: 100%; }
+  .side-by-side { display: flow-root; }
+  .side-by-side > figure { float: left; margin: 0 8mm 4mm 0; }
+  .side-by-side > figure img { width: 100%; max-height: none; }
+  .w-sidebar { width: 60mm; }
+  .w-side { width: 78mm; }
+  a { color: var(--ink); text-decoration: none; }
+  footer.end { display: none; }
+  .video { display: none; }
+  .print-only { display: block; color: var(--muted); }
+}
+.fig-login img { max-width: 560px; }
+.fig-color img { max-width: 420px; }
+.fig-bar img { max-width: 520px; }
+.mail { font-family: var(--font); white-space: pre-wrap; background: var(--paper); border: 1px dashed var(--shot-frame); border-radius: 10px; padding: 14px 18px; font-size: 14px; line-height: 1.75; margin: 0; }
+@media print { .fig-login img { width: 120mm; } .fig-color img { width: 85mm; } .fig-bar img { width: 110mm; } }
+.fig-menu img { max-width: 620px; }
+.fig-import img { max-width: 760px; }
+.numtable { table-layout: fixed; }
+.numtable th:nth-child(1) { width: 30%; }
+.numtable th:nth-child(2) { width: 32%; }
+@media print { .fig-menu img { width: 125mm; }  }
+.fig-phone img { max-width: 300px; }
+.fig-dialog img { max-width: 620px; }
+.todo-table th:nth-child(1) { width: 26%; }
+.todo-table th:nth-child(2) { width: 30%; }
+@media print { .fig-phone img { width: 62mm; } .fig-dialog img { width: 125mm; } .loop ol { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+</style>
+
+<div class="page">
+
+<header class="sheet cover" id="top">
+  <div class="org">株式会社智翔館　社内向け</div>
+  <h1>イベント申込管理<br>教室担当者マニュアル</h1>
+  <p class="lead">イベントの申込をふやすために、教室担当が<b>「誰に・何をするか」</b>を名簿で見て、チラシ・声掛け・反応を記録する画面の使い方をまとめています。申込は、チラシの QR コード（Google フォーム）から申し込まれると、名簿に自動で出ます。</p>
+  <dl>
+    <dt>対象</dt><dd>教室担当の職員（小中等部・RED個別・高等部）</dd>
+    <dt>アプリ</dt><dd>智翔館アプリ「イベント申込管理」（v1.13.0・2026年11月の画面）</dd>
+    <dt>いまのイベント</dt><dd>トップリーダーと学ぶワークショップ2026 〜薬剤師編〜（長崎国際大学 薬学部 × 智翔館）12月3日（木）19:30〜21:00</dd>
+    <dt>最新版</dt><dd>智翔館アプリのヘルプデスク「マニュアル」タブからダウンロードできます</dd>
+    <dt>作成</dt><dd>2026年11月</dd>
+  </dl>
+  <p class="note-sample">※ 写真に写っている生徒・職員の氏名、記録、フォームの回答は、説明のために用意した架空の例です。</p>
+</header>
+
+<nav class="sheet toc" aria-label="目次">
+  <h2>目次</h2>
+  <ol>
+    <li><a href="#ch1">第1章　はじめに（この画面ですること）</a></li>
+    <li><a href="#ch2">第2章　声掛け名簿の見方</a>
+      <ol>
+        <li><a href="#s2-1">2-1　画面の全体</a></li>
+        <li><a href="#s2-2">2-2　名簿の1行の見方</a></li>
+        <li><a href="#s2-3">2-3　「次にすること」と「重点（★）」</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch3">第3章　記録する</a>
+      <ol>
+        <li><a href="#s3-1">3-1　スイッチで記録する（チラシ・声掛け・保護者へ案内）</a></li>
+        <li><a href="#s3-2">3-2　反応とメモを入れる</a></li>
+        <li><a href="#s3-3">3-3　何人もまとめて記録する（一括で記録）</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch4">第4章　絞り込みと並び順</a></li>
+    <li><a href="#ch5">第5章　申込の状況を見る</a>
+      <ol>
+        <li><a href="#s5-1">5-1　申込済・未申込</a></li>
+        <li><a href="#s5-2">5-2　名簿外の申込</a></li>
+        <li><a href="#s5-3">5-3　名簿にいない生徒を足す</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch6">第6章　困ったとき</a></li>
+  </ol>
+</nav>
+
+<article class="sheet chapter" id="ch1">
+  <header>
+    <div class="eyebrow">第1章</div>
+    <h2>はじめに（この画面ですること）</h2>
+    <p>名簿の生徒一人ひとりについて、チラシを渡したか・声を掛けたか・反応はどうか・申し込んだか、を1つの画面で追いかけます。</p>
+  </header>
+  <div class="loop">
+    <ol>
+      <li><span class="k">1</span><span class="t">チラシを渡す</span><span class="d">渡したらスイッチをオン。クラスで配ったら「一括で記録」</span></li>
+      <li><span class="k">2</span><span class="t">声を掛ける</span><span class="d">★（重点）の生徒には、直接声を掛けます</span></li>
+      <li><span class="k">3</span><span class="t">反応を記録する</span><span class="d">参加したい／検討中／不参加。検討中なら保護者へ案内</span></li>
+      <li><span class="k">4</span><span class="t">申込を確かめる</span><span class="d">フォームから申し込まれると、自動で「申込済」になります</span></li>
+    </ol>
+  </div>
+  <ul class="plain">
+    <li>画面には<b>「次にすること」</b>が生徒ごとに出ます。上から順に進めれば、やり残しがなくなります。</li>
+    <li><b>薬剤師・医療系を目指す生徒</b>は「重点」として ★ が付き、名簿の先頭に並びます。ぜひ受けてほしい生徒です。</li>
+    <li><b>申込は画面からは入れません。</b>生徒・保護者がチラシの QR コードのフォームから申し込むと、名簿に出ます（第5章）。</li>
+    <li>見えるのは<b>自分の部門の生徒だけ</b>です（小中等部でログインすると小中等部の生徒、RED個別なら RED個別の生徒、高等部なら高等部の生徒）。</li>
+    <li>智翔館アプリの総合メニューの<span class="btn">イベント申込管理</span>のカードから開きます。開くと「声掛け名簿」が出ます。</li>
+  </ul>
+  <figure class="fig-menu"><img src="images/event_01_menu.png" alt="総合メニューのイベント申込管理のカード"><figcaption>図1　総合メニューの「イベント申込管理」<span class="n">1</span></figcaption></figure>
+  <div class="box tip">
+    <div class="box-title">スマホでも使えます</div>
+    <p>教室で声を掛けながら、スマホで記録できます。表は横に動かせます。氏名の下にも「次にすること」が出ます。</p>
+  </div>
+  <figure class="fig-phone"><img src="images/event_11_phone.png" alt="スマホの声掛け名簿"><figcaption>図2　スマホで開いた声掛け名簿</figcaption></figure>
+</article>
+
+<article class="sheet chapter" id="ch2">
+  <header>
+    <div class="eyebrow">第2章</div>
+    <h2>声掛け名簿の見方</h2>
+    <p>1行が生徒1人です。左から、重点・生徒・夢と志望校・記録（チラシ〜保護者へ案内）・申込・次にすること・メモの順に並びます。</p>
+  </header>
+
+  <section class="sec" id="s2-1">
+    <h3><span class="no">2-1</span>画面の全体</h3>
+    <figure><img src="images/event_02_list.png" alt="声掛け名簿の画面"><figcaption>図3　声掛け名簿</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>タブ</b>　「声掛け名簿」と「名簿外の申込」を切り替えます。「名簿外の申込」の赤い数字は、名簿の誰とも結び付いていない申込の件数です（5-2）。</div></li>
+      <li><span class="n">2</span><div><b>絞り込みの並び</b>　校舎・表示する生徒・学年・並び順・氏名で、名簿を絞り込み・並べ替えます（第4章）。まず<b>校舎</b>で自分の校舎を選びます。</div></li>
+      <li><span class="n">3</span><div><b>件数</b>　いま表示している人数と、重点でまだ決まっていない生徒の人数です。</div></li>
+      <li><span class="n">4</span><div><span class="btn">一括で記録</span>　何人もまとめて、チラシ配布済み・声掛け済みなどを記録します（3-3）。</div></li>
+      <li><span class="n">5</span><div><span class="btn">＋ 生徒を追加</span>　名簿にいない生徒を足します（5-3）。</div></li>
+      <li><span class="n">6</span><div><span class="btn">最新にする</span>　名簿と申込を読み直します。左に、読み込んだ時刻か、保存の様子（保存中…／✓ 保存しました）が出ます。</div></li>
+      <li><span class="n">7</span><div><b>名簿</b>　ここで記録します。左に赤い線がある行は、重点でまだ決まっていない生徒です。</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s2-2">
+    <h3><span class="no">2-2</span>名簿の1行の見方</h3>
+    <figure><img src="images/event_03_row.png" alt="名簿の1行"><figcaption>図4　名簿の1行（列の見方）</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>重点</b>　<b>★薬</b>＝薬剤師・薬学、<b>★医</b>＝医療系、<b>★</b>＝担当が付けた生徒、☆＝重点でない生徒。押すと付け外しできます。</div></li>
+      <li><span class="n">2</span><div><b>生徒</b>　氏名と、学年・学校（校舎を「すべての校舎」にしているときは校舎も）。「追加 ✎」が付いている生徒は、アプリで足した生徒です。</div></li>
+      <li><span class="n">3</span><div><b>夢・志／志望校</b>　名簿のスプレッドシートに入っている内容です。声を掛けるときの話題に使えます。</div></li>
+      <li><span class="n">4</span><div><b>チラシ</b>　チラシを渡したらオンにします。</div></li>
+      <li><span class="n">5</span><div><b>声掛け</b>　本人に声を掛けたらオンにします。</div></li>
+      <li><span class="n">6</span><div><b>反応</b>　聞けた反応を選びます（参加したい／検討中／不参加）。</div></li>
+      <li><span class="n">7</span><div><b>保護者へ案内</b>　保護者に電話・LINE・面談などで案内したらオンにします。</div></li>
+      <li><span class="n">8</span><div><b>申込（フォーム）</b>　フォームから申し込まれると「申込済」と出ます。まだなら「未申込」です。<b>ここは押して変えることはできません。</b></div></li>
+      <li><span class="n">9</span><div><b>次にすること</b>　この生徒に、いま何をすればよいかが出ます（2-3）。</div></li>
+      <li><span class="n">10</span><div><b>メモ</b>　気づいたことを書きます（例：母に相談してみるとのこと）。</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s2-3">
+    <h3><span class="no">2-3</span>「次にすること」と「重点（★）」</h3>
+    <p>「次にすること」は、記録に合わせて自動で変わります。</p>
+    <div class="table-wrap">
+      <table class="todo-table">
+        <thead><tr><th>いまの状態</th><th>次にすること</th><th>記録のしかた</th></tr></thead>
+        <tbody>
+          <tr><td>まだ何もしていない</td><td>チラシを渡す<br>（★の生徒：チラシを渡して、直接声を掛ける）</td><td>渡したら「チラシ」をオン</td></tr>
+          <tr><td>チラシを渡した</td><td>声を掛けて反応を聞く<br>（★の生徒：本人に直接声を掛ける）</td><td>声を掛けたら「声掛け」をオン</td></tr>
+          <tr><td>声を掛けた</td><td>反応を聞いて記録する</td><td>「反応」を選ぶ</td></tr>
+          <tr><td>反応が「参加したい」</td><td>QRからの申込を後押し。保護者にも案内する</td><td>保護者に案内したら「保護者へ案内」をオン</td></tr>
+          <tr><td>反応が「検討中」</td><td>保護者へ案内して後押しする<br>（案内のあと：もう一度声を掛けて、決めてもらう）</td><td>「保護者へ案内」をオン。決まったら「反応」を直す</td></tr>
+          <tr><td>フォームから申し込んだ</td><td>（なし。「申込済」と出ます）</td><td>記録は要りません</td></tr>
+          <tr><td>反応が「不参加」</td><td>（なし。「不参加」と出ます）</td><td>―</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="box recommend">
+      <div class="box-title">重点（★）の生徒から声を掛けてください</div>
+      <p>夢・志や志望校に「薬剤師」「薬学」（★薬）、「医」「看護」「療法士」など（★医）の言葉がある生徒に、自動で ★ が付きます。名簿では先頭に並び、左に赤い線が付きます。</p>
+      <p>理系に興味がある・保護者が医療関係など、ほかにも受けてほしい生徒がいれば、<b>☆ を押して ★ を付けて</b>ください。RED個別・高等部の名簿には夢・志が入っていないので、★ は担当が付けます。まちがって付いている ★ は、押すと外せます。</p>
+    </div>
+  </section>
+</article>
+
+<article class="sheet chapter" id="ch3">
+  <header>
+    <div class="eyebrow">第3章</div>
+    <h2>記録する</h2>
+    <p>押す・選ぶと、その場で自動で保存されます。保存のボタンはありません。</p>
+  </header>
+
+  <section class="sec" id="s3-1">
+    <h3><span class="no">3-1</span>スイッチで記録する（チラシ・声掛け・保護者へ案内）</h3>
+    <ol class="steps">
+      <li><div>スイッチを押します。つまみが右に動いて色が付き、<b>オン</b>になります。</div></li>
+      <li><div>スイッチの下に<b>「保存中…」</b>と出ます<span class="n">1</span>。画面の右上<span class="n">2</span>と下<span class="n">3</span>にも「保存中…」と出ます。</div></li>
+      <li><div>保存できると、スイッチの下が<b>「済 11/18」</b>（今日の日付）になり、少しのあいだ <b>✓</b> が出ます。</div></li>
+    </ol>
+    <figure><img src="images/event_04_saving.png" alt="スイッチを押した直後"><figcaption>図5　「声掛け」のスイッチを押した直後（保存中）</figcaption></figure>
+    <figure><img src="images/event_05_saved.png" alt="保存できたところ"><figcaption>図6　保存できたところ。「済」と今日の日付、✓ が出ます<span class="n">1</span></figcaption></figure>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>見た目</th><th>意味</th></tr></thead>
+        <tbody>
+          <tr><td>つまみが左・灰色・「未」</td><td>オフ（まだしていない）</td></tr>
+          <tr><td>つまみが右・青・「済 11/18」</td><td>オン（その日にした）</td></tr>
+          <tr><td>「保存中…」</td><td>保存している途中。<b>このあいだは、同じスイッチをもう一度押しても変わりません</b></td></tr>
+          <tr><td>✓</td><td>保存できた（少しすると消えます）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="box warn">
+      <div class="box-title">「保存中…」のあいだは、押し直さないでください</div>
+      <p>スプレッドシートに保存するので、1〜3秒かかることがあります。「保存中…」が出ていれば、ちゃんと受け付けられています。ほかの生徒・ほかのスイッチは、待たずに続けて押せます。</p>
+    </div>
+    <ul class="plain">
+      <li>まちがえてオンにしたときは、保存が終わってからもう一度押すと、オフに戻ります。</li>
+      <li>「保存できませんでした」と赤く出たときは、スイッチが元に戻っています。もう一度押してください（第6章）。</li>
+      <li>記録を付けても、行の並びはその場では変わりません（続けて入れやすいように）。並べ直したいときは、「表示する生徒」か「並び順」を選び直すか、<span class="btn">最新にする</span>を押します。</li>
+    </ul>
+  </section>
+
+  <section class="sec" id="s3-2">
+    <h3><span class="no">3-2</span>反応とメモを入れる</h3>
+    <ul class="plain">
+      <li><b>反応</b>は、欄を押して「参加したい」「検討中」「不参加」から選びます。選ぶと、欄の下に「保存中…」→「✓ 保存しました」と出ます。</li>
+      <li>反応を入れると、「声掛け」がまだオフでも、自動でオン（今日の日付）になります。反応を聞けたなら、声は掛けているためです。</li>
+      <li><b>メモ</b>は、欄に書いて Enter を押すか、欄の外を押すと保存されます。</li>
+      <li>反応が変わったら（検討中 → 参加したい など）、選び直してください。</li>
+    </ul>
+  </section>
+
+  <section class="sec" id="s3-3">
+    <h3><span class="no">3-3</span>何人もまとめて記録する（一括で記録）</h3>
+    <p>クラスでチラシを配ったあとなど、何人もまとめて記録するときに使います。<b>先に、絞り込みの並びで校舎・学年を選んでから</b><span class="btn">一括で記録</span>を押すと、その生徒だけが並ぶので選びやすくなります。</p>
+    <figure class="fig-dialog"><img src="images/event_06_bulk.png" alt="一括で記録の窓"><figcaption>図7　一括で記録</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><span class="btn">すべて選ぶ</span><span class="btn">すべて外す</span>　右に、選んでいる人数が出ます。</div></li>
+      <li><span class="n">2</span><div><b>生徒の一覧</b>　名簿に表示している生徒が並びます。氏名の左の<b>チェックボックス</b>で選びます。右に、いまの記録（チラシ済・声掛け未 など）が出ます。</div></li>
+      <li><span class="n">3</span><div><b>済みにする／未に戻す</b>　ふつうは「済みにする（今日の日付）」のままです。まちがえて記録したものをまとめて取り消すときは「未に戻す」にします。</div></li>
+      <li><span class="n">4</span><div><b>記録する内容</b>　「チラシ配布済みにする」「声掛け済みにする」「保護者へ案内済みにする」から選びます（いくつでも）。その下の「反応」で、反応もまとめて入れられます。</div></li>
+      <li><span class="n">5</span><div><b>確かめ</b>　「4名に記録します：チラシ配布済み」のように、何人に何を記録するかが出ます。</div></li>
+      <li><span class="n">6</span><div><span class="btn">◯名に記録する</span>　押すと記録して、窓が閉じます。</div></li>
+    </ol>
+    <ul class="plain">
+      <li>すでに済みの生徒の日付は変わりません（その生徒は人数に数えません）。</li>
+      <li>やめるときは<span class="btn">やめる</span>か、窓の外を押します。</li>
+    </ul>
+  </section>
+</article>
+
+<article class="sheet chapter" id="ch4">
+  <header>
+    <div class="eyebrow">第4章</div>
+    <h2>絞り込みと並び順</h2>
+    <p>名簿の上の並び（図3 の <span class="n">2</span>）で、見たい生徒だけを出します。それぞれの選択肢に人数が出ます。</p>
+  </header>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>欄</th><th>選べるもの</th></tr></thead>
+      <tbody>
+        <tr><td class="num">校舎</td><td>すべての校舎／自分の部門の校舎。<b>まず自分の校舎を選びます</b></td></tr>
+        <tr><td class="num">表示する生徒</td><td><b>することがある</b>（最初はこれ。申込済・不参加の生徒は出ません）／重点で未決／未着手／参加したい・検討中／申込済／不参加／全員</td></tr>
+        <tr><td class="num">学年</td><td>すべての学年／名簿にある学年</td></tr>
+        <tr><td class="num">並び順</td><td><b>おすすめ（することがある順）</b>／学年（上の学年から・下の学年から）／氏名／校舎／進み具合（未着手から）／更新が新しい順</td></tr>
+        <tr><td class="num">氏名で絞り込み</td><td>氏名の一部を入れると、その生徒だけが出ます</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="box tip">
+    <div class="box-title">こんなときは</div>
+    <p><b>今日声を掛ける生徒を見たい</b> → 表示する生徒「することがある」（最初のまま）。★ の生徒が上に並びます。</p>
+    <p><b>まだ何もしていない生徒だけ見たい</b> → 表示する生徒「未着手」。</p>
+    <p><b>あと一押しの生徒を見たい</b> → 表示する生徒「参加したい・検討中」。</p>
+    <p><b>クラスごとに配った分を記録したい</b> → 校舎と学年を選び、表示する生徒「全員」にして「一括で記録」。</p>
+    <p><b>申し込んだ生徒を確かめたい</b> → 表示する生徒「申込済」。</p>
+  </div>
+  <ul class="plain">
+    <li>「氏名」の並びは、漢字の文字の順です（名簿にふりがなが無いので、五十音順ではありません）。生徒を探すときは「氏名で絞り込み」が早いです。</li>
+    <li>学年が入っていない生徒は、学年の並びではいちばん後ろに並びます。</li>
+  </ul>
+</article>
+
+<article class="sheet chapter" id="ch5">
+  <header>
+    <div class="eyebrow">第5章</div>
+    <h2>申込の状況を見る</h2>
+    <p>申込は、チラシの QR コードの Google フォームの回答を読んで、氏名で名簿の生徒に結び付けて出しています。<b>画面から申込を入れることはできません。</b></p>
+  </header>
+
+  <section class="sec" id="s5-1">
+    <h3><span class="no">5-1</span>申込済・未申込</h3>
+    <figure><img src="images/event_07_apply.png" alt="申込の列"><figcaption>図8　申込の列。申込済<span class="n">1</span>と未申込<span class="n">2</span></figcaption></figure>
+    <ul class="plain">
+      <li><b>申込済　生徒</b>　…　生徒本人が参加します。</li>
+      <li><b>申込済　生徒＋同伴1人</b>　…　生徒と、一緒に参加する方（保護者の方など）1人が参加します。人数は、フォームの「一緒に参加される方の人数」です。</li>
+      <li><b>未申込</b>　…　まだフォームの回答がありません。</li>
+      <li>申込済の印を押すと、フォームの回答（学校名・連絡先・希望進路・先生への質問など）が出ます。</li>
+      <li>申込は、画面を開いたとき・<span class="btn">最新にする</span>を押したときに読み直します。「さっき申し込んだ」と言われたら、<span class="btn">最新にする</span>を押してください。</li>
+    </ul>
+    <figure class="fig-dialog"><img src="images/event_08_answer.png" alt="フォームの回答"><figcaption>図9　申込済の印を押すと出る、フォームの回答</figcaption></figure>
+    <div class="box warn">
+      <div class="box-title">申し込んだはずなのに「未申込」のままのとき</div>
+      <p>フォームに書いた氏名が、名簿の氏名と合っていないことがあります（ひらがなで書いた、保護者の方の氏名で申し込んだ、など）。その申込は「名簿外の申込」に出ているので、5-2 の手順で生徒に結び付けてください。</p>
+    </div>
+  </section>
+
+  <section class="sec" id="s5-2">
+    <h3><span class="no">5-2</span>名簿外の申込</h3>
+    <p>フォームの回答のうち、名簿の誰とも結び付かなかったものが並びます。タブの赤い数字が件数です。<b>ときどき開いて、0件にしておいてください。</b></p>
+    <figure><img src="images/event_09_outside.png" alt="名簿外の申込"><figcaption>図10　名簿外の申込</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>名簿外の申込</b>のタブ　赤い数字が、結び付いていない申込の件数です。</div></li>
+      <li><span class="n">2</span><div><b>名簿の生徒に結び付ける</b>　名簿にいる生徒の申込なら、生徒を選んで<span class="btn">結び付ける</span>を押します。その生徒が「申込済」になります。</div></li>
+      <li><span class="n">3</span><div><span class="btn">名簿に足す</span>　名簿にいない生徒なら、ここから名簿に足します（5-3）。</div></li>
+      <li><span class="n">4</span><div><span class="btn">回答を見る</span>　フォームの回答の中身を見ます。だれの申込か分からないときに使います。</div></li>
+    </ol>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ここに出るのは</th><th>すること</th></tr></thead>
+        <tbody>
+          <tr><td>氏名の書き方が名簿とちがう（ひらがな・旧字体・あだ名）</td><td>生徒を選んで<span class="btn">結び付ける</span></td></tr>
+          <tr><td>保護者の方が、自分の氏名で申し込んだ</td><td>お子さんを選んで<span class="btn">結び付ける</span></td></tr>
+          <tr><td>同じ氏名の生徒が何人かいて、決められなかった</td><td>学年・校舎を見て、生徒を選んで<span class="btn">結び付ける</span></td></tr>
+          <tr><td>名簿にいない生徒（入ったばかりの生徒・外部の方）</td><td><span class="btn">名簿に足す</span>（外部の方で、追いかけなくてよければ、そのままでかまいません）</td></tr>
+          <tr><td>ほかの部門の校舎が書いてある</td><td>その部門の担当が対応します。そのままにしてください</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>まちがえて結び付けたときは、声掛け名簿でその生徒の「申込済」の印を押し、<span class="btn">この生徒との結び付けを外す</span>を押します。</p>
+  </section>
+
+  <section class="sec" id="s5-3">
+    <h3><span class="no">5-3</span>名簿にいない生徒を足す</h3>
+    <p>名簿のスプレッドシートに入っていない生徒（入ったばかりの生徒など）は、アプリから足せます。足した生徒は、自分の部門の名簿に入ります。</p>
+    <ul class="plain">
+      <li><b>名簿外の申込から足す</b>　<span class="btn">名簿に足す</span>を押すと、フォームの氏名・学校・学年・校舎・希望進路が入った状態で窓が開きます。確かめて<span class="btn">追加する</span>を押します。その生徒は「申込済」として名簿に入ります。</li>
+      <li><b>声掛け名簿から足す</b>　<span class="btn">＋ 生徒を追加</span>を押し、校舎と氏名（必須）、学年・学校・夢・志・志望校を入れて<span class="btn">追加する</span>を押します。</li>
+    </ul>
+    <figure class="fig-dialog"><img src="images/event_10_add.png" alt="生徒を追加の窓"><figcaption>図11　生徒を追加。内容を確かめて<span class="n">1</span>、追加する<span class="n">2</span></figcaption></figure>
+    <ul class="plain">
+      <li><b>校舎</b>は、名簿にある校舎の名前と同じに書いてください（候補から選べます）。</li>
+      <li>夢・志に「薬剤師」「看護師」などを入れると、★（重点）が付きます。</li>
+      <li>同じ氏名の生徒がすでに名簿にいると、注意が出ます。同じ生徒なら足さずに、5-2 の<span class="btn">結び付ける</span>を使ってください。</li>
+      <li>足した生徒には「追加 ✎」の印が付きます。押すと、内容を直す・名簿から外すができます。</li>
+      <li>もとの名簿（スプレッドシート）にいる生徒の氏名・学年・夢・志は、アプリからは直せません。管理部門に伝えてください。</li>
+    </ul>
+  </section>
+</article>
+
+<article class="sheet chapter" id="ch6">
+  <header>
+    <div class="eyebrow">第6章</div>
+    <h2>困ったとき</h2>
+  </header>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>こんなとき</th><th>こうしてください</th></tr></thead>
+      <tbody>
+        <tr><td>「保存できませんでした」と赤く出た</td><td>押したスイッチ・反応は元に戻っています。少し待って、もう一度押してください。何度も出るときは、<span class="btn">最新にする</span>を押すか、ページを読み込み直します。それでも出るときは管理部門に伝えてください。</td></tr>
+        <tr><td>押したのに変わらない</td><td>「保存中…」のあいだは、同じスイッチは変わりません。保存が終わるまで（1〜3秒）待ってください。</td></tr>
+        <tr><td>まちがえてオンにした</td><td>保存が終わってから、もう一度押すとオフに戻ります。何人もまちがえたときは、<span class="btn">一括で記録</span>で「未に戻す」を選びます（3-3）。</td></tr>
+        <tr><td>記録したのに、行の場所や「次にすること」の並びが変わらない</td><td>続けて入れやすいように、並びはその場では変えていません。「表示する生徒」か「並び順」を選び直すか、<span class="btn">最新にする</span>を押すと並べ直します。</td></tr>
+        <tr><td>申し込んだはずの生徒が「未申込」</td><td><span class="btn">最新にする</span>を押します。それでも変わらなければ、「名簿外の申込」に出ていないか見て、結び付けます（5-2）。</td></tr>
+        <tr><td>口頭・紙で「参加します」と言われた</td><td>申込は画面からは入れられません。チラシの QR コードのフォームから申し込んでもらってください（その場で一緒に入れてもかまいません）。それまでは、反応を「参加したい」にしておきます。</td></tr>
+        <tr><td>名簿に生徒がいない</td><td>校舎・表示する生徒・学年の絞り込みを確かめます（「全員」にすると全員出ます）。それでもいなければ、<span class="btn">＋ 生徒を追加</span>で足します（5-3）。</td></tr>
+        <tr><td>退会した生徒が名簿に出ている／氏名・学年がちがう</td><td>もとの名簿（スプレッドシート）を直す必要があります。管理部門に伝えてください。</td></tr>
+        <tr><td>ほかの部門の生徒が見えない</td><td>見えるのは自分の部門の生徒だけです。全部門の進み具合は、管理部門が見ています。</td></tr>
+        <tr><td>「保存先が未設定」「スプレッドシートの読み書きに失敗しました」と出る</td><td>管理部門に伝えてください。</td></tr>
+        <tr><td>ログインの画面に戻った</td><td>ログインが切れています（12時間で切れます）。もう一度ログインしてください。</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="box tip">
+    <div class="box-title">不具合・要望は</div>
+    <p>智翔館アプリのヘルプデスク「ご意見・不具合の報告」から送ってください。</p>
+  </div>
+</article>
+
+<footer class="end">イベント申込管理 教室担当者マニュアル v1.0.0　株式会社智翔館</footer>
+
+</div>

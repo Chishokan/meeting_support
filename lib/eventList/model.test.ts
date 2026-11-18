@@ -69,7 +69,7 @@ test('campusList：決まった順、知らない校舎は後ろ、未分類は�
 test('cleanTrackFields：知らない項目と形の違う値を捨てる', () => {
   assert.deepEqual(
     cleanTrackFields({ flyer: '2026-11-17', talk: '11/17', reaction: '行くかも', applied: 1, priority: '2', memo: ' あとで ', x: 1 }),
-    { flyer: '2026-11-17', talk: '', reaction: '', applied: '1', priority: '', memo: 'あとで' },
+    { flyer: '2026-11-17', talk: '', reaction: '', priority: '', memo: 'あとで' }, // applied（手入力の申込）は受け付けない
   );
   assert.deepEqual(cleanTrackFields({ reaction: '検討中' }), { reaction: '検討中' });
 });
@@ -79,7 +79,7 @@ test('trackFromSheet：シートが日付に読み替えた値もそろえる', 
   assert.equal(t.flyer, '2026-11-07');
   assert.equal(t.talk, '2026-11-17');
   assert.equal(t.reaction, '検討中');
-  assert.equal(t.applied, '1');
+  assert.equal('applied' in t, false); // シートの「申込」の列（手入力）は読まない
 });
 
 test('mapFormColumns：質問の文言から列を当てる', () => {
@@ -228,9 +228,9 @@ test('buildRows：段階と次にすること', () => {
     tr('B', { flyer: '2026-11-17' }),
     tr('C', { flyer: '2026-11-17', talk: '2026-11-17', reaction: '検討中' }),
     tr('D', { flyer: '2026-11-17', talk: '2026-11-17', reaction: '不参加' }),
-    tr('F', { applied: '1' }),
   ];
-  const apps = parseApplications(['タイムスタンプ', '生徒氏名', '保護者の参加人数', '保護者氏名'], [['t1', '', '1', '山 親']]);
+  // 申込はフォームの回答だけ：E は保護者だけの回答（手で結び付ける）、F は本人の回答（氏名で結び付く）
+  const apps = parseApplications(['タイムスタンプ', '生徒氏名', '保護者の参加人数', '保護者氏名'], [['t1', '', '1', '山 親'], ['t2', '谷五', '0', '']]);
   tracks.push(tr('E', { link: apps[0].id }));
   const { rows, unmatched } = buildRows(students, tracks, apps, WORDS);
   const by = Object.fromEntries(rows.map((r) => [r.student.key, r]));
@@ -287,9 +287,9 @@ test('sortRowsBy：学年・氏名・校舎・進み具合・更新の順に並�
   const tracks = [
     tr('A', { flyer: '2026-11-17', updatedAt: '2026/11/17 09:00' }),
     tr('B', { flyer: '2026-11-18', talk: '2026-11-18', reaction: '不参加', updatedAt: '2026/11/18 10:00' }),
-    tr('E', { applied: '1', updatedAt: '2026/11/18 08:00' }),
+    tr('E', { updatedAt: '2026/11/18 08:00' }),
   ];
-  const { rows } = buildRows(students, tracks, [], WORDS);
+  const { rows } = buildRows(students, tracks, parseApplications(['タイムスタンプ', 'お名前'], [['t1', 'お四']]), WORDS);
   const order = (k: Parameters<typeof sortRowsBy>[1]) => sortRowsBy(rows, k, ['駅前校', '日野校']).map((r) => r.student.key).join('');
   assert.equal(order('gradeDesc'), 'DBEAFC'); // 高1 → 中3 → 中1（駅前→日野）→ 小6 → 学年なし
   assert.equal(order('gradeAsc'), 'FEABDC');  // 小6 → 中1 → 中3 → 高1 → 学年なし（どちらでも最後）
