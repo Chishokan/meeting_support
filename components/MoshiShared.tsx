@@ -4,6 +4,7 @@
 // 個人成績表（A4 横の帳票）は components/MoshiReportSheet.tsx。
 // 計算は lib/moshi/model.ts、志望校の名前は lib/moshi/schools.ts。
 
+import { SkTable } from '@/components/Skeleton';
 import Link from 'next/link';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { CAMPUS_NAMES, SUBJECT_KEYS, campusInfo, round1, sortExams, type KenitsuExam, type KenitsuResult, type MoshiExam, type MoshiResult } from '@/lib/moshi/model';
@@ -227,7 +228,12 @@ export function ExamCampusBar({
 
 /** 回がまだ無い・読み込み中・失敗のときの表示。ready なら null。 */
 export function StateNote({ state, onRetry }: { state: MoshiState; onRetry: () => void }) {
-  if (state.status === 'loading') return <p className="ms-note">読み込み中…（スプレッドシートから読むので数秒かかります）</p>;
+  if (state.status === 'loading') return (
+    <div className="ms-note">
+      <p className="sk-caption">読み込み中…（スプレッドシートから読むので数秒かかります）</p>
+      <SkTable rows={8} cols={7} label="成績を読み込んでいます" />
+    </div>
+  );
   if (state.status === 'error') return (
     <div className="ms-note ms-note-err">
       <p>{state.message}</p>
