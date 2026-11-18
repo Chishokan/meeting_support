@@ -1,20 +1,21 @@
 'use client';
 
 // イベント申込管理（/event）。イベントの声掛け名簿と申込状況を、教室担当と管理担当が同じ画面で見る。
-//   校舎ごとの進み具合 … 管理担当向け。校舎ごとの チラシ配布・声掛け・申込・重点（薬剤師・医療系）の進み具合
+//   校舎ごとの進み具合 … 管理部門だけに出るタブ。校舎ごとの チラシ配布・声掛け・申込・重点（薬剤師・医療系）の進み具合
 //   声掛け名簿         … 教室担当向け。生徒ごとの「次にすること」。チラシ・声掛け・反応・保護者への案内をその場で記録する
 //   名簿外の申込       … フォームの回答のうち、名簿の誰とも結び付かなかったもの（RED個別・高校生・外部生・氏名の書き方が違う人）
 //   部門               … 小中等部・RED個別の職員には、自分の部門の生徒だけが届く（API で絞る）。管理部門は全部門を見て、上の切り替えで部門を選べる
+//   一括で記録         … 声掛け名簿の［一括で記録］。表示中の生徒をチェックボックスで選び、チラシ配布済み・声掛け済みなどをまとめて記録する
 //   生徒の追加         … 名簿に無い生徒を足す（声掛け名簿の［＋ 生徒を追加］、名簿外の申込の［名簿に足す］）。足した生徒は直す・外すができる
 // 申込は Google フォームの回答を氏名で名簿に結び付けて出す（手入力の申込も付けられる）。
 // 決まりと計算は lib/eventList/model.ts、イベントの中身は lib/eventList/event.ts、読み書きは lib/eventList/store.ts。
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CAMPUS_ORDER, DEFAULT_DEPT, DEPTS, EVENT, NO_CAMPUS, PRIORITY_WORDS } from '@/lib/eventList/event';
 import {
-  GRADES, PRIORITY_LABEL, REACTIONS, STAGE_LABEL, appLabel, autoPriority, buildRows, campusList, daysUntil, emptyTrack, linkIds, normCampus,
-  normGrade, normName, pct, sameNameStudents, shortDay, sortRows, summarize, todayJp,
-  type Application, type Reaction, type Student, type StudentInput, type StudentRow, type Summary, type Track, type TrackField,
+  DAY_FIELDS, GRADES, PRIORITY_LABEL, REACTIONS, STAGE_LABEL, TRACK_FIELDS, appLabel, bulkChanges, mergeSaved, revertFields, autoPriority, buildRows, campusList, daysUntil, emptyTrack, linkIds, normCampus,
+  normGrade, normName, pct, sameNameStudents, shortDay, sortRowsBy, summarize, todayJp, SORTS,
+  type Application, type BulkAction, type DayField, type Reaction, type SortKey, type Student, type StudentInput, type StudentRow, type Summary, type Track, type TrackField,
 } from '@/lib/eventList/model';
 
 const REASONS: Record<string, string> = {
@@ -38,6 +39,9 @@ type State = { status: 'loading' } | { status: 'error'; message: string } | ({ s
 type View = 'overview' | 'list' | 'outside';
 type Filter = 'todo' | 'urgent' | 'none' | 'thinking' | 'applied' | 'declined' | 'all';
 type Change = { row: StudentRow; fields: Partial<Record<TrackField, string>> };
+// 項目ごとの保存の様子（「生徒の鍵|項目」で引く）：saving＝保存の途中、saved＝保存できたばかり（少しのあいだ ✓ を出す）
+type SaveMarks = { pending: ReadonlyMap<string, number>; saved: ReadonlySet<string> };
+const markId = (key: string, f: string) => `${key}|${f}`;
 // 生徒を足す・直す窓：student＝直す生徒（足すときは無し）、app＝名簿外の申込から足すとき、init＝最初に入れておく値
 // dept＝足す生徒の部門（管理部門だけが選べる。ほかの職員はログインした部門になる）
 type Editing = { student?: Student; app?: Application; init: StudentInput; dept: string };
@@ -58,9 +62,15 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   const [view, setView] = useState<View>(admin ? 'overview' : 'list');
   const [campus, setCampus] = useState<string | null>(null); // null＝まだ選んでいない、''＝すべて
   const [filter, setFilter] = useState<Filter>('todo');
+  const [sort, setSort] = useState<SortKey>('todo');
   const [grade, setGrade] = useState('');
   const [q, setQ] = useState('');
-  const [busy, setBusy] = useState(0);
+  // 保存の途中の項目（数）。ref は保存の返事を入れるときにその場の値を読むため、state は画面に出すため
+  const pendingRef = useRef(new Map<string, number>());
+  const [pending, setPending] = useState<ReadonlyMap<string, number>>(new Map());
+  const [saved, setSaved] = useState<ReadonlySet<string>>(new Set());
+  const [flash, setFlash] = useState<'' | 'saved' | 'error'>(''); // 保存が終わった直後の知らせ（下の帯）
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [error, setError] = useState('');
   const [detail, setDetail] = useState<{ app: Application; row: StudentRow | null } | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -104,15 +114,30 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   }, [campus, admin, campuses, rooms]);
 
   // 記録を保存する。画面は先に書き換え、失敗したら元に戻す
+  // 記録を保存する。画面は先に書き換え、保存の途中の項目に印を付ける（押した所に「保存中」が出る）。
+  //   - 同じ項目の保存の途中は、もう一度押しても受け付けない（行の側で止める）
+  //   - 返事は、まだ保存の途中のほかの項目を上書きしないように入れる（mergeSaved）
+  //   - 失敗したら、その保存で変えた項目だけを元に戻す（revertFields）
   const save = useCallback(async (changes: Change[]) => {
     if (!changes.length) return;
-    const before = new Map(changes.map((c) => [c.row.student.key, c.row.track]));
+    const ids = changes.flatMap((c) => Object.keys(c.fields).map((f) => markId(c.row.student.key, f)));
+    const bump = (d: number) => {
+      const m = pendingRef.current;
+      for (const id of ids) { const n = (m.get(id) ?? 0) + d; if (n > 0) m.set(id, n); else m.delete(id); }
+      setPending(new Map(m));
+    };
+    const pendingOf = (key: string) => new Set(TRACK_FIELDS.filter((f) => pendingRef.current.has(markId(key, f))));
+    const notify = (kind: 'saved' | 'error') => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      setFlash(kind);
+      flashTimer.current = setTimeout(() => setFlash(''), kind === 'saved' ? 1800 : 5000);
+    };
     setTracks((m) => {
       const n = new Map(m);
       for (const c of changes) n.set(c.row.student.key, { ...(n.get(c.row.student.key) ?? emptyTrack(c.row.student.key)), ...c.fields } as Track);
       return n;
     });
-    setBusy((b) => b + 1);
+    bump(1);
     setError('');
     try {
       const res = await fetch('/api/event', {
@@ -122,20 +147,27 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
       });
       const j = await res.json().catch(() => null);
       if (!j?.ok) throw new Error(reasonText(j?.reason));
+      bump(-1);
       setTracks((m) => {
         const n = new Map(m);
-        for (const t of j.tracks as Track[]) n.set(t.key, t);
+        for (const t of j.tracks as Track[]) n.set(t.key, mergeSaved(n.get(t.key), t, pendingOf(t.key)));
         return n;
       });
+      setSaved((s) => new Set([...s, ...ids]));
+      setTimeout(() => setSaved((s) => new Set([...s].filter((id) => !ids.includes(id)))), 1600);
+      notify('saved');
     } catch (e) {
+      bump(-1);
       setTracks((m) => {
         const n = new Map(m);
-        for (const [k, t] of before) n.set(k, t);
+        for (const c of changes) {
+          const k = c.row.student.key;
+          n.set(k, revertFields(n.get(k) ?? emptyTrack(k), c.row.track, Object.keys(c.fields) as TrackField[], pendingOf(k)));
+        }
         return n;
       });
       setError(`保存できませんでした。${e instanceof Error && e.message ? e.message : reasonText('network_error')}`);
-    } finally {
-      setBusy((b) => b - 1);
+      notify('error');
     }
   }, []);
 
@@ -198,6 +230,16 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   const deptFor = (c: string) => state.students.find((st) => st.campus === c)?.dept ?? (deptView || DEFAULT_DEPT);
   const inCampus = activeCampus ? rows.filter((r) => r.student.campus === activeCampus) : rows;
   const openCampus = (c: string) => { setCampus(c); setView('list'); setFilter('todo'); setGrade(''); setQ(''); };
+  // 管理部門だけ：見る部門のプルダウン
+  const deptField = admin ? (
+    <Field label="部門">
+      <select value={deptView} onChange={(e) => { setDeptView(e.target.value); setCampus(''); }}>
+        {['', ...DEPTS].map((d) => (
+          <option key={d} value={d}>{d || 'すべての部門'}（{built.rows.filter((r) => !d || r.student.dept === d).length}）</option>
+        ))}
+      </select>
+    </Field>
+  ) : null;
   const blank = (c: string): StudentInput => ({ campus: c, school: '', grade: '', name: '', dream: '', hope: '' });
   const fromApp = (a: Application): Editing => ({
     app: a, dept: deptFor(a.campus),
@@ -210,29 +252,23 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
       <EventHead />
       <div className="ev-bar">
         <div className="ev-tabs">
-          <button type="button" className={view === 'overview' ? 'on' : ''} onClick={() => setView('overview')}>校舎ごとの進み具合</button>
+          {/* 校舎ごとの進み具合は管理部門だけ。ほかの部門は声掛け名簿から始まる */}
+          {admin && <button type="button" className={view === 'overview' ? 'on' : ''} onClick={() => setView('overview')}>校舎ごとの進み具合</button>}
           <button type="button" className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>声掛け名簿</button>
           <button type="button" className={view === 'outside' ? 'on' : ''} onClick={() => setView('outside')}>
             名簿外の申込{unmatched.length > 0 && <span className="ev-count">{unmatched.length}</span>}
           </button>
         </div>
         <div className="ev-fetched">
-          {busy > 0 ? '保存中…' : `${state.fetchedAt} 時点`}
+          {pending.size > 0
+            ? <span className="ev-saving"><span className="ev-spin" aria-hidden="true" />保存中…</span>
+            : flash === 'saved' ? <span className="ev-saved">✓ 保存しました</span> : `${state.fetchedAt} 時点`}
           <button type="button" className="ev-btn ev-btn-sub" disabled={refreshing} onClick={load}>{refreshing ? '読み込み中…' : '最新にする'}</button>
         </div>
       </div>
       {refreshing && <div className="ev-loadbar" role="status" aria-label="最新の名簿と申込状況を読み込んでいます" />}
 
-      {admin && (
-        <div className="ev-chips ev-depts" role="group" aria-label="部門">
-          <span>部門</span>
-          {['', ...DEPTS].map((d) => (
-            <button key={d} type="button" className={deptView === d ? 'on' : ''} onClick={() => { setDeptView(d); setCampus(''); }}>
-              {d || 'すべて'}<small>{built.rows.filter((r) => !d || r.student.dept === d).length}</small>
-            </button>
-          ))}
-        </div>
-      )}
+      {admin && view !== 'list' && <div className="ev-toolbar">{deptField}</div>}
 
       {error && <p className="ev-alert" role="alert">{error}</p>}
       {state.formStatus !== 'ok' && (
@@ -247,25 +283,26 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
       {view === 'overview' && <Overview rows={rows} campuses={campuses} unmatched={unmatched.length} onOpen={openCampus} />}
 
       {view === 'list' && (
-        <>
-          <div className="ev-chips">
-            <button type="button" className={activeCampus === '' ? 'on' : ''} onClick={() => setCampus('')}>すべて<small>{rows.length}</small></button>
-            {campuses.map((c) => (
-              <button key={c} type="button" className={activeCampus === c ? 'on' : ''} onClick={() => setCampus(c)}>
-                {c}<small>{rows.filter((r) => r.student.campus === c).length}</small>
-              </button>
-            ))}
-          </div>
-          <CampusList
-            rows={inCampus} scope={`${activeCampus}|${state.fetchedAt}|${rev}`} showCampus={activeCampus === ''} filter={filter} onFilter={setFilter} grade={grade} onGrade={setGrade} q={q} onQ={setQ}
-            onSave={save} onDetail={(app, row) => setDetail({ app, row })}
-            onAdd={() => setEditing({ init: blank(activeCampus), dept: deptFor(activeCampus) })} onEdit={(st) => setEditing(edit(st))}
-          />
-        </>
+        <CampusList
+          rows={inCampus} allRows={rows} campuses={campuses} campus={activeCampus} onCampus={setCampus} lead={deptField}
+          scope={`${activeCampus}|${state.fetchedAt}|${rev}`} showCampus={activeCampus === ''} filter={filter} onFilter={setFilter}
+          sort={sort} onSort={setSort} grade={grade} onGrade={setGrade} q={q} onQ={setQ}
+          onSave={save} marks={{ pending, saved }} onDetail={(app, row) => setDetail({ app, row })}
+          onAdd={() => setEditing({ init: blank(activeCampus), dept: deptFor(activeCampus) })} onEdit={(st) => setEditing(edit(st))}
+        />
       )}
 
       {view === 'outside' && (
         <Outside apps={unmatched} rows={rows} campuses={campuses} onLink={(app, row) => save([{ row, fields: { link: [...linkIds(row.track.link), app.id].join('\n') } }])} onDetail={(app) => setDetail({ app, row: null })} onAdd={(app) => setEditing(fromApp(app))} />
+      )}
+
+      {/* 保存の様子：表を下まで送っていても見えるよう、画面の下にも出す */}
+      {(pending.size > 0 || flash) && (
+        <div className={`ev-toast ${pending.size > 0 ? 'saving' : flash}`} role="status" aria-live="polite">
+          {pending.size > 0
+            ? <><span className="ev-spin" aria-hidden="true" />保存中…</>
+            : flash === 'saved' ? '✓ 保存しました' : '保存できませんでした。もう一度押してください'}
+        </div>
       )}
 
       {editing && (
@@ -300,13 +337,13 @@ function Skeleton({ view, admin }: { view: View; admin: boolean }) {
     <div className="ev-skeleton" role="status" aria-busy="true" aria-label="名簿と申込状況を読み込んでいます">
       <div className="ev-bar">
         <div className="ev-tabs">
-          <button type="button" className={view === 'overview' ? 'on' : ''} disabled>校舎ごとの進み具合</button>
+          {admin && <button type="button" className={view === 'overview' ? 'on' : ''} disabled>校舎ごとの進み具合</button>}
           <button type="button" className={view === 'list' ? 'on' : ''} disabled>声掛け名簿</button>
           <button type="button" disabled>名簿外の申込</button>
         </div>
         <div className="ev-fetched">名簿と申込状況を読み込んでいます…</div>
       </div>
-      {admin && <div className="ev-chips ev-depts"><Sk w={34} /><Sk w={86} h={32} /><Sk w={100} h={32} /><Sk w={100} h={32} /></div>}
+      {admin && view !== 'list' && <div className="ev-toolbar"><span className="ev-fld"><Sk w={34} h={12} /><Sk w={170} h={44} /></span></div>}
       {view === 'overview' ? (
         <div className="ev-cards">
           {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -315,9 +352,10 @@ function Skeleton({ view, admin }: { view: View; admin: boolean }) {
         </div>
       ) : (
         <>
-          <div className="ev-chips">{[78, 88, 88, 88, 88, 74].map((w, i) => <Sk key={i} w={w} h={32} />)}</div>
-          <div className="ev-filters">{[132, 110, 84, 160, 84, 84, 74].map((w, i) => <Sk key={i} w={w} h={32} />)}</div>
-          <div className="ev-tools"><Sk w={84} h={34} /><Sk w={180} h={34} /><Sk w={120} h={34} /></div>
+          <div className="ev-toolbar">
+            {[170, 210, 140, 220, 240].map((w, i) => <span key={i} className="ev-fld"><Sk w={56} h={12} /><Sk w={w} h={44} /></span>)}
+          </div>
+          <div className="ev-actions"><Sk w={220} h={16} /><span className="ev-spacer" /><Sk w={240} h={44} /><Sk w={130} h={44} /></div>
         </>
       )}
       <div className="ev-scroll">
@@ -423,57 +461,79 @@ function Overview({ rows, campuses, unmatched, onOpen }: { rows: StudentRow[]; c
 
 // ---- 声掛け名簿（教室担当） --------------------------------------------------
 
+// ラベル付きの入力（プルダウン・検索欄）。絞り込みの並びに横に並べ、狭い幅では折り返す
+function Field({ label, wide, children }: { label: string; wide?: boolean; children: ReactNode }) {
+  return <label className={`ev-fld ${wide ? 'wide' : ''}`}><span>{label}</span>{children}</label>;
+}
+
 function CampusList({
-  rows, scope, showCampus, filter, onFilter, grade, onGrade, q, onQ, onSave, onDetail, onAdd, onEdit,
+  rows, allRows, campuses, campus, onCampus, lead, scope, showCampus, filter, onFilter, sort, onSort, grade, onGrade, q, onQ, onSave, marks, onDetail, onAdd, onEdit,
 }: {
-  rows: StudentRow[]; scope: string; showCampus: boolean; filter: Filter; onFilter: (f: Filter) => void; grade: string; onGrade: (g: string) => void;
-  q: string; onQ: (v: string) => void; onSave: (c: Change[]) => void; onDetail: (app: Application, row: StudentRow) => void;
+  rows: StudentRow[]; allRows: StudentRow[]; campuses: string[]; campus: string; onCampus: (c: string) => void; lead: ReactNode;
+  scope: string; showCampus: boolean; filter: Filter; onFilter: (f: Filter) => void; sort: SortKey; onSort: (s: SortKey) => void;
+  grade: string; onGrade: (g: string) => void;
+  q: string; onQ: (v: string) => void; onSave: (c: Change[]) => void; marks: SaveMarks; onDetail: (app: Application, row: StudentRow) => void;
   onAdd: () => void; onEdit: (st: Student) => void;
 }) {
-  const grades = useMemo(() => [...new Set(rows.map((r) => r.student.grade).filter(Boolean))].sort(), [rows]);
+  const grades = useMemo(() => GRADES.filter((g) => rows.some((r) => r.student.grade === g)), [rows]);
   const scoped = rows.filter((r) => !grade || r.student.grade === grade);
   const test = FILTERS.find((f) => f.key === filter)!.test;
   const key = q.replace(/\s/g, '');
-  // 並びと顔ぶれは、絞り込み・校舎・学年・検索を変えたとき（と読み込み直したとき）にだけ決め直す。
+  // 並びと顔ぶれは、校舎・絞り込み・学年・並び順・検索を変えたとき（と読み込み直したとき）にだけ決め直す。
   // 記録を付けるたびに並べ直すと、押した行が動いたり消えたりして続けて入力できないため
   const [tick, setTick] = useState(0);
-  const sig = `${scope}|${filter}|${grade}|${key}|${tick}`;
+  const sig = `${scope}|${filter}|${sort}|${grade}|${key}|${tick}`;
   const frozen = useRef<{ sig: string; keys: string[] }>({ sig: '', keys: [] });
   if (frozen.current.sig !== sig) {
-    const list = sortRows(scoped.filter(test).filter((r) => !key || r.student.name.replace(/\s/g, '').includes(key)));
+    const list = sortRowsBy(scoped.filter(test).filter((r) => !key || r.student.name.replace(/\s/g, '').includes(key)), sort, campuses);
     frozen.current = { sig, keys: list.map((r) => r.student.key) };
   }
   const byKey = new Map(rows.map((r) => [r.student.key, r]));
   const shown = frozen.current.keys.map((k) => byKey.get(k)).filter((r): r is StudentRow => !!r);
-  const noFlyer = shown.filter((r) => !r.track.flyer);
   const today = todayJp();
-
-  const bulkFlyer = () => {
-    if (!noFlyer.length) return;
-    if (!window.confirm(`表示中の ${noFlyer.length} 名に「チラシを渡した（今日）」を付けます。よろしいですか？`)) return;
-    onSave(noFlyer.map((row) => ({ row, fields: { flyer: today } })));
-  };
+  const [bulk, setBulk] = useState(false); // ［一括で記録］の窓
 
   return (
     <section>
-      <div className="ev-filters">
-        {FILTERS.map((f) => (
-          <button key={f.key} type="button" className={`${filter === f.key ? 'on' : ''} ${f.key === 'urgent' ? 'hot' : ''}`} onClick={() => { onFilter(f.key); setTick((n) => n + 1); }}>
-            {f.label}<b>{scoped.filter(f.test).length}</b>
-          </button>
-        ))}
+      {/* 絞り込みの並び：どれもラベル付きのプルダウン。校舎 → 表示する生徒 → 学年 → 並び順 → 氏名 */}
+      <div className="ev-toolbar">
+        {lead}
+        <Field label="校舎">
+          <select value={campus} onChange={(e) => onCampus(e.target.value)}>
+            <option value="">すべての校舎（{allRows.length}）</option>
+            {campuses.map((c) => <option key={c} value={c}>{c}（{allRows.filter((r) => r.student.campus === c).length}）</option>)}
+          </select>
+        </Field>
+        <Field label="表示する生徒">
+          <select value={filter} onChange={(e) => { onFilter(e.target.value as Filter); setTick((n) => n + 1); }}>
+            {FILTERS.map((f) => <option key={f.key} value={f.key}>{f.label}（{scoped.filter(f.test).length}）</option>)}
+          </select>
+        </Field>
+        <Field label="学年">
+          <select value={grade} onChange={(e) => onGrade(e.target.value)}>
+            <option value="">すべての学年</option>
+            {grades.map((g) => <option key={g} value={g}>{g}（{rows.filter((r) => r.student.grade === g).length}）</option>)}
+          </select>
+        </Field>
+        <Field label="並び順">
+          <select value={sort} onChange={(e) => { onSort(e.target.value as SortKey); setTick((n) => n + 1); }}>
+            {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
+        </Field>
+        <Field label="氏名で絞り込み" wide>
+          <input type="search" value={q} onChange={(e) => onQ(e.target.value)} placeholder="例：山田" />
+        </Field>
       </div>
-      <div className="ev-tools">
-        <select value={grade} onChange={(e) => onGrade(e.target.value)} aria-label="学年">
-          <option value="">全学年</option>
-          {grades.map((g) => <option key={g} value={g}>{g}</option>)}
-        </select>
-        <input value={q} onChange={(e) => onQ(e.target.value)} placeholder="氏名で探す" aria-label="氏名で探す" />
-        <button type="button" className="ev-btn" onClick={onAdd}>＋ 生徒を追加</button>
+      <div className="ev-actions">
+        <span className="ev-result" role="status">
+          <b>{shown.length}</b>名を表示（{campus || 'すべての校舎'}：{rows.length}名）
+          {scoped.filter((r) => r.urgent).length > 0 && <em>重点で未決 {scoped.filter((r) => r.urgent).length}名</em>}
+        </span>
         <span className="ev-spacer" />
-        <button type="button" className="ev-btn ev-btn-sub" disabled={!noFlyer.length} onClick={bulkFlyer}>
-          表示中の {noFlyer.length} 名にチラシ配布済を付ける
+        <button type="button" className="ev-btn ev-btn-sub" disabled={!shown.length || marks.pending.size > 0} onClick={() => setBulk(true)}>
+          一括で記録
         </button>
+        <button type="button" className="ev-btn" onClick={onAdd}>＋ 生徒を追加</button>
       </div>
       <div className="ev-scroll">
         <table className="ev-table ev-list">
@@ -484,43 +544,164 @@ function CampusList({
             </tr>
           </thead>
           <tbody>
-            {shown.map((r) => <Row key={r.student.key} row={r} showCampus={showCampus} today={today} onSave={onSave} onDetail={onDetail} onEdit={onEdit} />)}
+            {shown.map((r) => <Row key={r.student.key} row={r} showCampus={showCampus} today={today} onSave={onSave} marks={marks} onDetail={onDetail} onEdit={onEdit} />)}
             {!shown.length && <tr><td colSpan={10} className="ev-empty">この条件の生徒はいません。</td></tr>}
           </tbody>
         </table>
       </div>
+      {bulk && <BulkDialog rows={shown} showCampus={showCampus} today={today} onRun={onSave} onClose={() => setBulk(false)} />}
       <p className="ev-hint">
-        チラシ・声掛け・保護者へ案内は、押すと今日の日付が入ります（もう一度押すと外れます）。申込はフォームの回答から自動で付きます。
-        口頭や紙で受けた申込は「手入力」で付けてください。★ を押すと、重点の付け外しができます。
-        記録を付けても行の並びはそのままです（上の絞り込みを押し直すと並べ直します）。
+        チラシ・声掛け・保護者へ案内は、スイッチを押すとオンになり今日の日付が入ります（もう一度押すとオフ）。押した所に「保存中」が出て、保存できると ✓ が出ます。申込はフォームの回答から自動で付きます。
+        クラスで配ったあとなど、何人もまとめて付けるときは［一括で記録］を使ってください。口頭や紙で受けた申込は「手入力」で付けてください。★ を押すと、重点の付け外しができます。
+        記録を付けても行の並びはそのままです（上の「表示する生徒」「並び順」を選び直すか［最新にする］で並べ直します）。
       </p>
     </section>
   );
 }
 
-function Row({ row, showCampus, today, onSave, onDetail, onEdit }: {
-  row: StudentRow; showCampus: boolean; today: string; onSave: (c: Change[]) => void; onDetail: (app: Application, row: StudentRow) => void;
-  onEdit: (st: Student) => void;
+// 一括で記録：表示中の生徒をチェックボックスで選び、チラシ配布済み・声掛け済みなどをまとめて記録する
+function BulkDialog({ rows, showCampus, today, onRun, onClose }: {
+  rows: StudentRow[]; showCampus: boolean; today: string; onRun: (c: Change[]) => void; onClose: () => void;
+}) {
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [mode, setMode] = useState<BulkAction['mode']>('on');
+  const [items, setItems] = useState<DayField[]>([]);
+  const [reaction, setReaction] = useState<Reaction | null>(null); // null＝変えない
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onClose]);
+  const toggle = (key: string) => setPicked((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  const toggleItem = (f: DayField) => setItems((a) => (a.includes(f) ? a.filter((x) => x !== f) : [...a, f]));
+  const chosen = rows.filter((r) => picked.has(r.student.key));
+  const action: BulkAction = { mode, items, reaction: mode === 'on' ? reaction : null };
+  const changes = bulkChanges(chosen, action, today);
+  const hasAction = items.length > 0 || (mode === 'on' && reaction != null);
+  const what = [
+    ...DAY_FIELDS.filter((d) => items.includes(d.key)).map((d) => (mode === 'on' ? d.done : `${d.label}を未に戻す`)),
+    ...(mode === 'on' && reaction != null ? [`反応を「${reaction || '未記入'}」に`] : []),
+  ].join('・');
+  return (
+    <div className="ev-modal" role="dialog" aria-modal="true" aria-label="一括で記録" onClick={onClose}>
+      <div className="ev-modal-body ev-bulk" onClick={(e) => e.stopPropagation()}>
+        <h2>一括で記録<small>（名簿に表示中の {rows.length}名から選ぶ）</small></h2>
+        <div className="ev-bulk-head">
+          <button type="button" className="ev-btn ev-btn-sub" onClick={() => setPicked(new Set(rows.map((r) => r.student.key)))}>すべて選ぶ</button>
+          <button type="button" className="ev-btn ev-btn-sub" disabled={!picked.size} onClick={() => setPicked(new Set())}>すべて外す</button>
+          <span className="ev-spacer" />
+          <span className="ev-result" role="status"><b>{chosen.length}</b>名を選択中</span>
+        </div>
+        <ul className="ev-bulk-list">
+          {rows.map((r) => {
+            const st = r.student;
+            return (
+              <li key={st.key}>
+                <label className={picked.has(st.key) ? 'on' : ''}>
+                  <input type="checkbox" checked={picked.has(st.key)} onChange={() => toggle(st.key)} />
+                  <span className="ev-bulk-name">{st.name}<small>{showCampus ? `${st.campus}・` : ''}{st.grade}</small></span>
+                  <span className="ev-bulk-now">
+                    {DAY_FIELDS.map((d) => (
+                      <span key={d.key} className={r.track[d.key] ? 'on' : ''}>{d.label}{r.track[d.key] ? `済 ${shortDay(r.track[d.key])}` : '未'}</span>
+                    ))}
+                    {r.stage === 'applied' && <span className="on">申込済</span>}
+                  </span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+        <fieldset className="ev-bulk-action">
+          <legend>選んだ生徒に記録する内容</legend>
+          <div className="ev-seg" role="radiogroup" aria-label="済みにする・未に戻す">
+            <label className={mode === 'on' ? 'on' : ''}><input type="radio" name="ev-bulk-mode" checked={mode === 'on'} onChange={() => setMode('on')} />済みにする（今日の日付）</label>
+            <label className={mode === 'off' ? 'on' : ''}><input type="radio" name="ev-bulk-mode" checked={mode === 'off'} onChange={() => setMode('off')} />未に戻す（取り消し）</label>
+          </div>
+          <div className="ev-bulk-items">
+            {DAY_FIELDS.map((d) => (
+              <label key={d.key} className={items.includes(d.key) ? 'on' : ''}>
+                <input type="checkbox" checked={items.includes(d.key)} onChange={() => toggleItem(d.key)} />
+                {mode === 'on' ? `${d.done}にする` : `${d.label}を未に戻す`}
+              </label>
+            ))}
+          </div>
+          {mode === 'on' && (
+            <Field label="反応（まとめて入れるとき）">
+              <select value={reaction == null ? '__keep' : reaction} onChange={(e) => setReaction(e.target.value === '__keep' ? null : (e.target.value as Reaction))}>
+                <option value="__keep">変えない</option>
+                {REACTIONS.filter((x) => x).map((x) => <option key={x} value={x}>{x}</option>)}
+              </select>
+            </Field>
+          )}
+        </fieldset>
+        <p className="ev-bulk-summary" role="status">
+          {!chosen.length ? '生徒を選んでください。'
+            : !hasAction ? '記録する内容を選んでください。'
+              : changes.length ? `${changes.length}名に記録します：${what}。${changes.length < chosen.length ? `（選んだ ${chosen.length}名のうち、${chosen.length - changes.length}名はすでにその状態なので変えません）` : ''}`
+                : `選んだ ${chosen.length}名は、すでにその状態です（変えるところがありません）。`}
+        </p>
+        <div className="ev-modal-foot">
+          <span className="ev-spacer" />
+          <button type="button" className="ev-btn ev-btn-sub" onClick={onClose}>やめる</button>
+          <button type="button" className="ev-btn" disabled={!changes.length} onClick={() => { onRun(changes); onClose(); }}>
+            {changes.length ? `${changes.length}名に記録する` : '記録する'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// オン／オフのスイッチ。オン＝右・色つき＋「済 11/18」、オフ＝左・灰色＋「未」。保存の途中は「保存中」を出し、押しても受け付けない
+function Toggle({ on, label, onText, offText = '未', state, onToggle }: {
+  on: boolean; label: string; onText: ReactNode; offText?: string; state: '' | 'saving' | 'saved'; onToggle: () => void;
+}) {
+  const saving = state === 'saving';
+  return (
+    <button
+      type="button" role="switch" aria-checked={on} aria-label={label} aria-busy={saving} aria-disabled={saving}
+      className={`ev-toggle ${on ? 'on' : ''} ${state}`} onClick={() => { if (!saving) onToggle(); }}
+    >
+      <span className="ev-toggle-track" aria-hidden="true"><span className="ev-toggle-knob">{saving && <span className="ev-spin" />}</span></span>
+      <span className="ev-toggle-text">
+        {saving ? '保存中…' : on ? onText : offText}
+        {state === 'saved' && <span className="ev-tick" aria-label="保存しました">✓</span>}
+      </span>
+    </button>
+  );
+}
+
+function Row({ row, showCampus, today, onSave, marks, onDetail, onEdit }: {
+  row: StudentRow; showCampus: boolean; today: string; onSave: (c: Change[]) => void; marks: SaveMarks;
+  onDetail: (app: Application, row: StudentRow) => void; onEdit: (st: Student) => void;
 }) {
   const { student: st, track: t } = row;
-  const set = (fields: Partial<Record<TrackField, string>>) => onSave([{ row, fields }]);
-  const dayBtn = (f: 'flyer' | 'talk' | 'parent', label: string) => (
-    <button type="button" className={`ev-check ${t[f] ? 'on' : ''}`} aria-pressed={!!t[f]} aria-label={label} onClick={() => set({ [f]: t[f] ? '' : today })}>
-      {t[f] ? <>済<small>{shortDay(t[f])}</small></> : '未'}
-    </button>
+  const stateOf = (f: TrackField): '' | 'saving' | 'saved' =>
+    marks.pending.has(markId(st.key, f)) ? 'saving' : marks.saved.has(markId(st.key, f)) ? 'saved' : '';
+  // 同じ項目の保存の途中は受け付けない（続けて押して、オン・オフが行ったり来たりしないように）
+  const set = (fields: Partial<Record<TrackField, string>>) => {
+    if (Object.keys(fields).some((f) => marks.pending.has(markId(st.key, f)))) return;
+    onSave([{ row, fields }]);
+  };
+  const dayToggle = (f: 'flyer' | 'talk' | 'parent', label: string) => (
+    <Toggle
+      on={!!t[f]} label={label} state={stateOf(f)} onText={<>済<small>{shortDay(t[f])}</small></>}
+      onToggle={() => set({ [f]: t[f] ? '' : today })}
+    />
   );
   // ★：自動で付いた重点は「外す（0）」⇄「自動に戻す」、付いていない生徒は「付ける（1）」⇄「外す」
   const auto = autoPriority(st, PRIORITY_WORDS);
   const togglePriority = () => set({ priority: auto ? (t.priority === '0' ? '' : '0') : (t.priority === '1' ? '' : '1') });
+  const reactionState = stateOf('reaction');
   return (
     <tr className={`${row.urgent ? 'ev-urgent' : ''} ${row.todo === '' ? 'ev-done' : ''}`}>
       <td>
         <button
-          type="button" className={`ev-star ${row.priority}`} onClick={togglePriority}
+          type="button" className={`ev-star ${row.priority} ${stateOf('priority')}`} onClick={togglePriority}
           title={row.priority ? `重点（${PRIORITY_LABEL[row.priority]}）。押すと外します` : '押すと重点にします'}
-          aria-label={row.priority ? '重点から外す' : '重点にする'} aria-pressed={row.priority !== ''}
+          aria-label={row.priority ? '重点から外す' : '重点にする'} aria-pressed={row.priority !== ''} aria-busy={stateOf('priority') === 'saving'}
         >
-          {row.priority === 'pharma' ? '★薬' : row.priority === 'medical' ? '★医' : row.priority === 'manual' ? '★' : '☆'}
+          {stateOf('priority') === 'saving' ? <span className="ev-spin" aria-hidden="true" /> : row.priority === 'pharma' ? '★薬' : row.priority === 'medical' ? '★医' : row.priority === 'manual' ? '★' : '☆'}
         </button>
       </td>
       <td className="ev-name">
@@ -533,21 +714,24 @@ function Row({ row, showCampus, today, onSave, onDetail, onEdit }: {
         {row.todo && <em className="ev-name-todo">{row.todo}</em>}
       </td>
       <td className="ev-dream">{st.dream || <i>未記入</i>}{st.hope && <small>志望校：{st.hope}</small>}</td>
-      <td>{dayBtn('flyer', 'チラシを渡した')}</td>
-      <td>{dayBtn('talk', '声を掛けた')}</td>
+      <td>{dayToggle('flyer', 'チラシを渡した')}</td>
+      <td>{dayToggle('talk', '声を掛けた')}</td>
       <td>
-        <select
-          className={`ev-reaction r-${REACTIONS.indexOf(t.reaction)}`} value={t.reaction} aria-label="反応"
-          onChange={(e) => {
-            const reaction = e.target.value as Reaction;
-            // 反応を聞けたなら、声は掛けている
-            set(reaction && !t.talk ? { reaction, talk: today } : { reaction });
-          }}
-        >
-          {REACTIONS.map((x) => <option key={x} value={x}>{x || '—'}</option>)}
-        </select>
+        <span className={`ev-field ${reactionState}`}>
+          <select
+            className={`ev-reaction r-${REACTIONS.indexOf(t.reaction)}`} value={t.reaction} aria-label="反応" disabled={reactionState === 'saving'}
+            onChange={(e) => {
+              const reaction = e.target.value as Reaction;
+              // 反応を聞けたなら、声は掛けている
+              set(reaction && !t.talk ? { reaction, talk: today } : { reaction });
+            }}
+          >
+            {REACTIONS.map((x) => <option key={x} value={x}>{x || '—'}</option>)}
+          </select>
+          <SaveNote state={reactionState} />
+        </span>
       </td>
-      <td>{dayBtn('parent', '保護者へ案内した')}</td>
+      <td>{dayToggle('parent', '保護者へ案内した')}</td>
       <td>
         <div className="ev-apply">
           {row.apps.map((a) => (
@@ -555,27 +739,43 @@ function Row({ row, showCampus, today, onSave, onDetail, onEdit }: {
               {appLabel(a)}
             </button>
           ))}
-          {t.applied === '1'
-            ? <button type="button" className="ev-badge ok hand" onClick={() => set({ applied: '' })} title="押すと手入力の申込を外します">手入力 ✓</button>
-            : !row.apps.length && <button type="button" className="ev-badge" onClick={() => set({ applied: '1' })}>手入力</button>}
+          {(t.applied === '1' || !row.apps.length) && (
+            <Toggle
+              on={t.applied === '1'} label="手入力の申込（口頭・紙で受けた申込）" state={stateOf('applied')} onText="手入力" offText="手入力"
+              onToggle={() => set({ applied: t.applied === '1' ? '' : '1' })}
+            />
+          )}
         </div>
       </td>
       <td className="ev-todo">{row.todo || <span className={`ev-stage ${row.stage}`}>{STAGE_LABEL[row.stage]}</span>}</td>
-      <td><Memo value={t.memo} onSave={(memo) => set({ memo })} /></td>
+      <td><Memo value={t.memo} state={stateOf('memo')} onSave={(memo) => set({ memo })} /></td>
     </tr>
   );
 }
 
-function Memo({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+// 入力欄の下に出す、保存の様子（保存中…／✓ 保存しました）
+function SaveNote({ state }: { state: '' | 'saving' | 'saved' }) {
+  if (!state) return null;
+  return (
+    <span className={`ev-savenote ${state}`} role="status">
+      {state === 'saving' ? <><span className="ev-spin" aria-hidden="true" />保存中…</> : '✓ 保存しました'}
+    </span>
+  );
+}
+
+function Memo({ value, state, onSave }: { value: string; state: '' | 'saving' | 'saved'; onSave: (v: string) => void }) {
   const [v, setV] = useState(value);
   useEffect(() => { setV(value); }, [value]);
   return (
-    <input
-      className="ev-memo" value={v} maxLength={500} placeholder="メモ" aria-label="メモ"
-      onChange={(e) => setV(e.target.value)}
-      onBlur={() => { if (v.trim() !== value) onSave(v.trim()); }}
-      onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) (e.target as HTMLInputElement).blur(); }}
-    />
+    <span className={`ev-field ${state}`}>
+      <input
+        className="ev-memo" value={v} maxLength={500} placeholder="メモ" aria-label="メモ" readOnly={state === 'saving'}
+        onChange={(e) => setV(e.target.value)}
+        onBlur={() => { if (v.trim() !== value) onSave(v.trim()); }}
+        onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) (e.target as HTMLInputElement).blur(); }}
+      />
+      <SaveNote state={state} />
+    </span>
   );
 }
 
