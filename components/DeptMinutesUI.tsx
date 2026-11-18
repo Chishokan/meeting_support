@@ -23,6 +23,8 @@ import {
   type PreshareRow,
 } from '@/lib/deptMinutesPreshare';
 import type { DecisionRow, MinutesRow } from '@/app/api/dept-minutes/list/route';
+import type { AgendaCandidate } from '@/app/api/dept-minutes/agenda/route';
+import { agendaLine, mergeAddedAgenda } from '@/lib/chishokanAi/meetingRecords';
 
 // 録音は1区間ずつ独立したファイルにして、会議中から順に文字起こししていく。
 // 会議が終わった時点でほぼ文字起こしが終わっている状態にするための作り。
@@ -262,6 +264,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [shareMsg, setShareMsg] = useState('');
   const [shareErr, setShareErr] = useState('');
   const [preshares, setPreshares] = useState<PreshareRow[]>([]);
+  // 智翔館AI から足された、この部門の「議題の候補」（事前共有がまだ無かったときに足されたもの）
+  const [agendaCands, setAgendaCands] = useState<AgendaCandidate[]>([]);
   const [openPreshare, setOpenPreshare] = useState<{ row: PreshareRow; when: string } | null>(null);
 
   const streamRef = useRef<MediaStream | null>(null);
@@ -418,8 +422,22 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       if (jm?.ok && Array.isArray(jm.items)) setMeetings(jm.items as MinutesRow[]);
       const jp = preRes ? await preRes.json().catch(() => ({})) : {};
       if (jp?.ok && Array.isArray(jp.items)) setPreshares(jp.items as PreshareRow[]);
+      const ca = await fetch(`/api/dept-minutes/agenda?campus=${encodeURIComponent(campus)}`).then((r) => r.json()).catch(() => null);
+      if (ca?.ok && Array.isArray(ca.items)) setAgendaCands(ca.items as AgendaCandidate[]);
     } catch {}
-  }, []);
+  }, [campus]);
+
+  // 議題の候補を、手順1の議題に入れる（入れた候補には「取り込み済み」の印を付ける）
+  async function takeAgendaCands() {
+    if (!agendaCands.length) return;
+    // 足した日（「2026/11/18 10:00」→「11/18」）
+    const stamp = (ts: string) => { const m = ts.match(/\d{4}\D(\d{1,2})\D(\d{1,2})/); return m ? `${Number(m[1])}/${Number(m[2])}` : ''; };
+    const lines = agendaCands.map((c) => agendaLine(c.item, c.detail, c.user, stamp(c.ts)));
+    setMeta((m) => ({ ...m, agenda: `${m.agenda.replace(/\s+$/, '')}${m.agenda.trim() ? '\n' : ''}${lines.join('\n')}` }));
+    const ids = agendaCands.map((c) => c.id);
+    setAgendaCands([]);
+    await fetch('/api/dept-minutes/agenda', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) }).catch(() => null);
+  }
 
   useEffect(() => {
     void loadSaved();
@@ -798,15 +816,29 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     setShareMsg('');
     setShareErr('');
     try {
+      // 事前共有を更新するときは、そのあいだに智翔館AI などから足された議題（・【追加】…）を手元の議題に足してから送る
+      //（手元の古い議題で上書きして、足された議題を消さないように）
+      let sending = meta;
+      if (shareId) {
+        const cur = await fetch('/api/dept-minutes/preshare').then((r) => r.json()).catch(() => null);
+        const row = Array.isArray(cur?.items) ? (cur.items as PreshareRow[]).find((r) => r.id === shareId) : undefined;
+        if (row) {
+          const merged = mergeAddedAgenda(meta.agenda, row.agenda);
+          if (merged !== meta.agenda) {
+            sending = { ...meta, agenda: merged };
+            setMeta(sending);
+          }
+        }
+      }
       const res = await fetch('/api/dept-minutes/preshare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: shareId, meta }),
+        body: JSON.stringify({ id: shareId, meta: sending }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) {
         setShareId(String(j.id));
-        setShareSnap(metaKey(meta));
+        setShareSnap(metaKey(sending));
         // どこに載ったかはボタンの横の文で伝えているので、ここは結果だけを短く出す。
         setShareMsg(j.updated ? '事前共有を更新しました。' : '事前共有しました。');
         void loadSaved();
@@ -1082,6 +1114,21 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                 />
               </label>
             </div>
+            {agendaCands.length > 0 && (
+              <div className="dm-agenda-cands">
+                <div className="dm-agenda-cands-title">💡 智翔館AI から足された議題の候補（{agendaCands.length}件）</div>
+                <ul>
+                  {agendaCands.map((c) => (
+                    <li key={c.id}>
+                      {c.item}
+                      {c.detail ? `（${c.detail}）` : ''}
+                      <span className="dm-agenda-cands-by">〔{c.user} {c.ts.slice(0, 10)}〕</span>
+                    </li>
+                  ))}
+                </ul>
+                <button type="button" onClick={() => void takeAgendaCands()}>議題に入れる</button>
+              </div>
+            )}
             <p className="dm-hint">
               入れておくと、「予定どおり進んだか」「話し合えなかった議題はどれか」まで議事録に出ます。
               レジュメを貼った場合は、その見出しをそのまま議題名に使います。

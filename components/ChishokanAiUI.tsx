@@ -18,6 +18,7 @@ import AiContextPanel, { type PinDraft, type PinProposalView, type SavedView } f
 import AiContextDiffDialog from '@/components/AiContextDiffDialog';
 import AiReportDialog from '@/components/AiReportDialog';
 import AiRequestDialog from '@/components/AiRequestDialog';
+import AiAgendaCard, { type AgendaProposalView } from '@/components/AiAgendaCard';
 import { imageToBase64, shrinkDataUrl } from '@/lib/chishokanAi/clientImage';
 import { attachOnlyQuestion, carryForSend, isHeavy, nextCarry, type HeavyAttach } from '@/lib/chishokanAi/attachCarry';
 import type { ReportContext } from '@/lib/chishokanAi/report';
@@ -77,6 +78,8 @@ type Msg = {
   pins?: string[];
   /** この回答で AI が作った画像（generate_image）。保存した会話には入らない（リンクは回答の文に残る） */
   images?: { name: string; url: string; src: string }[];
+  /** この回答で AI が出した、議題の追加の案（押すまで追加しない） */
+  agendas?: AgendaProposalView[];
 };
 
 /** 会話の番号（会話ログで1つの会話を探すため）。画面を開くたび・新しい相談のたびに作る。 */
@@ -703,7 +706,10 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           else if (ev.t === 'context') updateContext(mergeContext(contextRef.current, { reads: ev.reads, texts: ev.texts }));
           // 作り話のリンク（AI が道具を呼ばずに書いたファイルの URL）は、回答から消す（次の質問の履歴にも残さない）
           else if (ev.t === 'redact') draft = { ...draft, content: redactLinks(draft.content, ev.urls) };
-          else if (ev.t === 'image') {
+          else if (ev.t === 'agenda') {
+            const { t: _t, ...p } = ev;
+            draft = { ...draft, agendas: [...(draft.agendas ?? []), p] };
+          } else if (ev.t === 'image') {
             // 作った画像：回答の下に出し、次の質問にも「前の添付」として付け直す（「文字を大きく」などで直せる）
             const src = `data:${ev.mime};base64,${ev.data}`;
             draft = { ...draft, images: [...(draft.images ?? []), { name: ev.name, url: ev.url, src }] };
@@ -1048,6 +1054,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
                       <span className="ai-status">{m.status || '考えています…'}</span>
                     )}
                   </div>
+                  {!streaming && m.agendas?.map((p, j) => <AiAgendaCard key={`ag-${i}-${j}`} p={p} conversationId={convoIdRef.current} />)}
                   {m.images?.map((im, j) => (
                     <figure key={j} className="ai-image">
                       {/* eslint-disable-next-line @next/next/no-img-element */}

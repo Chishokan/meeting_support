@@ -23,6 +23,8 @@ export type AiEvent =
   | { t: 'redact'; urls: string[] }
   /** 作った画像（generate_image）。画面は回答の下に出し、次の質問にも「前の添付」として付け直す（lib/chishokanAi/imageGen.ts） */
   | { t: 'image'; name: string; url: string; mime: string; data: string }
+  /** 議題の追加の案（propose_agenda_item）。職員が［議題に追加する］を押したときだけ追加する（app/api/chishokan-ai/agenda） */
+  | { t: 'agenda'; dept: string; item: string; detail: string; meetingId: string; meetingTitle: string; meetingDate: string }
   | { t: 'error'; v: string };
 
 export function encodeEvent(ev: AiEvent): string {
@@ -185,6 +187,10 @@ export function statusFor(tool: string, input: Record<string, unknown>): string 
       return `📐 数学の教材を Word にしています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
     case 'create_google_doc':
       return `📝 Google ドキュメントを作っています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
+    case 'get_meeting_records':
+      return `🗂 会議の記録を読んでいます${s(input.dept) ? `（${s(input.dept)}）` : ''}`;
+    case 'propose_agenda_item':
+      return `📝 議題の追加の案を作っています${s(input.dept) ? `（${s(input.dept)}）` : ''}`;
     case 'generate_image':
       return `🎨 画像を作っています（30秒〜1分ほど）${s(input.name) ? `（${s(input.name).slice(0, 30)}）` : ''}`;
     case 'get_task_evaluation':
