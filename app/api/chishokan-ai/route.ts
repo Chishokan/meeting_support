@@ -50,8 +50,7 @@ import { MATH_QUIZ_TOOL } from '@/lib/chishokanAi/mathQuizTool';
 import { runTaskEvaluation, TASK_EVAL_TOOL } from '@/lib/chishokanAi/taskEval';
 import { carriedNote, CARRY_MAX_FILES, isHeavy } from '@/lib/chishokanAi/attachCarry';
 import { GENERATE_IMAGE_TOOL, IMAGE_MAX_PER_TURN } from '@/lib/chishokanAi/imageTool';
-import { runGenerateImage, type ImageSource } from '@/lib/chishokanAi/imageGen';
-import { geminiKeys } from '@/lib/transcribe';
+import { imageAvailable, runGenerateImage, type ImageSource } from '@/lib/chishokanAi/imageGen';
 import {
   buildCarryBlock,
   citationWarnings,
@@ -218,7 +217,7 @@ export async function POST(req: Request) {
   const system: Anthropic.TextBlockParam[] = [
     {
       type: 'text',
-      text: buildChishokanAiPrompt({ dept: session.campus, name: session.name, policy, index, tasks: taskListForPrompt(tasks), images: geminiKeys().length > 0 }),
+      text: buildChishokanAiPrompt({ dept: session.campus, name: session.name, policy, index, tasks: taskListForPrompt(tasks), images: imageAvailable() }),
       cache_control: { type: 'ephemeral' },
     },
   ];
@@ -235,8 +234,8 @@ export async function POST(req: Request) {
     MATH_QUIZ_TOOL,
     PROPOSE_CONTEXT_TOOL,
     TASK_EVAL_TOOL,
-    // 画像を作る道具（Google の API キーがあるときだけ）
-    ...(geminiKeys().length ? [GENERATE_IMAGE_TOOL] : []),
+    // 画像を作る道具（OpenAI か Google の API キーがあるときだけ）
+    ...(imageAvailable() ? [GENERATE_IMAGE_TOOL] : []),
   ] as unknown as Anthropic.Tool[];
   let tasksStarted = 0;
   // 計算の道具は、作業の手順書が使うときだけ足す（回答の途中で手順書を開いたら、次の往復から足す）。

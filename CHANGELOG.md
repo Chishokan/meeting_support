@@ -3,6 +3,13 @@
 智翔館アプリ群の本番リリースごとの変更を記録する。
 バージョンの付け方と本番に出す手順は [docs/release.md](docs/release.md) を参照。
 
+## [未リリース]
+
+### 変更
+- 智翔館AI（画像）：OpenAI の画像モデル（gpt-image-…）でも作れるようにした。Vercel に OPENAI_API_KEY があれば OpenAI を先に使い、
+  うまくいかなければ Google（GEMINI_API_KEY）で作る（CHISHOKAN_AI_IMAGE_PROVIDER=google で逆にできる）。
+  モデルは OPENAI_IMAGE_MODEL か、キーで使えるモデルの一覧から gpt-image の新しい版を自動で選ぶ。直すときは images/edits に元の画像を送る
+
 ## [1.13.0] - 2026-11-18
 
 ### 追加

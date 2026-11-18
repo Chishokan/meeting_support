@@ -1,6 +1,6 @@
 // 智翔館AI：画像を作る道具（generate_image）の定義と、入力の確かめ・Gemini の返事の読み取り。ほかに依存しない（テストしやすいように）。
 //
-// 2026-11-18：チラシの画像とスライドの挿絵を、智翔館AI の中で作れるようにした（Google の Gemini の画像モデル）。
+// 2026-11-18：チラシの画像とスライドの挿絵を、智翔館AI の中で作れるようにした（OpenAI の gpt-image か、Google の Gemini の画像モデル）。
 // これまでチラシは、AI が書いたプロンプトを職員が ChatGPT に貼って作っていた。
 // - 作った画像は Apps Script がドライブの「AI作成」に保存し、リンクを返す（apps_script/Code.gs の aiImageSave_）
 // - 画面は回答の下に画像を出し、次の質問にも「前の添付」として付け直す（「文字を大きく」などで直せる）
@@ -18,7 +18,7 @@ export const IMAGE_DAILY_DEFAULT = 20;
 export const GENERATE_IMAGE_TOOL = {
   name: 'generate_image',
   description:
-    '画像を作り、ドライブ（AI作成）に保存してリンクを返す（Google の画像生成AI）。職員が画像・チラシの画像・スライドの挿絵を頼んだときだけ使う。' +
+    '画像を作り、ドライブ（AI作成）に保存してリンクを返す（OpenAI か Google の画像生成AI）。職員が画像・チラシの画像・スライドの挿絵を頼んだときだけ使う。' +
     'prompt は絵の説明（何を・どんな雰囲気で・配色・構図。日本語でよい）。aspect は縦横の比（チラシ A4縦は 3:4、サイネージ・スライドは 16:9、SNS は 1:1）。' +
     'source に、前の回の画像・添付した画像のファイル名を渡すと、その画像を直す（「文字を大きく」「背景を青に」など）。' +
     '描かせないもの：実在の人物（講師・生徒・社長など）の顔、他社のロゴ・東進の素材、ロゴ・QRコード（あとから正式データを重ねる）。' +
@@ -110,4 +110,48 @@ export function imageDailyLimit(env: string | undefined = process.env.CHISHOKAN_
   if (env === undefined || !String(env).trim()) return IMAGE_DAILY_DEFAULT;
   const n = Number(env);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : IMAGE_DAILY_DEFAULT;
+}
+
+// --- OpenAI の画像モデル（gpt-image-…）。OPENAI_API_KEY があればこちらを先に使う（2026-11-18） ---
+
+/** OpenAI の画像の大きさ（どの gpt-image のモデルでも使える3つの大きさに寄せる）。 */
+export function openAiSize(aspect: ImageAspect): '1024x1024' | '1024x1536' | '1536x1024' {
+  if (aspect === '1:1') return '1024x1024';
+  return aspect === '4:3' || aspect === '3:2' || aspect === '16:9' ? '1536x1024' : '1024x1536';
+}
+
+/**
+ * OpenAI の画像モデルを選ぶ（GET /v1/models の id から）。「gpt-image-数字」の形で版の新しいものを先に、
+ * 日付つき・mini・ほかの名前のものはあとにする。何も無ければ gpt-image-1。
+ */
+export function pickOpenAiImageModels(ids: string[]): string[] {
+  const img = ids.filter((id) => /^gpt-image-/i.test(id));
+  const ver = (id: string) => Number((/^gpt-image-(\d+(?:\.\d+)?)/i.exec(id) ?? [])[1] ?? 0);
+  const plain = (id: string) => /^gpt-image-\d+(?:\.\d+)?$/i.test(id);
+  const sorted = [...img].sort((a, b) => Number(plain(b)) - Number(plain(a)) || Number(/mini/i.test(a)) - Number(/mini/i.test(b)) || ver(b) - ver(a));
+  return sorted.length ? sorted.slice(0, 3) : ['gpt-image-1'];
+}
+
+/** OpenAI の画像の返事から、画像を取り出す。止まった理由も返す。 */
+export function readOpenAiImage(j: unknown, status: number): { ok: true; mime: string; data: string } | { ok: false; reason: 'blocked' | 'empty' | 'error'; detail: string } {
+  const o = (j && typeof j === 'object' ? j : {}) as Record<string, unknown>;
+  const err = (o.error ?? null) as Record<string, unknown> | null;
+  if (err || status >= 400) {
+    const code = String(err?.code ?? err?.type ?? '');
+    const msg = String(err?.message ?? `HTTP ${status}`).slice(0, 200);
+    if (/moderation|content_policy|safety/i.test(code + msg)) return { ok: false, reason: 'blocked', detail: msg };
+    return { ok: false, reason: 'error', detail: msg };
+  }
+  const d = Array.isArray(o.data) ? (o.data[0] as Record<string, unknown> | undefined) : undefined;
+  if (d && typeof d.b64_json === 'string' && d.b64_json) {
+    const fmt = String(o.output_format ?? 'png');
+    return { ok: true, mime: fmt === 'jpeg' || fmt === 'jpg' ? 'image/jpeg' : fmt === 'webp' ? 'image/webp' : 'image/png', data: d.b64_json };
+  }
+  return { ok: false, reason: 'empty', detail: '画像が返ってきませんでした' };
+}
+
+/** 使う画像の会社の順（CHISHOKAN_AI_IMAGE_PROVIDER で先を決める。既定は OpenAI → Google）。キーが無いものは外す。 */
+export function imageProviders(has: { openai: boolean; google: boolean }, pref: string | undefined = process.env.CHISHOKAN_AI_IMAGE_PROVIDER): ('openai' | 'google')[] {
+  const order: ('openai' | 'google')[] = String(pref ?? '').trim().toLowerCase() === 'google' ? ['google', 'openai'] : ['openai', 'google'];
+  return order.filter((p) => has[p]);
 }

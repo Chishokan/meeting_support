@@ -81,7 +81,7 @@ const FRAME = `
 type Args = { dept: string; name: string; policy: string; index: string; tasks?: string; images?: boolean };
 
 // 画像を作る道具（generate_image）があるときだけ書く（Google の API キーが無いときは、作れると言わないように）
-const IMAGE_LINE = `- 画像の作成：generate_image（チラシ・ポスター・サイネージの画像、スライドの挿絵。頼まれたときだけ。Google の画像生成AI）。
+const IMAGE_LINE = `- 画像の作成：generate_image（チラシ・ポスター・サイネージの画像、スライドの挿絵。頼まれたときだけ。OpenAI か Google の画像生成AI）。
   作った画像は画面に出て、次の質問にも付け直されるので、「文字を大きく」などと頼まれたら source に前の画像のファイル名を入れて直す。
   画像の中の日本語は崩れることがあるので、日付・料金・電話番号は原稿と照らし合わせてもらう。実在の人物の顔・他社のロゴ・QRコードは描かせない。
 `;
