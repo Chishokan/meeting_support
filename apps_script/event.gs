@@ -13,6 +13,8 @@
  *   名簿           … このスクリプトを付けたスプレッドシート（「中等部名簿」）の、見出しに「生徒名」と「所属校舎」がある全部のタブ。
  *                     読むだけ。アプリが言ってきた列（所属校舎・中学校名・学年・生徒名・夢・志・志望校・student_id・№）だけを返す
  *                     （面談の記録など、ほかの列はアプリに渡さない）
+ *                     RED個別のタブ（「RED個別（イベント用）」）は、部門・所属校舎・学年・生徒名だけの表。「部門」の列に RED個別 と入れる
+ *                     （「部門」の列が無いタブ・空の行は、アプリ側で小中等部として扱う）
  *   声掛けの記録   … 同じスプレッドシートのタブ「イベント声掛け記録」（setupEvent で作る）。1行＝イベント×生徒1人
  *   足した生徒     … 同じスプレッドシートのタブ「イベント追加生徒」（setupEvent で作る）。1行＝アプリで足した生徒1人
  *                     （RED個別・高校生・外部生など、名簿に無い生徒。名簿のタブには書き込まない）
@@ -50,8 +52,8 @@ var EVENT_TRACK_HEADERS = ['イベントID', '生徒キー', '校舎', '氏名',
 var EVENT_TRACK_FIELDS = ['チラシ', '声掛け', '反応', '保護者案内', '申込', '申込ひも付け', '重点', 'メモ'];
 var EVENT_ADDED_SHEET = 'イベント追加生徒';
 // ★lib/eventList/model.ts の ADDED_HEADERS・addedFromSheet と同じ名前
-var EVENT_ADDED_HEADERS = ['イベントID', 'ID', '校舎', '中学校', '学年', '氏名', '夢・志', '志望校', '作成日時', '作成者', '更新日時', '更新者', '削除'];
-var EVENT_ADDED_FIELDS = ['校舎', '中学校', '学年', '氏名', '夢・志', '志望校'];
+var EVENT_ADDED_HEADERS = ['イベントID', 'ID', '部門', '校舎', '中学校', '学年', '氏名', '夢・志', '志望校', '作成日時', '作成者', '更新日時', '更新者', '削除'];
+var EVENT_ADDED_FIELDS = ['部門', '校舎', '中学校', '学年', '氏名', '夢・志', '志望校'];
 // 名簿のタブだと見分ける見出し（この2つが同じ行にあるタブを名簿として読む）
 var EVENT_ROSTER_MARKS = ['生徒名', '所属校舎'];
 
@@ -286,6 +288,14 @@ function addedRow_(values, col, eventId, id) {
   return -1;
 }
 
+/** data.scope（部門）があるときは、その部門の生徒の行だけを直せる・外せる（部門が空の行は data.defaultDept として扱う）。 */
+function inScope_(row, col, data) {
+  var scope = String(data.scope || '');
+  if (!scope) return true;
+  var dept = col['部門'] == null ? '' : String(row[col['部門']]);
+  return (dept || String(data.defaultDept || '')) === scope;
+}
+
 /** data.id が空なら1人足す。あればその行の data.fields（見出し → 値）を書く。 */
 function saveEventStudent_(data) {
   var eventId = String(data.eventId || '');
@@ -308,6 +318,7 @@ function saveEventStudent_(data) {
     if (id) {
       r = addedRow_(values, col, eventId, id);
       if (r < 0 || String(values[r][col['削除']]) === '1') return { ok: false, reason: 'not_found' };
+      if (!inScope_(values[r], col, data)) return { ok: false, reason: 'not_found' };
       row = values[r];
     } else {
       row = [];
@@ -345,7 +356,7 @@ function deleteEventStudent_(data) {
     var col = {};
     values[0].forEach(function (h, i) { if (h) col[h] = i; });
     var r = addedRow_(values, col, eventId, id);
-    if (r < 0) return { ok: false, reason: 'not_found' };
+    if (r < 0 || !inScope_(values[r], col, data)) return { ok: false, reason: 'not_found' };
     sh.getRange(r + 1, col['削除'] + 1).setValue('1');
     sh.getRange(r + 1, col['更新日時'] + 1).setValue(nowJp_());
     sh.getRange(r + 1, col['更新者'] + 1).setValue(String(data.user || ''));

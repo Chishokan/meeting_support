@@ -12,6 +12,7 @@
 export type Student = {
   key: string;       // 記録を結ぶ鍵。student_id があればそれ、無ければ「校舎|氏名（空白なし）」
   studentId: string;
+  dept: string;      // 部門（小中等部／RED個別）。ログインした部門の生徒だけが見える
   campus: string;    // 所属校舎
   school: string;    // 中学校名
   grade: string;     // 中１ → 中1 にそろえる
@@ -166,13 +167,13 @@ export const TRACK_HEADERS: Record<TrackField, string> = {
 
 // ---- 名簿 -----------------------------------------------------------------
 
-export type RosterColumns = { no: string; campus: string; school: string; grade: string; name: string; dream: string; hope: string; studentId: string };
+export type RosterColumns = { no: string; dept: string; campus: string; school: string; grade: string; name: string; dream: string; hope: string; studentId: string };
 
 /**
  * 名簿のスプレッドシートの行（見出しの名前 → 値）を生徒にする。
  * 「例」の行・氏名の無い行は捨てる。同じ鍵が2回出たら後のほうを捨てる（2つのタブに同じ生徒がいるとき）。
  */
-export function parseRoster(rows: Record<string, unknown>[], col: RosterColumns, noCampus: string): Student[] {
+export function parseRoster(rows: Record<string, unknown>[], col: RosterColumns, noCampus: string, defaultDept: string): Student[] {
   const out: Student[] = [];
   const seen = new Set<string>();
   for (const r of rows) {
@@ -184,7 +185,7 @@ export function parseRoster(rows: Record<string, unknown>[], col: RosterColumns,
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({
-      key, studentId, campus, school: s(r[col.school]), grade: normGrade(r[col.grade]), name,
+      key, studentId, dept: s(r[col.dept]) || defaultDept, campus, school: s(r[col.school]), grade: normGrade(r[col.grade]), name,
       dream: s(r[col.dream]), hope: s(r[col.hope]),
     });
   }
@@ -209,12 +210,12 @@ export const ADDED_HEADERS: Record<keyof StudentInput, string> = {
   campus: '校舎', school: '中学校', grade: '学年', name: '氏名', dream: '夢・志', hope: '志望校',
 };
 
-export function addedFromSheet(o: Record<string, unknown>): Student | null {
+export function addedFromSheet(o: Record<string, unknown>, defaultDept: string): Student | null {
   const key = s(o['ID']);
   const name = s(o['氏名']);
   if (!key || !name) return null;
   return {
-    key, studentId: '', campus: s(o['校舎']), school: s(o['中学校']), grade: normGrade(o['学年']), name,
+    key, studentId: '', dept: s(o['部門']) || defaultDept, campus: s(o['校舎']), school: s(o['中学校']), grade: normGrade(o['学年']), name,
     dream: s(o['夢・志']), hope: s(o['志望校']), added: true,
   };
 }
@@ -393,6 +394,24 @@ export function matchApplications(students: Student[], tracks: Map<string, Track
     else unmatched.push(a);
   }
   return { byStudent, unmatched };
+}
+
+// ---- 部門で絞る -------------------------------------------------------------
+
+/**
+ * ある部門の職員に返す分だけに絞る（dept が null なら全部）。
+ *   生徒・記録 … その部門の生徒の分だけ
+ *   申込       … その部門の生徒に結び付いた申込と、どの部門の生徒とも結び付いていない申込（名簿外）。
+ *                ほかの部門の生徒に結び付いた申込は返さない（名簿外に見えて、二重に足してしまわないように）
+ */
+export function scopeData(students: Student[], tracks: Track[], apps: Application[], dept: string | null): { students: Student[]; tracks: Track[]; applications: Application[] } {
+  if (dept == null) return { students, tracks, applications: apps };
+  const { byStudent, unmatched } = matchApplications(students, new Map(tracks.map((t) => [t.key, t])), apps);
+  const mine = students.filter((st) => st.dept === dept);
+  const keys = new Set(mine.map((st) => st.key));
+  const keep = new Set(unmatched.map((a) => a.id));
+  for (const [key, list] of byStudent) if (keys.has(key)) for (const a of list) keep.add(a.id);
+  return { students: mine, tracks: tracks.filter((t) => keys.has(t.key)), applications: apps.filter((a) => keep.has(a.id)) };
 }
 
 // ---- 画面の1行（次にすること） -----------------------------------------------
