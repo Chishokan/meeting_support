@@ -69,3 +69,37 @@ test('imageDailyLimit・道具の説明', () => {
   assert.match(GENERATE_IMAGE_TOOL.description, /実在の人物/);
   assert.match(GENERATE_IMAGE_TOOL.description, /日付・料金・電話番号/);
 });
+
+// --- OpenAI の画像（gpt-image） ---
+import { imageProviders, openAiSize, pickOpenAiImageModels, readOpenAiImage } from './imageTool.ts';
+
+test('openAiSize：縦横の比を、gpt-image の3つの大きさに寄せる', () => {
+  assert.equal(openAiSize('1:1'), '1024x1024');
+  assert.equal(openAiSize('3:4'), '1024x1536');
+  assert.equal(openAiSize('9:16'), '1024x1536');
+  assert.equal(openAiSize('16:9'), '1536x1024');
+  assert.equal(openAiSize('4:3'), '1536x1024');
+});
+
+test('pickOpenAiImageModels：gpt-image の新しい版を先に。日付つき・mini・ほかの名前はあと', () => {
+  const ids = ['gpt-4.1', 'gpt-image-1', 'gpt-image-1-mini', 'gpt-image-1.5', 'gpt-image-2', 'gpt-image-2-2026-04-21', 'dall-e-3'];
+  assert.deepEqual(pickOpenAiImageModels(ids), ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1']);
+  assert.deepEqual(pickOpenAiImageModels(['gpt-4.1']), ['gpt-image-1']);
+});
+
+test('readOpenAiImage：画像・描けない内容・エラーを見分ける', () => {
+  assert.deepEqual(readOpenAiImage({ data: [{ b64_json: 'AAAA' }] }, 200), { ok: true, mime: 'image/png', data: 'AAAA' });
+  assert.equal((readOpenAiImage({ data: [{ b64_json: 'AAAA' }], output_format: 'jpeg' }, 200) as { mime: string }).mime, 'image/jpeg');
+  const blocked = readOpenAiImage({ error: { code: 'moderation_blocked', message: 'Your request was rejected by the safety system.' } }, 400);
+  assert.ok(!blocked.ok && blocked.reason === 'blocked');
+  const quota = readOpenAiImage({ error: { code: 'insufficient_quota', message: 'You exceeded your current quota' } }, 429);
+  assert.ok(!quota.ok && quota.reason === 'error' && /quota/.test(quota.detail));
+  assert.ok(!readOpenAiImage({ data: [] }, 200).ok);
+});
+
+test('imageProviders：既定は OpenAI → Google。キーの無いものは外す', () => {
+  assert.deepEqual(imageProviders({ openai: true, google: true }, undefined), ['openai', 'google']);
+  assert.deepEqual(imageProviders({ openai: true, google: true }, 'google'), ['google', 'openai']);
+  assert.deepEqual(imageProviders({ openai: false, google: true }, ''), ['google']);
+  assert.deepEqual(imageProviders({ openai: false, google: false }, ''), []);
+});
