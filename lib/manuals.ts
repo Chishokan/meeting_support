@@ -120,4 +120,15 @@ export const MANUALS: ManualDoc[] = [
     downloadName: 'イベント申込管理_教室担当者マニュアル_v1.0.0.pdf',
     meta: 'v1.0.0｜PDF・A4・15ページ｜約3.1MB',
   },
+  // ナレーションの mp3 がまだ無いので、字幕だけの版を置いている。音声を入れたら meta と desc を直す（docs/manual/video/event-list/README.md）
+  {
+    id: 'event-list-video',
+    title: '動画：イベント申込管理 声掛け名簿の使い方',
+    desc: '名簿の開き方、「次にすること」と ★、スイッチでの記録と保存の見方、一括で記録、申込の状況と名簿外の申込を、画面と字幕で説明します（教室担当者向け。音声はありません）',
+    kind: 'video',
+    href: '/manual/event-list.mp4',
+    downloadName: 'イベント申込管理_声掛け名簿の使い方_動画マニュアル.mp4',
+    meta: '約2分20秒｜MP4｜約5.3MB｜字幕のみ（音声なし）',
+    poster: '/manual/event-list-poster.jpg',
+  },
 ];
