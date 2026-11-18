@@ -1,5 +1,6 @@
 'use client';
 
+import { SkLines } from '@/components/Skeleton';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { STAFF } from '@/lib/core/staff';
@@ -236,7 +237,7 @@ export default function DashboardUI({
       </h2>
       {minutes.length === 0 ? (
         <p className="dash-empty">
-          {loading ? '読み込み中…' : 'まだ保存された議事録はありません。'}
+          {loading ? <SkLines lines={2} /> : 'まだ保存された議事録はありません。'}
           {!loading && <> <Link href="/dept-minutes">部門会議</Link>から作れます。</>}
         </p>
       ) : (
@@ -281,7 +282,7 @@ export default function DashboardUI({
       {shareItems.length === 0 ? (
         <p className="dash-empty">
           {loading
-            ? '読み込み中…'
+            ? <SkLines lines={2} />
             : 'まだ事前共有事項はありません。会議AIで事前報告をまとめ、'}
           {!loading && <><Link href="/report">報告</Link>から転記すると、ここに集まります。</>}
         </p>
@@ -321,7 +322,7 @@ export default function DashboardUI({
       </h2>
       {upcoming.length === 0 ? (
         <p className="dash-empty">
-          {loading ? '読み込み中…' : 'これからの部門会議の事前共有はありません。'}
+          {loading ? <SkLines lines={2} /> : 'これからの部門会議の事前共有はありません。'}
           {!loading && (
             <>
               {' '}
@@ -388,7 +389,7 @@ export default function DashboardUI({
       </h2>
       {recentProgress.length === 0 ? (
         <p className="dash-empty">
-          {loading ? '読み込み中…' : 'まだ中間報告はありません。'}
+          {loading ? <SkLines lines={2} /> : 'まだ中間報告はありません。'}
           {!loading && <> <Link href="/progress">中間報告</Link>から送れます。</>}
         </p>
       ) : (
@@ -439,7 +440,7 @@ export default function DashboardUI({
       </h2>
       {yoko.length === 0 ? (
         <p className="dash-empty">
-          {loading ? '読み込み中…' : '実施中・開始間近の要項はありません。'}
+          {loading ? <SkLines lines={2} /> : '実施中・開始間近の要項はありません。'}
           {!loading && <> <Link href="/helpdesk">要項QA</Link>で確定済みの一覧を見られます。</>}
         </p>
       ) : (
@@ -471,7 +472,7 @@ export default function DashboardUI({
         cases.length === 0 ? (
           <p className="dash-empty">
             {loading
-              ? '読み込み中…'
+              ? <SkLines lines={2} />
               : 'まだ成功事例はありません。会議AIの「月次報告」「講習の結果報告」でまとめ、「報告完了」と送ると'}
             {!loading && 'ここに集まります。'}
           </p>
@@ -615,7 +616,7 @@ export default function DashboardUI({
             <h2>直近の中間報告</h2>
             {recent.length === 0 ? (
               <p className="dash-empty">
-                {loading ? '読み込み中…' : 'まだ中間報告はありません。'}
+                {loading ? <SkLines lines={2} /> : 'まだ中間報告はありません。'}
                 {!loading && <> <Link href="/progress">中間報告</Link>から送れます。</>}
               </p>
             ) : (
@@ -668,7 +669,7 @@ export default function DashboardUI({
           <h2>報告すべき項目・期日</h2>
           {deptItems.length === 0 ? (
             <p className="dash-empty">
-              {loading ? '読み込み中…' : '報告項目が設定されていません。'}
+              {loading ? <SkLines lines={2} /> : '報告項目が設定されていません。'}
             </p>
           ) : (
             <>

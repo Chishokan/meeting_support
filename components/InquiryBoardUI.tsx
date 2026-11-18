@@ -16,6 +16,7 @@
 // - 集計（学年別の問合・面談・体験・入塾）は元シート右側の表を再現したもの
 // - 保存先は Apps Script 経由のスプレッドシート「問合せ台帳」（lib/inquiryStore.ts）
 
+import { SkTable } from '@/components/Skeleton';
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   BOARD_CAMPUSES, GRADES, SOURCES, TERMS, CONTACTS, MARKS, RESULTS,
@@ -648,7 +649,7 @@ export default function InquiryBoardUI({ name }: { name: string }) {
       {okMsg && <div className="ib-note ib-note-dev">{okMsg}</div>}
 
       {loading && !items.length ? (
-        <p className="ib-empty">読み込み中…</p>
+        <SkTable rows={10} cols={9} label="問い合わせを読み込んでいます" />
       ) : shown.length === 0 ? (
         <p className="ib-empty">{items.length === 0 && !note ? 'まだ登録がありません。「＋ 新規登録」から追加してください。' : '該当する問い合わせはありません。'}</p>
       ) : (

@@ -5,6 +5,7 @@
 //   月間の計画 … 自分が担当の門配を月ごとに一覧で見る（見るだけ。計画の変更は社員が行う）
 // 他のアプリ（会議DXなど）へのリンクは置かない。読み書きは /api/monpai-staff だけ。
 
+import { SkList, SkTable } from '@/components/Skeleton';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { samePerson, shiftMonth, staffNames, todayJst, weekOf, type MonpaiRecord } from '@/lib/monpai/model';
 import { fetchMyRecords, reasonText, reportMyRecord } from '@/lib/monpai/client';
@@ -97,7 +98,7 @@ function ReportTab({ me }: { me: string }) {
   return (
     <div className="mp mp-report">
       {error && <div className="mp-note">{error}</div>}
-      {loading && <div className="mp-loading">読み込み中…</div>}
+      {loading && <SkList rows={3} label="門配の予定を読み込んでいます" />}
 
       <h2 className="mp-h2" style={{ marginTop: 0 }}>報告待ち <span className="mp-count">{pending.length}</span></h2>
       {pending.length === 0 && !loading && <p className="mp-muted">報告待ちの門配はありません。</p>}
@@ -153,7 +154,7 @@ function PlanTab({ me }: { me: string }) {
         </div>
       </div>
       {error && <div className="mp-note">{error}</div>}
-      {loading && <div className="mp-loading">読み込み中…</div>}
+      {loading && <SkTable rows={5} cols={5} label="門配の予定を読み込んでいます" />}
 
       {!loading && (
         <p className="mp-muted">

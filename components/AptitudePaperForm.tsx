@@ -5,6 +5,7 @@
 // 入れると次の番号（同じ列の下のマス。列の最後なら次の列の先頭）へ進む。
 // 公開中の版で使わない設問は「—」になり、入れなくてよい。
 
+import { SkTable } from '@/components/Skeleton';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AnswerValue, Question, Version } from '@/lib/aptitude/model';
 import { api, failText } from '@/lib/aptitude/client';
@@ -105,7 +106,7 @@ export default function AptitudePaperForm({
           <button className="dm-modal-close" onClick={close} aria-label="閉じる">×</button>
         </div>
         <div className="dm-modal-body">
-          {!questions && !err && <p className="apt-muted">設問を読み込み中…</p>}
+          {!questions && !err && <SkTable rows={10} cols={10} label="設問を読み込んでいます" />}
           {questions && (
             <>
               <div className="apt-paper-wrap">

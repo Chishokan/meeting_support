@@ -961,6 +961,14 @@ docs/superpowers/specs/2026-10-08-aptitude-test-design.md。
 2. 門配管理で SUPABASE_URL などを設定済みならそのまま動く。初回に画面を開くと、初期の版（v1：設問100問・判定基準）が自動で入る
 3. Vercel に CRON_SECRET を設定する（問合せ管理の cron と共通）
 
+## 読み込み中の表示（スケルトン）
+データを読んでいるあいだは、「読み込み中…」の文字の代わりに、これから出るものの形を灰色の枠で出す（全アプリ共通）。
+- 部品: components/Skeleton.tsx（Sk＝棒1本／SkLines＝文章の行／SkTable＝表／SkTableRows＝すでにある表の中の行／SkList＝カードの一覧／SkCards＝数字のカード）
+- 見た目: app/globals.css の「読み込み中の枠（スケルトン）」。動きを減らす設定（prefers-reduced-motion）の端末では動かさない
+- ★新しい画面で読み込みを待つときは、この部品を使う（`{loading && <SkTable rows={8} cols={6} label="…を読み込んでいます" />}`）。
+  失敗したとき・空のときの表示は、各画面がこれまでどおり出す
+- イベント申込管理だけは、画面の形に合わせた専用の枠（components/EventListUI.tsx の Skeleton）を使う
+
 ## ログ / セキュリティ（テスト版のため要ハードニング）
 - 会話は Vercel のログに [CHAT_LOG] として出力。durable 保存は lib/core/log.ts で DB 追加。
 - 認証は簡易版（氏名＋校舎＋合言葉）。本番は Google SSO 等へ。
