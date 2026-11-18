@@ -4,7 +4,7 @@
 //   校舎ごとの進み具合 … 管理部門だけに出るタブ。校舎ごとの チラシ配布・声掛け・申込・重点（薬剤師・医療系）の進み具合
 //   声掛け名簿         … 教室担当向け。生徒ごとの「次にすること」。チラシ・声掛け・反応・保護者への案内をその場で記録する
 //   名簿外の申込       … フォームの回答のうち、名簿の誰とも結び付かなかったもの（RED個別・高校生・外部生・氏名の書き方が違う人）
-//   部門               … 小中等部・RED個別の職員には、自分の部門の生徒だけが届く（API で絞る）。管理部門は全部門を見て、上の切り替えで部門を選べる
+//   部門               … 小中等部・RED個別・高等部の職員には、自分の部門の生徒だけが届く（API で絞る）。管理部門は全部門を見て、上の切り替えで部門を選べる
 //   一括で記録         … 声掛け名簿の［一括で記録］。表示中の生徒をチェックボックスで選び、チラシ配布済み・声掛け済みなどをまとめて記録する
 //   生徒の追加         … 名簿に無い生徒を足す（声掛け名簿の［＋ 生徒を追加］、名簿外の申込の［名簿に足す］）。足した生徒は直す・外すができる
 // 申込は Google フォームの回答を氏名で名簿に結び付けて出す（手入力の申込も付けられる）。
@@ -475,7 +475,11 @@ function CampusList({
   q: string; onQ: (v: string) => void; onSave: (c: Change[]) => void; marks: SaveMarks; onDetail: (app: Application, row: StudentRow) => void;
   onAdd: () => void; onEdit: (st: Student) => void;
 }) {
-  const grades = useMemo(() => GRADES.filter((g) => rows.some((r) => r.student.grade === g)), [rows]);
+  // 学年の選択肢：小1〜高3 の順。それ以外の書き方（高等部の「本科」など）は後ろに足す
+  const grades = useMemo(() => {
+    const have = new Set(rows.map((r) => r.student.grade).filter(Boolean));
+    return [...GRADES.filter((g) => have.has(g)), ...[...have].filter((g) => !GRADES.includes(g))];
+  }, [rows]);
   const scoped = rows.filter((r) => !grade || r.student.grade === grade);
   const test = FILTERS.find((f) => f.key === filter)!.test;
   const key = q.replace(/\s/g, '');
