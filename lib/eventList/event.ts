@@ -33,7 +33,7 @@ export const PRIORITY_WORDS = {
 // （面談の記録など、ほかの列はアプリに持ってこない）。
 export const ROSTER_COLUMNS = {
   no: '№',
-  dept: '部門', // 無いタブ・空の行は DEFAULT_DEPT（小中等部）。RED個別のタブはこの列に「RED個別」と入れる
+  dept: '部門', // 無いタブ・空の行は DEFAULT_DEPT（小中等部）。RED個別・高等部のタブはこの列に「RED個別」「高等部」と入れる
   campus: '所属校舎',
   school: '中学校名',
   grade: '学年',
@@ -44,13 +44,14 @@ export const ROSTER_COLUMNS = {
 };
 
 // 名簿を分ける部門（ログインした部門の生徒だけが見える。管理部門は全部）。lib/eventList/access.ts
-export const DEPTS = ['小中等部', 'RED個別'];
+export const DEPTS = ['小中等部', 'RED個別', '高等部'];
 export const DEFAULT_DEPT = '小中等部';
 
 // 校舎の並び順（名簿にあるほかの校舎は、この後ろに出てきた順で並ぶ）
 export const CAMPUS_ORDER = [
   '駅前校', '日野校', '大野校', '日宇校', '県中',
   'RED日野', 'RED大島', 'RED広田', 'RED大野', 'RED京町', 'RED佐々', 'ネクスタ駅前',
+  '東進駅前校', '東進日宇校', '東進大野校', // 高等部（小中等部の 駅前校・日宇校・大野校 と分けるため「東進」を付けている）
 ];
 // 校舎が空の生徒の置き場
 export const NO_CAMPUS = '未分類';

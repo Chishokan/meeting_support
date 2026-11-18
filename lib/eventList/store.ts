@@ -114,6 +114,10 @@ function sampleData(): LocalData {
       ...src.map((x, i) => row(i + 1, ...x)),
       red('RED広田', '中3', '個別 いちか'), red('RED広田', '中2', '個別 にこ'), red('RED広田', '', '個別 みつき'),
       red('RED日野', '中3', '個別 よつば'), red('RED日野', '中1', '個別 いつき'), red('ネクスタ駅前', '中3', '個別 むつみ'),
+      // 高等部のタブ：氏名・学年・学校（夢・志は無い）
+      ...([['東進駅前校', '高2', '高等 ななせ', '北高'], ['東進駅前校', '高1', '高等 やひろ', '南高'], ['東進駅前校', '本科', '高等 ここの', '西高'],
+        ['東進大野校', '高3', '高等 とわ', '西'], ['東進日宇校', '高2', '高等 いちか', '南高']] as const)
+        .map(([campus, grade, name, school]): SheetRow => ({ [C.dept]: '高等部', [C.campus]: campus, [C.grade]: grade, [C.name]: name, [C.school]: school })),
     ],
     tracks: [],
     added: [],
