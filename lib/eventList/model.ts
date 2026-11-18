@@ -511,6 +511,48 @@ export function sortRows(rows: StudentRow[]): StudentRow[] {
     || a.student.name.localeCompare(b.student.name, 'ja'));
 }
 
+// 名簿の並び順（画面の「並び順」のプルダウン）
+export type SortKey = 'todo' | 'gradeDesc' | 'gradeAsc' | 'name' | 'campus' | 'stage' | 'updated';
+export const SORTS: { key: SortKey; label: string }[] = [
+  { key: 'todo', label: 'おすすめ（することがある順）' },
+  { key: 'gradeDesc', label: '学年（上の学年から）' },
+  { key: 'gradeAsc', label: '学年（下の学年から）' },
+  { key: 'name', label: '氏名' },
+  { key: 'campus', label: '校舎' },
+  { key: 'stage', label: '進み具合（未着手から）' },
+  { key: 'updated', label: '更新が新しい順' },
+];
+
+/**
+ * 名簿を並べる。campuses は校舎の並び（campusList の結果）。
+ *   学年 … 小1〜高3 の順（上から／下から）。学年が空・読めない生徒は、どちらでも最後。同じ学年は校舎・氏名の順
+ *   氏名 … 漢字の文字の順（名簿にふりがなが無いので、読みの五十音順ではない）
+ *   校舎 … 校舎の並びの順。同じ校舎は上の学年から・氏名の順
+ *   進み具合 … 未着手 → チラシ配布済 → 声掛け済 → 参加したい → 検討中 → 申込済 → 不参加
+ *   更新 … 記録の更新日時が新しい順。まだ記録の無い生徒は最後
+ */
+export function sortRowsBy(rows: StudentRow[], key: SortKey, campuses: string[] = []): StudentRow[] {
+  if (key === 'todo') return sortRows(rows);
+  const name = (a: StudentRow, b: StudentRow) => a.student.name.localeCompare(b.student.name, 'ja');
+  const campusRank = (r: StudentRow) => { const i = campuses.indexOf(r.student.campus); return i < 0 ? campuses.length : i; };
+  const campus = (a: StudentRow, b: StudentRow) => campusRank(a) - campusRank(b) || a.student.campus.localeCompare(b.student.campus, 'ja');
+  const gradeRank = (r: StudentRow) => GRADES.indexOf(r.student.grade);
+  const grade = (dir: 1 | -1) => (a: StudentRow, b: StudentRow) => {
+    const x = gradeRank(a), y = gradeRank(b);
+    if (x < 0 || y < 0) return (x < 0 ? 1 : 0) - (y < 0 ? 1 : 0); // 学年が空の生徒は最後
+    return dir * (x - y);
+  };
+  const by: Record<Exclude<SortKey, 'todo'>, (a: StudentRow, b: StudentRow) => number> = {
+    gradeDesc: (a, b) => grade(-1)(a, b) || campus(a, b) || name(a, b),
+    gradeAsc: (a, b) => grade(1)(a, b) || campus(a, b) || name(a, b),
+    name: (a, b) => name(a, b) || campus(a, b),
+    campus: (a, b) => campus(a, b) || grade(-1)(a, b) || name(a, b),
+    stage: (a, b) => STAGE_RANK[a.stage] - STAGE_RANK[b.stage] || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || grade(-1)(a, b) || name(a, b),
+    updated: (a, b) => (b.track.updatedAt || '').localeCompare(a.track.updatedAt || '') || name(a, b),
+  };
+  return [...rows].sort(by[key]);
+}
+
 // ---- 集計（校舎ごとの進み具合） ----------------------------------------------
 
 export type Summary = {

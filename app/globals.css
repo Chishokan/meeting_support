@@ -3360,24 +3360,6 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .ev-barnum { font-size: 12.5px; color: #445; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ev-barnum small { margin-left: 5px; color: #778; }
 
-.ev-chips, .ev-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-.ev-chips button, .ev-filters button {
-  border: 1px solid #cdd3da; background: #fff; border-radius: 18px; padding: 6px 13px; font-size: 13.5px; font-weight: 700; color: #334; cursor: pointer;
-}
-.ev-chips button small, .ev-filters button b { margin-left: 6px; font-size: 12px; color: #778; font-weight: 700; }
-.ev-chips button.on { background: var(--navy); border-color: var(--navy); color: #fff; }
-.ev-chips button.on small { color: #cfe0f0; }
-.ev-filters button { border-radius: 8px; background: #f7f9fb; }
-.ev-filters button.on { background: #e4eef8; border-color: var(--navy); color: var(--navy); }
-.ev-filters button.on b { color: var(--navy); }
-.ev-filters button.hot b { color: #c0392b; }
-
-.ev-depts { align-items: center; margin-top: 10px; }
-.ev-depts > span { font-size: 12.5px; font-weight: 700; color: #556; margin-right: 2px; }
-.ev-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
-.ev-tools select, .ev-tools input { width: auto; padding: 6px 10px; font-size: 13.5px; }
-.ev-tools input { width: 180px; }
-
 .ev-list td { white-space: nowrap; }
 .ev-list tr.ev-urgent > td:first-child { box-shadow: inset 4px 0 0 #d9534f; }
 .ev-list tr.ev-done > td { background: #fafbfc; color: #778; }
@@ -3465,16 +3447,6 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .ev-fill.ok { background: var(--ev-accent); }
 .ev-barnum, .ev-updated { color: var(--ev-sub); }
 
-.ev-chips button, .ev-filters button {
-  min-height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--ev-field); background: #fff; color: var(--ev-text); font-size: 14px; font-weight: 500;
-}
-.ev-chips button small, .ev-filters button b { color: var(--ev-sub); font-weight: 500; }
-.ev-chips button.on, .ev-filters button.on { background: var(--ev-accent-bg); border-color: var(--ev-accent); color: var(--ev-accent); font-weight: 700; }
-.ev-chips button.on small, .ev-filters button.on b { color: var(--ev-accent-text); }
-.ev-filters button.hot b { color: #b0302a; }
-.ev-tools select, .ev-tools input { min-height: 44px; padding: 0 12px; font-size: 14px; border: 1px solid var(--ev-field); border-radius: 8px; color: var(--ev-text); }
-.ev-tools input { width: 220px; }
-
 .ev-list tr.ev-done > td { background: #fafbfc; color: var(--ev-sub); }
 .ev-name small, .ev-dream small { color: var(--ev-sub); }
 .ev-list td.ev-todo { color: var(--ev-text); }
@@ -3484,6 +3456,21 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .ev-star.medical { background: #fff1dc; color: #8a4b00; border-color: #efcf9a; }
 .ev-star.manual { background: var(--ev-accent-bg); color: var(--ev-accent-text); border-color: #b9c7de; }
 .ev-star.saving { cursor: progress; }
+
+/* 絞り込みの並び：ラベル付きのプルダウン・検索欄を横に並べ、狭い幅では折り返す。その下に件数と操作のボタン */
+.ev-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 0 0 12px; }
+.ev-fld { display: flex; flex-direction: column; gap: 4px; margin: 0; font-weight: 400; }
+.ev-fld > span:first-child { font-size: 12px; color: var(--ev-sub2); font-weight: 500; }
+.ev-fld select, .ev-fld input {
+  width: auto; min-width: 150px; min-height: 44px; padding: 0 12px; font-size: 14px; border: 1px solid var(--ev-field); border-radius: 8px;
+  background-color: #fff; color: var(--ev-text);
+}
+.ev-fld.wide { flex: 1 1 220px; max-width: 320px; }
+.ev-fld.wide input { width: 100%; box-sizing: border-box; }
+.ev-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.ev-result { color: var(--ev-sub); font-size: 13px; }
+.ev-result b { color: var(--ev-text); font-size: 16px; margin-right: 1px; }
+.ev-result em { font-style: normal; margin-left: 12px; padding: 2px 10px; border-radius: 12px; background: #fde8e6; color: #b0302a; font-size: 12px; font-weight: 700; }
 
 /* スイッチ（チラシ・声掛け・保護者へ案内・手入力の申込）。オン＝つまみが右＋アクセント色＋「済 日付」、オフ＝左＋灰色＋「未」 */
 .ev-toggle {
@@ -3549,8 +3536,6 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
   animation: ev-shimmer 1.4s ease infinite;
 }
 .ev-skeleton .ev-card { gap: 8px; }
-.ev-skeleton .ev-chips, .ev-skeleton .ev-filters, .ev-skeleton .ev-tools { align-items: center; }
-.ev-skeleton .ev-chips .ev-sk { border-radius: 18px; }
 .ev-skeleton .ev-tabs button:disabled { cursor: default; }
 .ev-skeleton .ev-table td { padding-top: 13px; padding-bottom: 13px; }
 .sk-loadbar { height: 3px; margin: 8px 0; border-radius: 2px; }
@@ -3586,4 +3571,8 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
   .ev-modal-body dl > div { grid-template-columns: 1fr; gap: 2px; }
   .ev-name-todo { display: block; }
   .ev-form-grid { grid-template-columns: 1fr; }
+  .ev-fld { flex: 1 1 140px; }
+  .ev-fld select { width: 100%; min-width: 0; }
+  .ev-fld.wide { max-width: none; }
+  .ev-actions .ev-btn { flex: 1 1 auto; }
 }

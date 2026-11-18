@@ -1,7 +1,7 @@
 'use client';
 
 // イベント申込管理（/event）。イベントの声掛け名簿と申込状況を、教室担当と管理担当が同じ画面で見る。
-//   校舎ごとの進み具合 … 管理担当向け。校舎ごとの チラシ配布・声掛け・申込・重点（薬剤師・医療系）の進み具合
+//   校舎ごとの進み具合 … 管理部門だけに出るタブ。校舎ごとの チラシ配布・声掛け・申込・重点（薬剤師・医療系）の進み具合
 //   声掛け名簿         … 教室担当向け。生徒ごとの「次にすること」。チラシ・声掛け・反応・保護者への案内をその場で記録する
 //   名簿外の申込       … フォームの回答のうち、名簿の誰とも結び付かなかったもの（RED個別・高校生・外部生・氏名の書き方が違う人）
 //   部門               … 小中等部・RED個別の職員には、自分の部門の生徒だけが届く（API で絞る）。管理部門は全部門を見て、上の切り替えで部門を選べる
@@ -13,8 +13,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { CAMPUS_ORDER, DEFAULT_DEPT, DEPTS, EVENT, NO_CAMPUS, PRIORITY_WORDS } from '@/lib/eventList/event';
 import {
   GRADES, PRIORITY_LABEL, REACTIONS, STAGE_LABEL, TRACK_FIELDS, appLabel, mergeSaved, revertFields, autoPriority, buildRows, campusList, daysUntil, emptyTrack, linkIds, normCampus,
-  normGrade, normName, pct, sameNameStudents, shortDay, sortRows, summarize, todayJp,
-  type Application, type Reaction, type Student, type StudentInput, type StudentRow, type Summary, type Track, type TrackField,
+  normGrade, normName, pct, sameNameStudents, shortDay, sortRowsBy, summarize, todayJp, SORTS,
+  type Application, type Reaction, type SortKey, type Student, type StudentInput, type StudentRow, type Summary, type Track, type TrackField,
 } from '@/lib/eventList/model';
 
 const REASONS: Record<string, string> = {
@@ -61,6 +61,7 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   const [view, setView] = useState<View>(admin ? 'overview' : 'list');
   const [campus, setCampus] = useState<string | null>(null); // null＝まだ選んでいない、''＝すべて
   const [filter, setFilter] = useState<Filter>('todo');
+  const [sort, setSort] = useState<SortKey>('todo');
   const [grade, setGrade] = useState('');
   const [q, setQ] = useState('');
   // 保存の途中の項目（数）。ref は保存の返事を入れるときにその場の値を読むため、state は画面に出すため
@@ -228,6 +229,16 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   const deptFor = (c: string) => state.students.find((st) => st.campus === c)?.dept ?? (deptView || DEFAULT_DEPT);
   const inCampus = activeCampus ? rows.filter((r) => r.student.campus === activeCampus) : rows;
   const openCampus = (c: string) => { setCampus(c); setView('list'); setFilter('todo'); setGrade(''); setQ(''); };
+  // 管理部門だけ：見る部門のプルダウン
+  const deptField = admin ? (
+    <Field label="部門">
+      <select value={deptView} onChange={(e) => { setDeptView(e.target.value); setCampus(''); }}>
+        {['', ...DEPTS].map((d) => (
+          <option key={d} value={d}>{d || 'すべての部門'}（{built.rows.filter((r) => !d || r.student.dept === d).length}）</option>
+        ))}
+      </select>
+    </Field>
+  ) : null;
   const blank = (c: string): StudentInput => ({ campus: c, school: '', grade: '', name: '', dream: '', hope: '' });
   const fromApp = (a: Application): Editing => ({
     app: a, dept: deptFor(a.campus),
@@ -240,7 +251,8 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
       <EventHead />
       <div className="ev-bar">
         <div className="ev-tabs">
-          <button type="button" className={view === 'overview' ? 'on' : ''} onClick={() => setView('overview')}>校舎ごとの進み具合</button>
+          {/* 校舎ごとの進み具合は管理部門だけ。ほかの部門は声掛け名簿から始まる */}
+          {admin && <button type="button" className={view === 'overview' ? 'on' : ''} onClick={() => setView('overview')}>校舎ごとの進み具合</button>}
           <button type="button" className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>声掛け名簿</button>
           <button type="button" className={view === 'outside' ? 'on' : ''} onClick={() => setView('outside')}>
             名簿外の申込{unmatched.length > 0 && <span className="ev-count">{unmatched.length}</span>}
@@ -255,16 +267,7 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
       </div>
       {refreshing && <div className="ev-loadbar" role="status" aria-label="最新の名簿と申込状況を読み込んでいます" />}
 
-      {admin && (
-        <div className="ev-chips ev-depts" role="group" aria-label="部門">
-          <span>部門</span>
-          {['', ...DEPTS].map((d) => (
-            <button key={d} type="button" className={deptView === d ? 'on' : ''} onClick={() => { setDeptView(d); setCampus(''); }}>
-              {d || 'すべて'}<small>{built.rows.filter((r) => !d || r.student.dept === d).length}</small>
-            </button>
-          ))}
-        </div>
-      )}
+      {admin && view !== 'list' && <div className="ev-toolbar">{deptField}</div>}
 
       {error && <p className="ev-alert" role="alert">{error}</p>}
       {state.formStatus !== 'ok' && (
@@ -279,21 +282,13 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
       {view === 'overview' && <Overview rows={rows} campuses={campuses} unmatched={unmatched.length} onOpen={openCampus} />}
 
       {view === 'list' && (
-        <>
-          <div className="ev-chips">
-            <button type="button" className={activeCampus === '' ? 'on' : ''} onClick={() => setCampus('')}>すべて<small>{rows.length}</small></button>
-            {campuses.map((c) => (
-              <button key={c} type="button" className={activeCampus === c ? 'on' : ''} onClick={() => setCampus(c)}>
-                {c}<small>{rows.filter((r) => r.student.campus === c).length}</small>
-              </button>
-            ))}
-          </div>
-          <CampusList
-            rows={inCampus} scope={`${activeCampus}|${state.fetchedAt}|${rev}`} showCampus={activeCampus === ''} filter={filter} onFilter={setFilter} grade={grade} onGrade={setGrade} q={q} onQ={setQ}
-            onSave={save} marks={{ pending, saved }} onDetail={(app, row) => setDetail({ app, row })}
-            onAdd={() => setEditing({ init: blank(activeCampus), dept: deptFor(activeCampus) })} onEdit={(st) => setEditing(edit(st))}
-          />
-        </>
+        <CampusList
+          rows={inCampus} allRows={rows} campuses={campuses} campus={activeCampus} onCampus={setCampus} lead={deptField}
+          scope={`${activeCampus}|${state.fetchedAt}|${rev}`} showCampus={activeCampus === ''} filter={filter} onFilter={setFilter}
+          sort={sort} onSort={setSort} grade={grade} onGrade={setGrade} q={q} onQ={setQ}
+          onSave={save} marks={{ pending, saved }} onDetail={(app, row) => setDetail({ app, row })}
+          onAdd={() => setEditing({ init: blank(activeCampus), dept: deptFor(activeCampus) })} onEdit={(st) => setEditing(edit(st))}
+        />
       )}
 
       {view === 'outside' && (
@@ -341,13 +336,13 @@ function Skeleton({ view, admin }: { view: View; admin: boolean }) {
     <div className="ev-skeleton" role="status" aria-busy="true" aria-label="名簿と申込状況を読み込んでいます">
       <div className="ev-bar">
         <div className="ev-tabs">
-          <button type="button" className={view === 'overview' ? 'on' : ''} disabled>校舎ごとの進み具合</button>
+          {admin && <button type="button" className={view === 'overview' ? 'on' : ''} disabled>校舎ごとの進み具合</button>}
           <button type="button" className={view === 'list' ? 'on' : ''} disabled>声掛け名簿</button>
           <button type="button" disabled>名簿外の申込</button>
         </div>
         <div className="ev-fetched">名簿と申込状況を読み込んでいます…</div>
       </div>
-      {admin && <div className="ev-chips ev-depts"><Sk w={34} /><Sk w={86} h={32} /><Sk w={100} h={32} /><Sk w={100} h={32} /></div>}
+      {admin && view !== 'list' && <div className="ev-toolbar"><span className="ev-fld"><Sk w={34} h={12} /><Sk w={170} h={44} /></span></div>}
       {view === 'overview' ? (
         <div className="ev-cards">
           {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -356,9 +351,10 @@ function Skeleton({ view, admin }: { view: View; admin: boolean }) {
         </div>
       ) : (
         <>
-          <div className="ev-chips">{[78, 88, 88, 88, 88, 74].map((w, i) => <Sk key={i} w={w} h={32} />)}</div>
-          <div className="ev-filters">{[132, 110, 84, 160, 84, 84, 74].map((w, i) => <Sk key={i} w={w} h={32} />)}</div>
-          <div className="ev-tools"><Sk w={84} h={34} /><Sk w={180} h={34} /><Sk w={120} h={34} /></div>
+          <div className="ev-toolbar">
+            {[170, 210, 140, 220, 240].map((w, i) => <span key={i} className="ev-fld"><Sk w={56} h={12} /><Sk w={w} h={44} /></span>)}
+          </div>
+          <div className="ev-actions"><Sk w={220} h={16} /><span className="ev-spacer" /><Sk w={240} h={44} /><Sk w={130} h={44} /></div>
         </>
       )}
       <div className="ev-scroll">
@@ -464,24 +460,31 @@ function Overview({ rows, campuses, unmatched, onOpen }: { rows: StudentRow[]; c
 
 // ---- 声掛け名簿（教室担当） --------------------------------------------------
 
+// ラベル付きの入力（プルダウン・検索欄）。絞り込みの並びに横に並べ、狭い幅では折り返す
+function Field({ label, wide, children }: { label: string; wide?: boolean; children: ReactNode }) {
+  return <label className={`ev-fld ${wide ? 'wide' : ''}`}><span>{label}</span>{children}</label>;
+}
+
 function CampusList({
-  rows, scope, showCampus, filter, onFilter, grade, onGrade, q, onQ, onSave, marks, onDetail, onAdd, onEdit,
+  rows, allRows, campuses, campus, onCampus, lead, scope, showCampus, filter, onFilter, sort, onSort, grade, onGrade, q, onQ, onSave, marks, onDetail, onAdd, onEdit,
 }: {
-  rows: StudentRow[]; scope: string; showCampus: boolean; filter: Filter; onFilter: (f: Filter) => void; grade: string; onGrade: (g: string) => void;
+  rows: StudentRow[]; allRows: StudentRow[]; campuses: string[]; campus: string; onCampus: (c: string) => void; lead: ReactNode;
+  scope: string; showCampus: boolean; filter: Filter; onFilter: (f: Filter) => void; sort: SortKey; onSort: (s: SortKey) => void;
+  grade: string; onGrade: (g: string) => void;
   q: string; onQ: (v: string) => void; onSave: (c: Change[]) => void; marks: SaveMarks; onDetail: (app: Application, row: StudentRow) => void;
   onAdd: () => void; onEdit: (st: Student) => void;
 }) {
-  const grades = useMemo(() => [...new Set(rows.map((r) => r.student.grade).filter(Boolean))].sort(), [rows]);
+  const grades = useMemo(() => GRADES.filter((g) => rows.some((r) => r.student.grade === g)), [rows]);
   const scoped = rows.filter((r) => !grade || r.student.grade === grade);
   const test = FILTERS.find((f) => f.key === filter)!.test;
   const key = q.replace(/\s/g, '');
-  // 並びと顔ぶれは、絞り込み・校舎・学年・検索を変えたとき（と読み込み直したとき）にだけ決め直す。
+  // 並びと顔ぶれは、校舎・絞り込み・学年・並び順・検索を変えたとき（と読み込み直したとき）にだけ決め直す。
   // 記録を付けるたびに並べ直すと、押した行が動いたり消えたりして続けて入力できないため
   const [tick, setTick] = useState(0);
-  const sig = `${scope}|${filter}|${grade}|${key}|${tick}`;
+  const sig = `${scope}|${filter}|${sort}|${grade}|${key}|${tick}`;
   const frozen = useRef<{ sig: string; keys: string[] }>({ sig: '', keys: [] });
   if (frozen.current.sig !== sig) {
-    const list = sortRows(scoped.filter(test).filter((r) => !key || r.student.name.replace(/\s/g, '').includes(key)));
+    const list = sortRowsBy(scoped.filter(test).filter((r) => !key || r.student.name.replace(/\s/g, '').includes(key)), sort, campuses);
     frozen.current = { sig, keys: list.map((r) => r.student.key) };
   }
   const byKey = new Map(rows.map((r) => [r.student.key, r]));
@@ -497,24 +500,45 @@ function CampusList({
 
   return (
     <section>
-      <div className="ev-filters">
-        {FILTERS.map((f) => (
-          <button key={f.key} type="button" className={`${filter === f.key ? 'on' : ''} ${f.key === 'urgent' ? 'hot' : ''}`} onClick={() => { onFilter(f.key); setTick((n) => n + 1); }}>
-            {f.label}<b>{scoped.filter(f.test).length}</b>
-          </button>
-        ))}
+      {/* 絞り込みの並び：どれもラベル付きのプルダウン。校舎 → 表示する生徒 → 学年 → 並び順 → 氏名 */}
+      <div className="ev-toolbar">
+        {lead}
+        <Field label="校舎">
+          <select value={campus} onChange={(e) => onCampus(e.target.value)}>
+            <option value="">すべての校舎（{allRows.length}）</option>
+            {campuses.map((c) => <option key={c} value={c}>{c}（{allRows.filter((r) => r.student.campus === c).length}）</option>)}
+          </select>
+        </Field>
+        <Field label="表示する生徒">
+          <select value={filter} onChange={(e) => { onFilter(e.target.value as Filter); setTick((n) => n + 1); }}>
+            {FILTERS.map((f) => <option key={f.key} value={f.key}>{f.label}（{scoped.filter(f.test).length}）</option>)}
+          </select>
+        </Field>
+        <Field label="学年">
+          <select value={grade} onChange={(e) => onGrade(e.target.value)}>
+            <option value="">すべての学年</option>
+            {grades.map((g) => <option key={g} value={g}>{g}（{rows.filter((r) => r.student.grade === g).length}）</option>)}
+          </select>
+        </Field>
+        <Field label="並び順">
+          <select value={sort} onChange={(e) => { onSort(e.target.value as SortKey); setTick((n) => n + 1); }}>
+            {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
+        </Field>
+        <Field label="氏名で絞り込み" wide>
+          <input type="search" value={q} onChange={(e) => onQ(e.target.value)} placeholder="例：山田" />
+        </Field>
       </div>
-      <div className="ev-tools">
-        <select value={grade} onChange={(e) => onGrade(e.target.value)} aria-label="学年">
-          <option value="">全学年</option>
-          {grades.map((g) => <option key={g} value={g}>{g}</option>)}
-        </select>
-        <input value={q} onChange={(e) => onQ(e.target.value)} placeholder="氏名で探す" aria-label="氏名で探す" />
-        <button type="button" className="ev-btn" onClick={onAdd}>＋ 生徒を追加</button>
+      <div className="ev-actions">
+        <span className="ev-result" role="status">
+          <b>{shown.length}</b>名を表示（{campus || 'すべての校舎'}：{rows.length}名）
+          {scoped.filter((r) => r.urgent).length > 0 && <em>重点で未決 {scoped.filter((r) => r.urgent).length}名</em>}
+        </span>
         <span className="ev-spacer" />
         <button type="button" className="ev-btn ev-btn-sub" disabled={!noFlyer.length || marks.pending.size > 0} onClick={bulkFlyer}>
           表示中の {noFlyer.length} 名にチラシ配布済を付ける
         </button>
+        <button type="button" className="ev-btn" onClick={onAdd}>＋ 生徒を追加</button>
       </div>
       <div className="ev-scroll">
         <table className="ev-table ev-list">
@@ -533,7 +557,7 @@ function CampusList({
       <p className="ev-hint">
         チラシ・声掛け・保護者へ案内は、スイッチを押すとオンになり今日の日付が入ります（もう一度押すとオフ）。押した所に「保存中」が出て、保存できると ✓ が出ます。申込はフォームの回答から自動で付きます。
         口頭や紙で受けた申込は「手入力」で付けてください。★ を押すと、重点の付け外しができます。
-        記録を付けても行の並びはそのままです（上の絞り込みを押し直すと並べ直します）。
+        記録を付けても行の並びはそのままです（上の「表示する生徒」「並び順」を選び直すか［最新にする］で並べ直します）。
       </p>
     </section>
   );

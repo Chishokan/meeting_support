@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addedFromSheet, appLabel, autoPriority, deptByCampus, mergeSaved, revertFields, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
+  addedFromSheet, appLabel, autoPriority, deptByCampus, mergeSaved, revertFields, sortRowsBy, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
   normCampus, normGrade, normName, parseApplications, parseRoster, scopeData, shortDay, sortRows, summarize, trackFromSheet,
   type Student, type Track,
 } from './model.ts';
@@ -255,6 +255,28 @@ test('buildRows：段階と次にすること', () => {
     [6, 3, 4, 1, 1, 2, 1, 1, 1, 4],
   );
   assert.deepEqual([sum.priority, sum.priorityTalked, sum.priorityApplied, sum.priorityOpen], [2, 1, 0, 1]);
+});
+
+test('sortRowsBy：学年・氏名・校舎・進み具合・更新の順に並べる', () => {
+  const students = [
+    st('A', 'い 花', '日野校', '中1'), st('B', 'あ 一', '駅前校', '中3'), st('C', 'う 二', '駅前校', ''), st('D', 'え 三', '日野校', '高1'),
+    st('E', 'お 四', '駅前校', '中1'), st('F', 'か 五', '日野校', '小6'),
+  ];
+  const tracks = [
+    tr('A', { flyer: '2026-11-17', updatedAt: '2026/11/17 09:00' }),
+    tr('B', { flyer: '2026-11-18', talk: '2026-11-18', reaction: '不参加', updatedAt: '2026/11/18 10:00' }),
+    tr('E', { applied: '1', updatedAt: '2026/11/18 08:00' }),
+  ];
+  const { rows } = buildRows(students, tracks, [], WORDS);
+  const order = (k: Parameters<typeof sortRowsBy>[1]) => sortRowsBy(rows, k, ['駅前校', '日野校']).map((r) => r.student.key).join('');
+  assert.equal(order('gradeDesc'), 'DBEAFC'); // 高1 → 中3 → 中1（駅前→日野）→ 小6 → 学年なし
+  assert.equal(order('gradeAsc'), 'FEABDC');  // 小6 → 中1 → 中3 → 高1 → 学年なし（どちらでも最後）
+  assert.equal(order('name'), 'BACDEF');
+  assert.equal(order('campus'), 'BECDAF');    // 駅前校（中3・中1・学年なし）→ 日野校（高1・中1・小6）
+  assert.equal(order('stage'), 'DFCAEB');     // 未着手（高1・小6・学年なし）→ チラシ配布済 → 申込済 → 不参加
+  assert.equal(order('updated'), 'BEACDF');   // 新しい順。記録の無い生徒は最後（氏名の順）
+  assert.equal(order('todo'), sortRows(rows).map((r) => r.student.key).join(''));
+  assert.equal(rows.map((r) => r.student.key).join(''), 'ABCDEF'); // 元の並びは変えない
 });
 
 test('daysUntil・shortDay', () => {
