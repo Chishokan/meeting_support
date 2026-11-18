@@ -489,7 +489,9 @@ function CampusList({
   const sig = `${scope}|${filter}|${sort}|${grade}|${key}|${tick}`;
   const frozen = useRef<{ sig: string; keys: string[] }>({ sig: '', keys: [] });
   if (frozen.current.sig !== sig) {
-    const list = sortRowsBy(scoped.filter(test).filter((r) => !key || r.student.name.replace(/\s/g, '').includes(key)), sort, campuses);
+    // 氏名で探すときは「表示する生徒」の絞り込みを外す（申込済の生徒は「することがある」に出ないので、探しても見つからず、
+    // 申込が反映されていないように見えるため）。校舎と学年はそのまま効かせる
+    const list = sortRowsBy(key ? scoped.filter((r) => r.student.name.replace(/\s/g, '').includes(key)) : scoped.filter(test), sort, campuses);
     frozen.current = { sig, keys: list.map((r) => r.student.key) };
   }
   const byKey = new Map(rows.map((r) => [r.student.key, r]));
@@ -532,6 +534,7 @@ function CampusList({
         <span className="ev-result" role="status">
           <b>{shown.length}</b>名を表示（{campus || 'すべての校舎'}：{rows.length}名）
           {scoped.filter((r) => r.urgent).length > 0 && <em>重点で未決 {scoped.filter((r) => r.urgent).length}名</em>}
+          {key && filter !== 'all' && <span className="ev-result-note">氏名で探すあいだは「表示する生徒」に関係なく、全員から探します</span>}
         </span>
         <span className="ev-spacer" />
         <button type="button" className="ev-btn ev-btn-sub" disabled={!shown.length || marks.pending.size > 0} onClick={() => setBulk(true)}>
