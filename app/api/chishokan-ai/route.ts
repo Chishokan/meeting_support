@@ -50,8 +50,9 @@ import { MATH_QUIZ_TOOL } from '@/lib/chishokanAi/mathQuizTool';
 import { runTaskEvaluation, TASK_EVAL_TOOL } from '@/lib/chishokanAi/taskEval';
 import { carriedNote, CARRY_MAX_FILES, isHeavy } from '@/lib/chishokanAi/attachCarry';
 import { GENERATE_IMAGE_TOOL, IMAGE_MAX_PER_TURN } from '@/lib/chishokanAi/imageTool';
-import { runGenerateImage, type ImageSource } from '@/lib/chishokanAi/imageGen';
-import { geminiKeys } from '@/lib/transcribe';
+import { imageAvailable, runGenerateImage, type ImageSource } from '@/lib/chishokanAi/imageGen';
+import { MEETING_RECORDS_TOOL, PROPOSE_AGENDA_TOOL } from '@/lib/chishokanAi/meetingRecords';
+import { runMeetingRecords, runProposeAgenda } from '@/lib/chishokanAi/meetingRecordsRun';
 import {
   buildCarryBlock,
   citationWarnings,
@@ -218,7 +219,7 @@ export async function POST(req: Request) {
   const system: Anthropic.TextBlockParam[] = [
     {
       type: 'text',
-      text: buildChishokanAiPrompt({ dept: session.campus, name: session.name, policy, index, tasks: taskListForPrompt(tasks), images: geminiKeys().length > 0 }),
+      text: buildChishokanAiPrompt({ dept: session.campus, name: session.name, policy, index, tasks: taskListForPrompt(tasks), images: imageAvailable() }),
       cache_control: { type: 'ephemeral' },
     },
   ];
@@ -235,8 +236,11 @@ export async function POST(req: Request) {
     MATH_QUIZ_TOOL,
     PROPOSE_CONTEXT_TOOL,
     TASK_EVAL_TOOL,
-    // 画像を作る道具（Google の API キーがあるときだけ）
-    ...(geminiKeys().length ? [GENERATE_IMAGE_TOOL] : []),
+    // 会議の記録（議事録・決定事項・ToDo・事前共有）を読む道具と、議題の追加の案
+    MEETING_RECORDS_TOOL,
+    PROPOSE_AGENDA_TOOL,
+    // 画像を作る道具（OpenAI か Google の API キーがあるときだけ）
+    ...(imageAvailable() ? [GENERATE_IMAGE_TOOL] : []),
   ] as unknown as Anthropic.Tool[];
   let tasksStarted = 0;
   // 計算の道具は、作業の手順書が使うときだけ足す（回答の途中で手順書を開いたら、次の往復から足す）。
@@ -247,6 +251,9 @@ export async function POST(req: Request) {
   let mathMade = 0;
   // 作った画像（会話ログ用）と、この回答で作った画像（続けて直すときの元にする）
   const imagesMade: CreatedDoc[] = [];
+  // 議題の追加の案（1回の回答で3つまで）
+  const agendaProposals: string[] = [];
+  let meetingReads = 0;
   const turnImages: ImageSource[] = [];
   // 作る道具が失敗したか（失敗のあとに呼び直したとき、「作れていた」と取り違えさせない）
   let mathFailed = false;
@@ -542,6 +549,26 @@ export async function POST(req: Request) {
                 }
                 out = r.toolResult;
               }
+            } else if (block.name === MEETING_RECORDS_TOOL.name) {
+              // 会議の記録は1回の回答で3回まで読む（部門・種類を変えて読み直すくらい）
+              if (meetingReads >= 3) {
+                out = '会議の記録はもう読んでいます。読んだ範囲で答えてください。';
+              } else {
+                meetingReads++;
+                const r = await runMeetingRecords(input, ac.signal);
+                out = r.text;
+              }
+            } else if (block.name === PROPOSE_AGENDA_TOOL.name) {
+              if (agendaProposals.length >= 3) {
+                out = '議題の追加の案は1回の回答で3つまでです。出した案を職員に見てもらってください。';
+              } else {
+                const r = await runProposeAgenda(input, ac.signal);
+                if (r.proposal) {
+                  send({ t: 'agenda', ...r.proposal });
+                  agendaProposals.push(`${r.proposal.dept}「${r.proposal.item}」`);
+                }
+                out = r.text;
+              }
             } else if (block.name === TASK_EVAL_TOOL.name) {
               // 校舎の重要タスク評価（AI壁打ちと同じ評価シート・基準）。行動計画を見直すときに読む
               const r = await runTaskEvaluation(input, { campus: session.campus });
@@ -576,7 +603,7 @@ export async function POST(req: Request) {
                 ? `${block.name}:${String(input.title ?? '')}`
                 : block.name === PROPOSE_CONTEXT_TOOL.name
                   ? `${block.name}:${String(input.id || input.name || '')}`
-                  : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? input.task ?? input.template ?? input.school ?? input.name ?? '')}`,
+                  : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? input.task ?? input.template ?? input.school ?? input.name ?? input.dept ?? '')}`,
             );
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           }

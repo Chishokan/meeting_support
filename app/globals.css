@@ -3614,3 +3614,24 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .ai-image img { display: block; width: 100%; height: auto; max-height: 520px; object-fit: contain; border-radius: 8px; border: 1px solid #d5dde6; background: #fff; }
 .ai-image figcaption { display: flex; gap: 14px; margin-top: 4px; font-size: 12px; }
 .ai-image figcaption a { color: #1f5c99; }
+
+/* 智翔館AI：議題の追加の案（propose_agenda_item） */
+.ai-agenda { margin: 8px 0 0; padding: 10px 12px; border: 1px solid #c9d8ea; border-radius: 10px; background: #f5f9fd; max-width: 560px; font-size: 13px; }
+.ai-agenda-off { color: #7a848f; background: #f7f7f7; border-color: #e3e3e3; }
+.ai-agenda-title { font-weight: bold; color: #1f3b57; margin-bottom: 4px; }
+.ai-agenda-where { color: #4a5866; font-size: 12px; margin-bottom: 6px; }
+.ai-agenda-item { font-weight: bold; }
+.ai-agenda-detail { color: #333; margin-top: 2px; }
+.ai-agenda-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.ai-agenda-actions button { padding: 6px 12px; border-radius: 8px; border: 1px solid #1f5c99; background: #1f5c99; color: #fff; font-size: 13px; cursor: pointer; }
+.ai-agenda-actions button:disabled { opacity: 0.6; cursor: default; }
+.ai-agenda-actions .ai-agenda-cancel { background: #fff; color: #1f5c99; }
+.ai-agenda-err { color: #c0392b; font-size: 12px; }
+.ai-agenda-ok { margin-top: 8px; color: #1e7a3a; }
+
+/* 部門会議議事録：智翔館AI から足された議題の候補 */
+.dm-agenda-cands { margin: 8px 0; padding: 10px 12px; border: 1px dashed #b9d3f2; border-radius: 10px; background: #f5f9fd; font-size: 13px; }
+.dm-agenda-cands-title { font-weight: bold; color: #1f3b57; margin-bottom: 4px; }
+.dm-agenda-cands ul { margin: 4px 0 8px 18px; padding: 0; }
+.dm-agenda-cands-by { color: #7a848f; font-size: 12px; margin-left: 4px; }
+.dm-agenda-cands button { padding: 5px 12px; border-radius: 8px; border: 1px solid #1f5c99; background: #1f5c99; color: #fff; font-size: 13px; cursor: pointer; }

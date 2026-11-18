@@ -363,6 +363,11 @@ function doPost(e) {
       return json_(listDeptPreshare_(data));
     }
 
+    // 部門会議の議題の追加（智翔館AI の［議題に追加する］）と、事前共有がまだ無い会議の「議題の候補」（2026-11-18）
+    if (action === 'addDeptAgenda') return json_(addDeptAgenda_(data));
+    if (action === 'listAgendaCandidates') return json_(listAgendaCandidates_(data));
+    if (action === 'useAgendaCandidates') return json_(useAgendaCandidates_(data));
+
     if (action === 'saveMinutes') {
       appendRow_(
         '議事録',
@@ -918,6 +923,94 @@ function saveDeptPreshare_(data) {
   // 開催日時が日付に化けたりする。先に文字列書式を付けてから setValues で書く。
   sh.getRange(row || sh.getLastRow() + 1, 1, 1, H.length).setNumberFormat('@').setValues([values]);
   return { ok: true, id: id, updated: Boolean(row), ts: rec['日時'] };
+}
+
+// ---- 部門会議の議題の追加（智翔館AI から。2026-11-18） ------------------------------------
+// 次の部門会議の事前共有があれば、その「議題・レジュメ」の末尾に「・【追加】議題（補足）〔追加した人 月/日〕」の1行を足す。
+// 事前共有がまだ無い（または議事録を保存した会議だった）ときは「議題の候補」に残し、会議の担当者が
+// 「部門会議議事録」の画面で事前共有を作るときに取り込む。どちらも「議題の候補」シートに1行残す（あとから追えるように）。
+var AGENDA_SHEET = '議題の候補';
+var AGENDA_HEADERS = ['日時', '部門', '追加した人', '議題', '補足', '状態', '事前共有ID', '取り込んだ日時', '取り込んだ人', '候補ID'];
+
+function agendaCell_(r, name) {
+  return cellStr_(r[colOf_(AGENDA_HEADERS, name) - 1]);
+}
+
+function addDeptAgenda_(data) {
+  var item = String(data.item || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  var detail = String(data.detail || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  var campus = String(data.campus || '').trim();
+  var user = String(data.user || '').trim();
+  if (!item || !campus) return { ok: false, reason: 'empty' };
+  var stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'M/d');
+  var line = '・【追加】' + item + (detail ? '（' + detail + '）' : '') + '〔' + user + ' ' + stamp + '〕';
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var log = sheetWithHeaders_(AGENDA_SHEET, AGENDA_HEADERS);
+    var id = Utilities.getUuid();
+    if (data.preshareId) {
+      var H = DEPT_PRESHARE_HEADERS;
+      var sh = sheetWithHeaders_(DEPT_PRESHARE_SHEET, H);
+      var row = findRowById_(sh, colOf_(H, '事前共有ID'), data.preshareId);
+      if (row) {
+        var cur = sh.getRange(row, 1, 1, H.length).getValues()[0];
+        if (!preshareCell_(cur, '議事録ID')) {
+          var agenda = preshareCell_(cur, '議題・レジュメ').replace(/\s+$/, '');
+          var next = (agenda ? agenda + '\n' : '') + line;
+          // 文字列として書く（「・」「-」で始まる行が数式・日付に化けないように）
+          sh.getRange(row, colOf_(H, '議題・レジュメ')).setNumberFormat('@').setValue(next);
+          sh.getRange(row, colOf_(H, '更新日時')).setNumberFormat('@').setValue(nowJp_(''));
+          sh.getRange(row, colOf_(H, '更新者')).setNumberFormat('@').setValue(user);
+          var rec = [nowJp_(''), preshareCell_(cur, '部門'), user, item, detail, '事前共有に追加', String(data.preshareId), '', '', id];
+          log.getRange(log.getLastRow() + 1, 1, 1, rec.length).setNumberFormat('@').setValues([rec]);
+          return { ok: true, saved: 'agenda', target: 'preshare', line: line, title: preshareCell_(cur, '会議名'), date: preshareCell_(cur, '開催日時'), campus: preshareCell_(cur, '部門') };
+        }
+      }
+    }
+    var cand = [nowJp_(''), campus, user, item, detail, '候補', '', '', '', id];
+    log.getRange(log.getLastRow() + 1, 1, 1, cand.length).setNumberFormat('@').setValues([cand]);
+    return { ok: true, saved: 'agenda', target: 'candidate', line: line, id: id, campus: campus };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// その部門の「議題の候補」（まだ取り込んでいないもの・古い順）
+function listAgendaCandidates_(data) {
+  var campus = String(data.campus || '').trim();
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(AGENDA_SHEET);
+  if (!sh || sh.getLastRow() < 2) return { ok: true, saved: 'agenda', items: [] };
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, AGENDA_HEADERS.length).getValues();
+  var items = [];
+  for (var i = 0; i < values.length; i++) {
+    var r = values[i];
+    if (agendaCell_(r, '状態') !== '候補') continue;
+    if (campus && agendaCell_(r, '部門') !== campus) continue;
+    items.push({ id: agendaCell_(r, '候補ID'), ts: agendaCell_(r, '日時'), campus: agendaCell_(r, '部門'), user: agendaCell_(r, '追加した人'), item: agendaCell_(r, '議題'), detail: agendaCell_(r, '補足') });
+  }
+  return { ok: true, saved: 'agenda', items: items.slice(-30) };
+}
+
+// 候補を取り込んだ印を付ける（事前共有の議題に入れたあと）
+function useAgendaCandidates_(data) {
+  var ids = Array.isArray(data.ids) ? data.ids.map(String) : [];
+  if (!ids.length) return { ok: true, saved: 'agenda', count: 0 };
+  var sh = sheetWithHeaders_(AGENDA_SHEET, AGENDA_HEADERS);
+  if (sh.getLastRow() < 2) return { ok: true, saved: 'agenda', count: 0 };
+  var idCol = colOf_(AGENDA_HEADERS, '候補ID');
+  var vals = sh.getRange(2, idCol, sh.getLastRow() - 1, 1).getValues();
+  var n = 0;
+  for (var i = 0; i < vals.length; i++) {
+    if (ids.indexOf(String(vals[i][0])) === -1) continue;
+    var row = i + 2;
+    sh.getRange(row, colOf_(AGENDA_HEADERS, '状態')).setValue('取り込み済み');
+    sh.getRange(row, colOf_(AGENDA_HEADERS, '取り込んだ日時')).setNumberFormat('@').setValue(nowJp_(''));
+    sh.getRange(row, colOf_(AGENDA_HEADERS, '取り込んだ人')).setValue(String(data.user || ''));
+    n++;
+  }
+  return { ok: true, saved: 'agenda', count: n };
 }
 
 // 部門会議の事前共有の一覧（新しい順・最大100件）。
