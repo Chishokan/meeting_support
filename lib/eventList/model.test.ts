@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addedFromSheet, appLabel, autoPriority, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
+  addedFromSheet, appLabel, autoPriority, deptByCampus, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
   normCampus, normGrade, normName, parseApplications, parseRoster, scopeData, shortDay, sortRows, summarize, trackFromSheet,
   type Student, type Track,
 } from './model.ts';
@@ -155,6 +155,14 @@ test('アプリで足した生徒：入力を整え、名簿に合わせ、同�
   const { rows, unmatched } = buildRows([added!], [], parseApplications(FORM_HEADERS, [['t1', '', '青空花', '', '中学3年生', 'RED広田', '', '2人', '', '', '', '']]), WORDS);
   assert.equal(unmatched.length, 0);
   assert.deepEqual([rows[0].priority, rows[0].stage, rows[0].studentApplied, rows[0].parentApplied, rows[0].companions], ['pharma', 'applied', true, true, 2]);
+});
+
+test('deptByCampus：部門の無い追加生徒は、同じ校舎の名簿の生徒の部門に入る', () => {
+  const roster = [st('S1', 'a', '駅前校'), { ...st('R1', 'b', 'RED広田'), dept: 'RED個別' }];
+  const of = deptByCampus(roster, '小中等部');
+  assert.deepEqual(['RED広田', '駅前校', '知らない校舎'].map(of), ['RED個別', '小中等部', '小中等部']);
+  assert.equal(addedFromSheet({ ID: 'A-1', 校舎: 'RED広田', 氏名: 'x' }, of('RED広田'))?.dept, 'RED個別');
+  assert.equal(addedFromSheet({ ID: 'A-2', 部門: '小中等部', 校舎: 'RED広田', 氏名: 'x' }, of('RED広田'))?.dept, '小中等部');
 });
 
 test('scopeData：部門の生徒・記録と、その部門の申込＋名簿外の申込だけを返す', () => {

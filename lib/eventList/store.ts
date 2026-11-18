@@ -15,7 +15,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { DEFAULT_DEPT, EVENT, NO_CAMPUS, ROSTER_COLUMNS } from './event';
 import {
-  ADDED_HEADERS, TRACK_HEADERS, addedFromSheet, mergeStudents, parseApplications, parseRoster, trackFromSheet,
+  ADDED_HEADERS, TRACK_HEADERS, addedFromSheet, deptByCampus, mergeStudents, parseApplications, parseRoster, trackFromSheet,
   type Application, type Student, type StudentInput, type Track, type TrackField,
 } from './model';
 
@@ -151,10 +151,13 @@ async function writeLocal(d: LocalData): Promise<void> {
 function build(
   roster: SheetRow[], tracks: SheetRow[], added: SheetRow[], form: FormSheet | null, formStatus: EventData['formStatus'], backend: EventData['backend'],
 ): EventData {
-  const extra = added.filter((r) => String(r['削除'] ?? '') !== '1').map((r) => addedFromSheet(r, DEFAULT_DEPT)).filter((st): st is Student => !!st);
+  const rosterStudents = parseRoster(roster, ROSTER_COLUMNS, NO_CAMPUS, DEFAULT_DEPT);
+  const deptOf = deptByCampus(rosterStudents, DEFAULT_DEPT);
+  const extra = added.filter((r) => String(r['削除'] ?? '') !== '1')
+    .map((r) => addedFromSheet(r, deptOf(String(r['校舎'] ?? '').trim()))).filter((st): st is Student => !!st);
   return {
     ok: true,
-    students: mergeStudents(parseRoster(roster, ROSTER_COLUMNS, NO_CAMPUS, DEFAULT_DEPT), extra),
+    students: mergeStudents(rosterStudents, extra),
     tracks: tracks.map(trackFromSheet).filter((t) => t.key),
     applications: form ? parseApplications(form.headers.map(String), form.rows) : [],
     formStatus,
@@ -245,7 +248,8 @@ export async function saveStudent(id: string, input: StudentInput, dept: string,
   }
   const j = await callGas({ action: 'saveEventStudent', user, id, fields, scope: scope ?? '', defaultDept: DEFAULT_DEPT });
   if (!j.ok) return { ok: false, reason: j.reason || 'upstream_error' };
-  const student = j.item && typeof j.item === 'object' ? addedFromSheet(j.item as SheetRow, DEFAULT_DEPT) : null;
+  // 古い Apps Script は「部門」を書かずに返してくる。そのときは、送った部門（直すときは見ている部門）として返す
+  const student = j.item && typeof j.item === 'object' ? addedFromSheet(j.item as SheetRow, id ? scope ?? DEFAULT_DEPT : dept) : null;
   return student ? { ok: true, student } : { ok: false, reason: 'not_deployed' };
 }
 

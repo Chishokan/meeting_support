@@ -220,6 +220,16 @@ export function addedFromSheet(o: Record<string, unknown>, defaultDept: string):
   };
 }
 
+/**
+ * 足した生徒の行に部門が無いときの部門：同じ校舎の名簿の生徒の部門。その校舎が名簿に無ければ defaultDept。
+ * （「イベント追加生徒」に「部門」の列が無い古い Apps Script のままでも、RED の校舎に足した生徒が RED個別 に入るように）
+ */
+export function deptByCampus(roster: Student[], defaultDept: string): (campus: string) => string {
+  const map = new Map<string, string>();
+  for (const st of roster) if (!map.has(st.campus)) map.set(st.campus, st.dept);
+  return (campus) => map.get(campus) ?? defaultDept;
+}
+
 /** 名簿の生徒に、アプリで足した生徒を合わせる（同じ鍵は名簿を優先）。 */
 export function mergeStudents(roster: Student[], added: Student[]): Student[] {
   const keys = new Set(roster.map((st) => st.key));
