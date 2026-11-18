@@ -3,6 +3,7 @@
 // 門配管理：月の集計。全地区の1か月分を、地区・学校・担当ごとにまとめる（月の実績報告・会議資料用）。
 // 数え方は月間一覧の集計表と同じ（lib/monpai/model.ts の summarizeMonth）。CSV で保存して Excel でも開ける。
 
+import { SkCards, SkTable } from '@/components/Skeleton';
 import { useEffect, useMemo, useState } from 'react';
 import { shiftMonth, summarizeMonth, todayJst, weekOf, type MonpaiRecord, type Tally } from '@/lib/monpai/model';
 import { fetchMaster, fetchRecords, reasonText, type Master } from '@/lib/monpai/client';
@@ -128,7 +129,7 @@ export default function MonpaiSummaryUI() {
       </div>
 
       {error && <div className="mp-note">{error}</div>}
-      {loading && <div className="mp-loading">読み込み中…</div>}
+      {loading && <><SkCards n={4} label="門配の集計を読み込んでいます" /><SkTable rows={6} cols={6} /></>}
 
       {ready && (
         <>

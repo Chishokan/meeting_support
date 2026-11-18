@@ -1,5 +1,6 @@
 'use client';
 
+import { SkList } from '@/components/Skeleton';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -95,7 +96,7 @@ export default function ProgressItemsAdmin() {
 
       {note && <p className="report-note">{note}</p>}
       {loading ? (
-        <p className="dash-empty">読み込み中…</p>
+        <SkList rows={3} label="報告項目を読み込んでいます" />
       ) : (
         <div className="items-grid">
           {campuses.map((c) => (

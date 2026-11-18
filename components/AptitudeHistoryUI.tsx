@@ -3,6 +3,7 @@
 // 適性検査：受検履歴（受検1回＝1行）。受検日・拠点・状態・方法で絞り込む。
 // 削除した受検者の分も、完全に消えるまで「削除済み」として出す（開けない）。
 
+import { SkTableRows } from '@/components/Skeleton';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BASES, METHODS, ROLES, ROLE_LABEL, type SessionState } from '@/lib/aptitude/model';
@@ -72,6 +73,7 @@ export default function AptitudeHistoryUI() {
         <table className="ib-table apt-table">
           <thead><tr><th>受検日時</th><th>拠点</th><th>氏名</th><th>性別</th><th>職種</th><th>方法</th><th>状態</th><th>判定</th><th>版</th></tr></thead>
           <tbody>
+            {items == null && <SkTableRows rows={8} cols={9} />}
             {filtered.map((x) => (
               <tr key={x.sessionId} className={x.deleted ? 'apt-deleted' : 'ib-row'} tabIndex={x.deleted ? -1 : 0}
                 onClick={() => !x.deleted && router.push(`/aptitude/c/${x.candidateId}`)}

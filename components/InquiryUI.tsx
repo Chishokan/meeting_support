@@ -1,5 +1,6 @@
 'use client';
 
+import { SkList } from '@/components/Skeleton';
 import { useEffect, useState } from 'react';
 
 type Item = {
@@ -269,7 +270,7 @@ export default function InquiryUI({ name, campus }: { name: string; campus: stri
           </div>
 
           {loading ? (
-            <p className="inq-empty">読み込み中…</p>
+            <SkList rows={4} label="報告の一覧を読み込んでいます" />
           ) : shown.length === 0 ? (
             <p className="inq-empty">該当する問い合わせはありません。</p>
           ) : (

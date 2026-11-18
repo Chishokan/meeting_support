@@ -3,6 +3,7 @@
 // 門配管理：月間一覧。地区を切り替え、「日付 × 学校」の表で1か月の計画と実績を見渡す。
 // 表の上に学校ごとのボトム（最低配布数）と達成率を出し、足りない学校がひと目で分かるようにする。
 
+import { SkTable } from '@/components/Skeleton';
 import { useEffect, useMemo, useState } from 'react';
 import {
   DISTRICTS, RATES, bottomOf, daysOf, findStaffConflicts, settingFor, shiftMonth, todayJst, weekOf,
@@ -182,7 +183,10 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
         <div className="mp-note">手元の開発用の保存先（.data/monpai.json）を使っています。</div>
       )}
 
-      {master && schools.length === 0 ? (
+      {!master && !error ? (
+        // 学校マスタを読むまでは、空の表の代わりに枠を出す
+        <SkTable rows={8} cols={8} label="門配の計画を読み込んでいます" />
+      ) : master && schools.length === 0 ? (
         <div className="mp-empty">
           {district}地区の学校がまだ登録されていません。門配管理のスプレッドシートの「学校マスタ」に追加してください。
         </div>
@@ -337,7 +341,7 @@ export default function MonpaiBoardUI({ staffNames }: { staffNames: string[] }) 
           <p className="mp-legend">マスの数字は「計画/実績」、その下が配布の開始時刻と担当。<span className="mp-key unreported" />過ぎた日で実績が未報告　<span className="mp-key done" />計画どおり配布済み</p>
         </>
       )}
-      {loading && <div className="mp-loading">読み込み中…</div>}
+      {loading && master && <div className="sk-loadbar" role="status" aria-label="門配の記録を読み込んでいます" />}
 
       {cellList && (
         <div className="mp-modal-bg" onClick={() => setCellList(null)}>

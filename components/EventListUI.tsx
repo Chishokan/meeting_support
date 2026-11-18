@@ -67,7 +67,9 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   const [deptView, setDeptView] = useState(''); // 管理部門だけ：見る部門（''＝全部門）
   const [rev, setRev] = useState(0); // 生徒を足す・直す・外すたびに増やす（名簿の並びを決め直す）
 
+  const [refreshing, setRefreshing] = useState(false); // ［最新にする］で読み直している間（画面はそのまま、上に細い帯を出す）
   const load = useCallback(async () => {
+    setRefreshing(true);
     try {
       const res = await fetch('/api/event', { cache: 'no-store' });
       const j = await res.json().catch(() => null);
@@ -76,6 +78,8 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
       setState({ status: 'ready', students: j.students, applications: j.applications, formStatus: j.formStatus, fetchedAt: j.fetchedAt, backend: j.backend });
     } catch {
       setState({ status: 'error', message: reasonText('network_error') });
+    } finally {
+      setRefreshing(false);
     }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -176,7 +180,8 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
     }
   }, []);
 
-  if (state.status === 'loading') return <div className="ev"><p className="ev-note">名簿と申込状況を読み込んでいます…</p></div>;
+  // 最初の読み込み（スプレッドシートを読むので数秒かかる）：これから出る画面の形を、灰色の枠で先に出す
+  if (state.status === 'loading') return <div className="ev"><EventHead /><Skeleton view={view} admin={admin} /></div>;
   if (state.status === 'error') {
     return (
       <div className="ev">
@@ -213,9 +218,10 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
         </div>
         <div className="ev-fetched">
           {busy > 0 ? '保存中…' : `${state.fetchedAt} 時点`}
-          <button type="button" className="ev-btn ev-btn-sub" onClick={load}>最新にする</button>
+          <button type="button" className="ev-btn ev-btn-sub" disabled={refreshing} onClick={load}>{refreshing ? '読み込み中…' : '最新にする'}</button>
         </div>
       </div>
+      {refreshing && <div className="ev-loadbar" role="status" aria-label="最新の名簿と申込状況を読み込んでいます" />}
 
       {admin && (
         <div className="ev-chips ev-depts" role="group" aria-label="部門">
@@ -275,6 +281,57 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
           onUnlink={(row, app) => { save([{ row, fields: { link: linkIds(row.track.link).filter((id) => id !== app.id).join('\n') } }]); setDetail(null); }}
         />
       )}
+    </div>
+  );
+}
+
+// ---- 読み込み中の枠（スケルトン） -----------------------------------------------
+
+// 幅をばらつかせて、文字の行らしく見せる（決まった並びなので、描き直しても形が変わらない）
+const SK_WIDTHS = [72, 54, 88, 63, 80, 46, 92, 58, 76, 66];
+const Sk = ({ w, h = 14 }: { w: number | string; h?: number }) => (
+  <span className="ev-sk" style={{ width: typeof w === 'number' ? `${w}px` : w, height: `${h}px` }} />
+);
+
+function Skeleton({ view, admin }: { view: View; admin: boolean }) {
+  const cols = view === 'overview' ? [70, 40, 150, 150, 150, 110, 150, 50, 60] : [44, 130, 170, 54, 54, 108, 54, 70, 210, 150];
+  const rows = view === 'overview' ? 6 : 10;
+  return (
+    <div className="ev-skeleton" role="status" aria-busy="true" aria-label="名簿と申込状況を読み込んでいます">
+      <div className="ev-bar">
+        <div className="ev-tabs">
+          <button type="button" className={view === 'overview' ? 'on' : ''} disabled>校舎ごとの進み具合</button>
+          <button type="button" className={view === 'list' ? 'on' : ''} disabled>声掛け名簿</button>
+          <button type="button" disabled>名簿外の申込</button>
+        </div>
+        <div className="ev-fetched">名簿と申込状況を読み込んでいます…</div>
+      </div>
+      {admin && <div className="ev-chips ev-depts"><Sk w={34} /><Sk w={86} h={32} /><Sk w={100} h={32} /><Sk w={100} h={32} /></div>}
+      {view === 'overview' ? (
+        <div className="ev-cards">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="ev-card"><Sk w={`${SK_WIDTHS[i]}%`} h={12} /><Sk w={70} h={30} /><Sk w={`${SK_WIDTHS[i + 3]}%`} h={11} /></div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="ev-chips">{[78, 88, 88, 88, 88, 74].map((w, i) => <Sk key={i} w={w} h={32} />)}</div>
+          <div className="ev-filters">{[132, 110, 84, 160, 84, 84, 74].map((w, i) => <Sk key={i} w={w} h={32} />)}</div>
+          <div className="ev-tools"><Sk w={84} h={34} /><Sk w={180} h={34} /><Sk w={120} h={34} /></div>
+        </>
+      )}
+      <div className="ev-scroll">
+        <table className="ev-table">
+          <thead><tr>{cols.map((w, i) => <th key={i}><Sk w={Math.round(w * 0.5)} h={11} /></th>)}</tr></thead>
+          <tbody>
+            {Array.from({ length: rows }, (_, r) => (
+              <tr key={r}>
+                {cols.map((w, i) => <td key={i}><Sk w={Math.round((w * SK_WIDTHS[(r + i) % SK_WIDTHS.length]) / 92)} h={view === 'list' && [3, 4, 5, 6].includes(i) ? 28 : 14} /></td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

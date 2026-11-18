@@ -3,6 +3,7 @@
 // 適性検査：受検者の一覧。拠点・職種・判定・受検の状態・採用結果で絞り込み、登録日の新しい順に出す。
 // 行を押すと詳細（受検URLの発行・結果）へ。
 
+import { SkTableRows } from '@/components/Skeleton';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BASES, GENDERS, HIRE_STATUSES, ROLES, ROLE_LABEL, todayJst, ageOf, type Candidate, type SessionState } from '@/lib/aptitude/model';
@@ -118,6 +119,7 @@ export default function AptitudeListUI() {
             </tr>
           </thead>
           <tbody>
+            {items == null && <SkTableRows rows={8} cols={8} />}
             {shown.map((c) => {
               const age = ageOf(c.birthDate, today);
               return (

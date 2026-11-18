@@ -4,6 +4,7 @@
 // 教室（地区）ごとに、どの品目をいくつ使ったか（門配の「配布物」欄に品名がある記録の実施部数の合計）を出す。
 // 在庫＝入庫の合計 − 実績で配った数（門配の「配布物」欄に品名を書くと、実施部数ぶん自動で減る）。
 
+import { SkTableRows } from '@/components/Skeleton';
 import { useEffect, useMemo, useState } from 'react';
 import { DISTRICTS, MATERIAL_KINDS, shiftMonth, splitMaterials, todayJst, type MonpaiRecord } from '@/lib/monpai/model';
 import { fetchMaterials, fetchRecords, postMaterial, reasonText, type MovementRow, type StockRow } from '@/lib/monpai/client';
@@ -106,6 +107,7 @@ export default function MonpaiMaterialsUI() {
                 <td className="mp-num">{i.threshold}</td>
               </tr>
             ))}
+            {loading && items.length === 0 && <SkTableRows rows={4} cols={7} />}
             {!loading && items.length === 0 && <tr><td colSpan={7} className="mp-muted">まだ登録されていません。下の「品目を追加」から登録してください。</td></tr>}
           </tbody>
         </table>

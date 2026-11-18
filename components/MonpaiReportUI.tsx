@@ -2,6 +2,7 @@
 
 // 門配管理：実績報告（スマホで使う想定）。自分が担当の門配を並べ、その場で配った部数と様子を入れる。
 
+import { SkList } from '@/components/Skeleton';
 import { useEffect, useMemo, useState } from 'react';
 import { isMine, shiftMonth, todayJst, weekOf, type MonpaiRecord } from '@/lib/monpai/model';
 import { fetchRecords, reasonText, saveRecordApi, type ReportInput, type ReportResult } from '@/lib/monpai/client';
@@ -51,7 +52,7 @@ export default function MonpaiReportUI({ me }: { me: string }) {
         </label>
       </div>
       {error && <div className="mp-note">{error}</div>}
-      {loading && <div className="mp-loading">読み込み中…</div>}
+      {loading && <SkList rows={3} label="門配の予定を読み込んでいます" />}
 
       <h2 className="mp-h2">報告待ち <span className="mp-count">{pending.length}</span></h2>
       {pending.length === 0 && !loading && <p className="mp-muted">報告待ちの門配はありません。</p>}

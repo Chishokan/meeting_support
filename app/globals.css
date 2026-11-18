@@ -3435,6 +3435,42 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .ev-form-grid label.wide { grid-column: 1 / -1; }
 .ev-form-grid input, .ev-form-grid select { margin-top: 4px; padding: 8px 10px; font-size: 14px; }
 
+/* 読み込み中の枠（スケルトン）と、読み直しの帯 */
+.sk, .ev-sk {
+  display: inline-block; max-width: 100%; border-radius: 6px; vertical-align: middle;
+  background: linear-gradient(90deg, #e6eaee 25%, #f3f5f7 37%, #e6eaee 63%); background-size: 400% 100%;
+  animation: ev-shimmer 1.4s ease infinite;
+}
+.ev-skeleton .ev-card { gap: 8px; }
+.ev-skeleton .ev-chips, .ev-skeleton .ev-filters, .ev-skeleton .ev-tools { align-items: center; }
+.ev-skeleton .ev-chips .ev-sk { border-radius: 18px; }
+.ev-skeleton .ev-tabs button:disabled { cursor: default; }
+.ev-skeleton .ev-table td { padding-top: 13px; padding-bottom: 13px; }
+.sk-loadbar { height: 3px; margin: 8px 0; border-radius: 2px; }
+.ev-loadbar { height: 3px; margin: -12px 0 9px; border-radius: 2px; }
+.ev-loadbar, .sk-loadbar {
+  background: linear-gradient(90deg, #dfe6ee 25%, var(--navy) 50%, #dfe6ee 75%); background-size: 400% 100%;
+  animation: ev-shimmer 1.2s linear infinite;
+}
+@keyframes ev-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .sk, .ev-sk, .ev-loadbar, .sk-loadbar { animation: none; } }
+
+/* ===== 読み込み中の枠（スケルトン）：全アプリ共通（components/Skeleton.tsx） ===== */
+.sk-lines { display: block; padding: 4px 0; }
+.sk-lines .sk { display: block; margin: 0 0 10px; }
+.sk-lines .sk:last-child { margin-bottom: 0; }
+.sk-caption { font-size: 13px; color: #8a94a0; margin: 0 0 10px; }
+.sk-table-wrap { background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 10px 0; }
+.sk-table { width: 100%; border-collapse: collapse; }
+.sk-table th { background: #f3f6f9; padding: 10px 12px; text-align: left; }
+.sk-table td, tr.sk-row > td { padding: 13px 12px; border-bottom: 1px solid #eef0f3; }
+.sk-table tbody tr:last-child td { border-bottom: none; }
+.sk-list { display: grid; gap: 10px; margin: 10px 0; }
+.sk-item { display: grid; gap: 9px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.sk-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 10px 0; }
+.sk-card { display: grid; gap: 8px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.ms-note .sk-table-wrap { margin: 0; border: none; border-radius: 0; }
+
 @media (max-width: 720px) {
   .ev { padding: 10px 10px 32px; }
   .ev-head { flex-direction: column; align-items: stretch; gap: 10px; padding: 14px; }
