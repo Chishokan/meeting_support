@@ -213,7 +213,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
 .numtable { table-layout: fixed; }
 .numtable th:nth-child(1) { width: 30%; }
 .numtable th:nth-child(2) { width: 32%; }
-@media print { .fig-menu img { width: 125mm; } .fig-import img { width: 160mm; } }
+@media print { .fig-menu img { width: 125mm; }  }
 </style>
 
 <div class="page">
@@ -221,7 +221,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
 <header class="sheet cover" id="top">
   <div class="org">株式会社智翔館　社内向け</div>
   <h1>成績管理<br>生徒の追加 マニュアル</h1>
-  <p class="lead">成績管理（本番レベル模試）の名簿に、生徒を足す方法をまとめています。いちばんよく使うのは、成績入力の画面の<b>［＋ 生徒を追加］</b>です。受験番号は自動で付きます。</p>
+  <p class="lead">受験票を作るために、成績管理（本番レベル模試）の名簿に生徒を足す方法をまとめています。使うのは、成績入力の画面の<b>［＋ 生徒を追加］</b>です。受験番号は自動で付きます。県一斉模試を受けた生徒は、管理部門が名簿に入れます。</p>
   <dl>
     <dt>対象</dt><dd>成績管理を使う職員（総務・人事・支援・管理、小中等部の職員）</dd>
     <dt>アプリ</dt><dd>智翔館アプリ「成績管理」（2026年11月の画面）</dd>
@@ -241,7 +241,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
         <li><a href="#s2-2">2-2　生徒を足して、氏名・性別・志望校を入れる</a></li>
       </ol>
     </li>
-    <li><a href="#ch3">第3章　県一斉模試を受けた生徒をまとめて入れる</a></li>
+    <li><a href="#ch3">第3章　受験票を印刷する</a></li>
     <li><a href="#ch4">第4章　困ったとき</a></li>
   </ol>
 </nav>
@@ -256,8 +256,8 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
     <table class="numtable">
       <thead><tr><th>生徒</th><th>受験番号</th><th>足し方</th></tr></thead>
       <tbody>
-        <tr><td>県一斉模試を受けた生徒</td><td>県一斉模試の番号（<b>0001</b> から。校舎ごと）</td><td>県一斉模試の名簿（氏名対応表）からまとめて入れる（第3章）</td></tr>
-        <tr><td>それ以外の生徒<br>（県一斉模試を受けていない・あとから入った生徒など）</td><td><b>0301</b> から自動（300番台。校舎ごと）</td><td>［＋ 生徒を追加］で1人ずつ足す（第2章）</td></tr>
+        <tr><td>県一斉模試を受けた生徒</td><td>県一斉模試の番号（<b>0001</b> から。校舎ごと）</td><td><b>管理部門が</b>、県一斉模試の番号で名簿に入れます（この手順の作業は要りません）</td></tr>
+        <tr><td>県一斉模試を受けていない生徒<br>（あとから入った生徒など）</td><td><b>0301</b> から自動（300番台。校舎ごと）</td><td>［＋ 生徒を追加］で1人ずつ足す（第2章）</td></tr>
       </tbody>
     </table>
   </div>
@@ -292,7 +292,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
       <li><div><span class="btn">＋ 生徒を追加</span>を押します。表示が「名簿・志望校」に切り替わり、いちばん下に新しい行ができます。受験番号には <b>0301</b>（2人目からは 0302、0303 …）が自動で入り、氏名の欄に文字を打てる状態になります。</div></li>
       <li><div><b>氏名</b>を入れます。名字と名前のあいだは空白を1つ入れてください（全角の空白にそろえます）。</div></li>
       <li><div><b>性別</b>を選びます。</div></li>
-      <li><div><b>志望校</b>を入れます。県一斉模試の学校コード（例 <b>518-01</b>）か、学校名の一部（例「佐世保北」）を打つと候補が出ます。コードを入れると、欄の下に学校名が出ます。第一〜第四志望まで入れられます（空欄でもかまいません）。</div></li>
+      <li><div><b>志望校</b>は、分かれば入れてください（あとから入れてもかまいません）。県一斉模試の学校コード（例 <b>518-01</b>）か、学校名の一部（例「佐世保北」）を打つと候補が出ます。コードを入れると、欄の下に学校名が出ます。第一〜第四志望まで入れられます。</div></li>
       <li><div>上に「<b>保存しました（時刻）</b>」と出れば完了です。</div></li>
     </ol>
     <figure><img src="images/seiseki_03_added.png" alt="生徒を追加した直後の名簿"><figcaption>図3　［＋ 生徒を追加］を押した直後。受験番号 0301 の行ができ<span class="n">1</span>、氏名の欄<span class="n">2</span>に文字を打てます</figcaption></figure>
@@ -314,20 +314,19 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
 <article class="sheet chapter" id="ch3">
   <header>
     <div class="eyebrow">第3章</div>
-    <h2>県一斉模試を受けた生徒をまとめて入れる</h2>
-    <p>県一斉模試を受けた生徒は、県一斉模試の受験番号のまま、まとめて名簿に入れます。使うのは、業者から届く<b>氏名対応表</b>の CSV です。</p>
+    <h2>受験票を印刷する</h2>
+    <p>足した生徒の受験票は、左のメニューの<b>受験票</b>から印刷できます。名簿の生徒（足した生徒も）が並びます。</p>
   </header>
-  <figure class="fig-import"><img src="images/seiseki_05_import.png" alt="県一斉模試の取り込みの名簿の欄"><figcaption>図5　「県一斉模試の取り込み」の「2. 名簿」</figcaption></figure>
-  <ol class="steps">
-    <li><div>左のメニューの<b>県一斉模試の取り込み</b>を開きます。</div></li>
-    <li><div><span class="n">1</span> 名簿を入れる<b>回</b>と<b>校舎</b>を選びます（全部の校舎をまとめて入れるときは「すべての校舎」）。</div></li>
-    <li><div><span class="n">2</span>「氏名対応表の CSV」で、氏名対応表のファイルを選びます（ボタンの表示は、ブラウザによって「ファイルを選択」「Choose File」などです）。</div></li>
-    <li><div><span class="n">3</span> 志望校もまとめて入れるときは、「志望校も入れる」で県一斉模試の回を選びます（志望校が空欄の生徒にだけ入ります）。</div></li>
-    <li><div>「追加 ○人・直す ○人」と出たのを確かめて、<span class="n">4</span><span class="btn">名簿に入れる</span>を押します。</div></li>
+  <figure><img src="images/seiseki_05_ticket.png" alt="受験票の画面"><figcaption>図5　受験票の画面</figcaption></figure>
+  <ol class="legend">
+    <li><span class="n">1</span><div><b>回</b>　受験票を作る模試の回を選びます。</div></li>
+    <li><span class="n">2</span><div><b>校舎</b>　校舎を選ぶと、その校舎の名簿の生徒が並びます。</div></li>
+    <li><span class="n">3</span><div><b>生徒の一覧</b>　印刷する生徒にチェックを入れます（はじめは全員にチェックが入っています）。足した生徒だけを印刷するときは、<span class="btn">すべて外す</span>を押してから、その生徒にチェックを入れます。</div></li>
+    <li><span class="n">4</span><div><span class="btn">印刷する</span>　A4 に4人分（または2人分）ずつ、切り取り線つきで印刷します。「1枚に4人」「1枚に2人」で選べます。</div></li>
   </ol>
-  <div class="box warn">
-    <div class="box-title">注意</div>
-    <p>氏名対応表には生徒の氏名が入っています。作業が終わったら、パソコンにダウンロードしたファイルは消してください。成績の取り込みも含めた詳しい手順は、別紙「成績管理：県一斉模試（2026年8月・10月）の取り込み手順」をご覧ください。</p>
+  <div class="box tip">
+    <div class="box-title">ポイント</div>
+    <p>時間割・持ち物・注意事項・会場は「模試の設定」の内容が入ります。入っていない項目があると、画面の上に知らせが出ます（空欄のまま印刷されます）。</p>
   </div>
 </article>
 
@@ -340,7 +339,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
     <table>
       <thead><tr><th>こんなとき</th><th>どうすればよいか</th></tr></thead>
       <tbody>
-        <tr><td>受験番号を直したい</td><td>「名簿・志望校」の表示で、受験番号の欄を直します（数字4桁。打つと自動で保存）。県一斉模試の番号が分かった生徒は、その番号に直してください。県一斉模試の名簿（第3章）を入れると、同じ氏名の生徒は県一斉模試の番号に自動で直ります。</td></tr>
+        <tr><td>受験番号を直したい</td><td>「名簿・志望校」の表示で、受験番号の欄を直します（数字4桁。打つと自動で保存）。県一斉模試を受けた生徒は、管理部門が県一斉模試の番号で名簿に入れます（そのとき、同じ氏名の生徒の番号は県一斉模試の番号に直ります）。</td></tr>
         <tr><td>校舎をまちがえて足した</td><td>その行の<span class="btn">消す</span>で消し、正しい校舎を選び直してから、<span class="btn">＋ 生徒を追加</span>で足し直します（得点を入れていた場合は、入れ直しになります）。</td></tr>
         <tr><td>同じ生徒を2回足した・いらない行がある</td><td>いらない行の<span class="btn">消す</span>を押し、確認で「OK」を押します。消すと、その行の得点も見えなくなります。まちがえて消したときは、管理者に連絡してください（元に戻せます）。</td></tr>
         <tr><td>志望校の下に「一覧に無いコード」「前のコード」と出る</td><td>県一斉模試の学校コードと合っていません。学校名の一部を打って、候補から選び直してください。</td></tr>
