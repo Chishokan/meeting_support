@@ -1,6 +1,7 @@
 import { guard } from '@/lib/eventList/api';
 import { loadAll, saveTracks, type TrackSave } from '@/lib/eventList/store';
-import { cleanTrackFields } from '@/lib/eventList/model';
+import { cleanTrackFields, scopeData } from '@/lib/eventList/model';
+import { eventScope } from '@/lib/eventList/access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -8,13 +9,15 @@ export const maxDuration = 60;
 
 // イベント申込管理（/event）。
 //   GET  … 名簿・声掛けの記録・申込フォームの回答をまとめて返す（画面側で校舎に絞り、集計する）
+//          小中等部・RED個別の職員には、自分の部門の生徒の分だけを返す（管理部門は全部門。lib/eventList/access.ts の eventScope）
 //   POST … { items: [{ key, campus, name, fields }] } 声掛けの記録を保存する。fields は変えた項目だけ
 //          （同じ生徒のチラシと反応を別の人が同時に入れても消えない）。まとめて付けるときは複数件
 export async function GET() {
   const g = guard();
   if ('res' in g) return g.res;
   const r = await loadAll();
-  return Response.json(r, { status: r.ok || r.reason === 'not_configured' ? 200 : 502 });
+  if (!r.ok) return Response.json(r, { status: r.reason === 'not_configured' ? 200 : 502 });
+  return Response.json({ ...r, ...scopeData(r.students, r.tracks, r.applications, eventScope(g.session.campus)) });
 }
 
 export async function POST(req: Request) {

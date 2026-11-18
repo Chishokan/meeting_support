@@ -23,7 +23,7 @@ export default function EventLayout({ children }: { children: ReactNode }) {
         {canUseEvent(s.campus) ? children : (
           <div className="soon-block">
             <div className="soon-badge">閲覧できません</div>
-            <p>イベント申込管理は{EVENT_DEPTS.join('と')}のみ利用できます。</p>
+            <p>イベント申込管理は{EVENT_DEPTS.join('・')}のみ利用できます。</p>
             <p className="soon-hint">生徒・保護者の情報を含むため、部門を限定しています。</p>
           </div>
         )}

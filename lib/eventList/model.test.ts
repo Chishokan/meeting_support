@@ -4,16 +4,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addedFromSheet, appLabel, autoPriority, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
-  normCampus, normGrade, normName, parseApplications, parseRoster, shortDay, sortRows, summarize, trackFromSheet,
+  addedFromSheet, appLabel, autoPriority, deptByCampus, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
+  normCampus, normGrade, normName, parseApplications, parseRoster, scopeData, shortDay, sortRows, summarize, trackFromSheet,
   type Student, type Track,
 } from './model.ts';
 
 const WORDS = { pharma: ['薬'], medical: ['医', '看護', '療法士', '歯科'] };
-const COL = { no: '№', campus: '所属校舎', school: '中学校名', grade: '学年', name: '生徒名', dream: '夢・志', hope: '志望校', studentId: 'student_id' };
+const COL = { no: '№', dept: '部門', campus: '所属校舎', school: '中学校名', grade: '学年', name: '生徒名', dream: '夢・志', hope: '志望校', studentId: 'student_id' };
 
 const st = (key: string, name: string, campus = '駅前校', grade = '中1', dream = '', hope = ''): Student =>
-  ({ key, studentId: key, campus, school: '', grade, name, dream, hope });
+  ({ key, studentId: key, dept: '小中等部', campus, school: '', grade, name, dream, hope });
 const tr = (key: string, f: Partial<Track> = {}): Track => ({ ...emptyTrack(key), ...f });
 
 test('normName：空白・全角半角・異体字をそろえる', () => {
@@ -39,10 +39,12 @@ test('parseRoster：「例」の行・氏名なし・重複を捨て、校舎な
     { '№': '2', 所属校舎: '県中', 生徒名: '', student_id: 'S002' },
     { '№': '', 所属校舎: '', 生徒名: '森 一', 学年: '中３' },
     { '№': '9', 所属校舎: '日野校', 生徒名: '青空 花', student_id: 'S001' },
+    { '№': '1', 部門: 'RED個別', 所属校舎: 'RED広田', 学年: '中3', 生徒名: '海 二', student_id: '' },
   ];
-  const r = parseRoster(rows, COL, '未分類');
-  assert.equal(r.length, 2);
-  assert.deepEqual(r[0], { key: 'S001', studentId: 'S001', campus: '県中', school: '北', grade: '中1', name: '青空 花', dream: '薬剤師', hope: '九大' });
+  const r = parseRoster(rows, COL, '未分類', '小中等部');
+  assert.equal(r.length, 3);
+  assert.deepEqual([r[2].key, r[2].dept, r[2].campus, r[2].grade], ['RED広田|海二', 'RED個別', 'RED広田', '中3']);
+  assert.deepEqual(r[0], { key: 'S001', studentId: 'S001', dept: '小中等部', campus: '県中', school: '北', grade: '中1', name: '青空 花', dream: '薬剤師', hope: '九大' });
   assert.equal(r[1].key, '未分類|森一');
   assert.equal(r[1].campus, '未分類');
 });
@@ -139,9 +141,10 @@ test('アプリで足した生徒：入力を整え、名簿に合わせ、同�
   );
   assert.equal(cleanStudentInput({ campus: '', name: '青空 花' }), null);
   assert.equal(cleanStudentInput({ campus: '駅前校', name: ' ' }), null);
-  const added = addedFromSheet({ ID: 'A-1', 校舎: 'RED広田', 中学校: '広田中', 学年: '中３', 氏名: '青空 花', '夢・志': '薬学部', 志望校: '' });
-  assert.deepEqual(added, { key: 'A-1', studentId: '', campus: 'RED広田', school: '広田中', grade: '中3', name: '青空 花', dream: '薬学部', hope: '', added: true });
-  assert.equal(addedFromSheet({ ID: '', 氏名: 'x' }), null);
+  const added = addedFromSheet({ ID: 'A-1', 部門: 'RED個別', 校舎: 'RED広田', 中学校: '広田中', 学年: '中３', 氏名: '青空 花', '夢・志': '薬学部', 志望校: '' }, '小中等部');
+  assert.equal(addedFromSheet({ ID: 'A-9', 校舎: '駅前校', 氏名: 'x' }, '小中等部')?.dept, '小中等部');
+  assert.deepEqual(added, { key: 'A-1', studentId: '', dept: 'RED個別', campus: 'RED広田', school: '広田中', grade: '中3', name: '青空 花', dream: '薬学部', hope: '', added: true });
+  assert.equal(addedFromSheet({ ID: '', 氏名: 'x' }, '小中等部'), null);
   const roster = [st('S1', '髙橋 花子'), st('A-1', '名簿 優先')];
   const all = mergeStudents(roster, [added!, st('A-2', '高橋花子', 'RED広田')]);
   assert.deepEqual(all.map((x) => x.key), ['S1', 'A-1', 'A-2']);
@@ -152,6 +155,32 @@ test('アプリで足した生徒：入力を整え、名簿に合わせ、同�
   const { rows, unmatched } = buildRows([added!], [], parseApplications(FORM_HEADERS, [['t1', '', '青空花', '', '中学3年生', 'RED広田', '', '2人', '', '', '', '']]), WORDS);
   assert.equal(unmatched.length, 0);
   assert.deepEqual([rows[0].priority, rows[0].stage, rows[0].studentApplied, rows[0].parentApplied, rows[0].companions], ['pharma', 'applied', true, true, 2]);
+});
+
+test('deptByCampus：部門の無い追加生徒は、同じ校舎の名簿の生徒の部門に入る', () => {
+  const roster = [st('S1', 'a', '駅前校'), { ...st('R1', 'b', 'RED広田'), dept: 'RED個別' }];
+  const of = deptByCampus(roster, '小中等部');
+  assert.deepEqual(['RED広田', '駅前校', '知らない校舎'].map(of), ['RED個別', '小中等部', '小中等部']);
+  assert.equal(addedFromSheet({ ID: 'A-1', 校舎: 'RED広田', 氏名: 'x' }, of('RED広田'))?.dept, 'RED個別');
+  assert.equal(addedFromSheet({ ID: 'A-2', 部門: '小中等部', 校舎: 'RED広田', 氏名: 'x' }, of('RED広田'))?.dept, '小中等部');
+});
+
+test('scopeData：部門の生徒・記録と、その部門の申込＋名簿外の申込だけを返す', () => {
+  const red = (key: string, name: string): Student => ({ ...st(key, name, 'RED広田', '中3'), dept: 'RED個別' });
+  const students = [st('S1', '青空 花'), st('S2', '森 一'), red('R1', '海 二'), red('R2', '川 三')];
+  const tracks = [tr('S1', { flyer: '2026-11-18' }), tr('R1', { memo: 'm' })];
+  const apps = parseApplications(['タイムスタンプ', 'お名前'], [['t1', '青空花'], ['t2', '海二'], ['t3', '外部 太郎']]);
+  const all = scopeData(students, tracks, apps, null);
+  assert.deepEqual([all.students.length, all.tracks.length, all.applications.length], [4, 2, 3]);
+  const c = scopeData(students, tracks, apps, '小中等部');
+  assert.deepEqual(c.students.map((x) => x.key), ['S1', 'S2']);
+  assert.deepEqual(c.tracks.map((x) => x.key), ['S1']);
+  assert.deepEqual(c.applications.map((a) => a.at), ['t1', 't3']);
+  const r = scopeData(students, tracks, apps, 'RED個別');
+  assert.deepEqual(r.students.map((x) => x.key), ['R1', 'R2']);
+  assert.deepEqual(r.tracks.map((x) => x.key), ['R1']);
+  assert.deepEqual(r.applications.map((a) => a.at), ['t2', 't3']);
+  assert.deepEqual(scopeData(students, tracks, apps, 'LEC'), { students: [], tracks: [], applications: [apps[2]] });
 });
 
 test('matchApplications：氏名で結び、同姓同名は校舎・学年で決め、決まらなければ名簿外', () => {

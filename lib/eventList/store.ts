@@ -13,9 +13,9 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { EVENT, NO_CAMPUS, ROSTER_COLUMNS } from './event';
+import { DEFAULT_DEPT, EVENT, NO_CAMPUS, ROSTER_COLUMNS } from './event';
 import {
-  ADDED_HEADERS, TRACK_HEADERS, addedFromSheet, mergeStudents, parseApplications, parseRoster, trackFromSheet,
+  ADDED_HEADERS, TRACK_HEADERS, addedFromSheet, deptByCampus, mergeStudents, parseApplications, parseRoster, trackFromSheet,
   type Application, type Student, type StudentInput, type Track, type TrackField,
 } from './model';
 
@@ -92,6 +92,8 @@ function sampleData(): LocalData {
     [C.no]: String(i), [C.campus]: campus, [C.school]: school, [C.grade]: grade, [C.name]: name, [C.dream]: dream, [C.hope]: hope,
     [C.studentId]: `X${String(i).padStart(3, '0')}`,
   });
+  // RED個別のタブ：氏名と学年だけ（夢・志・学校・student_id は無い）
+  const red = (campus: string, grade: string, name: string): SheetRow => ({ [C.dept]: 'RED個別', [C.campus]: campus, [C.grade]: grade, [C.name]: name });
   const src: [string, string, string, string, string, string][] = [
     ['駅前校', '山澄', '中１', '見本 あおい', '薬剤師', '佐世保北'], ['駅前校', '祇園', '中１', '見本 はると', '医者', '佐世保北'],
     ['駅前校', '清水', '中２', '見本 ゆい', '小学校の先生', '佐世保南'], ['駅前校', '福石', '中２', '見本 そうた', '工学系', '佐世保高専'],
@@ -108,7 +110,11 @@ function sampleData(): LocalData {
     ['県中', '佐世保北', '中１', '試作 うた', '作曲家', '決まっていない'],
   ];
   return {
-    roster: src.map((x, i) => row(i + 1, ...x)),
+    roster: [
+      ...src.map((x, i) => row(i + 1, ...x)),
+      red('RED広田', '中3', '個別 いちか'), red('RED広田', '中2', '個別 にこ'), red('RED広田', '', '個別 みつき'),
+      red('RED日野', '中3', '個別 よつば'), red('RED日野', '中1', '個別 いつき'), red('ネクスタ駅前', '中3', '個別 むつみ'),
+    ],
     tracks: [],
     added: [],
     // 見出しは本番のフォーム（東進 トップリーダーと学ぶワークショップ2026 参加申し込み）と同じ
@@ -145,10 +151,13 @@ async function writeLocal(d: LocalData): Promise<void> {
 function build(
   roster: SheetRow[], tracks: SheetRow[], added: SheetRow[], form: FormSheet | null, formStatus: EventData['formStatus'], backend: EventData['backend'],
 ): EventData {
-  const extra = added.filter((r) => String(r['削除'] ?? '') !== '1').map(addedFromSheet).filter((st): st is Student => !!st);
+  const rosterStudents = parseRoster(roster, ROSTER_COLUMNS, NO_CAMPUS, DEFAULT_DEPT);
+  const deptOf = deptByCampus(rosterStudents, DEFAULT_DEPT);
+  const extra = added.filter((r) => String(r['削除'] ?? '') !== '1')
+    .map((r) => addedFromSheet(r, deptOf(String(r['校舎'] ?? '').trim()))).filter((st): st is Student => !!st);
   return {
     ok: true,
-    students: mergeStudents(parseRoster(roster, ROSTER_COLUMNS, NO_CAMPUS), extra),
+    students: mergeStudents(rosterStudents, extra),
     tracks: tracks.map(trackFromSheet).filter((t) => t.key),
     applications: form ? parseApplications(form.headers.map(String), form.rows) : [],
     formStatus,
@@ -217,38 +226,43 @@ function studentToSheet(v: StudentInput): Record<string, string> {
   return o;
 }
 
-/** 名簿に無い生徒を足す（id が空）、または足した生徒を直す（id あり）。名簿のスプレッドシートの生徒は直せない。 */
-export async function saveStudent(id: string, input: StudentInput, user: string): Promise<StudentResult> {
+/**
+ * 名簿に無い生徒を足す（id が空）、または足した生徒を直す（id あり）。名簿のスプレッドシートの生徒は直せない。
+ * dept（部門）は足すときにだけ書く（直すときは変えない）。scope があるとき（管理部門でない職員）は、その部門の生徒だけを直せる。
+ */
+export async function saveStudent(id: string, input: StudentInput, dept: string, scope: string | null, user: string): Promise<StudentResult> {
   const fields = studentToSheet(input);
+  if (!id) fields['部門'] = dept;
   if (useLocal()) {
     const d = await readLocal();
     const ts = nowJp();
     let row = id ? d.added.find((r) => String(r['ID'] ?? '') === id && String(r['削除'] ?? '') !== '1') : undefined;
-    if (id && !row) return { ok: false, reason: 'not_found' };
+    if (id && (!row || (scope && (String(row['部門'] ?? '') || DEFAULT_DEPT) !== scope))) return { ok: false, reason: 'not_found' };
     if (!row) {
       row = { イベントID: EVENT.id, ID: `A-${randomUUID().slice(0, 8)}`, 作成日時: ts, 作成者: user };
       d.added.push(row);
     }
     Object.assign(row, fields, { 更新日時: ts, 更新者: user });
     await writeLocal(d);
-    return { ok: true, student: addedFromSheet(row)! };
+    return { ok: true, student: addedFromSheet(row, DEFAULT_DEPT)! };
   }
-  const j = await callGas({ action: 'saveEventStudent', user, id, fields });
+  const j = await callGas({ action: 'saveEventStudent', user, id, fields, scope: scope ?? '', defaultDept: DEFAULT_DEPT });
   if (!j.ok) return { ok: false, reason: j.reason || 'upstream_error' };
-  const student = j.item && typeof j.item === 'object' ? addedFromSheet(j.item as SheetRow) : null;
+  // 古い Apps Script は「部門」を書かずに返してくる。そのときは、送った部門（直すときは見ている部門）として返す
+  const student = j.item && typeof j.item === 'object' ? addedFromSheet(j.item as SheetRow, id ? scope ?? DEFAULT_DEPT : dept) : null;
   return student ? { ok: true, student } : { ok: false, reason: 'not_deployed' };
 }
 
 /** 足した生徒を外す（行は残し「削除」に 1 を立てる。声掛けの記録も残る）。 */
-export async function deleteStudent(id: string, user: string): Promise<{ ok: true } | Fail> {
+export async function deleteStudent(id: string, scope: string | null, user: string): Promise<{ ok: true } | Fail> {
   if (useLocal()) {
     const d = await readLocal();
     const row = d.added.find((r) => String(r['ID'] ?? '') === id);
-    if (!row) return { ok: false, reason: 'not_found' };
+    if (!row || (scope && (String(row['部門'] ?? '') || DEFAULT_DEPT) !== scope)) return { ok: false, reason: 'not_found' };
     Object.assign(row, { 削除: '1', 更新日時: nowJp(), 更新者: user });
     await writeLocal(d);
     return { ok: true };
   }
-  const j = await callGas({ action: 'deleteEventStudent', user, id });
+  const j = await callGas({ action: 'deleteEventStudent', user, id, scope: scope ?? '', defaultDept: DEFAULT_DEPT });
   return j.ok ? { ok: true } : { ok: false, reason: j.reason || 'upstream_error' };
 }
