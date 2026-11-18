@@ -7,6 +7,7 @@
 //   閲覧ログ：結果の閲覧・CSV出力などの記録
 // 詳細を読むと、結果があればサーバが「結果閲覧」を記録する（同じ人の10分以内の読み直しは1件にまとめる）。
 
+import { SkCards, SkLines } from '@/components/Skeleton';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -108,7 +109,7 @@ export default function AptitudeDetailUI({ id }: { id: string }) {
     return (
       <div className="ib apt">
         <Link href="/aptitude" className="apt-back">← 受検者の一覧</Link>
-        {msg ? <p className="ib-note ib-note-err" role="alert">{msg}</p> : <p className="apt-muted">読み込み中…</p>}
+        {msg ? <p className="ib-note ib-note-err" role="alert">{msg}</p> : <><SkCards n={3} label="受検者の情報を読み込んでいます" /><SkLines lines={6} /></>}
       </div>
     );
   }

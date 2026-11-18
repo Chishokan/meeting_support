@@ -6,6 +6,7 @@
 // ・書きかけはこの端末（localStorage）に残し、提出したら消す。提出はサーバ（/api/kenshu）へ
 // ・提出後に開くと「わたしのやりたいことリスト」を出し、［内容を直す］から出し直せる（上書き）
 
+import { SkLines } from '@/components/Skeleton';
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import {
   cheer, MAX_ITEM_LENGTH, MAX_ITEMS, MIN_ROWS, QUESTIONS, splitLines, SURVEY, type Question, type QuestionKey,
@@ -308,7 +309,7 @@ export default function KenshuSurveyUI({ name, campus }: { name: string; campus:
     window.scrollTo({ top: 0 });
   }
 
-  if (phase === 'loading') return <div className="ks"><p className="ks-loading">読み込み中…</p></div>;
+  if (phase === 'loading') return <div className="ks"><SkLines lines={8} label="読み込み中" /></div>;
   if (phase === 'done' && answer) {
     return <DoneView answer={answer} onEdit={() => { setPhase('edit'); window.scrollTo({ top: 0 }); }} />;
   }

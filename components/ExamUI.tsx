@@ -7,6 +7,7 @@
 // 設問は受検ごとにランダムな順。サーバとは「何番目に出したか（pos）」だけでやり取りし、設問番号は持たない。
 // 回答にかかった秒数（前の回答からの経過）を記録する。極端に速い受検を見分けるため。
 
+import { SkLines } from '@/components/Skeleton';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RETENTION, type AnswerValue, type ExamProfile } from '@/lib/aptitude/model';
 import type { ExamView } from '@/lib/aptitude/store';
@@ -33,7 +34,7 @@ export default function ExamUI({ token }: { token: string }) {
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (err && !view) return <div className="exam-card"><p className="exam-err" role="alert">{err}</p><button className="exam-btn" onClick={() => { setErr(''); load(); }}>もう一度読み込む</button></div>;
-  if (!view) return <div className="exam-card"><p className="exam-muted">読み込み中…</p></div>;
+  if (!view) return <div className="exam-card"><SkLines lines={6} label="読み込み中" /></div>;
 
   if (view.state === 'ready') return <Consent token={token} view={view} onDone={load} />;
   if (view.state === 'answering') return <Questions token={token} view={view} onDone={() => setView({ state: 'done' })} />;
