@@ -148,6 +148,25 @@ function sheetDay(v: unknown): string {
   return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : '';
 }
 
+// ---- 保存の途中の項目 --------------------------------------------------------
+// 画面は押したらすぐ書き換え、保存の返事を待つ。同じ生徒の別の項目を続けて押すと、先の保存の返事には後の項目がまだ入っていないので、
+// 返事をそのまま画面に入れると後の項目が元に戻って見える（→ もう一度押してしまう）。保存の途中の項目は、画面の値を残す。
+
+/** 保存の返事（saved）を画面の記録に入れる。まだ保存の途中の項目（pending）は、画面の値のまま。 */
+export function mergeSaved(local: Track | undefined, saved: Track, pending: ReadonlySet<TrackField>): Track {
+  if (!local) return saved;
+  const out: Track = { ...saved };
+  for (const f of pending) (out as Record<TrackField, string>)[f] = local[f];
+  return out;
+}
+
+/** 保存に失敗したとき：その保存で変えた項目（fields）だけを前の値に戻す。ほかの保存の途中の項目（pending）には触らない。 */
+export function revertFields(local: Track, before: Track, fields: TrackField[], pending: ReadonlySet<TrackField>): Track {
+  const out: Track = { ...local };
+  for (const f of fields) if (!pending.has(f)) (out as Record<TrackField, string>)[f] = before[f];
+  return out;
+}
+
 export function trackFromSheet(o: Record<string, unknown>): Track {
   const r = s(o['反応']);
   return {
@@ -490,6 +509,83 @@ export function sortRows(rows: StudentRow[]): StudentRow[] {
     || STAGE_RANK[a.stage] - STAGE_RANK[b.stage]
     || b.student.grade.localeCompare(a.student.grade, 'ja')
     || a.student.name.localeCompare(b.student.name, 'ja'));
+}
+
+// ---- まとめて記録 -----------------------------------------------------------
+
+export type DayField = 'flyer' | 'talk' | 'parent';
+export const DAY_FIELDS: { key: DayField; label: string; done: string }[] = [
+  { key: 'flyer', label: 'チラシ', done: 'チラシ配布済み' },
+  { key: 'talk', label: '声掛け', done: '声掛け済み' },
+  { key: 'parent', label: '保護者へ案内', done: '保護者へ案内済み' },
+];
+// mode：on＝済みにする（今日の日付）、off＝未に戻す。reaction は on のときだけ（null＝変えない）
+export type BulkAction = { mode: 'on' | 'off'; items: DayField[]; reaction: Reaction | null };
+
+/**
+ * 選んだ生徒にまとめて記録するときの、生徒ごとの変更。変えるところの無い生徒は入れない。
+ *   済みにする … まだ済みでない項目にだけ今日の日付を入れる（すでに済みの日付は変えない）
+ *   未に戻す   … 済みになっている項目だけを空にする
+ *   反応       … いまと違う生徒だけ。反応を入れたのに声掛けが未なら、声掛けも今日にする（1人ずつ入れるときと同じ）
+ */
+export function bulkChanges(rows: StudentRow[], action: BulkAction, today: string): { row: StudentRow; fields: Partial<Record<TrackField, string>> }[] {
+  const out: { row: StudentRow; fields: Partial<Record<TrackField, string>> }[] = [];
+  for (const row of rows) {
+    const t = row.track;
+    const fields: Partial<Record<TrackField, string>> = {};
+    for (const f of action.items) {
+      if (action.mode === 'on' && !t[f]) fields[f] = today;
+      if (action.mode === 'off' && t[f]) fields[f] = '';
+    }
+    if (action.mode === 'on' && action.reaction != null && action.reaction !== t.reaction) {
+      fields.reaction = action.reaction;
+      if (action.reaction && !t.talk && !fields.talk) fields.talk = today;
+    }
+    if (Object.keys(fields).length) out.push({ row, fields });
+  }
+  return out;
+}
+
+// 名簿の並び順（画面の「並び順」のプルダウン）
+export type SortKey = 'todo' | 'gradeDesc' | 'gradeAsc' | 'name' | 'campus' | 'stage' | 'updated';
+export const SORTS: { key: SortKey; label: string }[] = [
+  { key: 'todo', label: 'おすすめ（することがある順）' },
+  { key: 'gradeDesc', label: '学年（上の学年から）' },
+  { key: 'gradeAsc', label: '学年（下の学年から）' },
+  { key: 'name', label: '氏名' },
+  { key: 'campus', label: '校舎' },
+  { key: 'stage', label: '進み具合（未着手から）' },
+  { key: 'updated', label: '更新が新しい順' },
+];
+
+/**
+ * 名簿を並べる。campuses は校舎の並び（campusList の結果）。
+ *   学年 … 小1〜高3 の順（上から／下から）。学年が空・読めない生徒は、どちらでも最後。同じ学年は校舎・氏名の順
+ *   氏名 … 漢字の文字の順（名簿にふりがなが無いので、読みの五十音順ではない）
+ *   校舎 … 校舎の並びの順。同じ校舎は上の学年から・氏名の順
+ *   進み具合 … 未着手 → チラシ配布済 → 声掛け済 → 参加したい → 検討中 → 申込済 → 不参加
+ *   更新 … 記録の更新日時が新しい順。まだ記録の無い生徒は最後
+ */
+export function sortRowsBy(rows: StudentRow[], key: SortKey, campuses: string[] = []): StudentRow[] {
+  if (key === 'todo') return sortRows(rows);
+  const name = (a: StudentRow, b: StudentRow) => a.student.name.localeCompare(b.student.name, 'ja');
+  const campusRank = (r: StudentRow) => { const i = campuses.indexOf(r.student.campus); return i < 0 ? campuses.length : i; };
+  const campus = (a: StudentRow, b: StudentRow) => campusRank(a) - campusRank(b) || a.student.campus.localeCompare(b.student.campus, 'ja');
+  const gradeRank = (r: StudentRow) => GRADES.indexOf(r.student.grade);
+  const grade = (dir: 1 | -1) => (a: StudentRow, b: StudentRow) => {
+    const x = gradeRank(a), y = gradeRank(b);
+    if (x < 0 || y < 0) return (x < 0 ? 1 : 0) - (y < 0 ? 1 : 0); // 学年が空の生徒は最後
+    return dir * (x - y);
+  };
+  const by: Record<Exclude<SortKey, 'todo'>, (a: StudentRow, b: StudentRow) => number> = {
+    gradeDesc: (a, b) => grade(-1)(a, b) || campus(a, b) || name(a, b),
+    gradeAsc: (a, b) => grade(1)(a, b) || campus(a, b) || name(a, b),
+    name: (a, b) => name(a, b) || campus(a, b),
+    campus: (a, b) => campus(a, b) || grade(-1)(a, b) || name(a, b),
+    stage: (a, b) => STAGE_RANK[a.stage] - STAGE_RANK[b.stage] || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || grade(-1)(a, b) || name(a, b),
+    updated: (a, b) => (b.track.updatedAt || '').localeCompare(a.track.updatedAt || '') || name(a, b),
+  };
+  return [...rows].sort(by[key]);
 }
 
 // ---- 集計（校舎ごとの進み具合） ----------------------------------------------

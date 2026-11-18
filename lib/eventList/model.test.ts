@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addedFromSheet, appLabel, autoPriority, deptByCampus, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
+  addedFromSheet, appLabel, autoPriority, bulkChanges, deptByCampus, mergeSaved, revertFields, sortRowsBy, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
   normCampus, normGrade, normName, parseApplications, parseRoster, scopeData, shortDay, sortRows, summarize, trackFromSheet,
   type Student, type Track,
 } from './model.ts';
@@ -157,6 +157,24 @@ test('アプリで足した生徒：入力を整え、名簿に合わせ、同�
   assert.deepEqual([rows[0].priority, rows[0].stage, rows[0].studentApplied, rows[0].parentApplied, rows[0].companions], ['pharma', 'applied', true, true, 2]);
 });
 
+test('mergeSaved・revertFields：保存の途中の項目は、返事や失敗で元に戻さない', () => {
+  // チラシを押した直後に声掛けも押した。先に返ってきたチラシの保存の返事には、声掛けがまだ入っていない
+  const local = tr('S1', { flyer: '2026-11-18', talk: '2026-11-18' });
+  const reply1 = tr('S1', { flyer: '2026-11-18', updatedAt: '2026/11/18 10:00', updatedBy: '太田' });
+  const m1 = mergeSaved(local, reply1, new Set(['talk']));
+  assert.deepEqual([m1.flyer, m1.talk, m1.updatedBy], ['2026-11-18', '2026-11-18', '太田']);
+  // 途中の項目が無ければ、返事のとおりにする（ほかの人が入れた反応も入る）
+  const reply2 = tr('S1', { flyer: '2026-11-18', talk: '2026-11-18', reaction: '検討中' });
+  assert.deepEqual(mergeSaved(m1, reply2, new Set()), reply2);
+  assert.deepEqual(mergeSaved(undefined, reply2, new Set(['talk'])), reply2);
+  // 声掛けの保存が失敗：声掛けだけを前に戻す。チラシ（保存済み）と、まだ途中のメモはそのまま
+  const now = tr('S1', { flyer: '2026-11-18', talk: '2026-11-18', memo: '入力中' });
+  const r = revertFields(now, tr('S1'), ['talk'], new Set(['memo']));
+  assert.deepEqual([r.flyer, r.talk, r.memo], ['2026-11-18', '', '入力中']);
+  // 同じ項目の次の保存がまだ途中なら、戻さない
+  assert.equal(revertFields(now, tr('S1'), ['talk'], new Set(['talk'])).talk, '2026-11-18');
+});
+
 test('deptByCampus：部門の無い追加生徒は、同じ校舎の名簿の生徒の部門に入る', () => {
   const roster = [st('S1', 'a', '駅前校'), { ...st('R1', 'b', 'RED広田'), dept: 'RED個別' }];
   const of = deptByCampus(roster, '小中等部');
@@ -237,6 +255,50 @@ test('buildRows：段階と次にすること', () => {
     [6, 3, 4, 1, 1, 2, 1, 1, 1, 4],
   );
   assert.deepEqual([sum.priority, sum.priorityTalked, sum.priorityApplied, sum.priorityOpen], [2, 1, 0, 1]);
+});
+
+test('bulkChanges：選んだ生徒にまとめて記録する（済みの日付は変えない・変わらない生徒は入れない）', () => {
+  const students = [st('A', 'a'), st('B', 'b'), st('C', 'c')];
+  const tracks = [tr('B', { flyer: '2026-11-10' }), tr('C', { flyer: '2026-11-10', talk: '2026-11-11', reaction: '検討中' })];
+  const { rows } = buildRows(students, tracks, [], WORDS);
+  const pick = (c: ReturnType<typeof bulkChanges>) => c.map((x) => [x.row.student.key, x.fields]);
+  // チラシ：未の A だけ。B・C の日付は変えない
+  assert.deepEqual(pick(bulkChanges(rows, { mode: 'on', items: ['flyer'], reaction: null }, '2026-11-18')), [['A', { flyer: '2026-11-18' }]]);
+  // チラシと声掛け：A は両方、B は声掛けだけ、C は変わらないので入らない
+  assert.deepEqual(pick(bulkChanges(rows, { mode: 'on', items: ['flyer', 'talk'], reaction: null }, '2026-11-18')), [
+    ['A', { flyer: '2026-11-18', talk: '2026-11-18' }], ['B', { talk: '2026-11-18' }],
+  ]);
+  // 反応：違う生徒だけ。声掛けが未なら声掛けも今日
+  assert.deepEqual(pick(bulkChanges(rows, { mode: 'on', items: [], reaction: '検討中' }, '2026-11-18')), [
+    ['A', { reaction: '検討中', talk: '2026-11-18' }], ['B', { reaction: '検討中', talk: '2026-11-18' }],
+  ]);
+  // 未に戻す：済みの項目だけ
+  assert.deepEqual(pick(bulkChanges(rows, { mode: 'off', items: ['flyer', 'talk'], reaction: '不参加' }, '2026-11-18')), [
+    ['B', { flyer: '' }], ['C', { flyer: '', talk: '' }],
+  ]);
+  assert.deepEqual(bulkChanges(rows, { mode: 'on', items: [], reaction: null }, '2026-11-18'), []);
+});
+
+test('sortRowsBy：学年・氏名・校舎・進み具合・更新の順に並べる', () => {
+  const students = [
+    st('A', 'い 花', '日野校', '中1'), st('B', 'あ 一', '駅前校', '中3'), st('C', 'う 二', '駅前校', ''), st('D', 'え 三', '日野校', '高1'),
+    st('E', 'お 四', '駅前校', '中1'), st('F', 'か 五', '日野校', '小6'),
+  ];
+  const tracks = [
+    tr('A', { flyer: '2026-11-17', updatedAt: '2026/11/17 09:00' }),
+    tr('B', { flyer: '2026-11-18', talk: '2026-11-18', reaction: '不参加', updatedAt: '2026/11/18 10:00' }),
+    tr('E', { applied: '1', updatedAt: '2026/11/18 08:00' }),
+  ];
+  const { rows } = buildRows(students, tracks, [], WORDS);
+  const order = (k: Parameters<typeof sortRowsBy>[1]) => sortRowsBy(rows, k, ['駅前校', '日野校']).map((r) => r.student.key).join('');
+  assert.equal(order('gradeDesc'), 'DBEAFC'); // 高1 → 中3 → 中1（駅前→日野）→ 小6 → 学年なし
+  assert.equal(order('gradeAsc'), 'FEABDC');  // 小6 → 中1 → 中3 → 高1 → 学年なし（どちらでも最後）
+  assert.equal(order('name'), 'BACDEF');
+  assert.equal(order('campus'), 'BECDAF');    // 駅前校（中3・中1・学年なし）→ 日野校（高1・中1・小6）
+  assert.equal(order('stage'), 'DFCAEB');     // 未着手（高1・小6・学年なし）→ チラシ配布済 → 申込済 → 不参加
+  assert.equal(order('updated'), 'BEACDF');   // 新しい順。記録の無い生徒は最後（氏名の順）
+  assert.equal(order('todo'), sortRows(rows).map((r) => r.student.key).join(''));
+  assert.equal(rows.map((r) => r.student.key).join(''), 'ABCDEF'); // 元の並びは変えない
 });
 
 test('daysUntil・shortDay', () => {
