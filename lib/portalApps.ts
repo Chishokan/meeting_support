@@ -11,6 +11,8 @@ import { canUseChishokanAi } from './chishokanAi/access';
 import { hubConfigured } from './core/hub';
 import { canUseColor } from './colorAccess';
 import { canUseMoshi, MOSHI_DEPTS } from './moshi/access';
+import { canUseEvent, EVENT_DEPTS } from './eventList/access';
+import { EVENT } from './eventList/event';
 import type { HubRole } from './core/auth';
 
 // 面談管理は別アプリ（面談予約システム）の管理画面。部門ごとに URL が分かれている。
@@ -78,6 +80,16 @@ export const PORTAL_APPS: PortalApp[] = [
     status: 'ready',
     canUse: canUseInquiryBoard,
     deniedNote: `${INQUIRY_BOARD_DEPTS.join('、')}のみ利用できます`,
+  },
+  // イベント申込管理：いま追いかけているイベントは lib/eventList/event.ts。イベントが終わったらカードを外す（画面は URL /event で開ける）
+  {
+    id: 'event',
+    name: 'イベント申込管理',
+    desc: `${EVENT.short}の声掛け名簿と申込状況`,
+    href: '/event',
+    status: 'ready',
+    canUse: canUseEvent,
+    deniedNote: `${EVENT_DEPTS.join('、')}のみ利用できます`,
   },
   {
     id: 'monpai',
