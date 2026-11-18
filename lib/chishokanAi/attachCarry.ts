@@ -68,7 +68,8 @@ export function carryForSend(
 export function carriedNote(names: string[]): string {
   return (
     `【前の質問で添付された資料（画面が付け直したもの）：${names.join('、')}】\n` +
-    'この会話の前の回で職員が添付した資料。今回の質問の材料として使ってよい。「添付が無い」「問題文が渡されていない」と言わない。'
+    'この会話の前の回で職員が添付した資料と、generate_image で作った画像。今回の質問の材料として使ってよい（画像を直すときは generate_image の source にこの名前）。' +
+    '「添付が無い」「問題文が渡されていない」と言わない。'
   );
 }
 
