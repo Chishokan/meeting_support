@@ -74,11 +74,14 @@ export default function MoshiEntryUI({ name }: { name: string }) {
   }, [mine, order]);
 
   const visibleKeys: SubjectKey[] = subj === 'all' ? [...SUBJECT_KEYS] : [subj];
+  // 得点の表には、この回を受験しない生徒（名簿の「受験しない」）を出さない
+  const takers = useMemo(() => rows.filter((r) => !r.absent), [rows]);
+  const absentCount = rows.length - takers.length;
   const shownRows = useMemo(() => {
-    if (!onlyMissing || !exam) return rows;
-    return rows.filter((r) => visibleKeys.some((k) => subjectTotal(r, k) == null || isPartial(exam, r, k)));
+    if (!onlyMissing || !exam) return takers;
+    return takers.filter((r) => visibleKeys.some((k) => subjectTotal(r, k) == null || isPartial(exam, r, k)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, onlyMissing, exam, subj]);
+  }, [takers, onlyMissing, exam, subj]);
 
   // ---- 保存 ----------------------------------------------------------------
 
@@ -347,8 +350,8 @@ export default function MoshiEntryUI({ name }: { name: string }) {
 
   const progress = SUBJECT_KEYS.map((k) => ({
     k,
-    done: rows.filter((r) => subjectTotal(r, k) != null && !isPartial(exam, r, k)).length,
-    partial: rows.filter((r) => isPartial(exam, r, k)).length,
+    done: takers.filter((r) => subjectTotal(r, k) != null && !isPartial(exam, r, k)).length,
+    partial: takers.filter((r) => isPartial(exam, r, k)).length,
   }));
   const badCount = Object.keys(cellText).filter((k) => mine.some((r) => k.startsWith(`${r.id}|`))).length;
 
@@ -384,10 +387,10 @@ export default function MoshiEntryUI({ name }: { name: string }) {
         </div>
 
         <div className="ms-progress ms-noprint">
-          <span>{campusInfo(campus)?.label}：{rows.length}人</span>
+          <span>{campusInfo(campus)?.label}：{takers.length}人{absentCount > 0 && <em>（ほかに受験しない {absentCount}人）</em>}</span>
           {progress.map((p) => (
-            <span key={p.k} className={p.done === rows.length && rows.length ? 'ok' : ''}>
-              {SUBJECT_NAMES[p.k]} {p.done}/{rows.length}{p.partial ? <em>（途中 {p.partial}）</em> : null}
+            <span key={p.k} className={p.done === takers.length && takers.length ? 'ok' : ''}>
+              {SUBJECT_NAMES[p.k]} {p.done}/{takers.length}{p.partial ? <em>（途中 {p.partial}）</em> : null}
             </span>
           ))}
           {badCount > 0 && <span className="bad">赤いセル {badCount}か所（空欄として保存しています。直してください）</span>}
@@ -433,6 +436,7 @@ export default function MoshiEntryUI({ name }: { name: string }) {
                 ))}
               </tbody>
             </table>
+            {absentCount > 0 && <p className="ms-fine ms-noprint">受験しない生徒 {absentCount}人は、この表に出していません（「名簿・志望校」の［受験しない］で切り替えられます）。</p>}
           </div>
         ) : (
           <div className="ms-grid-wrap">
@@ -443,7 +447,8 @@ export default function MoshiEntryUI({ name }: { name: string }) {
               <thead>
                 <tr>
                   <th className="ms-c-no">受験番号</th><th className="ms-c-name">氏名</th><th>性別</th>
-                  <th>第一志望</th><th>第二志望</th><th>第三志望</th><th>第四志望</th><th></th>
+                  <th>第一志望</th><th>第二志望</th><th>第三志望</th><th>第四志望</th>
+                  <th className="ms-c-absent" title="この回を受けない生徒。得点の表と受験票に出さない">受験しない</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -498,7 +503,7 @@ export default function MoshiEntryUI({ name }: { name: string }) {
 }
 
 function toInput(r: MoshiResult) {
-  return { id: r.id, campus: r.campus, examNo: r.examNo, name: r.name, gender: r.gender, choices: r.choices, scores: r.scores, comment: r.comment };
+  return { id: r.id, campus: r.campus, examNo: r.examNo, name: r.name, gender: r.gender, choices: r.choices, scores: r.scores, comment: r.comment, absent: !!r.absent };
 }
 
 function rowSig(texts: Record<string, string>, id: string): string {
@@ -581,7 +586,7 @@ type RosterRowProps = {
 const RosterRow = memo(function RosterRow({ r, ri, onUpdate, onKey, onRemove }: RosterRowProps) {
   const other = r.examNo && campusOfExamNo(r.examNo) && campusOfExamNo(r.examNo) !== r.campus;
   return (
-    <tr data-id={r.id}>
+    <tr data-id={r.id} className={r.absent ? 'ms-absent' : ''}>
       <td className="ms-c-no">
         <input
           className={`ms-in ms-in-no${other ? ' warn' : ''}`} inputMode="numeric" data-r={ri} data-c={0} value={r.examNo}
@@ -629,6 +634,12 @@ const RosterRow = memo(function RosterRow({ r, ri, onUpdate, onKey, onRemove }: 
           </td>
         );
       })}
+      <td className="ms-c-absent">
+        <input
+          type="checkbox" checked={!!r.absent} aria-label={`${r.name || r.examNo}はこの回を受験しない`}
+          onChange={(e) => { const v = e.target.checked; onUpdate(r.id, (x) => ({ ...x, absent: v }), ['absent']); }}
+        />
+      </td>
       <td><button type="button" className="ms-x" onClick={() => onRemove(r)} title="この行を消す">消す</button></td>
     </tr>
   );

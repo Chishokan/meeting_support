@@ -270,6 +270,7 @@ export type MoshiResult = {
   choices: string[]; // 第一〜第四志望（志望校コード5桁か、コードが分からないときは学校名）。いつも4つ
   scores: Scores;
   comment: string;   // 成績表に載せる先生からのひとこと
+  absent?: boolean;  // 受験しない（この回は受けない）。成績入力の得点の表・受験票・集計に出さない（名簿には残す）
   createdAt: string; createdBy: string; updatedAt: string; updatedBy: string;
 };
 
@@ -405,6 +406,7 @@ export function cleanResult(raw: unknown, exam: MoshiExam): CleanResult {
       gender: normalizeGender(r.gender),
       choices, scores,
       comment: String(r.comment ?? '').slice(0, MAX_COMMENT),
+      absent: r.absent === true || r.absent === '1' || r.absent === 'true',
     },
   };
 }
@@ -620,7 +622,8 @@ function groupStats(exam: MoshiExam, rows: { r: MoshiResult; sub: Record<Subject
 
 /** 1回分の集計。results はその回の行だけでも、全部の回の行でもよい（examId で絞る）。 */
 export function computeStats(exam: MoshiExam, results: MoshiResult[]): ExamStats {
-  const mine = results.filter((r) => r.examId === exam.id);
+  // 受験しない生徒は集計にも一覧（順位表・成績表・面談）にも入れない
+  const mine = results.filter((r) => r.examId === exam.id && !r.absent);
   const base = mine.map((r) => {
     const sub = {} as Record<SubjectKey, number | null>;
     for (const k of SUBJECT_KEYS) sub[k] = subjectTotal(r, k);
