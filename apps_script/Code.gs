@@ -2672,12 +2672,16 @@ function aiTemplateCache_(f, kind, build) {
 function describeSlideTemplate_(data) {
   var f = aiFindTemplate_(data);
   if (!f) return { ok: false, reason: 'template_not_found' };
-  return aiTemplateCache_(f, 'describe', function () { return describeSlideTemplateUncached_(f); });
+  // 'describe2'：見た目（style）と見出しの形（heading）を足した（2026-11-18）。前の形の読み取り結果は使わない
+  return aiTemplateCache_(f, 'describe2', function () { return describeSlideTemplateUncached_(f); });
 }
 
 function describeSlideTemplateUncached_(f) {
   var pres = SlidesApp.openById(f.getId());
   var slides = pres.getSlides();
+  var pageH = pres.getPageHeight();
+  var style = null;
+  try { style = aiTemplateStyle_(slides, pres.getPageWidth(), pageH); } catch (e) {}
   var out = [];
   for (var i = 0; i < slides.length && i < 40; i++) {
     var items = aiSlideItems_(slides[i]).slice(0, 40).map(function (it) {
@@ -2686,9 +2690,12 @@ function describeSlideTemplateUncached_(f) {
     });
     var notes = '';
     try { notes = slides[i].getNotesPage().getSpeakerNotesShape().getText().asString().trim().slice(0, 200); } catch (e) {}
-    out.push({ index: i, label: aiSlideLabel_(items), items: items, notes: notes });
+    var heading = false;
+    try { var hd = i > 0 && style ? aiFindHeading_(slides[i], pageH) : null; heading = !!hd && hd.info.size >= style.headSize * 0.7; } catch (e) {}
+    out.push({ index: i, label: aiSlideLabel_(items), items: items, notes: notes, heading: heading });
   }
-  return { ok: true, id: f.getId(), name: f.getName(), slides: out };
+  var look = style ? { headFont: style.headFont, headColor: style.headColor, bodyFont: style.bodyFont, bodyColor: style.bodyColor, accent: style.accent, contentBase: style.contentBase } : null;
+  return { ok: true, id: f.getId(), name: f.getName(), style: look, slides: out };
 }
 
 // key（「3」「3.1」）からページ要素をたどる
@@ -2741,6 +2748,348 @@ function aiMoveSlideToEnd_(pres, slide) {
   if (all[all.length - 1].getObjectId() !== slide.getObjectId()) slide.move(all.length - 1);
 }
 
+// ---- 智翔館AI：ひな形の見た目で自由に組むスライド（layout） ------------------------------
+// 2026-11-17：セミナーの台本をスライドにしようとして、ひな形に内容の合う枚が無く、作れなかった。
+// ひな形の見た目（背景・見出しの位置と飾り・書体・色・ロゴ）を引き継ぎ、決まった組み方で自由に組む：
+//   title（表紙）／section（章の扉）／message（大きな一言）／bullets（箇条書き）／columns（カード2〜4枚）／table（表）
+// 見た目を借りるスライド（base）を複製し、見出しの枠と、背景・見出しのまわりの飾りだけを残して、ほかを消してから組む。
+// 文字の大きさは、枠に入るように小さくする（Google スライドは API から「枠に合わせて縮小」を設定できないため）。
+
+var AI_SLIDE_LAYOUTS = ['title', 'section', 'message', 'bullets', 'columns', 'table'];
+
+// 色を #rrggbb にする（テーマの色は、そのスライドの配色から引く）。読めなければ null。
+function aiHex_(color, slide) {
+  try {
+    if (!color) return null;
+    var t = color.getColorType();
+    if (t === SlidesApp.ColorType.RGB) return color.asRgbColor().asHexString();
+    if (t === SlidesApp.ColorType.THEME && slide) {
+      var c = slide.getColorScheme().getConcreteColor(color.asThemeColor().getThemeColorType());
+      return c ? c.asRgbColor().asHexString() : null;
+    }
+  } catch (e) {}
+  return null;
+}
+
+// 文字の枠の、いちばん長い文字の並びの書体・大きさ・色。文字が無ければ null。
+function aiShapeTextInfo_(shape, slide) {
+  var tr;
+  try { tr = shape.getText(); } catch (e) { return null; }
+  var text = tr.asString().replace(/\n$/, '');
+  if (!text.replace(/\s/g, '')) return null;
+  var runs = tr.getRuns();
+  var best = null;
+  var bestLen = -1;
+  for (var i = 0; i < runs.length; i++) {
+    var s = runs[i].asString();
+    if (!s.replace(/\s/g, '')) continue;
+    if (s.length > bestLen) { bestLen = s.length; best = runs[i]; }
+  }
+  if (!best) return null;
+  var st = best.getTextStyle();
+  var color = null;
+  try { color = aiHex_(st.getForegroundColor(), slide); } catch (e) {}
+  return { text: text, size: Number(st.getFontSize()) || 0, font: st.getFontFamily() || '', bold: !!st.isBold(), color: color };
+}
+
+// ページ要素が文字を持つか（グループは中も見る）
+function aiElementHasText_(el) {
+  try {
+    var t = el.getPageElementType();
+    if (t === SlidesApp.PageElementType.SHAPE) return !!el.asShape().getText().asString().replace(/\s/g, '');
+    if (t === SlidesApp.PageElementType.TABLE) return true;
+    if (t === SlidesApp.PageElementType.GROUP) {
+      var ch = el.asGroup().getChildren();
+      for (var i = 0; i < ch.length; i++) if (aiElementHasText_(ch[i])) return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+// スライドの見出し：上の3割にある、いちばん大きい文字の枠（いちばん上の階層だけ）
+function aiFindHeading_(slide, pageH) {
+  var els = slide.getPageElements();
+  var head = null;
+  var info = null;
+  for (var i = 0; i < els.length; i++) {
+    if (els[i].getPageElementType() !== SlidesApp.PageElementType.SHAPE) continue;
+    if (els[i].getTop() > pageH * 0.3) continue;
+    var x = aiShapeTextInfo_(els[i].asShape(), slide);
+    if (x && (!info || x.size > info.size)) { head = els[i]; info = x; }
+  }
+  return head ? { el: head, info: info } : null;
+}
+
+function aiMode_(list) {
+  var n = {};
+  var best = null;
+  for (var i = 0; i < list.length; i++) {
+    if (!list[i]) continue;
+    n[list[i]] = (n[list[i]] || 0) + 1;
+    if (!best || n[list[i]] > n[best]) best = list[i];
+  }
+  return best;
+}
+
+// 白・黒に近い色か（アクセントの色にしない）
+function aiPlainColor_(hex) {
+  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ''));
+  if (!m) return true;
+  var r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+  var max = Math.max(r, g, b), min = Math.min(r, g, b);
+  return max - min < 30 && (max > 215 || max < 70);
+}
+
+// 色の明るさ（0＝黒〜1＝白）
+function aiLum_(hex) {
+  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ''));
+  if (!m) return 0;
+  return (0.299 * parseInt(m[1], 16) + 0.587 * parseInt(m[2], 16) + 0.114 * parseInt(m[3], 16)) / 255;
+}
+
+// 色を白に寄せる（カードの地の色）
+function aiTint_(hex, k) {
+  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ''));
+  if (!m) return '#eef3f8';
+  function mix(v) { var x = Math.round(parseInt(v, 16) + (255 - parseInt(v, 16)) * k); return ('0' + x.toString(16)).slice(-2); }
+  return '#' + mix(m[1]) + mix(m[2]) + mix(m[3]);
+}
+
+// ひな形の見た目：見出しと本文の書体・色・大きさ、アクセントの色、見た目を借りる既定のスライド
+function aiTemplateStyle_(slides, pageW, pageH) {
+  var k = pageW / 720;
+  var heads = [];
+  var contentBase = -1;
+  var maxHead = 0;
+  for (var i = 1; i < slides.length && i < 25; i++) {
+    var h = aiFindHeading_(slides[i], pageH);
+    if (h) { heads.push(h.info); if (h.info.size > maxHead) maxHead = h.info.size; }
+  }
+  // 見出しのある最初の枚（見出しの大きさが、いちばん大きい見出しの6割以上）
+  for (var j = 1; j < slides.length && j < 25 && contentBase < 0; j++) {
+    var hj = aiFindHeading_(slides[j], pageH);
+    if (hj && hj.info.size >= maxHead * 0.6) contentBase = j;
+  }
+  var bodies = [];
+  var fills = [];
+  for (var s = 0; s < slides.length && s < 25; s++) {
+    var els = slides[s].getPageElements();
+    for (var e = 0; e < els.length; e++) {
+      if (els[e].getPageElementType() !== SlidesApp.PageElementType.SHAPE) continue;
+      var sh = els[e].asShape();
+      var x = aiShapeTextInfo_(sh, slides[s]);
+      if (x && maxHead && x.size < maxHead * 0.75 && x.size >= maxHead * 0.25) bodies.push(x);
+      try { var f = sh.getFill(); if (f.getType() === SlidesApp.FillType.SOLID) { var c = aiHex_(f.getSolidFill().getColor(), slides[s]); if (c && !aiPlainColor_(c)) fills.push(c); } } catch (err) {}
+    }
+  }
+  var headColor = aiMode_(heads.map(function (x) { return x.color; })) || '#1f3b57';
+  var bodyColor = aiMode_(bodies.map(function (x) { return x.color; })) || '#222222';
+  var accent = !aiPlainColor_(headColor) ? headColor : (aiMode_(fills) || '#1f5c99');
+  var headSize = heads.length ? heads.map(function (x) { return x.size; }).sort(function (a, b) { return a - b; })[Math.floor(heads.length / 2)] : 28 * k;
+  var bodySizes = bodies.map(function (x) { return x.size; }).sort(function (a, b) { return a - b; });
+  var bodySize = bodySizes.length ? bodySizes[Math.floor(bodySizes.length / 2)] : 16 * k;
+  return {
+    k: k,
+    headFont: aiMode_(heads.map(function (x) { return x.font; })) || 'BIZ UDPGothic',
+    headColor: headColor,
+    headBold: heads.length ? heads.filter(function (x) { return x.bold; }).length * 2 >= heads.length : true,
+    headSize: Math.max(22 * k, Math.min(40 * k, headSize)),
+    bodyFont: aiMode_(bodies.map(function (x) { return x.font; })) || aiMode_(heads.map(function (x) { return x.font; })) || 'BIZ UDPGothic',
+    bodyColor: bodyColor,
+    bodySize: Math.max(13 * k, Math.min(20 * k, bodySize)),
+    accent: accent,
+    light: aiTint_(accent, 0.88),
+    contentBase: contentBase > 0 ? contentBase : (slides.length > 1 ? 1 : 0)
+  };
+}
+
+// 文字の幅の目安（全角1字＝字の大きさ、半角は0.55字）
+function aiTextUnits_(s) {
+  var n = 0;
+  for (var i = 0; i < s.length; i++) n += s.charCodeAt(i) < 0x2000 ? 0.55 : 1;
+  return n;
+}
+
+// 枠（幅 w・高さ h、ポイント）に入る文字の大きさ。size から min まで小さくしていく。
+function aiFitSize_(text, w, h, size, min) {
+  var s = size;
+  while (s > min) {
+    var perLine = Math.max(1, Math.floor((w - 16) / (s * 1.04)));
+    var lines = 0;
+    String(text).split('\n').forEach(function (p) { lines += Math.max(1, Math.ceil(aiTextUnits_(p) / perLine)); });
+    if (lines * s * 1.5 + 16 <= h) return s;
+    s = Math.max(min, Math.floor(s * 0.92));
+    if (s === min) break;
+  }
+  return min;
+}
+
+// 文字の枠を置く。o：{ size, min, font, color, bold, align: 'center' | 'start', valign: 'middle' | 'top' }
+function aiPutText_(slide, text, x, y, w, h, o) {
+  var sh = slide.insertTextBox(String(text), x, y, w, h);
+  var size = aiFitSize_(text, w, h, o.size, o.min || Math.round(o.size * 0.55));
+  var st = sh.getText().getTextStyle();
+  st.setFontSize(size);
+  if (o.font) st.setFontFamily(o.font);
+  if (o.color) st.setForegroundColor(o.color);
+  st.setBold(!!o.bold);
+  try { sh.getText().getParagraphStyle().setLineSpacing(125); } catch (e) {}
+  if (o.align === 'center') sh.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
+  sh.setContentAlignment(o.valign === 'middle' ? SlidesApp.ContentAlignment.MIDDLE : SlidesApp.ContentAlignment.TOP);
+  return { shape: sh, size: size };
+}
+
+// 見た目を借りるスライドを整える：背景（ページのほとんどを覆うもの）・ロゴ・見出しのまわりの飾りを残し、ほかを消す。
+// keepHeading なら見出しの枠も残して返す。消す前に、いちばん大きい文字の枠の位置も返す（表紙の題名の位置に使う）。
+function aiPrepareBase_(slide, pageW, pageH, keepHeading, keepDecor) {
+  var head = aiFindHeading_(slide, pageH);
+  var els = slide.getPageElements();
+  var biggest = null;
+  var second = null;
+  for (var b = 0; b < els.length; b++) {
+    if (els[b].getPageElementType() !== SlidesApp.PageElementType.SHAPE) continue;
+    var bi = aiShapeTextInfo_(els[b].asShape(), slide);
+    if (!bi) continue;
+    var box = { size: bi.size, color: bi.color, left: els[b].getLeft(), top: els[b].getTop(), width: els[b].getWidth(), height: els[b].getHeight() };
+    if (!biggest || bi.size > biggest.size) { second = biggest; biggest = box; }
+    else if (!second || bi.size > second.size) second = box;
+  }
+  var band = head ? Math.min(pageH * 0.3, head.el.getTop() + head.el.getHeight() + pageH * 0.02) : 0;
+  var left = head ? head.el.getLeft() : pageW * 0.07;
+  var remove = [];
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i];
+    if (head && el === head.el) { if (!keepHeading) remove.push(el); continue; }
+    var title = '';
+    try { title = (el.getTitle() || '') + ' ' + (el.getDescription() || ''); } catch (e) {}
+    if (title.indexOf('ロゴ') !== -1) continue;
+    var area = el.getWidth() * el.getHeight();
+    if (area >= pageW * pageH * 0.8 && !aiElementHasText_(el)) continue; // 背景
+    if (!aiElementHasText_(el)) {
+      // 飾り：表紙・章の扉は全部残す。ほかは見出しのまわり（上の帯）だけ残す
+      if (keepDecor) continue;
+      if (head && el.getTop() + el.getHeight() <= band + 1) { left = Math.min(left, el.getLeft()); continue; }
+    }
+    remove.push(el);
+  }
+  for (var r = 0; r < remove.length; r++) { try { remove[r].remove(); } catch (e) {} }
+  left = Math.max(pageW * 0.03, Math.min(left, pageW * 0.12));
+  return { head: keepHeading && head ? head : null, band: band, left: left, biggest: biggest, second: second };
+}
+
+// layout の1枚を作る。できたスライドを返す（作れなければ null）。
+function aiBuildLayoutSlide_(pres, orig, spec, style, pageW, pageH, warnings, n) {
+  var layout = String(spec.layout || '');
+  if (AI_SLIDE_LAYOUTS.indexOf(layout) === -1) { warnings.push(n + '枚目：layout「' + layout + '」は使えません'); return null; }
+  var baseIdx = spec.base != null && spec.base !== '' ? Number(spec.base) : (layout === 'title' ? 0 : style.contentBase);
+  var src = orig[baseIdx];
+  if (!src) { warnings.push(n + '枚目：base の ' + spec.base + ' 番のスライドがないので、' + style.contentBase + ' 番の見た目で作りました'); src = orig[style.contentBase] || orig[0]; baseIdx = style.contentBase; }
+  var dup = src.duplicate();
+  aiMoveSlideToEnd_(pres, dup);
+  var k = style.k;
+  var withHeading = layout === 'bullets' || layout === 'columns' || layout === 'table';
+  // 表紙は、ひな形の飾りをすべて残す（ほかは見出しのまわりの飾りだけ）
+  var prep = aiPrepareBase_(dup, pageW, pageH, withHeading, layout === 'title');
+  var L = prep.left;
+  var W = pageW - L * 2;
+  var title = String(spec.title || '');
+  var lead = String(spec.lead || '');
+  var head = { font: style.headFont, color: style.headColor, bold: style.headBold };
+  var body = { font: style.bodyFont, color: style.bodyColor };
+  // カード・表の中（明るい地）の文字は、本文の色が明るいとき（暗い背景のひな形）は濃い色にする
+  var onLight = aiLum_(style.bodyColor) > 0.6 ? '#1f2d3d' : style.bodyColor;
+  var accentOnLight = aiLum_(style.accent) > 0.7 ? '#1f3b57' : style.accent;
+  var top;
+
+  if (withHeading) {
+    if (prep.head) {
+      // ひな形の見出しの枠に書く（位置・書体・色はそのまま。入らなければ小さくする）
+      var hs = prep.head.el.asShape();
+      hs.getText().setText(title);
+      var hw = prep.head.el.getWidth();
+      var size = prep.head.info.size;
+      var perLine = Math.max(1, Math.floor((hw - 16) / size));
+      if (aiTextUnits_(title) > perLine) {
+        try { hs.getText().getTextStyle().setFontSize(Math.max(Math.round(size * 0.55), Math.floor((hw - 16) / Math.max(1, aiTextUnits_(title)) ))); } catch (e) {}
+      }
+      top = prep.band + pageH * 0.025;
+    } else {
+      aiPutText_(dup, title, L, pageH * 0.06, W, pageH * 0.13, { size: style.headSize, font: head.font, color: head.color, bold: head.bold, valign: 'middle' });
+      top = pageH * 0.21;
+    }
+    if (lead) {
+      var lh = pageH * 0.09;
+      aiPutText_(dup, lead, L, top, W, lh, { size: style.bodySize * 1.05, font: body.font, color: body.color, valign: 'middle' });
+      top += lh + pageH * 0.015;
+    }
+    var bottom = pageH * 0.92;
+    var H = bottom - top;
+    if (layout === 'bullets') {
+      var pts = (spec.points || []).map(String);
+      var bx = aiPutText_(dup, pts.join('\n'), L, top, W, H, { size: style.bodySize * 1.15, font: body.font, color: body.color });
+      try { bx.shape.getText().getListStyle().applyListPreset(SlidesApp.ListPreset.DISC_CIRCLE_SQUARE); } catch (e) {}
+      try { bx.shape.getText().getParagraphStyle().setSpaceBelow(bx.size * 0.5); } catch (e) {}
+    } else if (layout === 'columns') {
+      var cols = (spec.columns || []).slice(0, 4);
+      var gap = pageW * 0.02;
+      var cw = (W - gap * (cols.length - 1)) / cols.length;
+      var ch = Math.min(H, pageH * 0.6);
+      for (var c = 0; c < cols.length; c++) {
+        var x = L + c * (cw + gap);
+        var card = dup.insertShape(SlidesApp.ShapeType.ROUND_RECTANGLE, x, top, cw, ch);
+        try { card.getFill().setSolidFill(style.light); card.getBorder().setTransparent(); } catch (e) {}
+        var pad = 12 * k;
+        var th = ch * 0.24;
+        aiPutText_(dup, String(cols[c].title || ''), x + pad, top + pad, cw - pad * 2, th, { size: style.bodySize * 1.2, font: head.font, color: accentOnLight, bold: true, valign: 'middle', align: 'center' });
+        aiPutText_(dup, String(cols[c].text || ''), x + pad, top + pad + th, cw - pad * 2, ch - th - pad * 2, { size: style.bodySize, font: body.font, color: onLight });
+      }
+    } else if (layout === 'table') {
+      var rows = (spec.table || []).slice(0, 12);
+      var ncol = 0;
+      rows.forEach(function (r) { ncol = Math.max(ncol, r.length); });
+      var rowH = Math.min(H / rows.length, 48 * k);
+      var tb = dup.insertTable(rows.length, ncol, L, top, W, rowH * rows.length);
+      var longest = 0;
+      rows.forEach(function (r) { r.forEach(function (cell) { longest = Math.max(longest, aiTextUnits_(String(cell || ''))); }); });
+      var fs = Math.max(10 * k, Math.min(style.bodySize, rowH * 0.42, (W / ncol - 12) / Math.max(4, Math.min(longest, 14))));
+      for (var ri = 0; ri < rows.length; ri++) {
+        for (var ci = 0; ci < ncol; ci++) {
+          var cell = tb.getCell(ri, ci);
+          try {
+            cell.getText().setText(String(rows[ri][ci] == null ? '' : rows[ri][ci]));
+            var cs = cell.getText().getTextStyle();
+            cs.setFontSize(fs).setFontFamily(body.font).setForegroundColor(ri === 0 ? (aiLum_(style.accent) > 0.6 ? '#1f2d3d' : '#ffffff') : onLight).setBold(ri === 0);
+            if (ri === 0) cell.getFill().setSolidFill(style.accent);
+            else cell.getFill().setSolidFill(ri % 2 === 0 ? style.light : '#ffffff');
+          } catch (e) {}
+        }
+      }
+    }
+  } else if (layout === 'message') {
+    var mh = pageH * 0.34;
+    var my = pageH * (lead ? 0.26 : 0.33);
+    aiPutText_(dup, title, L, my, W, mh, { size: style.headSize * 1.3, font: head.font, color: style.accent, bold: true, align: 'center', valign: 'middle' });
+    if (lead) aiPutText_(dup, lead, L, my + mh + pageH * 0.03, W, pageH * 0.18, { size: style.bodySize * 1.2, font: body.font, color: body.color, align: 'center' });
+  } else {
+    // 表紙：ひな形のいちばん大きい文字があった位置に題名を置く。章の扉・その位置が分からないときは、左寄せの中ほど
+    var bg = layout === 'title' ? prep.biggest : null;
+    var tx = bg ? Math.max(pageW * 0.04, Math.min(bg.left, pageW * 0.5)) : L;
+    var tw = bg ? Math.max(pageW * 0.45, Math.min(pageW - tx - pageW * 0.04, Math.max(bg.width, pageW * 0.6))) : W;
+    var ty = bg ? Math.max(pageH * 0.08, Math.min(bg.top, pageH * 0.5)) : pageH * 0.3;
+    var tsz = layout === 'title' ? style.headSize * 1.5 : style.headSize * 1.25;
+    // 表紙は、ひな形の表紙の文字の色を使う（暗い背景の表紙でも読めるように）
+    var tColor = (bg && bg.color) || head.color;
+    var sColor = (layout === 'title' && prep.second && prep.second.color) || body.color;
+    var t = aiPutText_(dup, title, tx, ty, tw, pageH * 0.26, { size: tsz, font: head.font, color: tColor, bold: true, valign: 'middle' });
+    var y = ty + pageH * 0.27;
+    if (lead) { aiPutText_(dup, lead, tx, y, tw, pageH * 0.12, { size: style.bodySize * 1.3, font: body.font, color: sColor }); y += pageH * 0.13; }
+    var pts2 = (spec.points || []).map(String).filter(function (p) { return p; });
+    if (pts2.length) aiPutText_(dup, pts2.join('\n'), tx, y, tw, Math.max(pageH * 0.08, pageH * 0.93 - y), { size: style.bodySize, font: body.font, color: sColor });
+    if (t.size < tsz * 0.6) warnings.push(n + '枚目：題名が長いので小さくしました');
+  }
+  return { slide: dup, base: baseIdx };
+}
+
 function createAiSlides_(data) {
   var title = String(data.title || '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 80);
   var specs = Array.isArray(data.slides) ? data.slides.slice(0, AI_SLIDE_MAX_SLIDES) : [];
@@ -2770,8 +3119,25 @@ function createAiSlides_(data) {
       }
     } catch (e) { warnings.push('ロゴを読めませんでした'); }
 
+    // ひな形の見た目（layout の枚で使う）
+    var style = null;
+    try { style = aiTemplateStyle_(orig, pageW, pageH); } catch (e) { warnings.push('ひな形の書体・色を読めませんでした（' + String(e).slice(0, 60) + '）'); }
     for (var s = 0; s < specs.length; s++) {
       var spec = specs[s] || {};
+      // ひな形の見た目で自由に組む枚
+      if (spec.layout) {
+        if (!style) style = { k: pageW / 720, headFont: 'BIZ UDPGothic', headColor: '#1f3b57', headBold: true, headSize: 28 * pageW / 720, bodyFont: 'BIZ UDPGothic', bodyColor: '#222222', bodySize: 16 * pageW / 720, accent: '#1f5c99', light: '#e6eef6', contentBase: orig.length > 1 ? 1 : 0 };
+        var built = null;
+        try { built = aiBuildLayoutSlide_(pres, orig, spec, style, pageW, pageH, warnings, s + 1); }
+        catch (e) { warnings.push((s + 1) + '枚目：組みきれませんでした（' + String(e).slice(0, 80) + '）'); }
+        if (built) {
+          if (spec.notes) { try { built.slide.getNotesPage().getSpeakerNotesShape().getText().setText(String(spec.notes).slice(0, 3000)); } catch (e) {} }
+          if (logoBlob && !aiSlideHasLogo_(orig[built.base])) {
+            try { aiPlaceLogo_(built.slide, logoBlob, spec.layout === 'title', pageW, pageH); } catch (e) { warnings.push((s + 1) + '枚目：ロゴを置けませんでした'); }
+          }
+        }
+        continue;
+      }
       var from = Number(spec.from);
       var src = orig[from];
       if (!src) { warnings.push((s + 1) + '枚目：ひな形に ' + spec.from + ' 番のスライドがありません'); continue; }
