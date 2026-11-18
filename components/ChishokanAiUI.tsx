@@ -18,7 +18,7 @@ import AiContextPanel, { type PinDraft, type PinProposalView, type SavedView } f
 import AiContextDiffDialog from '@/components/AiContextDiffDialog';
 import AiReportDialog from '@/components/AiReportDialog';
 import AiRequestDialog from '@/components/AiRequestDialog';
-import { imageToBase64 } from '@/lib/chishokanAi/clientImage';
+import { imageToBase64, shrinkDataUrl } from '@/lib/chishokanAi/clientImage';
 import { attachOnlyQuestion, carryForSend, isHeavy, nextCarry, type HeavyAttach } from '@/lib/chishokanAi/attachCarry';
 import type { ReportContext } from '@/lib/chishokanAi/report';
 import { toPlainText } from '@/lib/chishokanAi/markdown';
@@ -75,6 +75,8 @@ type Msg = {
   at?: string;
   /** この回答で AI が出した、コンテキストの直し案（PinProposalView の key） */
   pins?: string[];
+  /** この回答で AI が作った画像（generate_image）。保存した会話には入らない（リンクは回答の文に残る） */
+  images?: { name: string; url: string; src: string }[];
 };
 
 /** 会話の番号（会話ログで1つの会話を探すため）。画面を開くたび・新しい相談のたびに作る。 */
@@ -602,6 +604,16 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     if (now) updateSaved({ ...now, presets: now.presets.filter((p) => p.id !== id) });
   }
 
+  // 作った画像を軽くして、前の添付の先頭に入れる（次の質問で AI が見て、直せるように）
+  async function carryMadeImage(name: string, src: string) {
+    try {
+      const small = await shrinkDataUrl(src);
+      updateCarried(nextCarry(carriedRef.current, [{ name, mime: small.mime, kind: 'image', data: small.data }]).keep);
+    } catch {
+      // 持ち越せなくても、画像は回答の下とドライブに残る
+    }
+  }
+
   async function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = '';
@@ -691,6 +703,12 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           else if (ev.t === 'context') updateContext(mergeContext(contextRef.current, { reads: ev.reads, texts: ev.texts }));
           // 作り話のリンク（AI が道具を呼ばずに書いたファイルの URL）は、回答から消す（次の質問の履歴にも残さない）
           else if (ev.t === 'redact') draft = { ...draft, content: redactLinks(draft.content, ev.urls) };
+          else if (ev.t === 'image') {
+            // 作った画像：回答の下に出し、次の質問にも「前の添付」として付け直す（「文字を大きく」などで直せる）
+            const src = `data:${ev.mime};base64,${ev.data}`;
+            draft = { ...draft, images: [...(draft.images ?? []), { name: ev.name, url: ev.url, src }] };
+            void carryMadeImage(ev.name, src);
+          }
           else if (ev.t === 'pin') {
             // AI の直し案。同じ項目の前の案は捨て、この回答の下と右の欄に出す（押すまで変わらない）
             const key = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -1030,6 +1048,16 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
                       <span className="ai-status">{m.status || '考えています…'}</span>
                     )}
                   </div>
+                  {m.images?.map((im, j) => (
+                    <figure key={j} className="ai-image">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={im.src} alt={im.name} />
+                      <figcaption>
+                        <a href={im.url} target="_blank" rel="noreferrer">ドライブで開く</a>
+                        <a href={im.src} download={im.name}>画像を保存</a>
+                      </figcaption>
+                    </figure>
+                  ))}
                   {streaming && m.content && m.status && <div className="ai-status ai-status-line">{m.status}</div>}
                   {m.stopped && m.content && !m.error && <div className="ai-flag">（停止しました）</div>}
                   {m.cut && !streaming && (

@@ -3603,3 +3603,9 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
   .ev-fld.wide { max-width: none; }
   .ev-actions .ev-btn { flex: 1 1 auto; }
 }
+
+/* 智翔館AI：作った画像（generate_image） */
+.ai-image { margin: 8px 0 0; max-width: 420px; }
+.ai-image img { display: block; width: 100%; height: auto; max-height: 520px; object-fit: contain; border-radius: 8px; border: 1px solid #d5dde6; background: #fff; }
+.ai-image figcaption { display: flex; gap: 14px; margin-top: 4px; font-size: 12px; }
+.ai-image figcaption a { color: #1f5c99; }
