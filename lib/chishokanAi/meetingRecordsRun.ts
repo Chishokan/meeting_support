@@ -8,8 +8,10 @@ import {
   checkRecordsInput,
   deptMatch,
   formatMeetingRecords,
+  upcomingPreshareRows,
   pickAgendaTarget,
   type DecisionRec,
+  type MeetingWhat,
   type MinutesRec,
   type PreshareRec,
   type ShareRec,
@@ -40,7 +42,13 @@ export async function listPreshares(signal?: AbortSignal): Promise<{ ok: true; r
 }
 
 /** get_meeting_records：4つのシートを読み、絞り込んだ文を返す。 */
-export async function runMeetingRecords(input: Record<string, unknown>, signal?: AbortSignal): Promise<{ text: string; note: string }> {
+/** 画面のボタン（［意見を足す］［修正する］）に出す会議。 */
+export type PreshareButton = { id: string; campus: string; title: string; date: string };
+
+export async function runMeetingRecords(
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<{ text: string; note: string; what: MeetingWhat; preshares: PreshareButton[] }> {
   const o = checkRecordsInput(input);
   const need = (w: string) => o.what === 'all' || o.what === w;
   const [jm, jd, jp, js] = await Promise.all([
@@ -55,7 +63,7 @@ export async function runMeetingRecords(input: Record<string, unknown>, signal?:
     !jp.ok ? '部門会議事前共有' : '',
     !js.ok ? '事前共有事項' : '',
   ].filter(Boolean);
-  if (failed.length === 4) return { text: '会議の記録を読めませんでした（Apps Script との通信に失敗しました）。職員にそのことを伝える。', note: '読めず' };
+  if (failed.length === 4) return { text: '会議の記録を読めませんでした（Apps Script との通信に失敗しました）。職員にそのことを伝える。', note: '読めず', what: o.what, preshares: [] };
   const data = {
     minutes: items(jm).map((r): MinutesRec => ({ id: s(r.id), ts: s(r.ts), campus: s(r.campus), user: s(r.user), title: s(r.title), date: s(r.date), attendees: s(r.attendees), agenda: s(r.agenda), minutes: s(r.minutes) })),
     decisions: items(jd).map((r): DecisionRec => ({ ts: s(r.ts), campus: s(r.campus), meeting: s(r.meeting), date: s(r.date), title: s(r.title), detail: s(r.detail), owner: s(r.owner), due: s(r.due), related: s(r.related) })),
@@ -63,9 +71,12 @@ export async function runMeetingRecords(input: Record<string, unknown>, signal?:
     share: items(js).map((r): ShareRec => ({ ts: s(r.ts), campus: s(r.campus), user: s(r.user), kind: s(r.kind), title: s(r.title), background: s(r.background), point: s(r.point), opinion: s(r.opinion) })),
   };
   const text = formatMeetingRecords(data, o, todayJst());
+  const preshares = need('agenda') ? upcomingPreshareRows(data.preshare, o, todayJst()).map(({ r }) => ({ id: r.id, campus: r.campus, title: r.title, date: r.date })) : [];
   return {
     text: failed.length ? `${text}\n\n（読めなかったシート：${failed.join('・')}。そのことを回答に書く）` : text,
     note: `${o.dept || '全部門'}・${o.what}${failed.length ? `・読めず:${failed.join('・')}` : ''}`,
+    what: o.what,
+    preshares,
   };
 }
 
