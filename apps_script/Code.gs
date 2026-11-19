@@ -2830,9 +2830,28 @@ function aiPlaceLogo_(slide, blob, cover, pageW, pageH) {
   var ratio = img.getHeight() > 0 ? img.getWidth() / img.getHeight() : 3;
   var h = pageH * pos.height;
   var w = h * ratio;
+  var left = cover ? pageW * pos.left : pageW - pageW * pos.right - w;
+  var top = pageH * pos.top;
+  // 表紙：左上にひな形の文字・飾り（シリーズ名のラベルなど）があって重なるときは、右上に置く（2026-11-18 中3セミナー②）
+  if (cover && aiOverlapsElements_(slide, img, left, top, w, h, pageW, pageH)) left = pageW - pageW * AI_SLIDE_LOGO_PAGE.right - w;
   img.setWidth(w).setHeight(h);
-  img.setLeft(cover ? pageW * pos.left : pageW - pageW * pos.right - w).setTop(pageH * pos.top);
+  img.setLeft(left).setTop(top);
   try { img.setTitle('ロゴ'); } catch (e) {}
+}
+
+// 枠（x, y, w, h）が、スライドの要素（背景＝ページのほとんどを覆うもの と self を除く）と重なるか
+function aiOverlapsElements_(slide, self, x, y, w, h, pageW, pageH) {
+  var els = slide.getPageElements();
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i];
+    if (el === self) continue;
+    try {
+      var ew = el.getWidth(), eh = el.getHeight(), ex = el.getLeft(), ey = el.getTop();
+      if (ew * eh >= pageW * pageH * 0.8) continue;
+      if (x < ex + ew && ex < x + w && y < ey + eh && ey < y + h) return true;
+    } catch (e) {}
+  }
+  return false;
 }
 
 // スライドをいちばん後ろへ動かす。Slide.move(i) の i は「動かす前の並び」での位置なので、後ろへは枚数そのものを渡す。
@@ -2917,18 +2936,27 @@ function aiElementHasText_(el) {
   return false;
 }
 
-// スライドの見出し：上の3割にある、いちばん大きい文字の枠（いちばん上の階層だけ）
+// スライドの見出し：上の3割にある大きい文字の枠（いちばん大きい文字の 75% 以上）のうち、いちばん上にあるもの（いちばん上の階層だけ）。
+// 2026-11-18：Canva から書き出したひな形（中3セミナー②）で、グラフの数字「7」や図の中の大きな語「眠る」を見出しと取り違え、
+// 見出しの色が差し色（オレンジ）になった。見出しは、ふつう大きい文字のうち、いちばん上にある。
 function aiFindHeading_(slide, pageH) {
   var els = slide.getPageElements();
-  var head = null;
-  var info = null;
+  var cands = [];
+  var max = 0;
   for (var i = 0; i < els.length; i++) {
     if (els[i].getPageElementType() !== SlidesApp.PageElementType.SHAPE) continue;
     if (els[i].getTop() > pageH * 0.3) continue;
     var x = aiShapeTextInfo_(els[i].asShape(), slide);
-    if (x && (!info || x.size > info.size)) { head = els[i]; info = x; }
+    if (!x) continue;
+    cands.push({ el: els[i], info: x });
+    if (x.size > max) max = x.size;
   }
-  return head ? { el: head, info: info } : null;
+  var best = null;
+  for (var j = 0; j < cands.length; j++) {
+    if (cands[j].info.size < max * 0.75) continue;
+    if (!best || cands[j].el.getTop() < best.el.getTop()) best = cands[j];
+  }
+  return best;
 }
 
 function aiMode_(list) {
