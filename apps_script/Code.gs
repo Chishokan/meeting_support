@@ -3179,7 +3179,8 @@ function aiBuildLayoutSlide_(pres, orig, spec, style, pageW, pageH, warnings, n)
       var pts = (spec.points || []).map(String);
       var bx = aiPutText_(dup, pts.join('\n'), L, top, W, H, { size: style.bodySize * 1.15, font: body.font, color: body.color });
       try { bx.shape.getText().getListStyle().applyListPreset(SlidesApp.ListPreset.DISC_CIRCLE_SQUARE); } catch (e) {}
-      try { bx.shape.getText().getParagraphStyle().setSpaceBelow(bx.size * 0.5); } catch (e) {}
+      // 行と行のあいだは文字の大きさの0.6倍（2026-11-19：あとほんの少し開けると見やすい、と言われた）
+      try { bx.shape.getText().getParagraphStyle().setSpaceBelow(bx.size * 0.6); } catch (e) {}
     } else if (layout === 'columns') {
       var cols = (spec.columns || []).slice(0, 4);
       var gap = pageW * 0.02;
@@ -3217,10 +3218,38 @@ function aiBuildLayoutSlide_(pres, orig, spec, style, pageW, pageH, warnings, n)
       }
     }
   } else if (layout === 'message') {
-    var mh = pageH * 0.34;
-    var my = pageH * (lead ? 0.26 : 0.33);
-    aiPutText_(dup, title, L, my, W, mh, { size: style.headSize * 1.3, font: head.font, color: style.accent, bold: true, align: 'center', valign: 'middle' });
-    if (lead) aiPutText_(dup, lead, L, my + mh + pageH * 0.03, W, pageH * 0.18, { size: style.bodySize * 1.2, font: body.font, color: body.color, align: 'center' });
+    // 大きな一言。label（上の小さな見出し）と points（下の淡い地の囲みに入れる要点）は省いてよい。
+    // 2026-11-19：「本日のテーマ」「TOP10文化」の枚（ラベル→大きな一言→囲み）が見やすいと言われた
+    var mlabel = String(spec.label || '');
+    var mpts = (spec.points || []).map(String).filter(function (p) { return p; });
+    var labelColor = aiLum_(style.accent) > 0.7 ? '#1f3b57' : style.accent;
+    if (!mpts.length) {
+      var mh = pageH * 0.34;
+      var my = pageH * (lead ? 0.26 : 0.33);
+      if (mlabel) aiPutText_(dup, mlabel, L, my - pageH * 0.09, W, pageH * 0.08, { size: style.bodySize * 1.1, font: head.font, color: labelColor, bold: true, align: 'center', valign: 'middle' });
+      aiPutText_(dup, title, L, my, W, mh, { size: style.headSize * 1.3, font: head.font, color: style.accent, bold: true, align: 'center', valign: 'middle' });
+      if (lead) aiPutText_(dup, lead, L, my + mh + pageH * 0.03, W, pageH * 0.18, { size: style.bodySize * 1.2, font: body.font, color: body.color, align: 'center' });
+    } else {
+      var yy = pageH * 0.11;
+      if (mlabel) { aiPutText_(dup, mlabel, L, yy, W, pageH * 0.07, { size: style.bodySize * 1.05, font: head.font, color: labelColor, bold: true, align: 'center', valign: 'middle' }); yy += pageH * 0.08; }
+      var th2 = pageH * 0.22;
+      aiPutText_(dup, title, L, yy, W, th2, { size: style.headSize * 1.1, font: head.font, color: head.color, bold: true, align: 'center', valign: 'middle' });
+      yy += th2 + pageH * 0.01;
+      if (lead) { aiPutText_(dup, lead, L, yy, W, pageH * 0.08, { size: style.bodySize * 1.05, font: body.font, color: body.color, align: 'center', valign: 'middle' }); yy += pageH * 0.09; }
+      var pw = W * 0.8;
+      var px = L + (W - pw) / 2;
+      var py = yy + pageH * 0.02;
+      var ph = Math.max(pageH * 0.18, pageH * 0.9 - py);
+      var panel = dup.insertShape(SlidesApp.ShapeType.RECTANGLE, px, py, pw, ph);
+      try { panel.getFill().setSolidFill(style.light); panel.getBorder().setTransparent(); } catch (e) {}
+      var ppad = 24 * k;
+      var pb = aiPutText_(dup, mpts.join('\n'), px + ppad, py + ppad * 0.6, pw - ppad * 2, ph - ppad * 1.2,
+        { size: style.bodySize * 1.1, font: body.font, color: onLight, bold: true, valign: 'middle', align: mpts.length === 1 ? 'center' : 'start' });
+      if (mpts.length > 1) {
+        try { pb.shape.getText().getListStyle().applyListPreset(SlidesApp.ListPreset.DISC_CIRCLE_SQUARE); } catch (e) {}
+        try { pb.shape.getText().getParagraphStyle().setSpaceBelow(pb.size * 0.6); } catch (e) {}
+      }
+    }
   } else {
     // 表紙：ひな形のいちばん大きい文字があった位置に題名を置く。章の扉・その位置が分からないときは、左寄せの中ほど
     var bg = layout === 'title' ? prep.biggest : null;

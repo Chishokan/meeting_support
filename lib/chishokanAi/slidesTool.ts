@@ -29,10 +29,11 @@ export const CREATE_SLIDES_TOOL = {
     '【from】ひな形の何枚目（0から）をそのまま使い、texts（枠の key → 書く文字）と tables（表の key → 行の配列）で書き換える。' +
     '見本の文字はすべて書き換える。文字数は目安（max）以内。ページ番号の数字は並べた順に振り直す。内容がぴったり合う枚（表紙など）に使う。' +
     '【layout】ひな形の見た目（背景・見出しの飾り・書体・色・ロゴ）で、自由に組む。合う枚が無いときはこちらで作る（「合うひな形が無い」と止めない）。' +
-    'layout：title（表紙。title・lead＝副題・points＝日付や名前）／section（章の扉。title・lead）／message（大きな一言。title・lead。承認・問いかけ・まとめ）／' +
+    'layout：title（表紙。title・lead＝副題・points＝日付や名前）／section（章の扉。title・lead）／message（大きな一言。label＝上の小さな見出し・title・lead・points＝下の淡い地の囲みに入れる要点1〜4。承認・テーマ・問いかけ・まとめ）／' +
     'bullets（見出しと箇条書き。title・lead・points 1〜8）／columns（見出しとカード2〜4枚。title・lead・columns［{title, text}］）／table（見出しと表。title・lead・table＝行の配列、1行目が見出し）／' +
     'image（見出しと画像。title・lead・image・points＝左に並べる要点。省くと画像を大きく）。image は generate_image で作った画像の id（title・section にも付けられ、右半分に入る）。' +
     'base はどのスライドの見た目（背景・見出しの飾り）を使うか（ひな形の何枚目。省くと表紙は0枚目、ほかは見出しのある最初の枚）。文字の大きさはアプリが枠に合わせる。' +
+    '似た配置を続けない：columns（カード）の枚を2枚続けない。同じ layout を3枚続けない（続けると作れずに理由が返る）。' +
     'notes は発表者ノート。数字・日付は資料にあるものだけ。1回の回答で1つまで。',
   input_schema: {
     type: 'object' as const,
@@ -55,9 +56,10 @@ export const CREATE_SLIDES_TOOL = {
             layout: { type: 'string', enum: ['title', 'section', 'message', 'bullets', 'columns', 'table', 'image'], description: '【layout】組み方' },
             image: { type: 'string', description: '【layout】generate_image で作った画像の id（image・title・section）' },
             base: { type: 'integer', description: '【layout】見た目を使うひな形の何枚目（省いてよい）' },
+            label: { type: 'string', description: '【layout】message の上に小さく出す見出し（例：本日のテーマ）' },
             title: { type: 'string', description: '【layout】見出し（message は大きな一言）' },
             lead: { type: 'string', description: '【layout】見出しの下の1〜2文（副題・リード文）' },
-            points: { type: 'array', items: { type: 'string' }, description: '【layout】箇条書き（bullets）、表紙の日付・名前（title）' },
+            points: { type: 'array', items: { type: 'string' }, description: '【layout】箇条書き（bullets）、表紙の日付・名前（title）、message の下の囲みに入れる要点（1〜4）' },
             columns: {
               type: 'array',
               description: '【layout】カード（columns）2〜4枚',
@@ -88,6 +90,8 @@ export type TemplateSlideSpec = { from: number; texts: Record<string, string>; t
 export type LayoutSlideSpec = {
   layout: SlideLayout;
   base?: number;
+  /** message の上に小さく出す見出し（例：本日のテーマ） */
+  label?: string;
   title: string;
   lead: string;
   points: string[];
@@ -100,7 +104,7 @@ export type LayoutSlideSpec = {
 export type SlideSpec = TemplateSlideSpec | LayoutSlideSpec;
 export type SlidesInput = { template: string; title: string; slides: SlideSpec[] };
 
-const LAYOUT_LIMITS = { title: 80, lead: 160, point: 140, points: 8, columns: 4, colTitle: 40, colText: 240, rows: 12, cols: 6, cell: 80 };
+const LAYOUT_LIMITS = { title: 80, lead: 160, point: 140, points: 8, messagePoints: 4, label: 30, columns: 4, colTitle: 40, colText: 240, rows: 12, cols: 6, cell: 80 };
 
 /** layout の枚を確かめて整える。問題があれば理由の文を返す。 */
 function checkLayoutSlide(s: Record<string, unknown>, n: number): LayoutSlideSpec | string {
@@ -125,6 +129,8 @@ function checkLayoutSlide(s: Record<string, unknown>, n: number): LayoutSlideSpe
   if (layout === 'bullets' && !points.length) return `${n}枚目（bullets）に points（箇条書き）がありません。`;
   if (layout === 'bullets' && points.length > LAYOUT_LIMITS.points) return `${n}枚目（bullets）の箇条書きは${LAYOUT_LIMITS.points}つまでです。分けるか、まとめてください。`;
   if (layout === 'columns' && (columns.length < 2 || columns.length > LAYOUT_LIMITS.columns)) return `${n}枚目（columns）のカードは2〜${LAYOUT_LIMITS.columns}枚にしてください。`;
+  if (layout === 'message' && points.length > LAYOUT_LIMITS.messagePoints) return `${n}枚目（message）の囲みの要点は${LAYOUT_LIMITS.messagePoints}つまでです（多いときは bullets）。`;
+  const label = str(s.label, LAYOUT_LIMITS.label);
   const image = typeof s.image === 'string' ? s.image.trim() : '';
   if (image && !/^[\w-]{20,80}$/.test(image)) return `${n}枚目の image は、generate_image の結果に出た id をそのまま入れてください。`;
   if (layout === 'image' && !image) return `${n}枚目（image）に image（generate_image で作った画像の id）がありません。先に generate_image で作ってください。`;
@@ -138,6 +144,7 @@ function checkLayoutSlide(s: Record<string, unknown>, n: number): LayoutSlideSpe
   return {
     layout,
     ...(base !== undefined ? { base } : {}),
+    ...(label && layout === 'message' ? { label } : {}),
     title,
     lead: str(s.lead, LAYOUT_LIMITS.lead),
     points: points.slice(0, LAYOUT_LIMITS.points),
@@ -149,6 +156,27 @@ function checkLayoutSlide(s: Record<string, unknown>, n: number): LayoutSlideSpe
 }
 
 const KEY = /^\d{1,3}(\.\d{1,3}){0,4}$/;
+
+/**
+ * 似た配置の枚が続いていないか。続いていれば理由の文を返す。
+ * 2026-11-19：夢・志セミナー（中1・2）のスライドで、カードが並ぶ枚が4枚続き、見づらいと言われた。
+ * columns（カード）は2枚続けない。どの layout も3枚続けない（from の枚は数えない）。
+ */
+export function checkLayoutRhythm(slides: SlideSpec[]): string | null {
+  for (let i = 1; i < slides.length; i++) {
+    const a = slides[i - 1];
+    const b = slides[i];
+    if (!('layout' in a) || !('layout' in b) || a.layout !== b.layout) continue;
+    if (b.layout === 'columns') {
+      return `${i}枚目と${i + 1}枚目がどちらもカード（columns）です。似た配置を続けないでください。片方を message・bullets・table・image にするか、あいだに別の組み方の枚を入れてください。`;
+    }
+    const c = slides[i - 2];
+    if (c && 'layout' in c && c.layout === b.layout) {
+      return `${i - 1}〜${i + 1}枚目がどれも ${b.layout} です。同じ組み方を3枚続けないでください。まん中の枚の組み方を変えるか、2枚にまとめてください。`;
+    }
+  }
+  return null;
+}
 
 /** AI が渡した入力を確かめて整える。問題があれば、AI に返す理由の文を返す。 */
 export function checkSlidesInput(input: Record<string, unknown>): { ok: true; value: SlidesInput } | { ok: false; message: string } {
@@ -183,6 +211,8 @@ export function checkSlidesInput(input: Record<string, unknown>): { ok: true; va
     }
     slides.push({ from, texts, tables, notes: typeof s.notes === 'string' ? s.notes.slice(0, MAX_NOTES) : '' });
   }
+  const rhythm = checkLayoutRhythm(slides);
+  if (rhythm) return { ok: false, message: rhythm };
   return { ok: true, value: { template, title, slides } };
 }
 
