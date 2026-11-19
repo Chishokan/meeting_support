@@ -2,7 +2,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  AGENDA_CHOICE_BLOCK,
   addedAgendaLines,
+  asksAboutPreshare,
+  needsAgendaChoice,
   agendaLine,
   checkAgendaInput,
   checkRecordsInput,
@@ -125,3 +128,33 @@ test('議題の追加：入力・足す会議の選び方・足す行・上書�
   assert.equal(mergeAddedAgenda('・行動計画\n・冬期講習の外部募集', server), `・行動計画\n・冬期講習の外部募集\n${line}`);
   assert.equal(mergeAddedAgenda(`・行動計画\n${line}`, server), `・行動計画\n${line}`);
 });
+
+test('事前共有を聞かれたら、回答の最後に「議題を追加する」を出すよう AI に伝える（決定事項だけのときは伝えない）', () => {
+  const agenda = formatMeetingRecords(data, checkRecordsInput({ what: 'agenda' }), '2026-11-18');
+  assert.ok(agenda.includes(AGENDA_CHOICE_BLOCK));
+  assert.ok(agenda.trimEnd().endsWith(AGENDA_CHOICE_BLOCK));
+  const all = formatMeetingRecords(data, checkRecordsInput({}), '2026-11-18');
+  assert.ok(all.includes(AGENDA_CHOICE_BLOCK));
+  const dec = formatMeetingRecords(data, checkRecordsInput({ what: 'decisions' }), '2026-11-18');
+  assert.ok(!dec.includes(AGENDA_CHOICE_BLOCK));
+});
+
+test('事前共有を聞いているか：agenda なら常に、all なら質問に事前共有・議題・次の会議の言葉があるとき', () => {
+  assert.equal(asksAboutPreshare('agenda', '小中等部の決定事項は？'), true);
+  assert.equal(asksAboutPreshare('all', '次の小中等部の会議の事前共有を教えて'), true);
+  assert.equal(asksAboutPreshare('all', '次の RED個別の会議は何を話す？'), true);
+  assert.equal(asksAboutPreshare('all', '私の ToDo は？'), false);
+  assert.equal(asksAboutPreshare('decisions', '事前共有の議題は？'), false);
+  assert.equal(asksAboutPreshare('share', '全体会議の事前共有事項は？'), false);
+});
+
+test('「議題を追加する」を付け足すのは、聞かれた・案をまだ出していない・選択肢が無い・回答があるときだけ', () => {
+  const ans = '小中等部会議（11/24）の議題は次のとおりです。\n- 冬期講習の分担';
+  assert.equal(needsAgendaChoice(ans, { asked: true, proposed: false }), true);
+  assert.equal(needsAgendaChoice(ans, { asked: false, proposed: false }), false);
+  assert.equal(needsAgendaChoice(ans, { asked: true, proposed: true }), false);
+  assert.equal(needsAgendaChoice(`${ans}\n\n\`\`\`選択肢\n小中等部の会議に議題を追加する\n\`\`\``, { asked: true, proposed: false }), false);
+  assert.equal(needsAgendaChoice('  ', { asked: true, proposed: false }), false);
+  assert.equal(AGENDA_CHOICE_BLOCK, '```選択肢\n議題を追加する\n```');
+});
+

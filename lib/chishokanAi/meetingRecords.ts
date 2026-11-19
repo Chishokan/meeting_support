@@ -35,7 +35,7 @@ export const PROPOSE_AGENDA_TOOL = {
   name: 'propose_agenda_item',
   description:
     '部門会議の議題を足す案を、画面に出す（職員が［議題に追加する］を押したときだけ、次の部門会議の事前共有の議題に足される）。' +
-    '「次の小中等部の会議の議題に〇〇を入れて」と頼まれたときだけ使う。どの部門の会議にも足せる。' +
+    '「次の小中等部の会議の議題に〇〇を入れて」と頼まれたとき、または「議題を追加する」を選んだ職員が足したい議題を伝えたときに使う。どの部門の会議にも足せる。' +
     'meeting_id は get_meeting_records の「これからの部門会議」に出た事前共有ID（省くと、その部門のいちばん近い会議）。事前共有がまだ無い部門は「議題の候補」として残り、会議の担当者が事前共有を作るときに取り込む。' +
     '回答では「追加しました」と言い切らず、「下のボタンで追加してください」と伝える。',
   input_schema: {
@@ -224,8 +224,33 @@ export function formatMeetingRecords(data: RecordsData, o: RecordsOpts, today: s
   return (
     `${body}\n\n` +
     '答え方：聞かれた部門・項目だけを抜き出す。出典として会議名と日付を書く。生徒・保護者の名前はイニシャルにする。' +
-    '記録に無いことは「記録に無い」と書く（作らない）。議題を足してと頼まれたら propose_agenda_item を使う。'
+    '記録に無いことは「記録に無い」と書く（作らない）。議題を足してと頼まれたら propose_agenda_item を使う。' +
+    (want('agenda') ? `\n${AGENDA_CHOICE_RULE}` : '')
   );
+}
+
+// --- 事前共有を聞かれたときの、議題の追加を促す選択肢（2026-11-19） ----------------------
+// 部門会議の事前共有（これからの会議の議題）について答えたら、回答の最後に「議題を追加する」を出して、議題の追加を促す。
+// AI が付け忘れたときは、アプリ（app/api/chishokan-ai/route.ts）が回答の最後に付け足す。
+
+export const AGENDA_CHOICE = '議題を追加する';
+export const AGENDA_CHOICE_BLOCK = '```選択肢\n' + AGENDA_CHOICE + '\n```';
+const AGENDA_CHOICE_RULE =
+  '部門会議の事前共有（これからの会議の議題）について答えたときは、回答の最後に次の選択肢を付けて、議題の追加を促す（選択肢のあとには何も書かない）：\n' +
+  AGENDA_CHOICE_BLOCK;
+
+/** この質問が、部門会議の事前共有（これからの会議の議題）を聞いているか。what が agenda か、all で質問に事前共有・議題の言葉があるとき。 */
+export function asksAboutPreshare(what: MeetingWhat, userText: string): boolean {
+  if (what === 'agenda') return true;
+  return what === 'all' && /事前共有|議題|レジュメ|次の.{0,12}会議/.test(String(userText ?? ''));
+}
+
+/** 回答の最後に「議題を追加する」の選択肢を付け足すか。選択肢がもうある・議題の案を出した・回答が空なら付けない。 */
+export function needsAgendaChoice(answer: string, opts: { asked: boolean; proposed: boolean }): boolean {
+  if (!opts.asked || opts.proposed) return false;
+  const t = String(answer ?? '');
+  if (!t.trim()) return false;
+  return !/```[ \t]*(?:選択肢|choices)/.test(t);
 }
 
 // --- 議題の追加の案 -----------------------------------------------------------------

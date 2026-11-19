@@ -32,6 +32,17 @@ export function imageAvailable(): boolean {
   return imageProviders({ openai: !!process.env.OPENAI_API_KEY, google: geminiKeys().length > 0 }).length > 0;
 }
 
+/**
+ * API での画像生成を一旦止めている（2026-11-19 職員の指示）。止めているあいだ、画像・挿絵・背景・チラシの画像を頼まれたら、
+ * AI は NEP事業部への作成依頼の案を出す（lib/chishokanAi/nepRequest.ts）。再開するときは false にする。
+ */
+export const IMAGE_GENERATION_PAUSED = true;
+
+/** 画像を作る道具（generate_image）を AI に渡すか：止めていない、かつキーがある。 */
+export function imageGenerationEnabled(): boolean {
+  return !IMAGE_GENERATION_PAUSED && imageAvailable();
+}
+
 const DEFAULT_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 // 一覧が引けなかったときの候補（新しい順）
 const FALLBACK_MODELS = ['gemini-3.1-flash-image', 'gemini-2.5-flash-image'];

@@ -33,7 +33,7 @@ export const CREATE_SLIDES_TOOL = {
     '書体は from・layout とも、すべて Noto Sans JP にそろう（Apps Script がそろえる。職員の指定）。' +
     'layout：title（表紙。title・lead＝副題・points＝日付や名前）／section（章の扉。title・lead）／message（大きな一言。label＝上の小さな見出し・title・lead・points＝下の淡い地の囲みに入れる要点1〜4。承認・テーマ・問いかけ・まとめ）／' +
     'bullets（見出しと箇条書き。title・lead・points 1〜8）／columns（見出しとカード2〜4枚。title・lead・columns［{title, text}］）／table（見出しと表。title・lead・table＝行の配列、1行目が見出し）／' +
-    'image（見出しと画像。title・lead・image・points＝左に並べる要点。省くと画像を大きく）。image は generate_image で作った画像の id（title・section にも付けられ、右半分に入る）。' +
+    'image（見出しと画像。title・lead・image・points＝左に並べる要点。省くと画像を大きく）。image は generate_image で作った画像の id（title・section にも付けられ、右半分に入る。画像の生成を止めているあいだは使えないので、挿絵・背景が要るときは propose_nep_request で NEP に依頼する）。' +
     'base はどのスライドの見た目（背景・見出しの飾り）を使うか（ひな形の何枚目。省くと表紙は0枚目、ほかは見出しのある最初の枚）。文字の大きさはアプリが枠に合わせる。' +
     '似た配置を続けない：columns（カード）の枚を2枚続けない。同じ layout を3枚続けない（続けると作れずに理由が返る）。' +
     'notes は発表者ノート。数字・日付は資料にあるものだけ。1回の回答で1つまで。',

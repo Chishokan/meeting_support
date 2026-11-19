@@ -3636,6 +3636,14 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .ai-agenda-actions .ai-agenda-cancel { background: #fff; color: #1f5c99; }
 .ai-agenda-err { color: #c0392b; font-size: 12px; }
 .ai-agenda-ok { margin-top: 8px; color: #1e7a3a; }
+/* NEPへの作成依頼の案（AiNepRequestCard）。枠とボタンは議題の追加案と同じ */
+.ai-nep-rows { margin: 6px 0 4px; display: grid; gap: 2px; }
+.ai-nep-rows > div { display: flex; gap: 8px; }
+.ai-nep-rows dt { color: #4a5866; min-width: 6.5em; font-size: 12px; }
+.ai-nep-rows dd { margin: 0; }
+.ai-nep-content { white-space: pre-wrap; }
+.ai-nep-more { margin-top: 6px; font-size: 12px; color: #4a5866; }
+.ai-nep-more summary { cursor: pointer; }
 
 /* 部門会議議事録：智翔館AI から足された議題の候補 */
 .dm-agenda-cands { margin: 8px 0; padding: 10px 12px; border: 1px dashed #b9d3f2; border-radius: 10px; background: #f5f9fd; font-size: 13px; }

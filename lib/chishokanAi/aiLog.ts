@@ -7,7 +7,7 @@
 
 import { callGas } from './gas';
 
-export type AiLogKind = '質問' | '評価' | 'コンテキスト' | '議題';
+export type AiLogKind = '質問' | '評価' | 'コンテキスト' | '議題' | '制作依頼';
 
 export type AiLogEntry = {
   user: string;
