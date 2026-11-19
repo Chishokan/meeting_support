@@ -564,7 +564,11 @@ export async function POST(req: Request) {
               } else {
                 meetingReads++;
                 const r = await runMeetingRecords(input, ac.signal);
-                if (asksAboutPreshare(r.what, lastUserText)) preshareAsked = true;
+                if (asksAboutPreshare(r.what, lastUserText)) {
+                  preshareAsked = true;
+                  // 回答の下に、会議ごとの［意見を足す］［修正する］を出す
+                  if (r.preshares.length) send({ t: 'preshare', items: r.preshares });
+                }
                 out = r.text;
               }
             } else if (block.name === PROPOSE_AGENDA_TOOL.name) {

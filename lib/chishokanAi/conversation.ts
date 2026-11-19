@@ -25,6 +25,8 @@ export type AiEvent =
   | { t: 'image'; name: string; url: string; mime: string; data: string }
   /** 議題の追加の案（propose_agenda_item）。職員が［議題に追加する］を押したときだけ追加する（app/api/chishokan-ai/agenda） */
   | { t: 'agenda'; dept: string; item: string; detail: string; meetingId: string; meetingTitle: string; meetingDate: string }
+  /** 事前共有を読んだ会議（部門会議）。画面は回答の下に会議ごとの［意見を足す］［修正する］を出す（app/api/chishokan-ai/preshare） */
+  | { t: 'preshare'; items: { id: string; campus: string; title: string; date: string }[] }
   /** NEPへの作成依頼の案（propose_nep_request）。職員が［この内容でNEPへ作成依頼を出す］を押したときだけ送る（app/api/chishokan-ai/nep-request） */
   | { t: 'nep'; title: string; kind: string; purpose: string; size: string; content: string; avoid: string; due: string; prompt: string; notes: string }
   | { t: 'error'; v: string };

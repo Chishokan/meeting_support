@@ -147,6 +147,17 @@ export function checkRecordsInput(input: Record<string, unknown>): RecordsOpts {
   return { dept: s(input?.dept, 20), what, person: s(input?.person, 20), query: s(input?.query, 40), days: Number.isFinite(d) && d >= 1 ? Math.min(180, Math.floor(d)) : 45 };
 }
 
+/** これからの部門会議の事前共有（議事録がまだ無く、開催日が昨日以降。部門・言葉で絞り、近い順に8件まで）。画面のボタンにも使う。 */
+export function upcomingPreshareRows(preshare: PreshareRec[], o: RecordsOpts, today: string): { r: PreshareRec; day: string }[] {
+  const hit = (...xs: string[]) => !o.query || xs.some((x) => String(x ?? '').includes(o.query));
+  return preshare
+    .filter((r) => !r.minutesId && deptMatch(r.campus, o.dept))
+    .map((r) => ({ r, day: meetingDayOf(r.date, r.ts) }))
+    .filter((x) => x.day && dayDiff(today, x.day) >= -1 && hit(x.r.title, x.r.agenda))
+    .sort((a, b) => a.day.localeCompare(b.day))
+    .slice(0, 8);
+}
+
 /** 読んだ記録を、AI に渡す文にする（部門・期間・担当者・言葉で絞り、長くなりすぎないように切る）。 */
 export function formatMeetingRecords(data: RecordsData, o: RecordsOpts, today: string, maxChars = 24_000): string {
   const inDept = (c: string) => deptMatch(c, o.dept);
@@ -158,12 +169,7 @@ export function formatMeetingRecords(data: RecordsData, o: RecordsOpts, today: s
   const head = `【会議の記録（${o.dept || '全部門'}・${o.what === 'all' ? 'すべて' : o.what}${o.person ? `・担当 ${o.person}` : ''}${o.query ? `・「${o.query}」` : ''}・${o.days}日前まで。今日 ${today}）】`;
 
   if (want('agenda')) {
-    const rows = data.preshare
-      .filter((r) => !r.minutesId && inDept(r.campus))
-      .map((r) => ({ r, day: meetingDayOf(r.date, r.ts) }))
-      .filter((x) => x.day && dayDiff(today, x.day) >= -1 && hit(x.r.title, x.r.agenda))
-      .sort((a, b) => a.day.localeCompare(b.day))
-      .slice(0, 8);
+    const rows = upcomingPreshareRows(data.preshare, o, today);
     out.push('■ これからの部門会議（事前共有）');
     if (!rows.length) out.push('（事前共有された会議はありません）');
     for (const { r, day } of rows) {
@@ -236,6 +242,7 @@ export function formatMeetingRecords(data: RecordsData, o: RecordsOpts, today: s
 export const AGENDA_CHOICE = '議題を追加する';
 export const AGENDA_CHOICE_BLOCK = '```選択肢\n' + AGENDA_CHOICE + '\n```';
 const AGENDA_CHOICE_RULE =
+  '画面には、回答の下に会議ごとの［意見を足す］［修正する］ボタンが出る（押すと編集の小窓が開く）。事前共有に意見を書き足したい・直したいと言われたら、そのボタンを使うよう伝える。\n' +
   '部門会議の事前共有（これからの会議の議題）について答えたときは、回答の最後に次の選択肢を付けて、議題の追加を促す（選択肢のあとには何も書かない）：\n' +
   AGENDA_CHOICE_BLOCK;
 

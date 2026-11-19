@@ -3636,6 +3636,23 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .ai-agenda-actions .ai-agenda-cancel { background: #fff; color: #1f5c99; }
 .ai-agenda-err { color: #c0392b; font-size: 12px; }
 .ai-agenda-ok { margin-top: 8px; color: #1e7a3a; }
+/* 事前共有の［意見を足す］［修正する］（AiPreshareCards）。枠とボタンは議題の追加案と同じ */
+.ai-preshare-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 0; border-top: 1px dashed #d6e2ee; }
+.ai-agenda-title + .ai-preshare-row { border-top: none; }
+.ai-preshare-name { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.ai-preshare-btns { display: flex; gap: 6px; }
+.ai-preshare-btns button { padding: 5px 10px; border-radius: 8px; border: 1px solid #1f5c99; background: #1f5c99; color: #fff; font-size: 12.5px; cursor: pointer; }
+.ai-preshare-btns .ai-agenda-cancel { background: #fff; color: #1f5c99; }
+.ai-preshare-saved { margin-top: 0; flex-basis: 100%; font-size: 12px; }
+.dm-modal.ai-preshare-modal { width: min(720px, 100%); }
+.ai-preshare-modal .ai-report-field input, .ai-preshare-modal .ai-report-field select {
+  width: 100%; box-sizing: border-box; padding: 7px 10px; font-size: 14px; border: 1px solid #cfd8e3; border-radius: 8px; background: #fff;
+}
+.ai-preshare-modal .ai-report-field textarea { width: 100%; box-sizing: border-box; font-weight: 400; }
+/* 全体の label の上下の余白（14px）を消し、欄の間はフォームの gap だけにする */
+.ai-preshare-modal .ai-report-field { margin: 0; }
+.ai-preshare-modal .ai-report-form { gap: 12px; }
+.ai-preshare-agenda { max-height: 220px; overflow-y: auto; background: #f7f9fb; border: 1px solid #e3e8ee; border-radius: 8px; padding: 8px 12px; font-size: 13px; line-height: 1.7; }
 /* NEPへの作成依頼の案（AiNepRequestCard）。枠とボタンは議題の追加案と同じ */
 .ai-nep-rows { margin: 6px 0 4px; display: grid; gap: 2px; }
 .ai-nep-rows > div { display: flex; gap: 8px; }
