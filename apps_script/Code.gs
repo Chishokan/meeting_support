@@ -2922,6 +2922,37 @@ function aiShapeTextInfo_(shape, slide) {
   return { text: text, size: Number(st.getFontSize()) || 0, font: st.getFontFamily() || '', bold: !!st.isBold(), color: color };
 }
 
+// 智翔館AI が作るスライドの書体。職員の指定（2026-11-19）で、ひな形の書体にかかわらず全部これにそろえる。
+var AI_SLIDE_FONT = 'Noto Sans JP';
+
+// スライドの文字をすべて font にする（太字・大きさ・色はそのまま）。表のセルとグループの中も見る。
+function aiForceFont_(slide, font) {
+  var els = slide.getPageElements();
+  for (var i = 0; i < els.length; i++) aiForceFontEl_(els[i], font);
+}
+function aiForceFontEl_(el, font) {
+  try {
+    var t = el.getPageElementType();
+    if (t === SlidesApp.PageElementType.SHAPE) {
+      var tr = el.asShape().getText();
+      if (tr.asString().replace(/\s/g, '')) tr.getTextStyle().setFontFamily(font);
+    } else if (t === SlidesApp.PageElementType.TABLE) {
+      var tb = el.asTable();
+      for (var r = 0; r < tb.getNumRows(); r++) {
+        for (var c = 0; c < tb.getNumColumns(); c++) {
+          try {
+            var ct = tb.getCell(r, c).getText();
+            if (ct.asString().replace(/\s/g, '')) ct.getTextStyle().setFontFamily(font);
+          } catch (e) {}
+        }
+      }
+    } else if (t === SlidesApp.PageElementType.GROUP) {
+      var ch = el.asGroup().getChildren();
+      for (var j = 0; j < ch.length; j++) aiForceFontEl_(ch[j], font);
+    }
+  } catch (e) {}
+}
+
 // ページ要素が文字を持つか（グループは中も見る）
 function aiElementHasText_(el) {
   try {
@@ -3029,11 +3060,11 @@ function aiTemplateStyle_(slides, pageW, pageH) {
   var bodySize = bodySizes.length ? bodySizes[Math.floor(bodySizes.length / 2)] : 16 * k;
   return {
     k: k,
-    headFont: aiMode_(heads.map(function (x) { return x.font; })) || 'BIZ UDPGothic',
+    headFont: AI_SLIDE_FONT,
     headColor: headColor,
     headBold: heads.length ? heads.filter(function (x) { return x.bold; }).length * 2 >= heads.length : true,
     headSize: Math.max(22 * k, Math.min(40 * k, headSize)),
-    bodyFont: aiMode_(bodies.map(function (x) { return x.font; })) || aiMode_(heads.map(function (x) { return x.font; })) || 'BIZ UDPGothic',
+    bodyFont: AI_SLIDE_FONT,
     bodyColor: bodyColor,
     bodySize: Math.max(13 * k, Math.min(20 * k, bodySize)),
     accent: accent,
@@ -3312,11 +3343,12 @@ function createAiSlides_(data) {
       var spec = specs[s] || {};
       // ひな形の見た目で自由に組む枚
       if (spec.layout) {
-        if (!style) style = { k: pageW / 720, headFont: 'BIZ UDPGothic', headColor: '#1f3b57', headBold: true, headSize: 28 * pageW / 720, bodyFont: 'BIZ UDPGothic', bodyColor: '#222222', bodySize: 16 * pageW / 720, accent: '#1f5c99', light: '#e6eef6', contentBase: orig.length > 1 ? 1 : 0 };
+        if (!style) style = { k: pageW / 720, headFont: AI_SLIDE_FONT, headColor: '#1f3b57', headBold: true, headSize: 28 * pageW / 720, bodyFont: AI_SLIDE_FONT, bodyColor: '#222222', bodySize: 16 * pageW / 720, accent: '#1f5c99', light: '#e6eef6', contentBase: orig.length > 1 ? 1 : 0 };
         var built = null;
         try { built = aiBuildLayoutSlide_(pres, orig, spec, style, pageW, pageH, warnings, s + 1); }
         catch (e) { warnings.push((s + 1) + '枚目：組みきれませんでした（' + String(e).slice(0, 80) + '）'); }
         if (built) {
+          try { aiForceFont_(built.slide, AI_SLIDE_FONT); } catch (e) {}
           if (spec.notes) { try { built.slide.getNotesPage().getSpeakerNotesShape().getText().setText(String(spec.notes).slice(0, 3000)); } catch (e) {} }
           if (logoBlob && !aiSlideHasLogo_(orig[built.base])) {
             try { aiPlaceLogo_(built.slide, logoBlob, spec.layout === 'title', pageW, pageH); } catch (e) { warnings.push((s + 1) + '枚目：ロゴを置けませんでした'); }
@@ -3361,6 +3393,7 @@ function createAiSlides_(data) {
       for (var i = 0; i < items.length; i++) {
         if (!done[items[i].key]) warnings.push((s + 1) + '枚目：見本の文字のまま「' + (items[i].type === 'text' ? items[i].text : '表').replace(/\s+/g, ' ').slice(0, 20) + '」');
       }
+      try { aiForceFont_(dup, AI_SLIDE_FONT); } catch (e) {}
       if (spec.notes) {
         try { dup.getNotesPage().getSpeakerNotesShape().getText().setText(String(spec.notes).slice(0, 3000)); } catch (e) {}
       }

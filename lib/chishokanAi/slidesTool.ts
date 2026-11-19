@@ -7,7 +7,8 @@
 //     箇条書き・カード・表）で自由に組む（ひな形に合う枚が無いとき）。2026-11-17 の会話ログで、合う枚が無く作れなかったため
 //   1. get_slide_templates：ひな形の一覧 → 1つのひな形の、スライドごとの文字の枠（key・見本の文字・目安の文字数）と表、見た目
 //   2. create_google_slides：使うスライド（from か layout）を並べる。発表者ノートも入れる
-// Apps Script がひな形をコピーして作り、ロゴ（フォルダの「ロゴ…」の画像）を置き、00_進行中/AI作成 に保存して URL を返す。
+// Apps Script がひな形をコピーして作り、ロゴ（フォルダの「ロゴ…」の画像）を置き、書体をすべて Noto Sans JP にそろえ（2026-11-19 職員の指定）、
+// 00_進行中/AI作成 に保存して URL を返す。
 // 実行は slides.ts。
 
 export const SLIDES_TEMPLATES_TOOL = {
@@ -28,7 +29,8 @@ export const CREATE_SLIDES_TOOL = {
     'slides は作るスライドの順。1枚ごとに、次のどちらかで書く（混ぜてよい）。' +
     '【from】ひな形の何枚目（0から）をそのまま使い、texts（枠の key → 書く文字）と tables（表の key → 行の配列）で書き換える。' +
     '見本の文字はすべて書き換える。文字数は目安（max）以内。ページ番号の数字は並べた順に振り直す。内容がぴったり合う枚（表紙など）に使う。' +
-    '【layout】ひな形の見た目（背景・見出しの飾り・書体・色・ロゴ）で、自由に組む。合う枚が無いときはこちらで作る（「合うひな形が無い」と止めない）。' +
+    '【layout】ひな形の見た目（背景・見出しの飾り・色・ロゴ）で、自由に組む。合う枚が無いときはこちらで作る（「合うひな形が無い」と止めない）。' +
+    '書体は from・layout とも、すべて Noto Sans JP にそろう（Apps Script がそろえる。職員の指定）。' +
     'layout：title（表紙。title・lead＝副題・points＝日付や名前）／section（章の扉。title・lead）／message（大きな一言。label＝上の小さな見出し・title・lead・points＝下の淡い地の囲みに入れる要点1〜4。承認・テーマ・問いかけ・まとめ）／' +
     'bullets（見出しと箇条書き。title・lead・points 1〜8）／columns（見出しとカード2〜4枚。title・lead・columns［{title, text}］）／table（見出しと表。title・lead・table＝行の配列、1行目が見出し）／' +
     'image（見出しと画像。title・lead・image・points＝左に並べる要点。省くと画像を大きく）。image は generate_image で作った画像の id（title・section にも付けられ、右半分に入る）。' +
