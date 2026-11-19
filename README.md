@@ -76,6 +76,21 @@
     - 並べ方・外し方（議事録を保存した会議と、開催日から3日過ぎた会議は外す）: lib/deptMinutesPreshare.ts
     - 保存先: 「部門会議事前共有」シート（1会議1行）。議事録を保存すると「議事録ID」が入る
       （apps_script/Code.gs の saveDeptPreshare_ / listDeptPreshare_ / linkDeptPreshare_）
+  - Zoom連携（v1.17.0〜）：［事前共有で報告する］のときに「Zoom ミーティングも作る」にチェックがあると、開催日時から
+    Zoom ミーティングを作り（自動クラウド録画）、事前共有のカードに［Zoomに参加］を出す。メールは送らない
+    - アカウントは公式1・公式2 の2つ（lib/zoom/accounts.ts。中等部は公式2、その他の部門は公式1 が既定で、画面で選べる）。
+      Vercel の ZOOM_1_… / ZOOM_2_…（.env.example）が未設定なら、Zoom の欄は画面に出ない
+    - 開催日時の読み取り: lib/zoom/schedule.ts（終了時刻が無ければ60分）。手順1の日付・開始・終了の入力も同じ形で書く
+    - Zoom API の呼び出し: lib/zoom/client.ts（Server-to-Server OAuth。作成・更新・開始用URLの取得）
+    - ［ホストとして開始］：管理部門（全部門の会議）と部門長権限者（自分の部門の会議）にだけ出す（lib/zoom/access.ts）。
+      共通ログインで入っているときだけ。開始用URLは保存せず、押すたびに取り直す（app/api/zoom/meetings/start）。誰がいつ開始したかは会話ログに残る
+    - 保存先: 「部門会議事前共有」シートの「Zoomアカウント」「ZoomミーティングID」「参加URL」「パスコード」列と、
+      Supabase の zoom_meetings（supabase/migrations/0004_zoom_meetings.sql。録画から議事録を自動で作るときに、どの会議の録画かを引くため）
+    - 設計書（録画からの議事録の自動生成までの全体）: https://claude.ai/artifact/VRvyBB8x3daSpYBEnJgr6o
+  - 事前共有の削除（v1.18.0〜）：詳細のポップアップの［削除］。その部門の人・事前共有した本人・管理部門が消せる
+    （lib/deptMinutesPreshare.ts の canDeletePreshare）。議事録を保存済みのものは消せない。
+    シートの行ごと消し（apps_script/Code.gs の deleteDeptPreshare_）、Zoom ミーティングを作ってあればそれも消す
+    （Zoom のアプリにスコープ meeting:delete:meeting:admin が要る）。誰がいつ消したかは会話ログに残る
   - 議事録テンプレート（項目・書き方）: lib/deptMinutesTemplate.ts ★ここを直せば AI の出力・
     画面のヘルプ・会議の質チェックにまとめて反映される
   - AI への指示: lib/deptMinutesPrompt.ts

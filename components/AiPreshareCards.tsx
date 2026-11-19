@@ -10,7 +10,13 @@ import { OPINION_MAX, type PreshareFields } from '@/lib/chishokanAi/preshareEdit
 
 export type PreshareButtonView = { id: string; campus: string; title: string; date: string };
 type Mode = 'opinion' | 'edit';
-type Item = PreshareFields & { id: string; campus: string; user: string; editedAt: string; editedBy: string; minutesId: string; targets: string[] };
+type Item = PreshareFields & {
+  id: string; campus: string; user: string; editedAt: string; editedBy: string; minutesId: string; targets: string[];
+  /** 修正できる人か（その部門の方・事前共有した本人・管理部門の方） */
+  canEdit: boolean;
+  /** Zoom ミーティングを作ってある会議か（日時を変えても Zoom 側の時刻は変わらない） */
+  hasZoom: boolean;
+};
 
 export default function AiPreshareCards({ items, conversationId }: { items: PreshareButtonView[]; conversationId: string }) {
   const [open, setOpen] = useState<{ id: string; mode: Mode } | null>(null);
@@ -182,7 +188,13 @@ function AiPreshareDialog({
             <pre className="dm-modal-text ai-preshare-agenda">{item.agenda}</pre>
           </div>
         )}
-        {(state === 'ready' || state === 'saving') && item && !locked && (
+        {(state === 'ready' || state === 'saving') && item && !locked && mode === 'edit' && !item.canEdit && (
+          <div className="dm-modal-body">
+            <p className="ai-report-error">事前共有を修正できるのは、その部門の方・事前共有した本人・管理部門の方です。意見を足すことはできます。</p>
+            <pre className="dm-modal-text ai-preshare-agenda">{item.agenda}</pre>
+          </div>
+        )}
+        {(state === 'ready' || state === 'saving') && item && !locked && (mode === 'opinion' || item.canEdit) && (
           <form className="dm-modal-body ai-report-form" onSubmit={submit}>
             {mode === 'opinion' ? (
               <>
@@ -251,6 +263,12 @@ function AiPreshareDialog({
                   </span>
                   <textarea value={fields.agenda} onChange={set('agenda')} rows={10} maxLength={6000} />
                 </label>
+                {item.hasZoom && (fields.date.trim() !== base.date.trim() || fields.title.trim() !== base.title.trim()) && (
+                  <p className="ai-report-error">
+                    この会議には Zoom ミーティングがあります。ここで開催日時・会議名を変えても、Zoom 側の時刻・名前は変わりません（参加URLはそのまま使えます）。
+                    Zoom も合わせるときは「部門会議議事録」の画面で直してください。
+                  </p>
+                )}
                 <p className="ai-report-note">保存すると、この事前共有がそのまま置き換わります（最初に共有した人・部門はそのまま、修正した人が残ります）。</p>
               </>
             )}

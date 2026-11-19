@@ -4,6 +4,7 @@
 // ★並べる順・出す範囲は lib/deptMinutesPreshare.ts の upcomingPreshares() で決める。
 
 import { agendaPreview, shortDate, whenLabel, type PreshareRow, type PreshareView } from '@/lib/deptMinutesPreshare';
+import ZoomButtons from '@/components/ZoomButtons';
 
 export default function PreshareList({
   views,
@@ -46,6 +47,8 @@ export default function PreshareList({
               </span>
               <div className="pre-actions">
                 <button className="dm-detail" onClick={() => onOpen(row, when)}>議題を見る</button>
+                {/* Zoom ミーティングを作った会議だけ、［Zoomに参加］か［ホストとして開始］が出る */}
+                <ZoomButtons row={row} />
                 {onStart && (
                   <button className="pre-start" onClick={() => onStart(row)}>議事録をつくる</button>
                 )}

@@ -3,9 +3,13 @@
 //   POST       … { id, mode: 'opinion', target, text }：選んだ議題の下に意見の1行を足す（保存の直前に最新を読み直して足す）
 //               { id, mode: 'edit', fields, base }：会議情報と議題・レジュメを直す。base（開いたときの中身）といまの中身が違えば保存しない
 // 保存は「部門会議議事録」画面と同じ Apps Script の saveDeptPreshare（再デプロイは要らない）。議事録を保存した会議は直せない。
+// 意見は誰でも足せる。修正（全体の書き換え）は、削除と同じく、その部門の方・事前共有した本人・管理部門の方だけ（canDeletePreshare）。
+// Zoom の列は送らないので、保存済みの Zoom ミーティング（参加URLなど）はそのまま残る（日時を変えても Zoom 側の時刻は変わらない）。
 // 決まりは lib/chishokanAi/preshareEdit.ts。
 
 import { getSession, verifiedEmail } from '@/lib/core/auth';
+import { ADMIN_CAMPUS } from '@/lib/core/staff';
+import { canDeletePreshare } from '@/lib/deptMinutesPreshare';
 import { canUseChishokanAi } from '@/lib/chishokanAi/access';
 import { callGas } from '@/lib/chishokanAi/gas';
 import { logAi } from '@/lib/chishokanAi/aiLog';
@@ -26,7 +30,9 @@ export const maxDuration = 30;
 
 const s = (v: unknown) => String(v ?? '');
 
-async function latestRow(id: string): Promise<{ ok: true; row: PreshareEditRow | null } | { ok: false }> {
+type Row = PreshareEditRow & { zoomMeetingId: string };
+
+async function latestRow(id: string): Promise<{ ok: true; row: Row | null } | { ok: false }> {
   const j = await callGas({ action: 'listDeptPreshare' });
   if (!j.ok || !Array.isArray(j.items)) return { ok: false };
   const r = (j.items as Record<string, unknown>[]).find((x) => s(x.id) === id);
@@ -36,11 +42,17 @@ async function latestRow(id: string): Promise<{ ok: true; row: PreshareEditRow |
     row: {
       id: s(r.id), campus: s(r.campus), user: s(r.user), title: s(r.title), date: s(r.date), place: s(r.place),
       attendees: s(r.attendees), agenda: s(r.agenda), editedAt: s(r.editedAt), editedBy: s(r.editedBy), minutesId: s(r.minutesId),
+      zoomMeetingId: s(r.zoomMeetingId),
     },
   };
 }
 
-const view = (row: PreshareEditRow) => ({ ...row, targets: agendaTargets(row.agenda) });
+type Who = { name: string; campus: string };
+const view = (row: Row, who: Who) => {
+  const { zoomMeetingId, ...rest } = row;
+  return { ...rest, targets: agendaTargets(row.agenda), canEdit: canDeletePreshare(who, row, ADMIN_CAMPUS), hasZoom: Boolean(zoomMeetingId) };
+};
+const NO_EDIT = '事前共有を修正できるのは、その部門の方・事前共有した本人・管理部門の方です（意見を足すことはできます）。';
 const fieldsOf = (row: PreshareEditRow): PreshareFields => ({ title: row.title, date: row.date, place: row.place, attendees: row.attendees, agenda: row.agenda });
 
 function guard() {
@@ -58,7 +70,7 @@ export async function GET(req: Request) {
   const l = await latestRow(id);
   if (!l.ok) return Response.json({ ok: false, message: '事前共有を読めませんでした。時間をおいてもう一度開いてください。' }, { status: 502 });
   if (!l.row) return Response.json({ ok: false, message: editableMessage(null) }, { status: 404 });
-  return Response.json({ ok: true, item: view(l.row), locked: editableMessage(l.row) });
+  return Response.json({ ok: true, item: view(l.row, g.session!), locked: editableMessage(l.row) });
 }
 
 export async function POST(req: Request) {
@@ -86,9 +98,10 @@ export async function POST(req: Request) {
   if (op && op.ok) {
     next = { ...fieldsOf(row), agenda: insertOpinion(row.agenda, op.value.target, op.value.text, session.name, stampJst()) };
   } else if (ed && ed.ok) {
+    if (!canDeletePreshare(session, row, ADMIN_CAMPUS)) return Response.json({ ok: false, message: NO_EDIT }, { status: 403 });
     if (!sameVersion(fieldsOf(row), (body?.base ?? {}) as PreshareFields)) {
       return Response.json(
-        { ok: false, conflict: true, message: '開いてから保存するまでに、ほかの人がこの事前共有を直しました。最新を読み込み直してから、もう一度直してください。', item: view(row) },
+        { ok: false, conflict: true, message: '開いてから保存するまでに、ほかの人がこの事前共有を直しました。最新を読み込み直してから、もう一度直してください。', item: view(row, session) },
         { status: 409 },
       );
     }
@@ -113,5 +126,5 @@ export async function POST(req: Request) {
     { input: `[智翔館AI 事前共有の${mode === 'opinion' ? '意見' : '修正'}] ${row.campus} ${row.title}`, output: 'saved' },
     { timeoutMs: 8000 },
   );
-  return Response.json({ ok: true, item: view({ ...row, ...next, editedBy: session.name }) });
+  return Response.json({ ok: true, item: view({ ...row, ...next, editedBy: session.name }, session) });
 }

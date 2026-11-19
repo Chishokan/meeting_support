@@ -1524,6 +1524,40 @@ a.ai-source:hover { background: #e2ecf6; }
   border: 1px solid var(--navy); border-radius: 6px; padding: 4px 12px; cursor: pointer; white-space: nowrap;
 }
 .pre-start:hover { filter: brightness(1.12); }
+/* Zoom のボタン（［Zoomに参加］［ホストとして開始］）。カード・詳細・手順1で共通に使う（components/ZoomButtons.tsx） */
+.zoom-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff; background: #0b5cff;
+  border: 1px solid #0b5cff; border-radius: 6px; padding: 4px 12px;
+  cursor: pointer; white-space: nowrap; text-decoration: none;
+}
+.zoom-btn:hover { filter: brightness(1.1); }
+.zoom-btn:disabled { opacity: .6; cursor: default; filter: none; }
+.zoom-btn.sub { color: #0b5cff; background: #fff; }
+.zoom-err { flex: 1 1 100%; font-size: 12px; color: #b3261e; line-height: 1.6; }
+.pre-actions { flex-wrap: wrap; justify-content: flex-end; }
+.dm-modal-foot .zoom-btn { padding: 9px 16px; font-size: 13px; border-radius: 8px; }
+/* 事前共有の削除（詳細のポップアップ） */
+.pre-delete {
+  padding: 10px 16px; font-size: 13px; color: #b3261e;
+  background: #fff; border: 1px solid #e6b8b4; border-radius: 8px; cursor: pointer;
+}
+.pre-delete:hover { background: #fdf1f0; }
+.pre-delete:disabled { opacity: .5; cursor: default; }
+.pre-modal .dm-modal-foot { flex-wrap: wrap; }
+/* 手順1：開催日時を日付・開始・終了から選ぶ */
+.dm-fields .dm-when { display: flex; gap: 6px; }
+.dm-fields .dm-when input { flex: 1 1 0; min-width: 0; padding: 6px 6px; font-size: 13px; }
+.dm-fields .dm-when input[type="date"] { flex: 1.4 1 0; }
+/* 手順1：事前共有のときに Zoom ミーティングも作る */
+.dm-zoom {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed #d5dde6;
+}
+.dm-zoom-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #33404d; cursor: pointer; }
+.dm-zoom-check input { width: 16px; height: 16px; }
+.dm-zoom select { width: auto; flex: 0 0 auto; font-size: 13px; padding: 5px 8px; border: 1px solid #cfd8e2; border-radius: 6px; background: #fff; }
+.dm-zoom-text { flex: 1 1 240px; min-width: 0; font-size: 12px; color: #5a636d; line-height: 1.7; }
 /* 会議中に読むので、議題・レジュメは議事録の本文より少し大きくする */
 .dm-modal-text.pre-agenda { font-size: 15px; }
 /* 議事録の詳細の左側のボタン（［次回の事前共有をつくる］［修正する］）。コピー・閉じるとは離して置く */
@@ -1590,7 +1624,7 @@ a.ai-source:hover { background: #e2ecf6; }
   .panel-more { padding: 11px 6px; margin: -11px -6px -11px auto; }
   .yq-toggle { padding: 11px 4px; margin: -11px -4px; }
   .doc-link { display: inline-block; padding: 11px 4px; margin: -11px -4px; }
-  .dm-detail, .dm-reload, .pre-start { min-height: 36px; padding: 7px 14px; }
+  .dm-detail, .dm-reload, .pre-start, .zoom-btn { min-height: 36px; padding: 7px 14px; }
   /* 画面の切り替えに使うボタンは押す回数が多いので、少し高くする */
   .dm-tab, .mode-btn, .reset-chat, .iqa-example { min-height: 40px; }
 

@@ -12,6 +12,7 @@
  *   - action:'listDeptDecisions' … 部門横断の決定事項一覧（決め事の見える化）
  *   - action:'saveDeptPreshare' … 部門会議の事前共有（会議情報と議題・レジュメ） → 「部門会議事前共有」シートに1会議1行
  *   - action:'listDeptPreshare' … ダッシュボードの「部門会議の事前共有」用の一覧
+ *   - action:'deleteDeptPreshare' … 事前共有の削除（議事録を保存する前のものだけ）
  *   - action:'appendReport' … 「報告」からの事前報告      → Google ドキュメント（REPORT_DOC_ID）に新セクション追記
  *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントの【中間報告タブ】に追記＋「中間報告状況」シートに記録
  *   - action:'listProgress' … ダッシュボード用の直近報告者  → 「中間報告状況」シートを新しい順に返す
@@ -362,6 +363,9 @@ function doPost(e) {
     if (action === 'listDeptPreshare') {
       return json_(listDeptPreshare_(data));
     }
+
+    // 事前共有の削除（2026-11-19）
+    if (action === 'deleteDeptPreshare') return json_(deleteDeptPreshare_(data));
 
     // 部門会議の議題の追加（智翔館AI の［議題に追加する］）と、事前共有がまだ無い会議の「議題の候補」（2026-11-18）
     if (action === 'addDeptAgenda') return json_(addDeptAgenda_(data));
@@ -889,7 +893,11 @@ function listDeptDecisions_(data) {
 //（ダッシュボードの「部門会議の事前共有」で、出席者が議題・レジュメを見ながら会議を進めるため）。
 // ★列は見出し名で引く（colOf_）。「議事録ID」はこの会議の議事録を保存したときに入る。
 var DEPT_PRESHARE_SHEET = '部門会議事前共有';
-var DEPT_PRESHARE_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '場所', '出席者', '議題・レジュメ', '事前共有ID', '更新日時', '更新者', '議事録ID'];
+// 末尾の5列は Zoom連携（2026-11-19）。事前共有を出したときにアプリが Zoom ミーティングを作った会議だけ入る。
+// 「文字起こし元」は、録画から議事録を自動で作るとき（今後の追加）に使う。
+var DEPT_PRESHARE_ZOOM_HEADERS = ['Zoomアカウント', 'ZoomミーティングID', '参加URL', 'パスコード', '文字起こし元'];
+var DEPT_PRESHARE_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '場所', '出席者', '議題・レジュメ', '事前共有ID', '更新日時', '更新者', '議事録ID']
+  .concat(DEPT_PRESHARE_ZOOM_HEADERS);
 
 function preshareCell_(r, name) {
   return cellStr_(r[colOf_(DEPT_PRESHARE_HEADERS, name) - 1]);
@@ -918,11 +926,22 @@ function saveDeptPreshare_(data) {
     '更新者': cur ? (data.user || '') : '',
     '議事録ID': cur ? preshareCell_(cur, '議事録ID') : ''
   };
+  // Zoom の列：data.zoom が来たときだけ書き換える。来ないとき（議題だけ直したときなど）は元の値を残す。
+  var z = data.zoom && typeof data.zoom === 'object' ? data.zoom : null;
+  var zoomIn = z ? {
+    'Zoomアカウント': z.account, 'ZoomミーティングID': z.meetingId, '参加URL': z.joinUrl,
+    'パスコード': z.passcode, '文字起こし元': z.transcript
+  } : null;
+  DEPT_PRESHARE_ZOOM_HEADERS.forEach(function (h) {
+    var kept = cur ? preshareCell_(cur, h) : '';
+    rec[h] = zoomIn && zoomIn[h] != null && String(zoomIn[h]) !== '' ? String(zoomIn[h]) : kept;
+  });
   var values = H.map(function (h) { return String(rec[h]); });
   // appendRow は手入力と同じ解釈で書くため、「- 9月の実績」で始まる議題が数式とみなされたり、
   // 開催日時が日付に化けたりする。先に文字列書式を付けてから setValues で書く。
   sh.getRange(row || sh.getLastRow() + 1, 1, 1, H.length).setNumberFormat('@').setValues([values]);
-  return { ok: true, id: id, updated: Boolean(row), ts: rec['日時'] };
+  // zoomSaved：Zoom の列を書いたか。アプリ側が「Apps Script が古くて Zoom の列を知らない」と見分けるのに使う。
+  return { ok: true, id: id, updated: Boolean(row), ts: rec['日時'], zoomSaved: Boolean(z) };
 }
 
 // ---- 部門会議の議題の追加（智翔館AI から。2026-11-18） ------------------------------------
@@ -1018,7 +1037,8 @@ function useAgendaCandidates_(data) {
 function listDeptPreshare_(data) {
   var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(DEPT_PRESHARE_SHEET);
-  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  // zoomColumns：この Apps Script が Zoom の列を読み書きできる印（アプリ側が、古い Apps Script と見分けるのに使う）。
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [], zoomColumns: true };
   var values = sh.getRange(2, 1, sh.getLastRow() - 1, DEPT_PRESHARE_HEADERS.length).getValues();
   var items = [];
   for (var i = 0; i < values.length; i++) {
@@ -1030,12 +1050,15 @@ function listDeptPreshare_(data) {
       place: preshareCell_(r, '場所'), attendees: preshareCell_(r, '出席者'),
       agenda: preshareCell_(r, '議題・レジュメ'),
       editedAt: preshareCell_(r, '更新日時'), editedBy: preshareCell_(r, '更新者'),
-      minutesId: preshareCell_(r, '議事録ID')
+      minutesId: preshareCell_(r, '議事録ID'),
+      zoomAccount: preshareCell_(r, 'Zoomアカウント'), zoomMeetingId: preshareCell_(r, 'ZoomミーティングID'),
+      zoomJoinUrl: preshareCell_(r, '参加URL'), zoomPasscode: preshareCell_(r, 'パスコード'),
+      zoomTranscript: preshareCell_(r, '文字起こし元')
     });
   }
   items.reverse();
   if (items.length > 100) items = items.slice(0, 100);
-  return { ok: true, items: items };
+  return { ok: true, items: items, zoomColumns: true };
 }
 
 // 議事録を保存したとき、元になった事前共有に議事録IDを入れる（saveDeptMinutes_ から呼ぶ）。
@@ -1046,6 +1069,32 @@ function linkDeptPreshare_(preshareId, minutesId) {
   var row = findRowById_(sh, colOf_(DEPT_PRESHARE_HEADERS, '事前共有ID'), preshareId);
   if (!row) return;
   sh.getRange(row, colOf_(DEPT_PRESHARE_HEADERS, '議事録ID')).setNumberFormat('@').setValue(String(minutesId));
+}
+
+// 部門会議の事前共有を1件消す（行ごと消す。消した行はスプレッドシートの「変更履歴」からしか戻せない）。
+// 議事録を保存済み（議事録IDが入っている）の事前共有は消さない（議事録との結び付きが切れるため）。
+// 誰が消してよいかはアプリ側で確かめている（lib/deptMinutesPreshare.ts の canDeletePreshare）。
+// deleted：行を消した印。アプリ側が、古い Apps Script（この action を知らない）と見分けるのに使う。
+function deleteDeptPreshare_(data) {
+  var id = String(data.id || '');
+  if (!id) return { ok: false, reason: 'empty' };
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(DEPT_PRESHARE_SHEET);
+  if (!sh) return { ok: false, reason: 'not_found' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var H = DEPT_PRESHARE_HEADERS;
+    // 行番号は、鍵を取ってから探す（ほかの人が同時に行を足したり消したりしてもずれないように）。
+    var row = findRowById_(sh, colOf_(H, '事前共有ID'), id);
+    if (!row) return { ok: false, reason: 'not_found' };
+    var minutesId = String(sh.getRange(row, colOf_(H, '議事録ID')).getValue() || '');
+    if (minutesId) return { ok: false, reason: 'has_minutes' };
+    sh.deleteRow(row);
+    return { ok: true, id: id, deleted: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // 全体研修会アンケート（/kenshu）。1人1行（研修会×部門×氏名）で持ち、送り直すと同じ行を上書きする。

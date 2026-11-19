@@ -21,7 +21,34 @@ export type PreshareRow = PreshareMeta & {
   editedAt: string; // 更新したときだけ入る
   editedBy: string;
   minutesId: string; // この会議の議事録を保存すると入る（入ったらダッシュボードから外す）
+  // ---- Zoom連携（事前共有を出したときにアプリが Zoom ミーティングを作った会議だけ入る） ----
+  zoomAccount?: string; // '1'（公式1）| '2'（公式2）
+  zoomMeetingId?: string;
+  zoomJoinUrl?: string; // ［Zoomに参加］で開くURL
+  zoomPasscode?: string;
+  // いま見ている人が［ホストとして開始］できるか（サーバが決めて返す。lib/zoom/access.ts）。
+  canHost?: boolean;
+  // いま見ている人がこの事前共有を削除できるか（サーバが決めて返す。下の canDeletePreshare）。
+  canDelete?: boolean;
 };
+
+/**
+ * 事前共有を削除できる人。
+ *   ・その会議の部門の人（事前共有はもともと部門の誰でも直せる）
+ *   ・事前共有した本人（別の部門に切り替えて見ているときも消せるように）
+ *   ・管理部門（全部門の会議）
+ * 議事録を保存済みの事前共有は、議事録との結び付きが切れるので誰も消せない。
+ */
+export function canDeletePreshare(
+  who: { name: string; campus: string } | null | undefined,
+  row: { campus: string; user: string; minutesId: string },
+  adminCampus: string,
+): boolean {
+  if (!who || row.minutesId) return false;
+  if (who.campus === adminCampus) return true;
+  if (row.campus && who.campus === row.campus) return true;
+  return Boolean(row.user) && who.name === row.user;
+}
 
 // 開催日を過ぎても、議事録が保存されるまでは何日ぶん出しておくか。
 // 会議の翌日以降に議事録を作ることもあるので、当日で消さずに少し残す。

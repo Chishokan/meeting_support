@@ -554,6 +554,11 @@ export default function DashboardUI({
               setPreshares((rows) => rows.map((r) => (r.id === next.id ? next : r)));
               setOpenPreshare((o) => (o ? { ...o, row: next } : o));
             }}
+            // 消したら、一覧から外して詳細を閉じる。
+            onDeleted={(id) => {
+              setPreshares((rows) => rows.filter((r) => r.id !== id));
+              setOpenPreshare(null);
+            }}
           />
         )}
         {openProgress && (
