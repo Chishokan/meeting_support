@@ -47,3 +47,20 @@ export async function saveMeetingLink(link: ZoomMeetingLink): Promise<'ok' | 'no
     return 'error';
   }
 }
+
+/** 対応表から消す（事前共有を削除したとき）。失敗しても呼び出し元は止めない。 */
+export async function deleteMeetingLinks(preshareId: string): Promise<'ok' | 'not_configured' | 'error'> {
+  const db = supabaseAdmin();
+  if (!db) return 'not_configured';
+  try {
+    const { error } = await db.from('zoom_meetings').delete().eq('preshare_id', preshareId);
+    if (error) {
+      console.error('[ZOOM_LINK_ERROR]', error.message);
+      return 'error';
+    }
+    return 'ok';
+  } catch (e) {
+    console.error('[ZOOM_LINK_ERROR]', e instanceof Error ? e.message : String(e));
+    return 'error';
+  }
+}

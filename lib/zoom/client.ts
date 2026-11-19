@@ -3,8 +3,8 @@
 // アカウントは lib/zoom/accounts.ts（公式1・公式2）から選ぶ。
 //
 // 必要なスコープ（Zoom App Marketplace のアプリ側で付ける）：
-//   ミーティングの作成・更新・読み取り（meeting:write:meeting:admin / meeting:update:meeting:admin /
-//   meeting:read:meeting:admin。名前は作成画面の表示で確かめる）
+//   ミーティングの作成・更新・読み取り・削除（meeting:write:meeting:admin / meeting:update:meeting:admin /
+//   meeting:read:meeting:admin / meeting:delete:meeting:admin）
 
 import { zoomAccount, type ZoomAccount, type ZoomAccountId } from './accounts';
 
@@ -140,6 +140,11 @@ export async function createMeeting(id: ZoomAccountId, m: MeetingInput): Promise
 /** 会議名・日時を直したときに、同じミーティングを更新する（参加URLは変わらない）。 */
 export async function updateMeeting(id: ZoomAccountId, meetingId: string, m: MeetingInput): Promise<void> {
   await call(account(id), 'PATCH', `/meetings/${encodeURIComponent(meetingId)}`, meetingBody(m));
+}
+
+/** ミーティングを消す（事前共有を削除したとき）。スコープ meeting:delete:meeting:admin が要る。 */
+export async function deleteMeeting(id: ZoomAccountId, meetingId: string): Promise<void> {
+  await call(account(id), 'DELETE', `/meetings/${encodeURIComponent(meetingId)}`);
 }
 
 /** ミーティングを読む。開始用URLはここで毎回取り直す。 */
