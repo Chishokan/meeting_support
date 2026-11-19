@@ -21,6 +21,13 @@ export type PreshareRow = PreshareMeta & {
   editedAt: string; // 更新したときだけ入る
   editedBy: string;
   minutesId: string; // この会議の議事録を保存すると入る（入ったらダッシュボードから外す）
+  // ---- Zoom連携（事前共有を出したときにアプリが Zoom ミーティングを作った会議だけ入る） ----
+  zoomAccount?: string; // '1'（公式1）| '2'（公式2）
+  zoomMeetingId?: string;
+  zoomJoinUrl?: string; // ［Zoomに参加］で開くURL
+  zoomPasscode?: string;
+  // いま見ている人が［ホストとして開始］できるか（サーバが決めて返す。lib/zoom/access.ts）。
+  canHost?: boolean;
 };
 
 // 開催日を過ぎても、議事録が保存されるまでは何日ぶん出しておくか。
