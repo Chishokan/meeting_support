@@ -8,6 +8,8 @@
 import { useState } from 'react';
 import type { PreshareRow } from '@/lib/deptMinutesPreshare';
 import { useModalDismiss } from '@/lib/useModalDismiss';
+import ZoomButtons from '@/components/ZoomButtons';
+import { formatMeetingId, zoomJoinHref } from '@/lib/zoom/link';
 
 // 更新日時は時刻まで見せる（会議の直前に直すことがあるため）。
 function fmtStamp(s: string) {
@@ -103,6 +105,11 @@ export default function PreshareDetail({
     { label: '場所', text: row.place },
     { label: '出席者', text: row.attendees },
   ].filter((s) => s.text);
+  // Zoom ミーティングを作った会議だけ、ID とパスコードを出す（アプリから入れない人に口頭で伝えられるように）。
+  const zoomJoin = zoomJoinHref(row.zoomJoinUrl);
+  const zoomInfo = zoomJoin
+    ? `ミーティングID ${formatMeetingId(row.zoomMeetingId)}${row.zoomPasscode ? `　パスコード ${row.zoomPasscode}` : ''}`
+    : '';
 
   return (
     <div className="dm-modal-bg" onClick={close}>
@@ -125,6 +132,7 @@ export default function PreshareDetail({
             {info.map((s) => (
               <div key={s.label} className="dm-modal-sub">{s.label}：{s.text}</div>
             ))}
+            {zoomInfo && <div className="dm-modal-sub">Zoom：{zoomInfo}</div>}
             {row.editedBy && (
               <div className="dm-modal-edited">
                 更新：{fmtStamp(row.editedAt)}　{row.editedBy}
@@ -188,6 +196,7 @@ export default function PreshareDetail({
             </>
           ) : (
             <>
+          <ZoomButtons row={row} detail />
           {onStart && (
             <button className="dm-modal-edit" onClick={onStart}>この会議の議事録をつくる</button>
           )}
@@ -198,6 +207,7 @@ export default function PreshareDetail({
                 [
                   row.title,
                   ...info.map((s) => `${s.label}：${s.text}`),
+                  ...(zoomJoin ? [`Zoom：${zoomJoin}`, zoomInfo] : []),
                   '',
                   row.agenda,
                 ].join('\n'),
