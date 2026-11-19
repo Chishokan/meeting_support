@@ -987,14 +987,21 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .ai-diff-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 20px; border-top: 1px solid var(--line); }
 .ai-diff-actions .ai-report-submit:disabled { opacity: .5; cursor: default; }
 
-/* 広い画面：右の欄を常に出し、会話と入力欄はその左に置く */
-@media (min-width: 1180px) {
+/* 広い画面：右の欄（履歴・コンテキスト）を常に出し、会話と入力欄はその左に置く。
+   2026-11-18：ノートPC（1366px を 125%〜150% で表示すると約 900〜1090px）で右の欄が隠れていたため、常に出す幅を 1180px → 900px に下げた。
+   900〜1279px は欄を少し細くして、会話の幅（600px 以上）を残す。智翔館AI の画面には左のメニューが無い */
+@media (min-width: 900px) {
   .iqa-page.ai-has-panel { padding-right: 340px; }
   .ai-has-panel .composer { right: 340px; }
   .ai-panel-toggle { display: none; }
 }
-/* 狭い画面：「📌 コンテキスト」で右から引き出す */
-@media (max-width: 1179px) {
+@media (min-width: 900px) and (max-width: 1279px) {
+  .ai-panel { width: 300px; padding: 12px 12px 24px; }
+  .iqa-page.ai-has-panel { padding-right: 300px; }
+  .ai-has-panel .composer { right: 300px; }
+}
+/* 狭い画面（タブレットの縦・スマホ）：「📌 コンテキスト」で右から引き出す */
+@media (max-width: 899px) {
   .ai-panel {
     top: 0; width: min(380px, 100vw); z-index: 50; transform: translateX(100%); visibility: hidden;
     transition: transform .2s ease, visibility .2s; box-shadow: -4px 0 16px rgba(0,0,0,.12);
