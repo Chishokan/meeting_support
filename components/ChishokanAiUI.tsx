@@ -19,6 +19,8 @@ import AiContextDiffDialog from '@/components/AiContextDiffDialog';
 import AiReportDialog from '@/components/AiReportDialog';
 import AiRequestDialog from '@/components/AiRequestDialog';
 import AiAgendaCard, { type AgendaProposalView } from '@/components/AiAgendaCard';
+import AiNepRequestCard, { type NepRequestView } from '@/components/AiNepRequestCard';
+import AiPreshareCards, { type PreshareButtonView } from '@/components/AiPreshareCards';
 import { imageToBase64, shrinkDataUrl } from '@/lib/chishokanAi/clientImage';
 import { attachOnlyQuestion, carryForSend, isHeavy, nextCarry, type HeavyAttach } from '@/lib/chishokanAi/attachCarry';
 import type { ReportContext } from '@/lib/chishokanAi/report';
@@ -80,6 +82,10 @@ type Msg = {
   images?: { name: string; url: string; src: string }[];
   /** この回答で AI が出した、議題の追加の案（押すまで追加しない） */
   agendas?: AgendaProposalView[];
+  /** この回答で AI が出した、NEPへの作成依頼の案（押すまで送らない） */
+  neps?: NepRequestView[];
+  /** この回答で読んだ事前共有の会議（回答の下に［意見を足す］［修正する］を出す） */
+  preshares?: PreshareButtonView[];
 };
 
 /** 会話の番号（会話ログで1つの会話を探すため）。画面を開くたび・新しい相談のたびに作る。 */
@@ -709,6 +715,12 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           else if (ev.t === 'agenda') {
             const { t: _t, ...p } = ev;
             draft = { ...draft, agendas: [...(draft.agendas ?? []), p] };
+          } else if (ev.t === 'preshare') {
+            const have = new Set((draft.preshares ?? []).map((p) => p.id));
+            draft = { ...draft, preshares: [...(draft.preshares ?? []), ...ev.items.filter((p) => p.id && !have.has(p.id))] };
+          } else if (ev.t === 'nep') {
+            const { t: _t, ...p } = ev;
+            draft = { ...draft, neps: [...(draft.neps ?? []), p as NepRequestView] };
           } else if (ev.t === 'image') {
             // 作った画像：回答の下に出し、次の質問にも「前の添付」として付け直す（「文字を大きく」などで直せる）
             const src = `data:${ev.mime};base64,${ev.data}`;
@@ -1055,6 +1067,8 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
                     )}
                   </div>
                   {!streaming && m.agendas?.map((p, j) => <AiAgendaCard key={`ag-${i}-${j}`} p={p} conversationId={convoIdRef.current} />)}
+                  {!streaming && m.neps?.map((p, j) => <AiNepRequestCard key={`nep-${i}-${j}`} p={p} conversationId={convoIdRef.current} />)}
+                  {!streaming && !!m.preshares?.length && <AiPreshareCards items={m.preshares} conversationId={convoIdRef.current} />}
                   {m.images?.map((im, j) => (
                     <figure key={j} className="ai-image">
                       {/* eslint-disable-next-line @next/next/no-img-element */}

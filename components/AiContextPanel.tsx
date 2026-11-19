@@ -6,7 +6,7 @@
 // - 読んだ資料：この会話で AI が読んだ資料（次の質問にも自動で渡している）。外したり、コンテキストに固定したりできる。
 // - この会話：ファイルに書き出す・書き出したファイルから再開する。
 // - 保存した会話・履歴・いつものコンテキスト：メールアドレスでログインしたときだけ出す（サーバーに本人の分だけ保存。lib/chishokanAi/savedRules.ts）。
-// 画面が広いときは右に常に出し、狭いとき（スマホなど）は「📌 コンテキスト」で引き出す。
+// 画面の幅が 900px 以上（ノートPCを拡大表示したときも）なら右に常に出し、それより狭いとき（タブレットの縦・スマホ）は「📌 コンテキスト」で引き出す（app/globals.css）。
 
 import { useEffect, useRef, useState } from 'react';
 import type { CarryContext } from '@/lib/chishokanAi/conversation';

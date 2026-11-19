@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkSlidesInput, formatTemplateDetail, formatTemplateList } from './slidesTool.ts';
+import { checkSlidesInput, formatTemplateDetail, formatTemplateList, type LayoutSlideSpec } from './slidesTool.ts';
 
 test('checkSlidesInput：足りないもの・形の違うものを断る', () => {
   assert.equal(checkSlidesInput({}).ok, false);
@@ -112,4 +112,37 @@ test('formatTemplateDetail：見た目と、見出しの形の枚を見せる', 
   assert.match(detail, /■ from=1「概要」［見出しの形］/);
   assert.doesNotMatch(detail, /■ from=0「企画書」［見出しの形］/);
   assert.match(formatTemplateList([{ id: 'x', name: '企画書', slides: 2, labels: ['企画書', '概要'] }]), /合わない枚は layout で/);
+});
+
+// --- 似た配置を続けない（2026-11-19：カードの枚が4枚続いて見づらかった）と、message のラベル・囲み ---
+test('checkSlidesInput：columns を2枚続けない・同じ layout を3枚続けない', () => {
+  const card = (t: string) => ({ layout: 'columns', title: t, columns: [{ title: 'a', text: 'x' }, { title: 'b', text: 'y' }] });
+  const msg = (t: string) => ({ layout: 'message', title: t });
+  const run = (slides: unknown[]) => checkSlidesInput({ template: 'セミナー', title: 't', slides });
+  const r1 = run([msg('承認'), card('3つの力'), card('学年の流れ')]);
+  assert.equal(r1.ok, false);
+  if (!r1.ok) assert.match(r1.message, /2枚目と3枚目がどちらもカード/);
+  const r2 = run([msg('a'), msg('b'), msg('c')]);
+  assert.equal(r2.ok, false);
+  if (!r2.ok) assert.match(r2.message, /1〜3枚目がどれも message/);
+  assert.equal(run([msg('a'), msg('b'), card('c'), msg('d'), card('e')]).ok, true);
+  // from の枚はあいだに入れば区切りになる
+  assert.equal(run([card('a'), { from: 1, texts: {} }, card('b')]).ok, true);
+});
+
+test('checkSlidesInput：message の label と囲みの要点（4つまで）', () => {
+  const r = checkSlidesInput({ template: 'セミナー', title: 't', slides: [
+    { layout: 'message', label: ' 智翔館のTOP10文化 ', title: '目標に向けて努力した経験が、夢・志を実現する力になる', points: ['学年TOP10を目指す', '順位はゴールではない', '努力する経験を積む'] },
+    { layout: 'bullets', label: '使わない', title: 'x', points: ['a'] },
+  ] });
+  assert.ok(r.ok);
+  if (r.ok) {
+    const [m, b] = r.value.slides as LayoutSlideSpec[];
+    assert.equal(m.label, '智翔館のTOP10文化');
+    assert.equal(m.points.length, 3);
+    assert.equal(b.label, undefined);
+  }
+  const over = checkSlidesInput({ template: 'セミナー', title: 't', slides: [{ layout: 'message', title: 'x', points: ['1', '2', '3', '4', '5'] }] });
+  assert.equal(over.ok, false);
+  if (!over.ok) assert.match(over.message, /4つまで/);
 });
