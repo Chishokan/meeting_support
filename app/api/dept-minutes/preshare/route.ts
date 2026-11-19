@@ -1,12 +1,13 @@
 import { getSession } from '@/lib/core/auth';
 import { ADMIN_CAMPUS } from '@/lib/core/staff';
-import { missingForPreshare, type PreshareRow } from '@/lib/deptMinutesPreshare';
+import { logInteraction } from '@/lib/core/log';
+import { canDeletePreshare, missingForPreshare, type PreshareRow } from '@/lib/deptMinutesPreshare';
 import { listPreshareRows } from '@/lib/deptMinutesPreshareGas';
 import { canHostMeeting } from '@/lib/zoom/access';
 import { defaultZoomAccount, isZoomAccountId, zoomAccount, zoomAccountOptions, type ZoomAccountId } from '@/lib/zoom/accounts';
-import { ZoomError, createMeeting, updateMeeting, type MeetingInput } from '@/lib/zoom/client';
+import { ZoomError, createMeeting, deleteMeeting, updateMeeting, type MeetingInput } from '@/lib/zoom/client';
 import { parseSchedule } from '@/lib/zoom/schedule';
-import { saveMeetingLink } from '@/lib/zoom/store';
+import { deleteMeetingLinks, saveMeetingLink } from '@/lib/zoom/store';
 
 export const runtime = 'nodejs';
 // Zoom ミーティングの作成（数秒）とスプレッドシートの読み書き（1〜3秒×2回）が続くことがある。
@@ -15,6 +16,7 @@ export const maxDuration = 60;
 // 部門会議の事前共有（会議の前に、会議情報と議題・レジュメを全部門へ出しておく）。
 //   GET  … 事前共有の一覧（新しい順）。ダッシュボードと「部門会議議事録」画面で使う
 //   POST … 事前共有の保存。id を添えると、その事前共有を上書きする
+//   DELETE … 事前共有の削除（議事録を保存する前のものだけ。Zoom ミーティングを作ってあれば、それも消す）
 // 保存先は Apps Script の「部門会議事前共有」シート（saveDeptPreshare_ / listDeptPreshare_）。
 //
 // Zoom連携：POST に zoom:{ create:true, account } を添えると、開催日時から Zoom ミーティングを作り
@@ -43,6 +45,8 @@ export async function GET() {
     ...row,
     // ［ホストとして開始］を出すか。開始のときにもサーバで同じ判定をする（app/api/zoom/meetings/start）。
     canHost: Boolean(row.zoomMeetingId) && canHostMeeting(session, row.campus, ADMIN_CAMPUS),
+    // ［削除］を出すか。削除のときにもサーバで同じ判定をする（下の DELETE）。
+    canDelete: canDeletePreshare(session, row, ADMIN_CAMPUS),
   }));
   return Response.json({
     ok: true,
@@ -178,4 +182,77 @@ export async function POST(req: Request) {
   } catch {
     return Response.json({ ok: false, reason: 'network_error' }, { status: 502 });
   }
+}
+
+// 事前共有の削除。
+//   ・消せるのは、その部門の人・事前共有した本人・管理部門（lib/deptMinutesPreshare.ts の canDeletePreshare）
+//   ・議事録を保存済みの事前共有は消せない
+//   ・Zoom ミーティングを作ってあれば、それも消す。Zoom だけ失敗しても事前共有は消し、結果を zoom.ok / zoom.reason で返す
+//   ・誰がいつ消したかを会話ログに残す
+export async function DELETE(req: Request) {
+  const session = getSession();
+  if (!session) return Response.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
+
+  const body = await req.json().catch(() => ({}));
+  const id = s(body?.id);
+  if (!id) return Response.json({ ok: false, reason: 'bad_request' }, { status: 400 });
+
+  const url = process.env.APPS_SCRIPT_URL;
+  if (!url) return Response.json({ ok: false, reason: 'not_configured' });
+
+  // 画面から送られてきた内容ではなく、保存済みの行で判定する。
+  const cur = await listPreshareRows();
+  if (!cur.ok) return Response.json({ ok: false, reason: cur.reason }, { status: cur.status });
+  const row = cur.items.find((r) => r.id === id);
+  if (!row) return Response.json({ ok: false, reason: 'not_found' }, { status: 404 });
+  if (row.minutesId) return Response.json({ ok: false, reason: 'has_minutes' }, { status: 409 });
+  if (!canDeletePreshare(session, row, ADMIN_CAMPUS)) {
+    return Response.json({ ok: false, reason: 'forbidden' }, { status: 403 });
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'deleteDeptPreshare', token: process.env.APPS_SCRIPT_TOKEN || '', id }),
+    });
+    const j = await res.json().catch(() => null);
+    if (!(res.ok && j && j.ok === true && j.deleted === true)) {
+      // 古い Apps Script は、知らない action に ok:true だけを返す（deleted の印が無い）。
+      const reason = j && j.ok === true ? 'gas_outdated' : (j && j.reason) || 'upstream_error';
+      return Response.json({ ok: false, reason }, { status: 502 });
+    }
+  } catch {
+    return Response.json({ ok: false, reason: 'network_error' }, { status: 502 });
+  }
+
+  // ここから先は失敗しても、事前共有はもう消えている。
+  let zoom: { ok: true } | { ok: false; reason: string } | undefined;
+  if (row.zoomMeetingId && isZoomAccountId(row.zoomAccount)) {
+    try {
+      await deleteMeeting(row.zoomAccount, row.zoomMeetingId);
+      zoom = { ok: true };
+    } catch (e) {
+      const z = e instanceof ZoomError ? e : new ZoomError('upstream');
+      // Zoom 側ですでに消されていたら、消せたのと同じ。
+      if (z.reason === 'not_found') zoom = { ok: true };
+      else {
+        console.error('[ZOOM_DELETE_ERROR]', z.reason, z.detail);
+        zoom = { ok: false, reason: z.reason };
+      }
+    }
+    await deleteMeetingLinks(id);
+  }
+
+  await logInteraction(
+    {
+      user: session.name,
+      campus: session.campus,
+      input: `[事前共有/削除] ${row.title || '（会議名なし）'}｜${row.campus}｜${row.date}｜共有：${row.user}`,
+      output: row.zoomMeetingId ? `Zoom ミーティングID ${row.zoomMeetingId}：${zoom?.ok ? '削除' : '削除できず'}` : 'Zoom なし',
+    },
+    { timeoutMs: 5000 },
+  );
+
+  return Response.json({ ok: true, id, ...(zoom ? { zoom } : {}) });
 }

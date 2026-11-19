@@ -87,6 +87,10 @@
     - 保存先: 「部門会議事前共有」シートの「Zoomアカウント」「ZoomミーティングID」「参加URL」「パスコード」列と、
       Supabase の zoom_meetings（supabase/migrations/0004_zoom_meetings.sql。録画から議事録を自動で作るときに、どの会議の録画かを引くため）
     - 設計書（録画からの議事録の自動生成までの全体）: https://claude.ai/artifact/VRvyBB8x3daSpYBEnJgr6o
+  - 事前共有の削除（v1.18.0〜）：詳細のポップアップの［削除］。その部門の人・事前共有した本人・管理部門が消せる
+    （lib/deptMinutesPreshare.ts の canDeletePreshare）。議事録を保存済みのものは消せない。
+    シートの行ごと消し（apps_script/Code.gs の deleteDeptPreshare_）、Zoom ミーティングを作ってあればそれも消す
+    （Zoom のアプリにスコープ meeting:delete:meeting:admin が要る）。誰がいつ消したかは会話ログに残る
   - 議事録テンプレート（項目・書き方）: lib/deptMinutesTemplate.ts ★ここを直せば AI の出力・
     画面のヘルプ・会議の質チェックにまとめて反映される
   - AI への指示: lib/deptMinutesPrompt.ts

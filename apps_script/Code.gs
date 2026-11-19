@@ -12,6 +12,7 @@
  *   - action:'listDeptDecisions' … 部門横断の決定事項一覧（決め事の見える化）
  *   - action:'saveDeptPreshare' … 部門会議の事前共有（会議情報と議題・レジュメ） → 「部門会議事前共有」シートに1会議1行
  *   - action:'listDeptPreshare' … ダッシュボードの「部門会議の事前共有」用の一覧
+ *   - action:'deleteDeptPreshare' … 事前共有の削除（議事録を保存する前のものだけ）
  *   - action:'appendReport' … 「報告」からの事前報告      → Google ドキュメント（REPORT_DOC_ID）に新セクション追記
  *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントの【中間報告タブ】に追記＋「中間報告状況」シートに記録
  *   - action:'listProgress' … ダッシュボード用の直近報告者  → 「中間報告状況」シートを新しい順に返す
@@ -362,6 +363,9 @@ function doPost(e) {
     if (action === 'listDeptPreshare') {
       return json_(listDeptPreshare_(data));
     }
+
+    // 事前共有の削除（2026-11-19）
+    if (action === 'deleteDeptPreshare') return json_(deleteDeptPreshare_(data));
 
     // 部門会議の議題の追加（智翔館AI の［議題に追加する］）と、事前共有がまだ無い会議の「議題の候補」（2026-11-18）
     if (action === 'addDeptAgenda') return json_(addDeptAgenda_(data));
@@ -1065,6 +1069,32 @@ function linkDeptPreshare_(preshareId, minutesId) {
   var row = findRowById_(sh, colOf_(DEPT_PRESHARE_HEADERS, '事前共有ID'), preshareId);
   if (!row) return;
   sh.getRange(row, colOf_(DEPT_PRESHARE_HEADERS, '議事録ID')).setNumberFormat('@').setValue(String(minutesId));
+}
+
+// 部門会議の事前共有を1件消す（行ごと消す。消した行はスプレッドシートの「変更履歴」からしか戻せない）。
+// 議事録を保存済み（議事録IDが入っている）の事前共有は消さない（議事録との結び付きが切れるため）。
+// 誰が消してよいかはアプリ側で確かめている（lib/deptMinutesPreshare.ts の canDeletePreshare）。
+// deleted：行を消した印。アプリ側が、古い Apps Script（この action を知らない）と見分けるのに使う。
+function deleteDeptPreshare_(data) {
+  var id = String(data.id || '');
+  if (!id) return { ok: false, reason: 'empty' };
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(DEPT_PRESHARE_SHEET);
+  if (!sh) return { ok: false, reason: 'not_found' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var H = DEPT_PRESHARE_HEADERS;
+    // 行番号は、鍵を取ってから探す（ほかの人が同時に行を足したり消したりしてもずれないように）。
+    var row = findRowById_(sh, colOf_(H, '事前共有ID'), id);
+    if (!row) return { ok: false, reason: 'not_found' };
+    var minutesId = String(sh.getRange(row, colOf_(H, '議事録ID')).getValue() || '');
+    if (minutesId) return { ok: false, reason: 'has_minutes' };
+    sh.deleteRow(row);
+    return { ok: true, id: id, deleted: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // 全体研修会アンケート（/kenshu）。1人1行（研修会×部門×氏名）で持ち、送り直すと同じ行を上書きする。

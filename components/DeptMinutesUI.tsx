@@ -1758,6 +1758,19 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
               setShareSnap(metaKey({ ...meta, agenda: next.agenda }));
             }
           }}
+          onDeleted={(id) => {
+            setPreshares((rows) => rows.filter((r) => r.id !== id));
+            setOpenPreshare(null);
+            // いま手順1に読み込んでいる会議を消したときは、「事前共有済み」を外す（入力した内容は残す）。
+            if (id === shareId) {
+              setShareId('');
+              setShareSnap('');
+              setZoomChoice(null);
+              setZoomAccountChoice('');
+              setShareErr('');
+              setShareMsg('事前共有を削除しました。もう一度出すときは［事前共有で報告する］を押してください。');
+            }
+          }}
         />
       )}
     </div>
