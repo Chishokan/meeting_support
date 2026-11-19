@@ -1530,6 +1530,13 @@ a.ai-source:hover { background: #e2ecf6; }
 .zoom-err { flex: 1 1 100%; font-size: 12px; color: #b3261e; line-height: 1.6; }
 .pre-actions { flex-wrap: wrap; justify-content: flex-end; }
 .dm-modal-foot .zoom-btn { padding: 9px 16px; font-size: 13px; border-radius: 8px; }
+/* 事前共有の削除（詳細のポップアップ） */
+.pre-delete {
+  padding: 10px 16px; font-size: 13px; color: #b3261e;
+  background: #fff; border: 1px solid #e6b8b4; border-radius: 8px; cursor: pointer;
+}
+.pre-delete:hover { background: #fdf1f0; }
+.pre-delete:disabled { opacity: .5; cursor: default; }
 .pre-modal .dm-modal-foot { flex-wrap: wrap; }
 /* 手順1：開催日時を日付・開始・終了から選ぶ */
 .dm-fields .dm-when { display: flex; gap: 6px; }

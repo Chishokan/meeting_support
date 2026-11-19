@@ -9,7 +9,7 @@ import { useState } from 'react';
 import type { PreshareRow } from '@/lib/deptMinutesPreshare';
 import { useModalDismiss } from '@/lib/useModalDismiss';
 import ZoomButtons from '@/components/ZoomButtons';
-import { formatMeetingId, zoomJoinHref } from '@/lib/zoom/link';
+import { formatMeetingId, zoomErrorText, zoomJoinHref } from '@/lib/zoom/link';
 
 // 更新日時は時刻まで見せる（会議の直前に直すことがあるため）。
 function fmtStamp(s: string) {
@@ -26,6 +26,7 @@ export default function PreshareDetail({
   onClose,
   onStart,
   onSaved,
+  onDeleted,
 }: {
   row: PreshareRow;
   when?: string; // 「今日」「明日」など（無ければ出さない）
@@ -35,6 +36,8 @@ export default function PreshareDetail({
   onStart?: () => void;
   // 渡されたときだけ議題を直せるようにする。保存できたら直したあとの行を返す。
   onSaved?: (next: PreshareRow) => void;
+  // 渡されたときだけ［削除］を出す（消せる人にだけ。row.canDelete）。消せたら事前共有IDを返す。
+  onDeleted?: (id: string) => void;
 }) {
   // 会議の直前に議題を足したいことがあるので、この場で直せるようにしている。
   // 全部門が見ているものを直すため、誰が直したかは必ず残す（更新日時・更新者）。
@@ -42,6 +45,7 @@ export default function PreshareDetail({
   const [text, setText] = useState(row.agenda);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
+  const [deleting, setDeleting] = useState(false);
   const dirty = editing && text.trim() !== row.agenda.trim();
 
   // 書きかけのまま閉じると消えてしまうので、そのときだけ確かめる。
@@ -94,6 +98,46 @@ export default function PreshareDetail({
       setErr('保存に失敗しました。通信状況をご確認ください。');
     } finally {
       setSaving(false);
+    }
+  }
+
+  // 事前共有の削除。間違えて作ったとき・会議が無くなったときに使う。元に戻せないので必ず確かめる。
+  async function remove() {
+    if (deleting) return;
+    const hasZoom = Boolean(row.zoomMeetingId);
+    const ask = `「${row.title || '（会議名なし）'}」の事前共有を削除します。\n`
+      + 'ダッシュボードから消え、元に戻せません。'
+      + (hasZoom ? '\nこの会議の Zoom ミーティングも削除します（参加URLは使えなくなります）。' : '')
+      + '\n\nよろしいですか？';
+    if (!confirm(ask)) return;
+    setErr('');
+    setDeleting(true);
+    try {
+      const res = await fetch('/api/dept-minutes/preshare', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: row.id }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) {
+        // Zoom だけ消せなかったとき：事前共有は消えているので、Zoom に残ったことだけ伝える。
+        if (j.zoom && !j.zoom.ok) {
+          alert(`事前共有は削除しましたが、Zoom ミーティングは削除できませんでした。\n${zoomErrorText(j.zoom.reason)}`);
+        }
+        onDeleted?.(row.id);
+        return;
+      }
+      setErr(
+        j?.reason === 'forbidden' ? '削除できるのは、その部門の方・事前共有した本人・管理部門の方です。'
+          : j?.reason === 'has_minutes' ? 'この会議は議事録を保存済みのため、事前共有は削除できません。'
+            : j?.reason === 'not_found' ? 'この事前共有は、すでに削除されています。画面を読み込み直してください。'
+              : j?.reason === 'gas_outdated' ? 'スプレッドシート側の設定が古いため削除できません。管理者にご連絡ください。'
+                : '削除に失敗しました。時間をおいてお試しください。',
+      );
+    } catch {
+      setErr('削除に失敗しました。通信状況をご確認ください。');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -170,7 +214,10 @@ export default function PreshareDetail({
                 {err && <p className="dm-note err">{err}</p>}
               </>
             ) : (
-              <pre className="dm-modal-text pre-agenda">{row.agenda || '（議題が登録されていません）'}</pre>
+              <>
+                <pre className="dm-modal-text pre-agenda">{row.agenda || '（議題が登録されていません）'}</pre>
+                {err && <p className="dm-note err">{err}</p>}
+              </>
             )}
           </div>
         </div>
@@ -216,9 +263,15 @@ export default function PreshareDetail({
           >
             コピー
           </button>
+          {/* 消せる人（その部門・事前共有した本人・管理部門）にだけ出す */}
+          {onDeleted && row.canDelete && (
+            <button className="pre-delete" onClick={() => void remove()} disabled={deleting}>
+              {deleting ? '削除中…' : '削除'}
+            </button>
+          )}
             </>
           )}
-          <button className="dm-modal-done" onClick={close} disabled={saving}>閉じる</button>
+          <button className="dm-modal-done" onClick={close} disabled={saving || deleting}>閉じる</button>
         </div>
       </div>
     </div>
