@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   agendaPreview,
+  canDeletePreshare,
   buildNextAgenda,
   meetingDay,
   nextMeetingDate,
@@ -164,4 +165,27 @@ test('agendaPreview: ふつうの議題・レジュメは先頭から（記号�
     agendaPreview('1. 9月度 実績報告\n   (1) 生徒数・前年比\n2. 中間テスト対策\n3. 冬期講習'),
     ['9月度 実績報告', '(1) 生徒数・前年比', '中間テスト対策'],
   );
+});
+
+// ---- 削除できる人 ----
+const ADMIN = '総務・人事・支援・管理';
+const target = { campus: '小中等部', user: '直江', minutesId: '' };
+
+test('その部門の人・事前共有した本人・管理部門は削除できる', () => {
+  assert.equal(canDeletePreshare({ name: '太田', campus: '小中等部' }, target, ADMIN), true);
+  assert.equal(canDeletePreshare({ name: '直江', campus: 'RED個別' }, target, ADMIN), true);
+  assert.equal(canDeletePreshare({ name: '安藤', campus: ADMIN }, target, ADMIN), true);
+});
+
+test('ほかの部門の人は削除できない', () => {
+  assert.equal(canDeletePreshare({ name: '福元', campus: 'RED個別' }, target, ADMIN), false);
+  assert.equal(canDeletePreshare(null, target, ADMIN), false);
+  // 共有者の名前が空の行は、名前が空の人と一致させない。
+  assert.equal(canDeletePreshare({ name: '', campus: 'RED個別' }, { ...target, user: '' }, ADMIN), false);
+});
+
+test('議事録を保存済みの事前共有は、誰も削除できない', () => {
+  const done = { ...target, minutesId: 'm-1' };
+  assert.equal(canDeletePreshare({ name: '直江', campus: '小中等部' }, done, ADMIN), false);
+  assert.equal(canDeletePreshare({ name: '安藤', campus: ADMIN }, done, ADMIN), false);
 });

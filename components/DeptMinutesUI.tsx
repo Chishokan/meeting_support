@@ -7,6 +7,11 @@ import { extractDecisions, extractMinutes, extractSection, summarizeSection } fr
 import MinutesDetail from '@/components/MinutesDetail';
 import PreshareDetail from '@/components/PreshareDetail';
 import PreshareList from '@/components/PreshareList';
+import ZoomButtons from '@/components/ZoomButtons';
+import ZoomMinutesBox from '@/components/ZoomMinutesBox';
+import AttendeePicker from '@/components/AttendeePicker';
+import { zoomErrorText } from '@/lib/zoom/link';
+import { formatSchedule, parseSchedule, splitSchedule } from '@/lib/zoom/schedule';
 import {
   DRAFT_KEY as STORE_KEY,
   draftForNext,
@@ -23,6 +28,8 @@ import {
   type PreshareRow,
 } from '@/lib/deptMinutesPreshare';
 import type { DecisionRow, MinutesRow } from '@/app/api/dept-minutes/list/route';
+import type { AgendaCandidate } from '@/app/api/dept-minutes/agenda/route';
+import { agendaLine, mergeAddedAgenda } from '@/lib/chishokanAi/meetingRecords';
 
 // 録音は1区間ずつ独立したファイルにして、会議中から順に文字起こししていく。
 // 会議が終わった時点でほぼ文字起こしが終わっている状態にするための作り。
@@ -262,6 +269,15 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [shareMsg, setShareMsg] = useState('');
   const [shareErr, setShareErr] = useState('');
   const [preshares, setPreshares] = useState<PreshareRow[]>([]);
+  // ---- Zoom連携（事前共有を出すときに Zoom ミーティングを作る） ----
+  // 使える Zoom アカウント（公式1・公式2）。接続情報が未設定なら空で、Zoom の欄は画面に出ない。
+  const [zoomAccounts, setZoomAccounts] = useState<{ id: string; label: string }[]>([]);
+  const [zoomDefault, setZoomDefault] = useState('');
+  // 自分で選んだときだけ値が入る（null・'' のあいだは、事前共有済みの内容か部門の既定に従う）。
+  const [zoomChoice, setZoomChoice] = useState<boolean | null>(null);
+  const [zoomAccountChoice, setZoomAccountChoice] = useState('');
+  // 智翔館AI から足された、この部門の「議題の候補」（事前共有がまだ無かったときに足されたもの）
+  const [agendaCands, setAgendaCands] = useState<AgendaCandidate[]>([]);
   const [openPreshare, setOpenPreshare] = useState<{ row: PreshareRow; when: string } | null>(null);
 
   const streamRef = useRef<MediaStream | null>(null);
@@ -418,8 +434,26 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       if (jm?.ok && Array.isArray(jm.items)) setMeetings(jm.items as MinutesRow[]);
       const jp = preRes ? await preRes.json().catch(() => ({})) : {};
       if (jp?.ok && Array.isArray(jp.items)) setPreshares(jp.items as PreshareRow[]);
+      if (jp?.ok && Array.isArray(jp.zoom?.accounts)) {
+        setZoomAccounts(jp.zoom.accounts as { id: string; label: string }[]);
+        setZoomDefault(String(jp.zoom.defaultAccount ?? ''));
+      }
+      const ca = await fetch(`/api/dept-minutes/agenda?campus=${encodeURIComponent(campus)}`).then((r) => r.json()).catch(() => null);
+      if (ca?.ok && Array.isArray(ca.items)) setAgendaCands(ca.items as AgendaCandidate[]);
     } catch {}
-  }, []);
+  }, [campus]);
+
+  // 議題の候補を、手順1の議題に入れる（入れた候補には「取り込み済み」の印を付ける）
+  async function takeAgendaCands() {
+    if (!agendaCands.length) return;
+    // 足した日（「2026/11/18 10:00」→「11/18」）
+    const stamp = (ts: string) => { const m = ts.match(/\d{4}\D(\d{1,2})\D(\d{1,2})/); return m ? `${Number(m[1])}/${Number(m[2])}` : ''; };
+    const lines = agendaCands.map((c) => agendaLine(c.item, c.detail, c.user, stamp(c.ts)));
+    setMeta((m) => ({ ...m, agenda: `${m.agenda.replace(/\s+$/, '')}${m.agenda.trim() ? '\n' : ''}${lines.join('\n')}` }));
+    const ids = agendaCands.map((c) => c.id);
+    setAgendaCands([]);
+    await fetch('/api/dept-minutes/agenda', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) }).catch(() => null);
+  }
 
   useEffect(() => {
     void loadSaved();
@@ -794,21 +828,54 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       setShareErr(`${missing.join('・')}を入れてから事前共有してください。`);
       return;
     }
+    // Zoom ミーティングを作るには開始日時が要る。読めない書き方のまま送ると、事前共有だけ出て Zoom が作られない。
+    if (zoomOn && !parseSchedule(meta.date, localDay())) {
+      setShareMsg('');
+      setShareErr(zoomErrorText('bad_date'));
+      return;
+    }
     setSharing(true);
     setShareMsg('');
     setShareErr('');
     try {
+      // 事前共有を更新するときは、そのあいだに智翔館AI などから足された議題（・【追加】…）を手元の議題に足してから送る
+      //（手元の古い議題で上書きして、足された議題を消さないように）
+      let sending = meta;
+      if (shareId) {
+        const cur = await fetch('/api/dept-minutes/preshare').then((r) => r.json()).catch(() => null);
+        const row = Array.isArray(cur?.items) ? (cur.items as PreshareRow[]).find((r) => r.id === shareId) : undefined;
+        if (row) {
+          const merged = mergeAddedAgenda(meta.agenda, row.agenda);
+          if (merged !== meta.agenda) {
+            sending = { ...meta, agenda: merged };
+            setMeta(sending);
+          }
+        }
+      }
       const res = await fetch('/api/dept-minutes/preshare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: shareId, meta }),
+        body: JSON.stringify({
+          id: shareId,
+          meta: sending,
+          ...(zoomOn ? { zoom: { create: true, account: zoomAccount } } : {}),
+        }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) {
         setShareId(String(j.id));
-        setShareSnap(metaKey(meta));
+        setShareSnap(metaKey(sending));
         // どこに載ったかはボタンの横の文で伝えているので、ここは結果だけを短く出す。
-        setShareMsg(j.updated ? '事前共有を更新しました。' : '事前共有しました。');
+        const base = j.updated ? '事前共有を更新しました。' : '事前共有しました。';
+        const label = zoomAccounts.find((a) => a.id === j.zoom?.account)?.label ?? '';
+        const zoomMsg = !j.zoom?.ok
+          ? ''
+          : j.zoom.action === 'created'
+            ? ` Zoom ミーティングを作りました${label ? `（${label}）` : ''}。`
+            : ' Zoom ミーティングの会議名・日時もそろえました。';
+        setShareMsg(base + zoomMsg);
+        // Zoom だけ失敗したとき：事前共有は出ているので、Zoom の理由だけを出す。
+        if (j.zoom && !j.zoom.ok) setShareErr(zoomErrorText(j.zoom.reason));
         void loadSaved();
       } else if (j?.reason === 'not_configured') {
         setShareErr('スプレッドシート連携が未設定のため、事前共有できません。管理者にご連絡ください。');
@@ -839,6 +906,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     setInstruction('');
     setShareId(d.preshareId ?? '');
     setShareSnap(d.preshareSnap ?? '');
+    setZoomChoice(null);
+    setZoomAccountChoice('');
     setOpenPreshare(null);
     setOpenMeeting(null);
     setNote('');
@@ -867,6 +936,23 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
       draftFromPreshare(row),
       '事前共有の会議を読み込みました。手順2で音声を取り込んでください。議事録を保存すると、この事前共有に結び付きます。',
     );
+  }
+
+  // Zoom の録画から作った文字起こしと議事録の下書きを、手順2・3に読み込む（components/ZoomMinutesBox.tsx）。
+  function loadFromRecording(text: string, minutes: string, sourceText: string): boolean {
+    if (recording || busyTranscribe || generating || saving) return false;
+    if ((transcript.trim() || draft.trim()) && !confirm('いまの文字起こし・議事録を、録画から作った下書きに置き換えますか？')) return false;
+    queueRef.current = [];
+    setQueued(0);
+    setFailedSegs(0);
+    setLastRun(null);
+    setTranscript(text);
+    setDraft(minutes);
+    setInstruction('');
+    setErr('');
+    setWarn('');
+    setNote(`Zoom の録画から議事録の下書きを作りました（文字起こし：${sourceText || '録画'}）。内容を確認し、必要なら直してから保存してください。`);
+    return true;
   }
 
   // 部門会議のループ：保存した議事録から次回の会議の下書きを作り、手順1に読み込む。
@@ -966,6 +1052,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     setInstruction('');
     setShareId('');
     setShareSnap('');
+    setZoomChoice(null);
+    setZoomAccountChoice('');
     setShareMsg('');
     setShareErr('');
     setNote('');
@@ -975,6 +1063,35 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
 
   const set = (k: keyof Meta) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setMeta((m) => ({ ...m, [k]: e.target.value }));
+
+  // ---- 開催日時を、日付・開始・終了から選ぶ ----
+  // 開催日時は自由に書ける欄のままにしてある（「9/10(木) 18時〜」のような書き方も残せるように）。
+  // 下の3つの入力は、その欄を「2026/11/25 13:00〜14:00」の形で書き直すための補助。
+  // Zoom ミーティングの開始日時もこの欄から読むので、選んで入れると読み違いが起きない。
+  const today = localDay();
+  const when = splitSchedule(meta.date, today);
+  const setWhen = (part: Partial<typeof when>) => {
+    // 日付を消したときは、欄ごと空にする。
+    if (part.day === '') {
+      setMeta((m) => ({ ...m, date: '' }));
+      return;
+    }
+    const next = { ...when, ...part };
+    // 時刻を先に選んだときは、日付を今日にしておく。
+    setMeta((m) => ({ ...m, date: formatSchedule(next.day || today, next.start, next.end) }));
+  };
+
+  // ---- Zoom連携 ----
+  // いま手順1に開いている会議の事前共有（事前共有済みのときだけ）。
+  const shareRow = shareId ? preshares.find((r) => r.id === shareId) : undefined;
+  const zoomReady = zoomAccounts.length > 0;
+  // 既定：新しい会議では作る。事前共有済みの会議では、そのとき作ったかどうかに合わせる。
+  const zoomOn = zoomReady && (zoomChoice ?? (shareRow ? Boolean(shareRow.zoomMeetingId) : true));
+  const zoomWanted = zoomAccountChoice || shareRow?.zoomAccount || zoomDefault;
+  const zoomAccount = zoomAccounts.some((a) => a.id === zoomWanted) ? zoomWanted : zoomDefault;
+  // 事前共有は済んでいるが、Zoom ミーティングがまだ無い（または別のアカウントで作り直す）。
+  const zoomPending = zoomOn && Boolean(shareRow)
+    && (!shareRow?.zoomMeetingId || shareRow.zoomAccount !== zoomAccount);
 
   // 音声の読み込み中は区間数がまだ決まっていないので、phase も見て「処理中」と判断する
   //（ここを落とすと、1時間の音声の読み込み中だけ画面が無反応に見える）。
@@ -1059,15 +1176,29 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
               <label>
                 <span>開催日時</span>
                 <input value={meta.date} onChange={set('date')} placeholder="例：2026/9/10 18:00〜19:00" />
+                {/* 日付・開始・終了から選ぶと、上の欄に「2026/9/10 18:00〜19:00」の形で入る */}
+                <div className="dm-when">
+                  <input type="date" aria-label="開催日" value={when.day} onChange={(e) => setWhen({ day: e.target.value })} />
+                  <input type="time" aria-label="開始時刻" step={300} value={when.start} onChange={(e) => setWhen({ start: e.target.value })} />
+                  <input
+                    type="time" aria-label="終了時刻" step={300} value={when.end} disabled={!when.start}
+                    onChange={(e) => setWhen({ end: e.target.value })}
+                  />
+                </div>
               </label>
               <label>
                 <span>場所</span>
                 <input value={meta.place} onChange={set('place')} placeholder="例：本部会議室 / オンライン" />
               </label>
-              <label className="wide">
+              {/* 出席者は、部門を選んで名前にチェックを入れる（components/AttendeePicker.tsx） */}
+              <div className="wide dm-att-field">
                 <span>出席者</span>
-                <input value={meta.attendees} onChange={set('attendees')} placeholder="例：直江、安東、池田、山中" />
-              </label>
+                <AttendeePicker
+                  value={meta.attendees}
+                  onChange={(v) => setMeta((m) => ({ ...m, attendees: v }))}
+                  campus={campus}
+                />
+              </div>
               <label className="wide">
                 <span>予定していた議題、または会議のレジュメ（任意）</span>
                 <textarea
@@ -1082,6 +1213,21 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                 />
               </label>
             </div>
+            {agendaCands.length > 0 && (
+              <div className="dm-agenda-cands">
+                <div className="dm-agenda-cands-title">💡 智翔館AI から足された議題の候補（{agendaCands.length}件）</div>
+                <ul>
+                  {agendaCands.map((c) => (
+                    <li key={c.id}>
+                      {c.item}
+                      {c.detail ? `（${c.detail}）` : ''}
+                      <span className="dm-agenda-cands-by">〔{c.user} {c.ts.slice(0, 10)}〕</span>
+                    </li>
+                  ))}
+                </ul>
+                <button type="button" onClick={() => void takeAgendaCands()}>議題に入れる</button>
+              </div>
+            )}
             <p className="dm-hint">
               入れておくと、「予定どおり進んだか」「話し合えなかった議題はどれか」まで議事録に出ます。
               レジュメを貼った場合は、その見出しをそのまま議題名に使います。
@@ -1108,12 +1254,35 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
             )}
 
             {showShare && (
-              <div className={`dm-share ${shareId && !shareDirty ? 'done' : ''}`}>
+              <div className={`dm-share ${shareId && !shareDirty && !zoomPending ? 'done' : ''}`}>
+                {/* Zoom 連携が設定されているときだけ出す（Vercel の ZOOM_1_… / ZOOM_2_…） */}
+                {zoomReady && (
+                  <div className="dm-zoom">
+                    <label className="dm-zoom-check">
+                      <input type="checkbox" checked={zoomOn} onChange={(e) => setZoomChoice(e.target.checked)} />
+                      Zoom ミーティングも作る
+                    </label>
+                    {zoomOn && zoomAccounts.length > 1 && (
+                      <select
+                        aria-label="使う Zoom アカウント"
+                        value={zoomAccount}
+                        onChange={(e) => setZoomAccountChoice(e.target.value)}
+                      >
+                        {zoomAccounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+                      </select>
+                    )}
+                    <span className="dm-zoom-text">
+                      {zoomOn
+                        ? '開催日時の開始時刻で Zoom ミーティングを作り、事前共有のカードに［Zoomに参加］を出します（クラウド録画は自動で始まります）。'
+                        : '対面だけの会議など、Zoom を使わないときはこのままで構いません。'}
+                    </span>
+                  </div>
+                )}
                 <div className="dm-share-row">
                   <button
                     className="dm-share-btn"
                     onClick={() => void preshare()}
-                    disabled={sharing || (Boolean(shareId) && !shareDirty)}
+                    disabled={sharing || (Boolean(shareId) && !shareDirty && !zoomPending)}
                   >
                     {sharing
                       ? '送信中…'
@@ -1121,15 +1290,21 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                         ? '事前共有で報告する'
                         : shareDirty
                           ? '事前共有を更新する'
-                          : '✓ 事前共有済み'}
+                          : zoomPending
+                            ? 'Zoom ミーティングを作る'
+                            : '✓ 事前共有済み'}
                   </button>
                   <span className="dm-share-text">
                     {!shareId
                       ? '会議の前に押すと、会議名・日時・場所・出席者・議題（レジュメ）がダッシュボードに載り、全部門が見ながら会議を進められます。'
                       : shareDirty
                         ? '事前共有のあとで会議の情報を直しました。［事前共有を更新する］を押すと、ダッシュボードにも反映されます。'
-                        : 'ダッシュボードの「部門会議の事前共有」に載っています。議事録を保存すると、そこから外れて「直近の議事録」に移ります。'}
+                        : zoomPending
+                          ? '事前共有は済んでいます。左のボタンを押すと、この会議の Zoom ミーティングを作ってカードに載せます。'
+                          : 'ダッシュボードの「部門会議の事前共有」に載っています。議事録を保存すると、そこから外れて「直近の議事録」に移ります。'}
                   </span>
+                  {/* この会議の Zoom（作ってあるときだけ） */}
+                  {shareRow && <ZoomButtons row={shareRow} />}
                 </div>
                 {shareMsg && <p className="dm-note ok">{shareMsg}</p>}
                 {shareErr && <p className="dm-note err">{shareErr}</p>}
@@ -1140,6 +1315,15 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           {/* ---------- 2. 音声 → 文字起こし ---------- */}
           <section className="dm-step" id="dm-step-2">
             <h2><span className="dm-num">2</span>会議の音声を取り込む</h2>
+
+            {/* Zoom ミーティングで開いた会議は、録画からそのまま議事録の下書きを作れる */}
+            {shareRow?.zoomMeetingId && shareRow.canRecord && !editingId && (
+              <ZoomMinutesBox
+                row={shareRow}
+                disabled={recording || busyTranscribe || generating || saving}
+                onLoad={loadFromRecording}
+              />
+            )}
 
             {configured === false && (
               <p className="dm-warn">
@@ -1598,6 +1782,10 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           me={name}
           onClose={() => setOpenPreshare(null)}
           onStart={openPreshare.row.id === shareId ? undefined : () => loadPreshare(openPreshare.row)}
+          onConfirmed={(next) => {
+            setPreshares((rows) => rows.map((r) => (r.id === next.id ? next : r)));
+            setOpenPreshare((o) => (o ? { ...o, row: next } : o));
+          }}
           onSaved={(next) => {
             setPreshares((rows) => rows.map((r) => (r.id === next.id ? next : r)));
             setOpenPreshare((o) => (o ? { ...o, row: next } : o));
@@ -1605,6 +1793,19 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
             if (next.id === shareId) {
               setMeta((m) => ({ ...m, agenda: next.agenda }));
               setShareSnap(metaKey({ ...meta, agenda: next.agenda }));
+            }
+          }}
+          onDeleted={(id) => {
+            setPreshares((rows) => rows.filter((r) => r.id !== id));
+            setOpenPreshare(null);
+            // いま手順1に読み込んでいる会議を消したときは、「事前共有済み」を外す（入力した内容は残す）。
+            if (id === shareId) {
+              setShareId('');
+              setShareSnap('');
+              setZoomChoice(null);
+              setZoomAccountChoice('');
+              setShareErr('');
+              setShareMsg('事前共有を削除しました。もう一度出すときは［事前共有で報告する］を押してください。');
             }
           }}
         />

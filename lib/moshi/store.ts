@@ -23,12 +23,12 @@ export type MoshiData = { exams: MoshiExam[]; results: MoshiResult[]; kenitsu: K
 export type Fail = { ok: false; reason: string };
 
 // 画面から送る「変えた項目」の名前 → シートの見出し
-export type ResultField = 'campus' | 'examNo' | 'name' | 'gender' | 'choices' | 'comment' | SubjectKey;
-export const RESULT_FIELDS: ResultField[] = ['campus', 'examNo', 'name', 'gender', 'choices', 'comment', ...SUBJECT_KEYS];
+export type ResultField = 'campus' | 'examNo' | 'name' | 'gender' | 'choices' | 'comment' | 'absent' | SubjectKey;
+export const RESULT_FIELDS: ResultField[] = ['campus', 'examNo', 'name', 'gender', 'choices', 'comment', 'absent', ...SUBJECT_KEYS];
 
 const CHOICE_HEADERS = ['第一志望', '第二志望', '第三志望', '第四志望'];
 const FIELD_HEADERS: Record<ResultField, string[]> = {
-  campus: ['校舎'], examNo: ['受験番号'], name: ['氏名'], gender: ['性別'], choices: CHOICE_HEADERS, comment: ['コメント'],
+  campus: ['校舎'], examNo: ['受験番号'], name: ['氏名'], gender: ['性別'], choices: CHOICE_HEADERS, comment: ['コメント'], absent: ['受験しない'],
   ja: ['国語'], en: ['英語'], ma: ['数学'], so: ['社会'], sc: ['理科'],
 };
 
@@ -129,6 +129,7 @@ export function resultFromSheet(o: Record<string, unknown>, exam: MoshiExam | un
     choices: CHOICE_HEADERS.map((h) => String(o[h] ?? '')),
     scores,
     comment: String(o['コメント'] ?? ''),
+    absent: String(o['受験しない'] ?? '').trim() === '1',
     createdAt: String(o['作成日時'] ?? ''), createdBy: String(o['作成者'] ?? ''),
     updatedAt: String(o['更新日時'] ?? ''), updatedBy: String(o['更新者'] ?? ''),
   };
@@ -137,6 +138,7 @@ export function resultFromSheet(o: Record<string, unknown>, exam: MoshiExam | un
 function resultToSheet(r: ResultInput): Record<string, string> {
   const o: Record<string, string> = {
     ID: r.id, 模試ID: r.examId, 校舎: r.campus, 受験番号: r.examNo, 氏名: r.name, 性別: r.gender, コメント: r.comment,
+    受験しない: r.absent ? '1' : '',
   };
   CHOICE_HEADERS.forEach((h, i) => { o[h] = r.choices[i] ?? ''; });
   for (const k of SUBJECT_KEYS) o[SUBJECT_NAMES[k]] = scoresToCell(r.scores[k] ?? []);
@@ -249,6 +251,12 @@ export async function saveResults(exam: MoshiExam, rows: SaveRow[], user: string
   }));
   const j = await callGas({ action: 'saveMoshiResults', user, rows: payload });
   if (!j.ok || !Array.isArray(j.items)) return { ok: false, reason: j.reason || 'upstream_error' };
+  // 「受験しない」列の無い古い Apps Script（seiseki.gs）は、この項目を黙って捨てる。捨てられたら知らせる
+  const touchesAbsent = rows.some(({ fields }) => !fields || fields.includes('absent'));
+  if (touchesAbsent && (j.items as Record<string, unknown>[]).some((o) => !('受験しない' in o))) {
+    const wanted = rows.some(({ value, fields }) => value.absent && (!fields || fields.includes('absent')));
+    if (wanted) return { ok: false, reason: 'need_script_update' };
+  }
   return { ok: true, items: (j.items as Record<string, unknown>[]).map((o) => resultFromSheet(o, exam)) };
 }
 

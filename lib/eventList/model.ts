@@ -1,7 +1,7 @@
 // イベント申込管理（/event）の決まりと計算。画面・API・テストから使う（ここは import を持たない＝ npm test でそのまま動く）。
 //
 //   名簿（Student）       … 名簿のスプレッドシートの1行＝生徒1人。夢・志／志望校から「重点」を見分ける
-//   声掛けの記録（Track） … 生徒1人につき1行。チラシ・声掛け・反応・保護者への案内・手入力の申込・メモ
+//   声掛けの記録（Track） … 生徒1人につき1行。チラシ・声掛け・反応・保護者への案内・メモ（申込は入れない。フォームの回答だけで決まる）
 //   申込（Application）   … Google フォームの回答1件。氏名（＋校舎）で名簿の生徒に結び付ける
 //   StudentRow            … 上の3つを合わせた、画面の1行（次にすること・段階つき）
 //
@@ -35,7 +35,6 @@ export type Track = {
   talk: string;      // 声を掛けた日
   reaction: Reaction;
   parent: string;    // 保護者へ案内した日
-  applied: string;   // 手入力の申込（'1'＝申込済。フォームの回答と結べないとき・口頭や紙の申込）
   link: string;      // 名簿外になった申込を、この生徒に結び付けたときの申込ID（複数は改行で区切る）
   priority: string;  // 重点の手入力（''＝自動、'1'＝重点にする、'0'＝重点から外す）
   memo: string;
@@ -43,8 +42,9 @@ export type Track = {
   updatedBy: string;
 };
 
-export type TrackField = 'flyer' | 'talk' | 'reaction' | 'parent' | 'applied' | 'link' | 'priority' | 'memo';
-export const TRACK_FIELDS: TrackField[] = ['flyer', 'talk', 'reaction', 'parent', 'applied', 'link', 'priority', 'memo'];
+// ★申込は Google フォームの回答だけで決める（手で「申込済」にする項目は v1.13.0 で外した。シートの「申込」の列は読まない）
+export type TrackField = 'flyer' | 'talk' | 'reaction' | 'parent' | 'link' | 'priority' | 'memo';
+export const TRACK_FIELDS: TrackField[] = ['flyer', 'talk', 'reaction', 'parent', 'link', 'priority', 'memo'];
 
 export type Application = {
   id: string;          // 「回答日時|氏名（空白なし）」
@@ -76,7 +76,7 @@ export type StudentRow = {
   track: Track;
   priority: PriorityKind;
   apps: Application[];       // この生徒に結び付いた申込
-  studentApplied: boolean;   // 生徒の申込（フォーム or 手入力）
+  studentApplied: boolean;   // 生徒の申込（フォーム）
   parentApplied: boolean;    // 保護者・同伴の方の申込（フォーム）
   companions: number;        // 一緒に参加する方の人数
   stage: Stage;
@@ -122,7 +122,7 @@ export function linkIds(v: unknown): string[] {
 }
 
 export function emptyTrack(key: string): Track {
-  return { key, flyer: '', talk: '', reaction: '', parent: '', applied: '', link: '', priority: '', memo: '', updatedAt: '', updatedBy: '' };
+  return { key, flyer: '', talk: '', reaction: '', parent: '', link: '', priority: '', memo: '', updatedAt: '', updatedBy: '' };
 }
 
 /** 保存する値を整える（知らない項目・形の違う値は捨てる）。 */
@@ -134,7 +134,6 @@ export function cleanTrackFields(input: unknown): Partial<Record<TrackField, str
     if (!(f in o)) continue;
     if (f === 'flyer' || f === 'talk' || f === 'parent') out[f] = day(o[f]);
     else if (f === 'reaction') out[f] = (REACTIONS as string[]).includes(s(o[f])) ? s(o[f]) : '';
-    else if (f === 'applied') out[f] = s(o[f]) === '1' ? '1' : '';
     else if (f === 'priority') out[f] = ['1', '0'].includes(s(o[f])) ? s(o[f]) : '';
     else if (f === 'link') out[f] = linkIds(o[f]).join('\n').slice(0, 1000);
     else out[f] = s(o[f]).slice(0, 500);
@@ -173,7 +172,7 @@ export function trackFromSheet(o: Record<string, unknown>): Track {
     key: s(o['生徒キー']),
     flyer: sheetDay(o['チラシ']), talk: sheetDay(o['声掛け']),
     reaction: ((REACTIONS as string[]).includes(r) ? r : '') as Reaction,
-    parent: sheetDay(o['保護者案内']), applied: s(o['申込']) === '1' ? '1' : '', link: s(o['申込ひも付け']),
+    parent: sheetDay(o['保護者案内']), link: s(o['申込ひも付け']),
     priority: ['1', '0'].includes(s(o['重点'])) ? s(o['重点']) : '', memo: s(o['メモ']),
     updatedAt: s(o['更新日時']), updatedBy: s(o['更新者']),
   };
@@ -181,7 +180,7 @@ export function trackFromSheet(o: Record<string, unknown>): Track {
 
 // 画面の項目名 → シートの見出し（apps_script/event.gs の EVENT_TRACK_HEADERS と同じ名前）
 export const TRACK_HEADERS: Record<TrackField, string> = {
-  flyer: 'チラシ', talk: '声掛け', reaction: '反応', parent: '保護者案内', applied: '申込', link: '申込ひも付け', priority: '重点', memo: 'メモ',
+  flyer: 'チラシ', talk: '声掛け', reaction: '反応', parent: '保護者案内', link: '申込ひも付け', priority: '重点', memo: 'メモ',
 };
 
 // ---- 名簿 -----------------------------------------------------------------
@@ -451,7 +450,7 @@ export function buildRows(students: Student[], tracks: Track[], apps: Applicatio
   const rows = students.map((student) => {
     const track = tmap.get(student.key) ?? emptyTrack(student.key);
     const mine = byStudent.get(student.key) ?? [];
-    const studentApplied = track.applied === '1' || mine.some((a) => a.student);
+    const studentApplied = mine.some((a) => a.student);
     const parentApplied = mine.some((a) => a.parent);
     const priority = effectivePriority(student, track, words);
     const stage = stageOf(track, studentApplied || parentApplied);

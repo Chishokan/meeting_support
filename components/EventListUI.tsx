@@ -4,10 +4,10 @@
 //   校舎ごとの進み具合 … 管理部門だけに出るタブ。校舎ごとの チラシ配布・声掛け・申込・重点（薬剤師・医療系）の進み具合
 //   声掛け名簿         … 教室担当向け。生徒ごとの「次にすること」。チラシ・声掛け・反応・保護者への案内をその場で記録する
 //   名簿外の申込       … フォームの回答のうち、名簿の誰とも結び付かなかったもの（RED個別・高校生・外部生・氏名の書き方が違う人）
-//   部門               … 小中等部・RED個別の職員には、自分の部門の生徒だけが届く（API で絞る）。管理部門は全部門を見て、上の切り替えで部門を選べる
+//   部門               … 小中等部・RED個別・高等部の職員には、自分の部門の生徒だけが届く（API で絞る）。管理部門は全部門を見て、上の切り替えで部門を選べる
 //   一括で記録         … 声掛け名簿の［一括で記録］。表示中の生徒をチェックボックスで選び、チラシ配布済み・声掛け済みなどをまとめて記録する
 //   生徒の追加         … 名簿に無い生徒を足す（声掛け名簿の［＋ 生徒を追加］、名簿外の申込の［名簿に足す］）。足した生徒は直す・外すができる
-// 申込は Google フォームの回答を氏名で名簿に結び付けて出す（手入力の申込も付けられる）。
+// 申込は Google フォームの回答を氏名で名簿に結び付けて出すだけ（画面からは申込を入れない。申込の状況を見る）。
 // 決まりと計算は lib/eventList/model.ts、イベントの中身は lib/eventList/event.ts、読み書きは lib/eventList/store.ts。
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -274,8 +274,8 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
       {state.formStatus !== 'ok' && (
         <p className="ev-warn">
           {state.formStatus === 'not_set'
-            ? '申込フォームの回答はまだつながっていません（Apps Script の FORM_BOOK_ID が未設定）。いまは手入力の申込だけを数えています。'
-            : '申込フォームの回答のスプレッドシートを開けませんでした。いまは手入力の申込だけを数えています。管理者に伝えてください。'}
+            ? '申込フォームの回答はまだつながっていません（Apps Script の FORM_BOOK_ID が未設定）。申込の状況はまだ出ません。'
+            : '申込フォームの回答のスプレッドシートを開けませんでした。申込の状況が出ていません。管理者に伝えてください。'}
         </p>
       )}
       {state.backend === 'local' && <p className="ev-warn">手元の開発用データ（架空の名簿）を表示しています。</p>}
@@ -475,7 +475,11 @@ function CampusList({
   q: string; onQ: (v: string) => void; onSave: (c: Change[]) => void; marks: SaveMarks; onDetail: (app: Application, row: StudentRow) => void;
   onAdd: () => void; onEdit: (st: Student) => void;
 }) {
-  const grades = useMemo(() => GRADES.filter((g) => rows.some((r) => r.student.grade === g)), [rows]);
+  // 学年の選択肢：小1〜高3 の順。それ以外の書き方（高等部の「本科」など）は後ろに足す
+  const grades = useMemo(() => {
+    const have = new Set(rows.map((r) => r.student.grade).filter(Boolean));
+    return [...GRADES.filter((g) => have.has(g)), ...[...have].filter((g) => !GRADES.includes(g))];
+  }, [rows]);
   const scoped = rows.filter((r) => !grade || r.student.grade === grade);
   const test = FILTERS.find((f) => f.key === filter)!.test;
   const key = q.replace(/\s/g, '');
@@ -485,7 +489,9 @@ function CampusList({
   const sig = `${scope}|${filter}|${sort}|${grade}|${key}|${tick}`;
   const frozen = useRef<{ sig: string; keys: string[] }>({ sig: '', keys: [] });
   if (frozen.current.sig !== sig) {
-    const list = sortRowsBy(scoped.filter(test).filter((r) => !key || r.student.name.replace(/\s/g, '').includes(key)), sort, campuses);
+    // 氏名で探すときは「表示する生徒」の絞り込みを外す（申込済の生徒は「することがある」に出ないので、探しても見つからず、
+    // 申込が反映されていないように見えるため）。校舎と学年はそのまま効かせる
+    const list = sortRowsBy(key ? scoped.filter((r) => r.student.name.replace(/\s/g, '').includes(key)) : scoped.filter(test), sort, campuses);
     frozen.current = { sig, keys: list.map((r) => r.student.key) };
   }
   const byKey = new Map(rows.map((r) => [r.student.key, r]));
@@ -528,6 +534,7 @@ function CampusList({
         <span className="ev-result" role="status">
           <b>{shown.length}</b>名を表示（{campus || 'すべての校舎'}：{rows.length}名）
           {scoped.filter((r) => r.urgent).length > 0 && <em>重点で未決 {scoped.filter((r) => r.urgent).length}名</em>}
+          {key && filter !== 'all' && <span className="ev-result-note">氏名で探すあいだは「表示する生徒」に関係なく、全員から探します</span>}
         </span>
         <span className="ev-spacer" />
         <button type="button" className="ev-btn ev-btn-sub" disabled={!shown.length || marks.pending.size > 0} onClick={() => setBulk(true)}>
@@ -539,7 +546,7 @@ function CampusList({
         <table className="ev-table ev-list">
           <thead>
             <tr>
-              <th>重点</th><th>生徒</th><th>夢・志／志望校</th><th>チラシ</th><th>声掛け</th><th>反応</th><th>保護者へ案内</th><th>申込</th>
+              <th>重点</th><th>生徒</th><th>夢・志／志望校</th><th>チラシ</th><th>声掛け</th><th>反応</th><th>保護者へ案内</th><th>申込（フォーム）</th>
               <th>次にすること</th><th>メモ</th>
             </tr>
           </thead>
@@ -551,8 +558,9 @@ function CampusList({
       </div>
       {bulk && <BulkDialog rows={shown} showCampus={showCampus} today={today} onRun={onSave} onClose={() => setBulk(false)} />}
       <p className="ev-hint">
-        チラシ・声掛け・保護者へ案内は、スイッチを押すとオンになり今日の日付が入ります（もう一度押すとオフ）。押した所に「保存中」が出て、保存できると ✓ が出ます。申込はフォームの回答から自動で付きます。
-        クラスで配ったあとなど、何人もまとめて付けるときは［一括で記録］を使ってください。口頭や紙で受けた申込は「手入力」で付けてください。★ を押すと、重点の付け外しができます。
+        チラシ・声掛け・保護者へ案内は、スイッチを押すとオンになり今日の日付が入ります（もう一度押すとオフ）。押した所に「保存中」が出て、保存できると ✓ が出ます。
+        クラスで配ったあとなど、何人もまとめて付けるときは［一括で記録］を使ってください。
+        申込は、チラシの QR コードのフォームから申し込まれると自動で「申込済」になります（画面からは入れません）。★ を押すと、重点の付け外しができます。
         記録を付けても行の並びはそのままです（上の「表示する生徒」「並び順」を選び直すか［最新にする］で並べ直します）。
       </p>
     </section>
@@ -736,15 +744,10 @@ function Row({ row, showCampus, today, onSave, marks, onDetail, onEdit }: {
         <div className="ev-apply">
           {row.apps.map((a) => (
             <button key={a.id} type="button" className="ev-badge ok" onClick={() => onDetail(a, row)} title="フォームの回答を見る">
-              {appLabel(a)}
+              申込済<small>{appLabel(a)}</small>
             </button>
           ))}
-          {(t.applied === '1' || !row.apps.length) && (
-            <Toggle
-              on={t.applied === '1'} label="手入力の申込（口頭・紙で受けた申込）" state={stateOf('applied')} onText="手入力" offText="手入力"
-              onToggle={() => set({ applied: t.applied === '1' ? '' : '1' })}
-            />
-          )}
+          {!row.apps.length && <span className="ev-noapply">未申込</span>}
         </div>
       </td>
       <td className="ev-todo">{row.todo || <span className={`ev-stage ${row.stage}`}>{STAGE_LABEL[row.stage]}</span>}</td>
@@ -806,7 +809,8 @@ function Outside({ apps, rows, campuses, onLink, onDetail, onAdd }: {
                 <td>{a.school}</td>
                 <td>{a.campus}</td>
                 <td>{appLabel(a)}</td>
-                <td className="ev-linker">
+                <td>
+                  <div className="ev-linker">
                   <select value={pick[a.id] ?? ''} onChange={(e) => setPick((p) => ({ ...p, [a.id]: e.target.value }))} aria-label="名簿の生徒">
                     <option value="">生徒を選ぶ</option>
                     {campuses.map((c) => (
@@ -821,10 +825,14 @@ function Outside({ apps, rows, campuses, onLink, onDetail, onAdd }: {
                     type="button" className="ev-btn" disabled={!pick[a.id]}
                     onClick={() => { const row = rows.find((r) => r.student.key === pick[a.id]); if (row) onLink(a, row); }}
                   >結び付ける</button>
+                  </div>
                 </td>
-                <td className="ev-linker">
-                  <button type="button" className="ev-btn" onClick={() => onAdd(a)}>名簿に足す</button>
-                  <button type="button" className="ev-btn ev-btn-sub" onClick={() => onDetail(a)}>回答を見る</button>
+                <td>
+                  {/* 表のマスそのものを横並び（flex）にすると表の形が崩れるので、中に入れ物を置く */}
+                  <div className="ev-linker">
+                    <button type="button" className="ev-btn" onClick={() => onAdd(a)}>名簿に足す</button>
+                    <button type="button" className="ev-btn ev-btn-sub" onClick={() => onDetail(a)}>回答を見る</button>
+                  </div>
                 </td>
               </tr>
             ))}

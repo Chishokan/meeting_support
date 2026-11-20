@@ -37,6 +37,7 @@ const MEETING_NAV: NavGroup[] = [
     items: [
       { href: '/task-report', label: '重要タスク報告', desc: '毎週｜マイルストーンの進み具合と改善・工夫', depts: ['小中等部'] },
       { href: '/task-coach', label: 'AI壁打ち', desc: '重要タスク評価をもとに行動計画を相談', depts: ['小中等部'] },
+      { href: '/task-eval', label: '重要タスク評価', desc: '毎週の評価を PDF でダウンロード', depts: ['小中等部'] },
     ],
   },
 ];

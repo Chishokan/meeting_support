@@ -22,7 +22,12 @@ export default function MoshiTicketUI({ name }: { name: string }) {
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
 
   const list = useMemo(
-    () => byExamNo(results.filter((r) => r.examId === examId && (!campus || r.campus === campus))),
+    () => byExamNo(results.filter((r) => r.examId === examId && !r.absent && (!campus || r.campus === campus))),
+    [results, examId, campus],
+  );
+  // 受験しない生徒（成績入力の名簿で［受験しない］）は受験票を作らない
+  const absentCount = useMemo(
+    () => results.filter((r) => r.examId === examId && r.absent && (!campus || r.campus === campus)).length,
     [results, examId, campus],
   );
   const chosen = list.filter((r) => !unchecked.has(r.id));
@@ -74,6 +79,7 @@ export default function MoshiTicketUI({ name }: { name: string }) {
         )}
         {noNames > 0 && <p className="ms-notice warn ms-noprint">氏名が入っていない人が {noNames}人います（氏名の欄は空いたまま出ます）。</p>}
         {!list.length && <p className="ms-note">この回の名簿がまだありません。「成績入力」で名簿を作ってください。</p>}
+        {absentCount > 0 && <p className="ms-fine ms-noprint">受験しない生徒 {absentCount}人は出していません（成績入力の「名簿・志望校」の［受験しない］で切り替えられます）。</p>}
 
         {list.length > 0 && (
           <div className="ms-ticket-pick ms-noprint">

@@ -35,6 +35,14 @@ const TIMEOUT_MS = 50000;
 // 画面はこの値を見て送信の間隔をあけるので、枠を上げたときはここも合わせて変える。
 const DEFAULT_RPM = 5;
 
+// 設定されているモデルと接続先。録画まるごとの文字起こし（lib/zoom/transcribeRecording.ts）も同じ設定を使う。
+export function geminiModel(): string {
+  return process.env.GEMINI_MODEL || DEFAULT_MODEL;
+}
+export function geminiBase(): string {
+  return process.env.GEMINI_API_URL || DEFAULT_BASE;
+}
+
 // キー1本あたり1分間に何回まで送ってよいか（環境変数 GEMINI_RPM で変更可）。
 // ★この上限は Google の「プロジェクト単位」なので、別アカウント（別プロジェクト）の
 //   キーを足すと、その本数ぶんだけ全体の上限が増える。
