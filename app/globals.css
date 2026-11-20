@@ -410,8 +410,6 @@ button.primary:disabled { opacity: .5; cursor: default; }
   flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; margin-top: 1px;
   border-radius: 50%; background: var(--navy); color: #fff; font-size: 12px;
 }
-.task-pct { display: flex; align-items: center; gap: 8px; font-size: 15px; }
-.task-pct input { width: 7em; font-variant-numeric: tabular-nums; }
 .task-q textarea {
   width: 100%; min-height: 7.5em; resize: vertical; padding: 10px 12px;
   font-size: 15px; line-height: 1.7; font-family: inherit;
@@ -428,6 +426,25 @@ button.primary:disabled { opacity: .5; cursor: default; }
 .task-done .task-done-sub { font-size: 13px; color: #667; margin-bottom: 14px; }
 .task-done button { color: var(--navy); background: #fff; border: 1px solid #cdd8e3; font-size: 13px; padding: 8px 18px; }
 @media (max-width: 620px) { .task-body { padding: 16px 16px 40px; } .task-q { padding: 12px 12px 14px; } }
+/* 重要タスク評価のダウンロード（/task-eval） */
+.teval { display: grid; gap: 14px; }
+.teval-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.teval-week { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
+.teval-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.teval-label { font-size: 15px; font-weight: 700; color: #2a2f36; }
+.teval-new { font-size: 11px; font-weight: 700; color: #fff; background: var(--navy); border-radius: 999px; padding: 2px 9px; }
+.teval-date { font-size: 12px; color: #8a94a0; margin-left: auto; }
+.teval-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.teval-actions button {
+  padding: 8px 16px; font-size: 13.5px; font-weight: 700; font-family: inherit; color: #fff;
+  background: var(--navy); border: 0; border-radius: 8px; cursor: pointer;
+}
+.teval-actions button:disabled { opacity: .5; cursor: default; }
+.teval-week .task-note { margin: 0; }
+.teval-empty { margin: 0; font-size: 14px; color: #667; }
+.teval-error { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; color: #c0392b; }
+.teval-error button { padding: 7px 14px; font-size: 13px; font-family: inherit; color: var(--navy); background: #fff; border: 1px solid #cdd8e3; border-radius: 8px; cursor: pointer; }
+@media (max-width: 620px) { .teval-week { padding: 12px; } .teval-date { margin-left: 0; } .teval-actions button { flex: 1 1 auto; } }
 
 /* ============ AI壁打ち（小中等部） ============ */
 .coach-body { padding: 20px 24px 48px; max-width: 820px; display: grid; gap: 14px; }
@@ -3717,6 +3734,66 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .dm-agenda-cands ul { margin: 4px 0 8px 18px; padding: 0; }
 .dm-agenda-cands-by { color: #7a848f; font-size: 12px; margin-left: 4px; }
 .dm-agenda-cands button { padding: 5px 12px; border-radius: 8px; border: 1px solid #1f5c99; background: #1f5c99; color: #fff; font-size: 13px; cursor: pointer; }
+
+/* 手順2：Zoom の録画から議事録をつくる（components/ZoomMinutesBox.tsx） */
+.dm-zoomrec {
+  margin: 0 0 16px; padding: 14px 16px; background: #f3f7ff; border: 1px solid #c9dafc; border-radius: 10px;
+}
+.dm-zoomrec-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 10px; }
+.dm-zoomrec-head strong { font-size: 14px; color: var(--navy); }
+.dm-zoomrec-head span { font-size: 12px; color: #5a6b7d; line-height: 1.6; }
+.dm-zoomrec-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dm-zoomrec-btn {
+  padding: 9px 18px; font-size: 13px; font-weight: 700; color: #fff; background: #0b5cff;
+  border: 1px solid #0b5cff; border-radius: 8px; cursor: pointer;
+}
+.dm-zoomrec-btn:hover { filter: brightness(1.06); }
+.dm-zoomrec-btn:disabled, .dm-zoomrec-sub:disabled { opacity: .55; cursor: default; filter: none; }
+.dm-zoomrec-sub {
+  padding: 7px 12px; font-size: 12px; font-weight: 700; color: var(--navy); background: #fff;
+  border: 1px solid #cdd8e3; border-radius: 8px; cursor: pointer;
+}
+.dm-zoomrec select { width: auto; max-width: 100%; padding: 7px 8px; font-size: 12px; border: 1px solid #cdd8e3; border-radius: 8px; background: #fff; }
+.dm-zoomrec-done { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: #2e6b4f; line-height: 1.7; }
+.dm-zoomrec-note { margin: 10px 0 0; font-size: 12px; color: #33475b; line-height: 1.7; }
+.dm-zoomrec-err { margin: 10px 0 0; font-size: 12px; color: #b3261e; line-height: 1.7; }
+.dm-zoomrec-fine { margin: 6px 0 0; font-size: 11px; color: #7a8794; line-height: 1.6; overflow-wrap: anywhere; }
+.pre-draft {
+  padding: 2px 8px; font-size: 11px; font-weight: 700; color: #0b5cff; background: #eaf1ff;
+  border: 1px solid #c9dafc; border-radius: 999px; white-space: nowrap;
+}
+
+/* 手順1：出席者を選ぶ欄（components/AttendeePicker.tsx） */
+.dm-fields .dm-att-field { flex-basis: 100%; min-width: 0; }
+.dm-att-field > span { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: #33475b; }
+.dm-att { padding: 12px; background: #f8fafc; border: 1px solid #dde5ee; border-radius: 10px; }
+.dm-att-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.dm-att-top select { width: auto; max-width: 100%; padding: 7px 8px; font-size: 13px; border: 1px solid #cdd8e3; border-radius: 8px; background: #fff; }
+.dm-att-all { padding: 6px 10px; font-size: 12px; font-weight: 700; color: var(--navy); background: #fff; border: 1px solid #cdd8e3; border-radius: 8px; cursor: pointer; }
+.dm-att-names { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-bottom: 10px; }
+.dm-fields .dm-att-names label {
+  display: inline-flex; flex-direction: row; flex: 0 0 auto; width: auto; min-width: 0; align-items: center; gap: 6px; padding: 6px 10px; font-size: 13px; color: #33475b;
+  background: #fff; border: 1px solid #dde5ee; border-radius: 999px; cursor: pointer; user-select: none;
+}
+.dm-fields .dm-att-names label.on { color: var(--navy); font-weight: 700; background: #eaf1ff; border-color: #9bbcf7; }
+.dm-fields .dm-att-names input { width: auto; margin: 0; padding: 0; flex: 0 0 auto; }
+.dm-att-others { width: 100%; padding: 8px 10px; font-size: 13px; border: 1px solid #cdd8e3; border-radius: 8px; background: #fff; }
+.dm-att-sum { margin: 8px 0 0; font-size: 12px; color: #5a6b7d; line-height: 1.6; }
+
+/* 事前共有の詳細：出席者が事前に見たかの確認（components/PreshareDetail.tsx） */
+.pre-confirm { margin-top: 14px; padding: 12px 14px; background: #f8fafc; border: 1px solid #dde5ee; border-radius: 10px; }
+.pre-confirm-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 13px; font-weight: 700; color: var(--navy); }
+.pre-confirm-head span { font-size: 12px; font-weight: 400; color: #5a6b7d; }
+.pre-confirm-list { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 0; padding: 0; list-style: none; font-size: 13px; color: #7a8794; }
+.pre-confirm-list li.ok { color: #2e6b4f; font-weight: 700; }
+.pre-confirm-me {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 14px; font-size: 14px; font-weight: 700;
+  color: var(--navy); background: #fff; border: 1px solid #9bbcf7; border-radius: 8px; cursor: pointer;
+}
+.pre-confirm-me input { width: 18px; height: 18px; margin: 0; }
+.pre-seen { padding: 2px 8px; font-size: 11px; font-weight: 700; color: #7a8794; background: #f1f4f8; border: 1px solid #dde5ee; border-radius: 999px; white-space: nowrap; }
+.pre-seen.all { color: #2e6b4f; background: #e8f5ee; border-color: #b9dcc8; }
+
 
 /* 智翔館AI：テスト問題を保存する小窓（components/TestPaperDialog.tsx）。欄の見た目は事前共有の小窓（.ai-preshare-modal）と同じ */
 .ai-testpaper-open { color: #22603a; border-color: #bfdcc9; }

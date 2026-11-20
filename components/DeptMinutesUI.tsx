@@ -8,6 +8,8 @@ import MinutesDetail from '@/components/MinutesDetail';
 import PreshareDetail from '@/components/PreshareDetail';
 import PreshareList from '@/components/PreshareList';
 import ZoomButtons from '@/components/ZoomButtons';
+import ZoomMinutesBox from '@/components/ZoomMinutesBox';
+import AttendeePicker from '@/components/AttendeePicker';
 import { zoomErrorText } from '@/lib/zoom/link';
 import { formatSchedule, parseSchedule, splitSchedule } from '@/lib/zoom/schedule';
 import {
@@ -936,6 +938,23 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     );
   }
 
+  // Zoom の録画から作った文字起こしと議事録の下書きを、手順2・3に読み込む（components/ZoomMinutesBox.tsx）。
+  function loadFromRecording(text: string, minutes: string, sourceText: string): boolean {
+    if (recording || busyTranscribe || generating || saving) return false;
+    if ((transcript.trim() || draft.trim()) && !confirm('いまの文字起こし・議事録を、録画から作った下書きに置き換えますか？')) return false;
+    queueRef.current = [];
+    setQueued(0);
+    setFailedSegs(0);
+    setLastRun(null);
+    setTranscript(text);
+    setDraft(minutes);
+    setInstruction('');
+    setErr('');
+    setWarn('');
+    setNote(`Zoom の録画から議事録の下書きを作りました（文字起こし：${sourceText || '録画'}）。内容を確認し、必要なら直してから保存してください。`);
+    return true;
+  }
+
   // 部門会議のループ：保存した議事録から次回の会議の下書きを作り、手順1に読み込む。
   // 前回の決定事項・継続審議・ToDo などを議題に引き継ぐので、あとは今回の議題を足して事前共有するだけになる。
   function startNext(prev: PreshareMeta & { minutes: string }) {
@@ -1171,10 +1190,15 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                 <span>場所</span>
                 <input value={meta.place} onChange={set('place')} placeholder="例：本部会議室 / オンライン" />
               </label>
-              <label className="wide">
+              {/* 出席者は、部門を選んで名前にチェックを入れる（components/AttendeePicker.tsx） */}
+              <div className="wide dm-att-field">
                 <span>出席者</span>
-                <input value={meta.attendees} onChange={set('attendees')} placeholder="例：直江、安東、池田、山中" />
-              </label>
+                <AttendeePicker
+                  value={meta.attendees}
+                  onChange={(v) => setMeta((m) => ({ ...m, attendees: v }))}
+                  campus={campus}
+                />
+              </div>
               <label className="wide">
                 <span>予定していた議題、または会議のレジュメ（任意）</span>
                 <textarea
@@ -1291,6 +1315,15 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           {/* ---------- 2. 音声 → 文字起こし ---------- */}
           <section className="dm-step" id="dm-step-2">
             <h2><span className="dm-num">2</span>会議の音声を取り込む</h2>
+
+            {/* Zoom ミーティングで開いた会議は、録画からそのまま議事録の下書きを作れる */}
+            {shareRow?.zoomMeetingId && shareRow.canRecord && !editingId && (
+              <ZoomMinutesBox
+                row={shareRow}
+                disabled={recording || busyTranscribe || generating || saving}
+                onLoad={loadFromRecording}
+              />
+            )}
 
             {configured === false && (
               <p className="dm-warn">
@@ -1749,6 +1782,10 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           me={name}
           onClose={() => setOpenPreshare(null)}
           onStart={openPreshare.row.id === shareId ? undefined : () => loadPreshare(openPreshare.row)}
+          onConfirmed={(next) => {
+            setPreshares((rows) => rows.map((r) => (r.id === next.id ? next : r)));
+            setOpenPreshare((o) => (o ? { ...o, row: next } : o));
+          }}
           onSaved={(next) => {
             setPreshares((rows) => rows.map((r) => (r.id === next.id ? next : r)));
             setOpenPreshare((o) => (o ? { ...o, row: next } : o));

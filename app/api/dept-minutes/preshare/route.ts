@@ -8,6 +8,10 @@ import { defaultZoomAccount, isZoomAccountId, zoomAccount, zoomAccountOptions, t
 import { ZoomError, createMeeting, deleteMeeting, getMeeting, updateMeeting, type MeetingInput } from '@/lib/zoom/client';
 import { parseSchedule } from '@/lib/zoom/schedule';
 import { deleteMeetingLinks, saveMeetingLink } from '@/lib/zoom/store';
+import { canUseRecording } from '@/lib/zoom/access';
+import { deleteJobs, jobStatuses } from '@/lib/zoom/minutesStore';
+import { isAttendee } from '@/lib/attendees';
+import { deleteConfirms, listConfirms } from '@/lib/preshareConfirmStore';
 
 export const runtime = 'nodejs';
 // Zoom ミーティングの作成（数秒）とスプレッドシートの読み書き（1〜3秒×2回）が続くことがある。
@@ -41,8 +45,21 @@ export async function GET() {
   const r = await listPreshareRows();
   if (!r.ok) return Response.json({ ok: false, reason: r.reason, items: [] }, { status: r.status });
 
+  // 録画から作った議事録の下書きがあるか（カードに出す）。見てよい人の分だけ引く。
+  const usable = r.items.filter((row) => row.zoomMeetingId && !row.minutesId && canUseRecording(session, row, ADMIN_CAMPUS));
+  // 下書きの状態と、出席者の「確認しました」を並べて引く。
+  const [jobs, confirms] = await Promise.all([
+    jobStatuses(usable.map((row) => row.id)),
+    listConfirms(r.items.map((row) => row.id)),
+  ]);
+
   const items: PreshareRow[] = r.items.map((row) => ({
     ...row,
+    // ［録画から議事録をつくる］を出すか。作るときにもサーバで同じ判定をする（app/api/zoom/minutes）。
+    canRecord: usable.includes(row),
+    minutesJob: jobs.get(row.id),
+    confirmed: confirms.get(row.id) ?? [],
+    canConfirm: isAttendee(session.name, row.attendees),
     // ［ホストとして開始］を出すか。開始のときにもサーバで同じ判定をする（app/api/zoom/meetings/start）。
     canHost: Boolean(row.zoomMeetingId) && canHostMeeting(session, row.campus, ADMIN_CAMPUS),
     // ［削除］を出すか。削除のときにもサーバで同じ判定をする（下の DELETE）。
@@ -252,6 +269,8 @@ export async function DELETE(req: Request) {
       }
     }
     await deleteMeetingLinks(id);
+    await deleteJobs(id);
+    await deleteConfirms(id);
   }
 
   await logInteraction(

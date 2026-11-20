@@ -22,3 +22,18 @@ export function canHostMeeting(
   if (who.campus === adminCampus) return true;
   return who.deptAdmin === true && Boolean(meetingCampus) && who.campus === meetingCampus;
 }
+
+/**
+ * 録画から作った議事録の下書き（文字起こしの全文を含む）を見られる人・作らせられる人。
+ * 会議の中身そのものなので、その部門の人・事前共有した本人・管理部門に限る。
+ */
+export function canUseRecording(
+  who: { name: string; campus: string } | null | undefined,
+  row: { campus: string; user: string },
+  adminCampus: string,
+): boolean {
+  if (!who) return false;
+  if (who.campus === adminCampus) return true;
+  if (row.campus && who.campus === row.campus) return true;
+  return Boolean(row.user) && who.name === row.user;
+}

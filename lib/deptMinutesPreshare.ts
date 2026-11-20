@@ -30,6 +30,14 @@ export type PreshareRow = PreshareMeta & {
   canHost?: boolean;
   // いま見ている人がこの事前共有を削除できるか（サーバが決めて返す。下の canDeletePreshare）。
   canDelete?: boolean;
+  // いま見ている人が、この会議の Zoom 録画から議事録の下書きを作れるか（lib/zoom/access.ts の canUseRecording）。
+  canRecord?: boolean;
+  // 事前共有を見て「確認しました」を付けた人の名前（確認した順）。
+  confirmed?: string[];
+  // いま見ている人が「確認しました」を付けられるか（出席者に入っているか。lib/attendees.ts の isAttendee）。
+  canConfirm?: boolean;
+  // 録画から作った下書きの状態（running 作成中 / transcribed 文字起こしまで / done 完成 / error 失敗）。無ければ未作成。
+  minutesJob?: 'running' | 'transcribed' | 'done' | 'error';
 };
 
 /**

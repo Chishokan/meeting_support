@@ -1,6 +1,6 @@
 // 重要タスク報告（/task-report）。小中等部の教室担当が毎週、マイルストーンの進み具合と改善・工夫を報告する。
 // 報告はスプレッドシート「重要タスク報告」に1件1行で残り、重要タスクのAI評価の材料になる
-//（行動計画・議事録・おはよう勉強会の集計から読み取れないことだけを聞く）。
+//（動員数などは営業サマリー・行動計画から読むので、ここではマイルストーンのために実行した改善・工夫を聞く）。
 // 画面（components/TaskReportUI.tsx）と API（app/api/task-report）の両方から使う。
 //
 // ★テストからも読めるよう、ここには import を置かない（型と計算だけ）。
@@ -11,7 +11,7 @@
 export const TASK_REPORT_DEPT = '小中等部';
 
 export type TaskQuestion = {
-  key: 'progress' | 'm1' | 'm2' | 'm3' | 'other';
+  key: 'm1' | 'm2' | 'other';
   no: number;
   label: string;
   required: boolean;
@@ -19,16 +19,16 @@ export type TaskQuestion = {
 };
 
 // ★設問の文言を変えるときはここだけを直す（シートの見出しは short から作る）。
+//   設問を変えたら、本番に出すときにスプレッドシートの「重要タスク報告」シートの名前を変えて残す
+//  （次の報告から、新しい見出しの「重要タスク報告」シートが自動でできる。README の重要タスク報告の節）。
+//   2026-11-21〜：定期テストが終わったので、マイルストーンを「中1・2模試、レベル模試の動員率7割」と
+//   「冬期講習 外部生（中1・2年）の目標動員率3割完了」の2つにした（それまでは進行表・テ対外部・おは勉の3つ＋進行表の%）。
 export const QUESTIONS: TaskQuestion[] = [
-  { key: 'progress', no: 1, required: true, short: '進行表の平均（%）',
-    label: '中１・中２生の定期テスト対策学習進行表の平均進み具合' },
-  { key: 'm1', no: 2, required: true, short: 'マイルストーン1の改善・工夫',
-    label: 'マイルストーン1（中1中2テスト対策外部生の集客目標の80%）をクリアするために実行した改善・工夫' },
-  { key: 'm2', no: 3, required: true, short: 'マイルストーン2の改善・工夫',
-    label: 'マイルストーン2（おはよう勉強会もしくは夜のオンライン学習会への内部生の参加率を70%まで高める）をクリアするために実行した改善・工夫' },
-  { key: 'm3', no: 4, required: true, short: 'マイルストーン3の改善・工夫',
-    label: 'マイルストーン3（内部生の定期テスト対策学習が、平均で進行表の80%まで進んでいる）をクリアするために実行した改善・工夫' },
-  { key: 'other', no: 5, required: false, short: 'そのほかの報告・共有事項',
+  { key: 'm1', no: 1, required: true, short: 'マイルストーン1（中1・2模試、レベル模試の動員率7割）の改善・工夫',
+    label: 'マイルストーン1（中1・2模試、レベル模試の動員率7割）をクリアするために実行した改善・工夫' },
+  { key: 'm2', no: 2, required: true, short: 'マイルストーン2（冬期講習 外部生の目標動員率3割）の改善・工夫',
+    label: 'マイルストーン2（冬期講習 外部生（中1・2年）の目標動員率3割完了）をクリアするために実行した改善・工夫' },
+  { key: 'other', no: 3, required: false, short: 'そのほかの報告・共有事項',
     label: 'そのほか今週の報告・共有事項' },
 ];
 
@@ -89,7 +89,7 @@ export type TaskReport = { week: string; school: string; answers: TaskAnswers };
 /** 送られてきた本文を整える。足りない項目があれば、その設問番号を返す。schools は選べる校舎。 */
 export function cleanReport(body: unknown, schools: string[]):
   | { ok: true; report: TaskReport }
-  | { ok: false; reason: 'bad_week' | 'bad_school' | 'bad_progress' | 'missing'; missing?: number[] } {
+  | { ok: false; reason: 'bad_week' | 'bad_school' | 'missing'; missing?: number[] } {
   const o = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
   const week = String(o.week ?? '').trim();
   if (!isValidWeek(week)) return { ok: false, reason: 'bad_week' };
@@ -102,10 +102,6 @@ export function cleanReport(body: unknown, schools: string[]):
 
   const missing = QUESTIONS.filter((q) => q.required && !answers[q.key]).map((q) => q.no);
   if (missing.length) return { ok: false, reason: 'missing', missing };
-
-  const pct = Number(answers.progress);
-  if (!Number.isFinite(pct) || pct < 0 || pct > 100) return { ok: false, reason: 'bad_progress' };
-  answers.progress = String(Math.round(pct * 10) / 10);
 
   return { ok: true, report: { week, school, answers } };
 }
