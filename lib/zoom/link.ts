@@ -35,6 +35,8 @@ export function zoomErrorText(reason: string | undefined | null): string {
       return 'Zoom への操作が多すぎます。しばらく待ってからもう一度お試しください。';
     case 'not_found':
       return 'Zoom ミーティングが見つかりません。Zoom 側で削除された可能性があります。事前共有を更新すると作り直します。';
+    case 'pmi':
+      return 'この会議はパーソナルミーティングルームで作られていたため、Zoom 側は削除していません（ほかの会議でも使われるためです）。';
     case 'forbidden':
       return 'ホストとして開始できるのは、その部門の部門長と管理部門の方です（共通ログインで入っているときだけ）。';
     case 'gas_outdated':
