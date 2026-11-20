@@ -210,6 +210,11 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   const [proposals, setProposals] = useState<PinProposalView[]>([]);
   const [pinDraft, setPinDraft] = useState<PinDraft | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  // 右の欄の出し方：'history' は保存した会話と履歴だけ（狭い画面の［🕘 過去の会話履歴を表示する］。閉じたら元に戻す）
+  const [panelView, setPanelView] = useState<'all' | 'history'>('all');
+  useEffect(() => {
+    if (!panelOpen) setPanelView('all');
+  }, [panelOpen]);
   const [diffKey, setDiffKey] = useState<string | null>(null);
   const [panelNote, setPanelNote] = useState('');
   // サーバーへの保存（メールアドレスでログインしたときだけ使える）。履歴は質問のたびに自動で保存する
@@ -949,6 +954,11 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   }
 
   const panelLabel = `📌 コンテキスト ${pinned.length}${carried ? `・資料 ${carried}` : ''}`;
+  // 狭い画面（スマホ）で、過去の会話（保存した会話・履歴）だけを右から引き出す
+  function openHistory() {
+    setPanelView('history');
+    setPanelOpen(true);
+  }
   const pendingCount = proposals.filter((x) => x.status === 'pending').length;
   const diffProposal = diffKey ? proposals.find((x) => x.key === diffKey) : undefined;
 
@@ -975,6 +985,11 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
               <li>試用期間中です。うまく動かないときは「不具合を報告」、こうしてほしいときは「要望を送る」から送ってください</li>
             </ul>
           </details>
+          {saved && (
+            <button type="button" className="ai-history-open" onClick={openHistory}>
+              🕘 過去の会話履歴を表示する
+            </button>
+          )}
           <button type="button" className="ai-panel-toggle" onClick={() => setPanelOpen(true)}>
             {panelLabel}{pendingCount ? '・直し案あり' : ''}
           </button>
@@ -1033,6 +1048,11 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           )}
           {/* 会話が長くなって画面の上の説明が見えなくなっても押せるように、この帯（上に固定）にも置く */}
           <span className="ai-convo-actions">
+            {saved && (
+              <button type="button" className="ai-history-open" onClick={openHistory}>
+                🕘 過去の会話履歴を表示する
+              </button>
+            )}
             <button type="button" className="ai-panel-toggle" onClick={() => setPanelOpen(true)}>
               {panelLabel}{pendingCount ? '・直し案あり' : ''}
             </button>
@@ -1306,6 +1326,8 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
         note={panelNote}
         open={panelOpen}
         onClose={() => setPanelOpen(false)}
+        view={panelOpen ? panelView : 'all'}
+        onView={setPanelView}
         saved={saved}
         savedActions={{
           currentId: convoIdRef.current,
