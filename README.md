@@ -95,7 +95,9 @@
     - 流れ: lib/zoom/minutesJob.ts（録画の音声を取り出す → 文字起こし → 議事録の下書き。途中経過を置いて続きから進める）
     - 文字起こし: lib/zoom/transcribeRecording.ts（OpenAI → Gemini → Zoom の文字起こし（予備）。順番は ZOOM_TRANSCRIBE_ORDER）
     - 置き場: Supabase の zoom_minutes_jobs（supabase/migrations/0005。文字起こし全文を含むので14日で消す）
-    - 自動: app/api/zoom/webhook/[account]（Zoom の recording.completed を受けて下書きを作る。ZOOM_n_WEBHOOK_SECRET が要る）
+    - 自動（毎朝の見回り）: app/api/zoom/minutes/cron/[slot]（vercel.json の Cron が午前1時・5時に叩く。CRON_SECRET が要る）。
+      終わった会議（lib/zoom/due.ts。3日前まで）で、議事録も下書きも無いものを作る。残りがあれば自分を呼び直して続ける
+    - 自動（録画完了の通知）: app/api/zoom/webhook/[account]（Zoom の recording.completed を受けてすぐ作る。ZOOM_n_WEBHOOK_SECRET が要る）
     - Zoom のアプリにスコープ cloud_recording:read:list_recording_files:admin が要る
   - 議事録テンプレート（項目・書き方）: lib/deptMinutesTemplate.ts ★ここを直せば AI の出力・
     画面のヘルプ・会議の質チェックにまとめて反映される
