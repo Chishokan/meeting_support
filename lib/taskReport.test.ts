@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanReport, isValidWeek, MAX_TEXT_LENGTH, reportRow, SHEET_HEADERS, weekOptions } from './taskReport.ts';
+import { cleanReport, isValidWeek, MAX_TEXT_LENGTH, QUESTIONS, reportRow, SHEET_HEADERS, weekOptions } from './taskReport.ts';
 
 const SCHOOLS = ['佐世保駅前校', '日野校'];
 const at = (iso: string) => new Date(iso);
@@ -39,33 +39,39 @@ test('isValidWeek: 土曜はじまりの7日間だけを通す', () => {
 });
 
 const full = {
-  week: '2026-10-17〜2026-10-23',
+  week: '2026-11-14〜2026-11-20',
   school: '佐世保駅前校',
-  answers: { progress: ' 72 ', m1: '門配の時間を変えた', m2: 'なし', m3: '声かけ', other: '' },
+  answers: { m1: ' 模試の案内を中1・2の全員に配った ', m2: '冬期の外部生リストに電話した', other: '' },
 };
 
-test('cleanReport: 必須の4つがそろえば通し、前後の空白を落とす', () => {
+test('QUESTIONS: マイルストーン2つ（必須）と、そのほか（任意）の3問', () => {
+  assert.deepEqual(QUESTIONS.map((q) => [q.key, q.no, q.required]), [['m1', 1, true], ['m2', 2, true], ['other', 3, false]]);
+  assert.match(QUESTIONS[0].label, /中1・2模試、レベル模試の動員率7割/);
+  assert.match(QUESTIONS[1].label, /冬期講習 外部生（中1・2年）の目標動員率3割完了/);
+});
+
+test('cleanReport: 必須の2つがそろえば通し、前後の空白を落とす', () => {
   const r = cleanReport(full, SCHOOLS);
   assert.equal(r.ok, true);
   if (!r.ok) return;
-  assert.equal(r.report.answers.progress, '72');
+  assert.equal(r.report.answers.m1, '模試の案内を中1・2の全員に配った');
   assert.equal(r.report.answers.other, '');
-  assert.deepEqual(reportRow(r.report), ['2026-10-17〜2026-10-23', '佐世保駅前校', '72', '門配の時間を変えた', 'なし', '声かけ', '']);
+  assert.deepEqual(reportRow(r.report), ['2026-11-14〜2026-11-20', '佐世保駅前校', '模試の案内を中1・2の全員に配った', '冬期の外部生リストに電話した', '']);
   assert.equal(SHEET_HEADERS.length, reportRow(r.report).length);
+  assert.equal(SHEET_HEADERS[2], '1 マイルストーン1（中1・2模試、レベル模試の動員率7割）の改善・工夫');
 });
 
-test('cleanReport: 足りない設問の番号を返す（5は任意）', () => {
-  const r = cleanReport({ ...full, answers: { progress: '', m1: ' ', m2: 'a', m3: '', other: '' } }, SCHOOLS);
-  assert.deepEqual(r, { ok: false, reason: 'missing', missing: [1, 2, 4] });
+test('cleanReport: 足りない設問の番号を返す（3は任意）', () => {
+  const r = cleanReport({ ...full, answers: { m1: ' ', m2: '', other: 'メモ' } }, SCHOOLS);
+  assert.deepEqual(r, { ok: false, reason: 'missing', missing: [1, 2] });
 });
 
-test('cleanReport: 週・校舎・%の範囲が正しくなければ通さない', () => {
-  assert.equal(cleanReport({ ...full, week: '2026-10-18〜2026-10-24' }, SCHOOLS).ok, false);
+test('cleanReport: 週・校舎が正しくなければ通さない。前の設問（進行表の%など）が送られてきても無視する', () => {
+  assert.equal(cleanReport({ ...full, week: '2026-11-15〜2026-11-21' }, SCHOOLS).ok, false);
   assert.equal(cleanReport({ ...full, school: '広田教室' }, SCHOOLS).ok, false);
-  for (const progress of ['120', '-1', 'abc']) {
-    const r = cleanReport({ ...full, answers: { ...full.answers, progress } }, SCHOOLS);
-    assert.deepEqual(r, { ok: false, reason: 'bad_progress' });
-  }
+  const r = cleanReport({ ...full, answers: { ...full.answers, progress: '120', m3: 'x' } }, SCHOOLS);
+  assert.equal(r.ok, true);
+  assert.equal(r.ok && reportRow(r.report).length, 5);
 });
 
 test('cleanReport: 長すぎる文は上限で切る', () => {
