@@ -10,6 +10,7 @@ import type { PreshareRow } from '@/lib/deptMinutesPreshare';
 import { useModalDismiss } from '@/lib/useModalDismiss';
 import ZoomButtons from '@/components/ZoomButtons';
 import { formatMeetingId, zoomErrorText, zoomJoinHref } from '@/lib/zoom/link';
+import { confirmSummary } from '@/lib/attendees';
 
 // 更新日時は時刻まで見せる（会議の直前に直すことがあるため）。
 function fmtStamp(s: string) {
@@ -27,6 +28,7 @@ export default function PreshareDetail({
   onStart,
   onSaved,
   onDeleted,
+  onConfirmed,
 }: {
   row: PreshareRow;
   when?: string; // 「今日」「明日」など（無ければ出さない）
@@ -38,6 +40,8 @@ export default function PreshareDetail({
   onSaved?: (next: PreshareRow) => void;
   // 渡されたときだけ［削除］を出す（消せる人にだけ。row.canDelete）。消せたら事前共有IDを返す。
   onDeleted?: (id: string) => void;
+  // 渡されたときだけ、出席者が「確認しました」を付けられる。付け外しできたら、直したあとの行を返す。
+  onConfirmed?: (next: PreshareRow) => void;
 }) {
   // 会議の直前に議題を足したいことがあるので、この場で直せるようにしている。
   // 全部門が見ているものを直すため、誰が直したかは必ず残す（更新日時・更新者）。
@@ -46,6 +50,35 @@ export default function PreshareDetail({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  // 押した直後の見た目（サーバの返事を待つあいだも、チェックがすぐ付いて見えるようにする）。
+  const [pendingOn, setPendingOn] = useState<boolean | null>(null);
+
+  // 事前に見たかどうか。出席者ごとに出し、出席者本人だけがチェックを付けられる（サーバでも確かめる）。
+  const seen = confirmSummary(row.attendees, row.confirmed);
+  const mine = Boolean(me) && (row.confirmed ?? []).includes(me as string);
+
+  async function toggleConfirm(on: boolean) {
+    if (confirming) return;
+    setErr('');
+    setPendingOn(on);
+    setConfirming(true);
+    try {
+      const res = await fetch('/api/dept-minutes/preshare/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: row.id, on }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) onConfirmed?.({ ...row, confirmed: Array.isArray(j.confirmed) ? j.confirmed : [] });
+      else setErr(j?.reason === 'forbidden' ? '「確認しました」を付けられるのは、この会議の出席者の方です。' : '確認の記録に失敗しました。時間をおいてお試しください。');
+    } catch {
+      setErr('確認の記録に失敗しました。通信状況をご確認ください。');
+    } finally {
+      setPendingOn(null);
+      setConfirming(false);
+    }
+  }
   const dirty = editing && text.trim() !== row.agenda.trim();
 
   // 書きかけのまま閉じると消えてしまうので、そのときだけ確かめる。
@@ -220,6 +253,27 @@ export default function PreshareDetail({
             ) : (
               <>
                 <pre className="dm-modal-text pre-agenda">{row.agenda || '（議題が登録されていません）'}</pre>
+                {/* 事前に見たかの確認。出席者が登録されている会議だけ出す */}
+                {seen.total > 0 && (
+                  <div className="pre-confirm">
+                    <div className="pre-confirm-head">
+                      事前の確認<span>{seen.done}／{seen.total}人が確認済み</span>
+                    </div>
+                    <ul className="pre-confirm-list">
+                      {seen.items.map((i) => (
+                        <li key={i.name} className={i.ok ? 'ok' : undefined}>
+                          {i.ok ? '✓' : '・'} {i.name}
+                        </li>
+                      ))}
+                    </ul>
+                    {onConfirmed && row.canConfirm && (
+                      <label className="pre-confirm-me">
+                        <input type="checkbox" checked={pendingOn ?? mine} disabled={confirming} onChange={(e) => void toggleConfirm(e.target.checked)} />
+                        議題を確認しました{me ? `（${me}）` : ''}
+                      </label>
+                    )}
+                  </div>
+                )}
                 {err && <p className="dm-note err">{err}</p>}
               </>
             )}

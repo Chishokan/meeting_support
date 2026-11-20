@@ -3728,3 +3728,35 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
   padding: 2px 8px; font-size: 11px; font-weight: 700; color: #0b5cff; background: #eaf1ff;
   border: 1px solid #c9dafc; border-radius: 999px; white-space: nowrap;
 }
+
+/* 手順1：出席者を選ぶ欄（components/AttendeePicker.tsx） */
+.dm-fields .dm-att-field { flex-basis: 100%; min-width: 0; }
+.dm-att-field > span { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: #33475b; }
+.dm-att { padding: 12px; background: #f8fafc; border: 1px solid #dde5ee; border-radius: 10px; }
+.dm-att-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.dm-att-top select { width: auto; max-width: 100%; padding: 7px 8px; font-size: 13px; border: 1px solid #cdd8e3; border-radius: 8px; background: #fff; }
+.dm-att-all { padding: 6px 10px; font-size: 12px; font-weight: 700; color: var(--navy); background: #fff; border: 1px solid #cdd8e3; border-radius: 8px; cursor: pointer; }
+.dm-att-names { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-bottom: 10px; }
+.dm-fields .dm-att-names label {
+  display: inline-flex; flex-direction: row; flex: 0 0 auto; width: auto; min-width: 0; align-items: center; gap: 6px; padding: 6px 10px; font-size: 13px; color: #33475b;
+  background: #fff; border: 1px solid #dde5ee; border-radius: 999px; cursor: pointer; user-select: none;
+}
+.dm-fields .dm-att-names label.on { color: var(--navy); font-weight: 700; background: #eaf1ff; border-color: #9bbcf7; }
+.dm-fields .dm-att-names input { width: auto; margin: 0; padding: 0; flex: 0 0 auto; }
+.dm-att-others { width: 100%; padding: 8px 10px; font-size: 13px; border: 1px solid #cdd8e3; border-radius: 8px; background: #fff; }
+.dm-att-sum { margin: 8px 0 0; font-size: 12px; color: #5a6b7d; line-height: 1.6; }
+
+/* 事前共有の詳細：出席者が事前に見たかの確認（components/PreshareDetail.tsx） */
+.pre-confirm { margin-top: 14px; padding: 12px 14px; background: #f8fafc; border: 1px solid #dde5ee; border-radius: 10px; }
+.pre-confirm-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 13px; font-weight: 700; color: var(--navy); }
+.pre-confirm-head span { font-size: 12px; font-weight: 400; color: #5a6b7d; }
+.pre-confirm-list { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 0; padding: 0; list-style: none; font-size: 13px; color: #7a8794; }
+.pre-confirm-list li.ok { color: #2e6b4f; font-weight: 700; }
+.pre-confirm-me {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 14px; font-size: 14px; font-weight: 700;
+  color: var(--navy); background: #fff; border: 1px solid #9bbcf7; border-radius: 8px; cursor: pointer;
+}
+.pre-confirm-me input { width: 18px; height: 18px; margin: 0; }
+.pre-seen { padding: 2px 8px; font-size: 11px; font-weight: 700; color: #7a8794; background: #f1f4f8; border: 1px solid #dde5ee; border-radius: 999px; white-space: nowrap; }
+.pre-seen.all { color: #2e6b4f; background: #e8f5ee; border-color: #b9dcc8; }
+
