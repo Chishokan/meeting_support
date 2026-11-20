@@ -227,12 +227,6 @@ export default function PreshareDetail({
           <div className="share-detail-sec">
             <h3>
               予定している議題・レジュメ
-              {/* 直せるのは、親から onSaved を渡された画面だけ（ダッシュボード・部門会議） */}
-              {onSaved && !editing && (
-                <button className="pre-edit-link" onClick={() => { setText(row.agenda); setErr(''); setEditing(true); }}>
-                  議題を直す
-                </button>
-              )}
             </h3>
 
             {editing ? (
@@ -304,6 +298,13 @@ export default function PreshareDetail({
           <ZoomButtons row={row} detail />
           {onStart && (
             <button className="dm-modal-edit" onClick={onStart}>この会議の議事録をつくる</button>
+          )}
+          {/* 議題を直す。長い議題をスクロールしても押せるよう、下のボタンの並びに置く。
+              直せるのは、親から onSaved を渡された画面だけ（ダッシュボード・部門会議） */}
+          {onSaved && (
+            <button className="dm-copy" onClick={() => { setText(row.agenda); setErr(''); setEditing(true); }}>
+              議題の修正
+            </button>
           )}
           <button
             className="dm-copy"
