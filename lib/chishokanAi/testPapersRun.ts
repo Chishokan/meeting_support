@@ -1,83 +1,81 @@
-// 智翔館AI：中学校のテスト問題の保存（save_test_paper）と検索（search_test_papers）。Apps Script を呼ぶ。サーバ専用。
-// 入力の確かめ・ファイル名・絞り込み・結果の文は testPapers.ts。保存先と記録のしかたは apps_script/Code.gs の saveTestPaper_ / listTestPapers_。
+// 智翔館AI：中学校のテスト問題の保存（［🗄 テスト問題を保存］の小窓 → app/api/chishokan-ai/test-papers）と検索（AI の search_test_papers）。
+// Apps Script を呼ぶ。サーバ専用。入力の確かめ・ファイル名・絞り込み・結果の文は testPapers.ts。
+// 保存先と記録のしかたは apps_script/Code.gs の saveTestPaperFile_・saveTestPaperEntry_・discardTestPaperFiles_・listTestPapers_。
 
 import { callGas } from './gas';
 import {
-  checkSaveInput,
   checkSearchInput,
   filterTestPapers,
   formatTestPapers,
   parseFilesCell,
   testFileName,
+  type SavedFile,
+  type TestMeta,
   type TestPaperRec,
 } from './testPapers';
 
-/** 保存できる添付（PDF・画像）。この質問の添付と前の添付。 */
-export type PaperSource = { name: string; mime: string; kind: string; data: string };
-
-const NOT_DEPLOYED = 'Apps Script が古いままのため保存・検索できません（管理者に Apps Script の再デプロイを頼んでください）。';
+export const TEST_NOT_DEPLOYED = 'Apps Script が古いままのため保存・検索できません。管理者に Apps Script の再デプロイを頼んでください。';
 const s = (v: unknown) => String(v ?? '');
 
-export async function runSaveTestPaper(
-  input: Record<string, unknown>,
-  sources: PaperSource[],
-  ctx: { campus: string; user: string },
-  signal?: AbortSignal,
-): Promise<{ text: string; saved: boolean; note: string }> {
-  const usable = sources.filter((a) => (a.kind === 'pdf' || a.kind === 'image') && typeof a.data === 'string' && a.data);
-  const names = [...new Set(usable.map((a) => a.name))];
-  const c = checkSaveInput(input, names);
-  if (!c.ok) return { text: c.message, saved: false, note: '入力の誤り' };
-  const m = c.value;
-  const count: Record<string, number> = {};
-  const files = m.files.map((f) => {
-    const src = usable.find((a) => a.name === f.name)!;
-    const n = count[f.role] ?? 0;
-    count[f.role] = n + 1;
-    return { role: f.role, name: testFileName(m, f.role, src.mime, n), mime: src.mime, base64: src.data };
-  });
-  const j = await callGas(
-    {
-      action: 'saveTestPaper',
-      campus: ctx.campus,
-      user: ctx.user,
-      kind: m.kind,
-      year: m.year,
-      school: m.school,
-      grade: m.grade,
-      subject: m.subject,
-      term: m.term,
-      title: m.title,
-      topics: m.topics,
-      note: m.note,
-      files,
-    },
-    signal,
-  );
-  const label = `${m.year}年度 ${m.school} ${m.grade} ${m.subject}${m.term ? ` ${m.term}` : ''}（${m.kind}）`;
-  if (j.ok && j.saved !== 'testPaper') return { text: `${NOT_DEPLOYED}職員にそのことを伝える。`, saved: false, note: '再デプロイ前' };
-  if (!j.ok) {
-    const why = s(j.reason) === 'too_large' ? 'ファイルが大きすぎます（合わせて 20MB まで）。ページを分けて保存してください。' : `保存できませんでした（${s(j.reason) || '通信の失敗'}）。`;
-    return { text: `${label} を${why}職員にそのことを伝える。「保存しました」とは書かない。`, saved: false, note: `失敗:${s(j.reason)}` };
+/** ファイルを1つ保存する（種類のフォルダへ）。 */
+export async function saveTestPaperFile(
+  meta: TestMeta,
+  file: { name: string; mime: string; data: string },
+  index: number,
+): Promise<{ ok: true; file: SavedFile } | { ok: false; message: string; reason: string }> {
+  const name = testFileName(meta, file.name, file.mime, index);
+  const j = await callGas({ action: 'saveTestPaperFile', kind: meta.kind, name, mime: file.mime, base64: file.data });
+  if (j.saved !== 'testPaper') {
+    return j.ok || s(j.reason) === 'unknown_action'
+      ? { ok: false, message: TEST_NOT_DEPLOYED, reason: 'not_deployed' }
+      : { ok: false, message: `${file.name}：保存できませんでした（${s(j.reason) || '通信の失敗'}）。もう一度押してください。`, reason: s(j.reason) };
   }
+  const f = (j.file ?? {}) as Record<string, unknown>;
+  if (!j.ok || !f.url) {
+    const why = s(j.reason) === 'too_large' ? '大きすぎます（1つ3MBまで）' : s(j.reason) === 'bad_type' ? 'この種類のファイルは保存できません' : `保存できませんでした（${s(j.reason)}）`;
+    return { ok: false, message: `${file.name}：${why}。`, reason: s(j.reason) };
+  }
+  return { ok: true, file: { name: s(f.name), url: s(f.url), id: s(f.id) } };
+}
+
+/** 保存したファイルをまとめて1件として記録する。 */
+export async function saveTestPaperEntry(
+  meta: TestMeta,
+  files: SavedFile[],
+  ctx: { campus: string; user: string },
+): Promise<{ ok: true; id: string; files: SavedFile[] } | { ok: false; message: string }> {
+  const j = await callGas({
+    action: 'saveTestPaperEntry',
+    campus: ctx.campus,
+    user: ctx.user,
+    kind: meta.kind,
+    year: meta.year,
+    school: meta.school,
+    entranceType: meta.entranceType,
+    grade: meta.kind === '入試問題' ? '' : meta.grade,
+    subject: meta.subject,
+    round: meta.round || '',
+    memo: meta.memo,
+    files,
+  });
+  if (j.saved !== 'testPaper') return { ok: false, message: j.ok ? TEST_NOT_DEPLOYED : '記録できませんでした（通信の失敗）。もう一度押してください。' };
+  if (!j.ok) return { ok: false, message: s(j.reason) === 'no_files' ? 'ファイルが見つからず、記録できませんでした。ファイルを付け直してください。' : `記録できませんでした（${s(j.reason)}）。もう一度押してください。` };
   const out = (Array.isArray(j.files) ? j.files : []) as Record<string, unknown>[];
-  const failed = (Array.isArray(j.failed) ? j.failed : []) as Record<string, unknown>[];
-  return {
-    text:
-      `保存した：${label}。登録番号 ${s(j.id)}。\n` +
-      out.map((f) => `- ${s(f.role)}：${s(f.name)} ${s(f.url)}`).join('\n') +
-      (failed.length ? `\n保存できなかったファイル：${failed.map((f) => s(f.name)).join('、')}（もう一度保存を頼んでもらう）` : '') +
-      '\n回答には、保存した内容（種類・年度・学校・学年・教科・時期・単元）と、ファイルのリンク（上の URL をそのまま）を書く。' +
-      '「保存したテストは、学校名・学年・教科・単元の言葉で探せます」と添える。',
-    saved: true,
-    note: label,
-  };
+  return { ok: true, id: s(j.id), files: out.map((f) => ({ name: s(f.name), url: s(f.url), id: s(f.id) })) };
+}
+
+/** 保存をやめたとき、記録しなかったファイルをゴミ箱へ（Apps Script 側で、このフォルダの2時間以内のものだけに限る）。 */
+export async function discardTestPaperFiles(ids: string[]): Promise<number> {
+  const clean = ids.filter((x) => /^[\w-]{10,}$/.test(x)).slice(0, 10);
+  if (!clean.length) return 0;
+  const j = await callGas({ action: 'discardTestPaperFiles', ids: clean });
+  return Number(j.trashed) || 0;
 }
 
 export async function runSearchTestPapers(input: Record<string, unknown>, signal?: AbortSignal): Promise<{ text: string; note: string }> {
   const q = checkSearchInput(input);
   const j = await callGas({ action: 'listTestPapers' }, signal);
-  if (j.ok && j.saved !== 'testPaper') return { text: `${NOT_DEPLOYED}職員にそのことを伝える。`, note: '再デプロイ前' };
+  if (j.ok && j.saved !== 'testPaper') return { text: `${TEST_NOT_DEPLOYED}職員にそのことを伝える。`, note: '再デプロイ前' };
   if (!j.ok) return { text: '保存したテスト問題の一覧を読めませんでした（Apps Script との通信に失敗しました）。職員にそのことを伝える。', note: '読めず' };
   const rows: TestPaperRec[] = (Array.isArray(j.items) ? (j.items as Record<string, unknown>[]) : []).map((r) => ({
     id: s(r.id),
@@ -87,12 +85,11 @@ export async function runSearchTestPapers(input: Record<string, unknown>, signal
     kind: s(r.kind),
     year: s(r.year),
     school: s(r.school),
+    entranceType: s(r.entranceType),
     grade: s(r.grade),
     subject: s(r.subject),
-    term: s(r.term),
-    title: s(r.title),
-    topics: s(r.topics),
-    note: s(r.note),
+    round: s(r.round),
+    memo: s(r.memo),
     files: parseFilesCell(s(r.files)),
   }));
   const found = filterTestPapers(rows, q);

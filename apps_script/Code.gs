@@ -251,7 +251,9 @@ function doPost(e) {
     }
 
     // 智翔館AI：中学校のテスト問題（定期テスト・実力テスト・入試問題）の保存と一覧（2026-11-20）
-    if (action === 'saveTestPaper') return json_(saveTestPaper_(data));
+    if (action === 'saveTestPaperFile') return json_(saveTestPaperFile_(data));
+    if (action === 'saveTestPaperEntry') return json_(saveTestPaperEntry_(data));
+    if (action === 'discardTestPaperFiles') return json_(discardTestPaperFiles_(data));
     if (action === 'listTestPapers') return json_(listTestPapers_(data));
 
     // 智翔館AI：アカウント別の会話ログ・会話の保存・いつものコンテキスト（スプレッドシート「智翔館AI 会話ログ」）
@@ -2597,14 +2599,20 @@ function saveAiFiles_(data) {
 }
 
 // ---- 中学校のテスト問題（定期テスト・実力テスト・入試問題）の保存と一覧（智翔館AI。2026-11-20） ----------------
-// 智翔館AI に添付された問題用紙・解答（PDF・画像）を「15_AI利用データ/中学校テスト問題/<種類>」に保存し、
-// 「中学校テスト問題」シートに1件1行で残す。検索は listTestPapers_ の一覧を Next 側（lib/chishokanAi/testPapers.ts）で絞る。
+// 智翔館AI の［🗄 テスト問題を保存］の小窓（components/TestPaperDialog.tsx）から、問題用紙・解答（PDF・画像・Word）を
+// 「15_AI利用データ/中学校テスト問題/<定期テスト・実力テスト・入試問題>」に保存し、「中学校テスト問題」シートに1件1行で残す。
+// - saveTestPaperFile_：ファイルを1つずつ保存する（アプリが1回に受け取れる大きさに上限があるため、1つずつ送られてくる）
+// - saveTestPaperEntry_：全部のファイルを保存できたら、1件として記録する（種類・年度・学校・学年・科目・実施回など）
+// - discardTestPaperFiles_：保存をやめたときに、記録しなかったファイルをゴミ箱に移す（このフォルダの中の、2時間以内に作ったものだけ）
+// - listTestPapers_：一覧。検索は Next 側（lib/chishokanAi/testPapers.ts）で絞る。
 // ★共有の設定は変えない（フォルダの共有のまま）。学校の問題なので、リンクを知っている人に公開しない。
-// ★生徒の名前・点数のある答案は保存しない（Next 側で AI に確かめさせる）。
+// ★学校名は小窓の一覧（lib/chishokanAi/testPapers.ts の SCHOOL_GROUPS）から選ぶので、表記はそろっている。
 var TEST_PAPER_PARENT_ID = '1blYbdrl24BF3HXMdNnC-D4SDW9X-Su8Y'; // 15_AI利用データ
 var TEST_PAPER_FOLDER_NAME = '中学校テスト問題';
+var TEST_PAPER_KINDS = ['定期テスト', '実力テスト', '入試問題'];
 var TEST_PAPER_SHEET = '中学校テスト問題';
-var TEST_PAPER_HEADERS = ['登録ID', '登録日時', '登録者', '部門', '種類', '年度', '学校', '学年', '教科', '時期・回', '題名', '単元・出題内容', 'メモ', 'ファイル', 'ファイルID'];
+var TEST_PAPER_HEADERS = ['登録ID', '登録日時', '登録者', '部門', '種類', '年度', '学校', '公立・私立', '学年', '科目', '実施回', 'メモ', 'ファイル', 'ファイルID'];
+var TEST_PAPER_MIMES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
 
 // 親フォルダの中の、名前の決まった子フォルダ（無ければ作る）
 function childFolder_(parent, name) {
@@ -2612,65 +2620,114 @@ function childFolder_(parent, name) {
   return it.hasNext() ? it.next() : parent.createFolder(name);
 }
 
+function testPaperRoot_() {
+  return childFolder_(DriveApp.getFolderById(TEST_PAPER_PARENT_ID), TEST_PAPER_FOLDER_NAME);
+}
+
 function testPaperCell_(r, name) {
   return cellStr_(r[colOf_(TEST_PAPER_HEADERS, name) - 1]);
 }
 
-// data：campus・user・kind・year・school・grade・subject・term・title・topics・note・files = [{ role, name, mime, base64 }]（6つ・合わせて 20MB まで）
-function saveTestPaper_(data) {
-  var files = Array.isArray(data.files) ? data.files.slice(0, 6) : [];
-  if (!files.length) return { ok: false, saved: 'testPaper', reason: 'empty' };
-  var total = 0;
-  for (var i = 0; i < files.length; i++) total += String(files[i].base64 || '').length;
-  if (total > 27000000) return { ok: false, saved: 'testPaper', reason: 'too_large' };
-  var kind = String(data.kind || 'その他').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim() || 'その他';
+// data：kind・name・mime・base64（1つ。base64 で 4.2MB まで）→ { ok, saved:'testPaper', file:{ name, url, id } }
+function saveTestPaperFile_(data) {
+  var kind = String(data.kind || '');
+  if (TEST_PAPER_KINDS.indexOf(kind) < 0) return { ok: false, saved: 'testPaper', reason: 'bad_kind' };
+  var mime = String(data.mime || '').toLowerCase();
+  if (TEST_PAPER_MIMES.indexOf(mime) < 0) return { ok: false, saved: 'testPaper', reason: 'bad_type' };
+  var b64 = String(data.base64 || '');
+  if (!b64) return { ok: false, saved: 'testPaper', reason: 'empty' };
+  if (b64.length > 4300000) return { ok: false, saved: 'testPaper', reason: 'too_large' };
+  var name = String(data.name || 'テスト問題').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 180);
   var folder;
   try {
-    folder = childFolder_(childFolder_(DriveApp.getFolderById(TEST_PAPER_PARENT_ID), TEST_PAPER_FOLDER_NAME), kind);
+    folder = childFolder_(testPaperRoot_(), kind);
   } catch (e) {
     return { ok: false, saved: 'testPaper', reason: 'folder_failed', detail: String(e).slice(0, 200) };
   }
-  var out = [];
-  var failed = [];
-  for (var k = 0; k < files.length; k++) {
-    var f = files[k] || {};
-    var name = String(f.name || 'テスト問題').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 150);
-    var file = null;
-    var lastErr = '';
-    // ドライブは一時的に失敗することがある（saveAiFiles_ と同じく3回まで）
-    for (var attempt = 0; attempt < 3 && !file; attempt++) {
-      if (attempt) Utilities.sleep(1500 * attempt);
-      try {
-        file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(String(f.base64 || '')), String(f.mime || 'application/octet-stream'), name));
-      } catch (e) {
-        lastErr = String(e).slice(0, 200);
-      }
+  var file = null;
+  var lastErr = '';
+  // ドライブは一時的に失敗することがある（saveAiFiles_ と同じく3回まで）
+  for (var attempt = 0; attempt < 3 && !file; attempt++) {
+    if (attempt) Utilities.sleep(1500 * attempt);
+    try {
+      file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(b64), mime, name));
+    } catch (e) {
+      lastErr = String(e).slice(0, 200);
     }
-    if (!file) { failed.push({ name: name, detail: lastErr }); continue; }
-    out.push({ role: String(f.role || '問題'), name: name, url: file.getUrl(), id: file.getId() });
   }
-  if (!out.length) {
-    return { ok: false, saved: 'testPaper', reason: 'create_failed', detail: failed.map(function (x) { return x.detail; }).join(' / ').slice(0, 300) };
+  if (!file) return { ok: false, saved: 'testPaper', reason: 'create_failed', detail: lastErr };
+  return { ok: true, saved: 'testPaper', file: { name: name, url: file.getUrl(), id: file.getId() } };
+}
+
+// data：campus・user・kind・year・school・entranceType・grade・subject・round・memo・files = [{ name, url, id }]
+// （項目の確かめは Next 側の checkMeta で済ませてある。ここでは種類と、ファイルがこのフォルダのものかだけ見る）
+function saveTestPaperEntry_(data) {
+  var kind = String(data.kind || '');
+  if (TEST_PAPER_KINDS.indexOf(kind) < 0) return { ok: false, saved: 'testPaper', reason: 'bad_kind' };
+  var files = Array.isArray(data.files) ? data.files.slice(0, 10) : [];
+  var ok = [];
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i] || {};
+    if (testPaperOwnFile_(String(f.id || ''), 0)) ok.push({ name: String(f.name || ''), url: String(f.url || ''), id: String(f.id) });
   }
+  if (!ok.length) return { ok: false, saved: 'testPaper', reason: 'no_files' };
   var id = Utilities.getUuid();
   var rec = {
     '登録ID': id, '登録日時': nowJp_(''), '登録者': data.user || '', '部門': data.campus || '',
-    '種類': kind, '年度': String(data.year || ''), '学校': data.school || '', '学年': data.grade || '', '教科': data.subject || '',
-    '時期・回': data.term || '', '題名': data.title || '', '単元・出題内容': data.topics || '', 'メモ': data.note || '',
-    'ファイル': out.map(function (x) { return x.role + '｜' + x.name + '｜' + x.url; }).join('\n'),
-    'ファイルID': out.map(function (x) { return x.id; }).join(',')
+    '種類': kind, '年度': String(data.year || ''), '学校': data.school || '', '公立・私立': data.entranceType || '',
+    '学年': data.grade || '', '科目': data.subject || '', '実施回': data.round ? String(data.round) : '', 'メモ': data.memo || '',
+    'ファイル': ok.map(function (x) { return x.name + '｜' + x.url; }).join('\n'),
+    'ファイルID': ok.map(function (x) { return x.id; }).join(',')
   };
   var values = TEST_PAPER_HEADERS.map(function (h) { return String(rec[h] == null ? '' : rec[h]); });
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
     var sh = sheetWithHeaders_(TEST_PAPER_SHEET, TEST_PAPER_HEADERS);
-    // 文字列として書く（「-」で始まる単元や年度が数式・数値に化けないように）
+    // 文字列として書く（年度・実施回が数値や日付に化けないように）
     sh.getRange(sh.getLastRow() + 1, 1, 1, values.length).setNumberFormat('@').setValues([values]);
   } finally {
     lock.releaseLock();
   }
-  return { ok: true, saved: 'testPaper', id: id, files: out, failed: failed };
+  return { ok: true, saved: 'testPaper', id: id, files: ok };
+}
+
+// このフォルダ（中学校テスト問題/<種類>）のファイルか。maxAgeMs を渡すと、作ってからその時間内のものだけ。
+function testPaperOwnFile_(id, maxAgeMs) {
+  if (!/^[\w-]{10,}$/.test(id)) return null;
+  try {
+    var file = DriveApp.getFileById(id);
+    if (maxAgeMs && new Date().getTime() - file.getDateCreated().getTime() > maxAgeMs) return null;
+    var rootId = testPaperRoot_().getId();
+    var parents = file.getParents();
+    while (parents.hasNext()) {
+      var p = parents.next();
+      var gp = p.getParents();
+      while (gp.hasNext()) if (gp.next().getId() === rootId && TEST_PAPER_KINDS.indexOf(p.getName()) >= 0) return file;
+    }
+  } catch (e) {}
+  return null;
+}
+
+// 保存をやめたとき：記録しなかったファイルをゴミ箱に移す（このフォルダの中の、2時間以内に作ったものだけ。記録済みのものは消さない）。
+function discardTestPaperFiles_(data) {
+  var ids = Array.isArray(data.ids) ? data.ids.slice(0, 10) : [];
+  var recorded = {};
+  var sh = (SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet()).getSheetByName(TEST_PAPER_SHEET);
+  if (sh && sh.getLastRow() >= 2) {
+    var col = colOf_(TEST_PAPER_HEADERS, 'ファイルID');
+    var vals = sh.getRange(2, col, sh.getLastRow() - 1, 1).getValues();
+    for (var i = 0; i < vals.length; i++) String(vals[i][0] || '').split(',').forEach(function (x) { if (x) recorded[x] = true; });
+  }
+  var trashed = 0;
+  for (var k = 0; k < ids.length; k++) {
+    var id = String(ids[k] || '');
+    if (recorded[id]) continue;
+    var file = testPaperOwnFile_(id, 2 * 3600 * 1000);
+    if (!file) continue;
+    try { file.setTrashed(true); trashed++; } catch (e) {}
+  }
+  return { ok: true, saved: 'testPaper', trashed: trashed };
 }
 
 // 保存したテスト問題の一覧（新しい順・最大3000件）。絞り込みは Next 側。
@@ -2686,9 +2743,9 @@ function listTestPapers_(data) {
     if (!testPaperCell_(r, '登録ID')) continue;
     items.push({
       id: testPaperCell_(r, '登録ID'), ts: testPaperCell_(r, '登録日時'), user: testPaperCell_(r, '登録者'), campus: testPaperCell_(r, '部門'),
-      kind: testPaperCell_(r, '種類'), year: testPaperCell_(r, '年度'), school: testPaperCell_(r, '学校'), grade: testPaperCell_(r, '学年'),
-      subject: testPaperCell_(r, '教科'), term: testPaperCell_(r, '時期・回'), title: testPaperCell_(r, '題名'),
-      topics: testPaperCell_(r, '単元・出題内容'), note: testPaperCell_(r, 'メモ'), files: testPaperCell_(r, 'ファイル')
+      kind: testPaperCell_(r, '種類'), year: testPaperCell_(r, '年度'), school: testPaperCell_(r, '学校'),
+      entranceType: testPaperCell_(r, '公立・私立'), grade: testPaperCell_(r, '学年'), subject: testPaperCell_(r, '科目'),
+      round: testPaperCell_(r, '実施回'), memo: testPaperCell_(r, 'メモ'), files: testPaperCell_(r, 'ファイル')
     });
   }
   items.reverse();

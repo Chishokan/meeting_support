@@ -18,6 +18,7 @@ import AiContextPanel, { type PinDraft, type PinProposalView, type SavedView } f
 import AiContextDiffDialog from '@/components/AiContextDiffDialog';
 import AiReportDialog from '@/components/AiReportDialog';
 import AiRequestDialog from '@/components/AiRequestDialog';
+import TestPaperDialog from '@/components/TestPaperDialog';
 import AiAgendaCard, { type AgendaProposalView } from '@/components/AiAgendaCard';
 import AiNepRequestCard, { type NepRequestView } from '@/components/AiNepRequestCard';
 import AiPreshareCards, { type PreshareButtonView } from '@/components/AiPreshareCards';
@@ -901,8 +902,20 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     });
   }
 
+  // テスト問題を保存する小窓（［🗄 テスト問題を保存］と、作業「テスト問題を保存する」で開く）
+  const [testPaper, setTestPaper] = useState(false);
+  function openTestPaper() {
+    ensureConvoId();
+    setTestPaper(true);
+  }
+
   // 作業ボタン：作業を選び、入力欄が空なら文の例を入れる（そのまま直して送れる）。
+  // 「テスト問題を保存する」は AI に頼まず、保存の小窓を開く。
   function chooseTask(t: TaskButton | null) {
+    if (t?.id === 'save-test') {
+      openTestPaper();
+      return;
+    }
     setTask(t);
     if (t && !input.trim()) setInput(t.starter);
     setTimeout(() => inputRef.current?.focus(), 0);
@@ -984,6 +997,9 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           <button type="button" className="ai-report-open ai-request-open" onClick={openRequest}>
             💡 要望を送る
           </button>
+          <button type="button" className="ai-report-open ai-testpaper-open" onClick={openTestPaper}>
+            🗄 テスト問題を保存
+          </button>
         </div>
       </div>
 
@@ -1038,6 +1054,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
             </button>
             <button type="button" className="ai-report-open" onClick={() => openReport()}>⚠ 不具合を報告</button>
             <button type="button" className="ai-report-open ai-request-open" onClick={openRequest}>💡 要望を送る</button>
+            <button type="button" className="ai-report-open ai-testpaper-open" onClick={openTestPaper}>🗄 テスト問題を保存</button>
           </span>
         </div>
       )}
@@ -1335,6 +1352,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
       )}
       {report && <AiReportDialog context={report.context} initialKind={report.kind} onClose={() => setReport(null)} />}
       {request && <AiRequestDialog context={request} onClose={() => setRequest(null)} />}
+      {testPaper && <TestPaperDialog conversationId={convoIdRef.current} onClose={() => setTestPaper(false)} />}
     </div>
   );
 }

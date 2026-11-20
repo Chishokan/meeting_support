@@ -3702,3 +3702,36 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .dm-agenda-cands ul { margin: 4px 0 8px 18px; padding: 0; }
 .dm-agenda-cands-by { color: #7a848f; font-size: 12px; margin-left: 4px; }
 .dm-agenda-cands button { padding: 5px 12px; border-radius: 8px; border: 1px solid #1f5c99; background: #1f5c99; color: #fff; font-size: 13px; cursor: pointer; }
+
+/* 智翔館AI：テスト問題を保存する小窓（components/TestPaperDialog.tsx）。欄の見た目は事前共有の小窓（.ai-preshare-modal）と同じ */
+.ai-testpaper-open { color: #22603a; border-color: #bfdcc9; }
+.ai-testpaper-open:hover { background: #f1f8f3; }
+.tp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+.tp-grid .tp-wide { grid-column: 1 / -1; }
+.tp-modal fieldset.ai-report-field { border: none; margin: 0; padding: 0; min-width: 0; }
+.tp-modal .ai-report-field small { display: block; margin-top: 4px; }
+.tp-drop {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 12px;
+  border: 1px dashed #b9cde0; border-radius: 8px; background: #f7fafd;
+}
+.tp-drop.on { border-color: #1f5c99; background: #eaf2fb; }
+.tp-files { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.tp-file {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 8px;
+  border: 1px solid #e3e8ee; border-radius: 8px; background: #fff;
+}
+.tp-file-name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.tp-file-size { flex: none; color: #7a848f; font-size: 12px; }
+.tp-file-state { flex: none; font-size: 12px; color: #4a5866; }
+.tp-done .tp-file-state { color: #1e7a3a; }
+.tp-error { white-space: pre-line; }
+.tp-file.tp-error .tp-file-state { color: #c0392b; white-space: normal; }
+.tp-file-remove { flex: none; border: none; background: none; color: #8a94a0; font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.tp-file-remove:disabled { opacity: .4; cursor: default; }
+.tp-saved { margin: 6px 0 10px; padding-left: 18px; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .tp-grid { grid-template-columns: minmax(0, 1fr); }
+  .tp-file { flex-wrap: wrap; }
+}
+/* 公立・私立のラジオは、小窓の入力欄の幅（100%）を受けない */
+.tp-modal .ai-report-kinds input[type='radio'] { width: auto; flex: none; margin: 0; padding: 0; border: none; }

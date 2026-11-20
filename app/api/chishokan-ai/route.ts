@@ -52,8 +52,8 @@ import { carriedNote, CARRY_MAX_FILES, isHeavy } from '@/lib/chishokanAi/attachC
 import { GENERATE_IMAGE_TOOL, IMAGE_MAX_PER_TURN } from '@/lib/chishokanAi/imageTool';
 import { imageGenerationEnabled, runGenerateImage, type ImageSource } from '@/lib/chishokanAi/imageGen';
 import { checkNepRequest, nepRequestToolResult, NEP_MAX_PER_TURN, PROPOSE_NEP_REQUEST_TOOL } from '@/lib/chishokanAi/nepRequest';
-import { SAVE_TEST_PAPER_TOOL, SEARCH_TEST_PAPERS_TOOL } from '@/lib/chishokanAi/testPapers';
-import { runSaveTestPaper, runSearchTestPapers } from '@/lib/chishokanAi/testPapersRun';
+import { SEARCH_TEST_PAPERS_TOOL } from '@/lib/chishokanAi/testPapers';
+import { runSearchTestPapers } from '@/lib/chishokanAi/testPapersRun';
 import { MEETING_RECORDS_TOOL, PROPOSE_AGENDA_TOOL } from '@/lib/chishokanAi/meetingRecords';
 import { runMeetingRecords, runProposeAgenda } from '@/lib/chishokanAi/meetingRecordsRun';
 import { AGENDA_CHOICE_BLOCK, asksAboutPreshare, needsAgendaChoice } from '@/lib/chishokanAi/meetingRecords';
@@ -248,7 +248,6 @@ export async function POST(req: Request) {
     // NEPへの作成依頼の案（画像・挿絵・チラシなどの制作は NEP に頼む。押すまで送らない）
     PROPOSE_NEP_REQUEST_TOOL,
     // 中学校のテスト問題（定期テスト・実力テスト・入試問題）の保存と検索（2026-11-20）
-    SAVE_TEST_PAPER_TOOL,
     SEARCH_TEST_PAPERS_TOOL,
   ] as unknown as Anthropic.Tool[];
   let tasksStarted = 0;
@@ -265,7 +264,7 @@ export async function POST(req: Request) {
   // NEPへの作成依頼の案（1回の回答で3つまで）
   const nepProposals: string[] = [];
   // テスト問題の保存（1回の回答で2件まで）と検索（3回まで）
-  const testSaved: string[] = [];
+  const testFound: string[] = [];
   let testSearches = 0;
   let meetingReads = 0;
   // 部門会議の事前共有を聞かれて読んだか（回答の最後に「議題を追加する」を出して、議題の追加を促す）
@@ -601,21 +600,14 @@ export async function POST(req: Request) {
                 nepProposals.push(c.value.title);
                 out = nepRequestToolResult(c.value);
               }
-            } else if (block.name === SAVE_TEST_PAPER_TOOL.name) {
-              if (testSaved.length >= 2) {
-                out = 'テスト問題の保存は1回の回答で2件までです。続きは次の質問で頼んでもらってください。';
-              } else {
-                // 保存できるのは、この質問の添付と前の添付（PDF・画像）
-                const r = await runSaveTestPaper(input, [...attachments, ...carried], { campus: session.campus, user: session.name }, ac.signal);
-                if (r.saved) testSaved.push(r.note);
-                out = r.text;
-              }
             } else if (block.name === SEARCH_TEST_PAPERS_TOOL.name) {
+              // 保存したテスト問題を探す（保存は画面の［🗄 テスト問題を保存］の小窓から。AI は保存しない）
               if (testSearches >= 3) {
                 out = 'テスト問題はもう探しています。見つかった範囲で答えてください。';
               } else {
                 testSearches++;
                 const r = await runSearchTestPapers(input, ac.signal);
+                testFound.push(r.note);
                 out = r.text;
               }
             } else if (block.name === TASK_EVAL_TOOL.name) {
@@ -652,8 +644,8 @@ export async function POST(req: Request) {
                 ? `${block.name}:${String(input.title ?? '')}`
                 : block.name === PROPOSE_CONTEXT_TOOL.name
                   ? `${block.name}:${String(input.id || input.name || '')}`
-                  : block.name === SAVE_TEST_PAPER_TOOL.name || block.name === SEARCH_TEST_PAPERS_TOOL.name
-                    ? `${block.name}:${[input.kind, input.year, input.school, input.grade, input.subject, input.term, input.query].filter(Boolean).join(' ')}`
+                  : block.name === SEARCH_TEST_PAPERS_TOOL.name
+                    ? `${block.name}:${[input.kind, input.year, input.school, input.grade, input.subject, input.round ? `第${input.round}回` : '', input.entrance_type, input.query].filter(Boolean).join(' ')}`
                     : `${block.name}:${String(input.path ?? input.query ?? input.folder ?? input.file ?? input.task ?? input.template ?? input.school ?? input.name ?? input.dept ?? '')}`,
             );
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
@@ -754,7 +746,7 @@ export async function POST(req: Request) {
         const pinNote = pinned.length ? `（コンテキスト: ${pinned.map((p) => `${p.id}「${p.name}」${p.text.length}字`).join('、')}）` : '';
         const proposalNote = proposals.length ? `（コンテキストの直し案: ${proposals.join('、')}）` : '';
         const nepNote = nepProposals.length ? `（NEPへの作成依頼の案: ${nepProposals.join('、')}）` : '';
-        const testNote = testSaved.length ? `（テスト問題を保存: ${testSaved.join('、')}）` : '';
+        const testNote = testFound.length ? `（テスト問題を検索: ${testFound.join('、')}）` : '';
         const fakeNote = fakeLinks.length ? `（作り話のリンク: ${fakeLinks.join('、')}）` : '';
         const madeAll = [...createdDocs, ...imagesMade];
         const docNote = madeAll.length

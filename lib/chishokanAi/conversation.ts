@@ -195,8 +195,6 @@ export function statusFor(tool: string, input: Record<string, unknown>): string 
       return `🗂 会議の記録を読んでいます${s(input.dept) ? `（${s(input.dept)}）` : ''}`;
     case 'propose_agenda_item':
       return `📝 議題の追加の案を作っています${s(input.dept) ? `（${s(input.dept)}）` : ''}`;
-    case 'save_test_paper':
-      return `🗄 テスト問題を保存しています${s(input.school) ? `（${s(input.school).slice(0, 20)} ${s(input.grade)} ${s(input.subject)}）` : ''}`;
     case 'search_test_papers':
       return `🔎 保存したテスト問題を探しています${[s(input.school), s(input.grade), s(input.subject), s(input.query)].filter(Boolean).length ? `（${[s(input.school), s(input.grade), s(input.subject), s(input.query)].filter(Boolean).join(' ').slice(0, 30)}）` : ''}`;
     case 'propose_nep_request':
