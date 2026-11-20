@@ -67,12 +67,11 @@
   - 評価シートの読み取りは見出しの文字（「指標」「段階」「良い動き」など）で行う。表の形を大きく変えたら parseEvaluation を直す
   - 行動計画への書き込みは Code.gs の appendPlanActions_。「月日」の行で日付の列、その下の校舎の3行（外部・内部・他）で行を決め、「★行動」を書き足す
   - 毎週の評価を別ファイルで作ったら、TASK_EVAL_BOOK_ID を変えて Apps Script を再デプロイする
-- 重要タスク評価（左メニュー「小中等部」→「重要タスク評価」。/task-eval）: lib/taskEval.ts（ファイル名の読み取り）、lib/taskEvalStore.ts（読み込み・書き出し）
-  - 小中等部でログインした人だけが、毎週の評価シート（Excel）と A4版（PDF）を保存できる。週ごと・新しい週から並ぶ
-  - ファイルはドライブ「15_AI利用データ」→「中等部重要タスクAI評価」（TASK_EVAL_FOLDER_ID）。名前の決まり
-    「YYYYMMDD_中等部重要タスクAI評価_評価シート_MMDD-MMDD」「YYYYMMDD_中等部重要タスクAI評価_A4版_MMDD-MMDD.pdf」に合うものだけを出す
-  - 一覧は Apps Script の listDriveFolder、A4版は readDriveFile（どちらも智翔館AI と同じ。再デプロイ不要）。
-    評価シートは Google スプレッドシートの書き出し（export?format=xlsx）をサーバで受けて渡す（フォルダが「リンクを知っている全員が閲覧可」であること）
+- 重要タスク評価（左メニュー「小中等部」→「重要タスク評価」。/task-eval）: lib/taskEval.ts（ファイル名の読み取り）、lib/taskEvalStore.ts（読み込み）
+  - 小中等部でログインした人だけが、毎週の評価の A4版（PDF）をダウンロードできる。週ごと・新しい週から並ぶ。評価シート（スプレッドシート）は出さない
+  - ファイルはドライブ「15_AI利用データ」→「中等部重要タスクAI評価」（TASK_EVAL_FOLDER_ID）。
+    名前の決まり「YYYYMMDD_中等部重要タスクAI評価_A4版_MMDD-MMDD.pdf」に合うものだけを出す（同じ週が2つあれば作った日が新しいほう）
+  - 一覧は Apps Script の listDriveFolder、PDF は readDriveFile（どちらも智翔館AI と同じ。再デプロイ不要。PDF は 4MB まで）
   - ダウンロードは一覧にある ID だけを受け付ける（フォルダの外のファイルは出さない）
 - 部門会議（「部門会議」メニュー。会議DXの基本機能。URL は /dept-minutes のまま）
   - 流れ（ループ）：1 会議情報を入力して［事前共有で報告する］→ 2 録音／録音ファイル添付／文字起こし貼り付け →

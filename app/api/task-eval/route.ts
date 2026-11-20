@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-// 重要タスク評価のダウンロード画面用。評価フォルダにある評価シートと A4版を、週ごとにまとめて返す。
+// 重要タスク評価のダウンロード画面用。評価フォルダにある A4版（PDF）を、週ごとにまとめて返す（評価シートは出さない）。
 export async function GET() {
   const s = getSession();
   if (!s) return Response.json({ ok: false, reason: 'unauthorized' }, { status: 401 });

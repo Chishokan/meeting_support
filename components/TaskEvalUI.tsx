@@ -1,19 +1,18 @@
 'use client';
 
-// 重要タスク評価のダウンロード（小中等部）。週ごとに、評価シート（Excel）と A4版（PDF）を保存できる。
+// 重要タスク評価のダウンロード（小中等部）。週ごとに、評価の A4版（PDF）を保存できる。
 // 一覧と中身はサーバ（/api/task-eval・/api/task-eval/download）が評価フォルダから読む。
 
 import { useEffect, useState } from 'react';
-import { sheetOpenUrl, TASK_EVAL_DEPT, type EvalFile, type EvalWeek } from '@/lib/taskEval';
+import { TASK_EVAL_DEPT, type EvalWeek } from '@/lib/taskEval';
 
 const REASONS: Record<string, string> = {
   not_configured: '読み込み先（Apps Script）が未設定です。管理者に伝えてください。',
   not_deployed: '読み込み先のスクリプトが古いままです。管理者に Apps Script の再デプロイを依頼してください。',
   not_allowed: '評価フォルダを読めませんでした。管理者に伝えてください。',
   forbidden: `${TASK_EVAL_DEPT}の職員だけが使えます。`,
-  not_found: 'ファイルが見つかりませんでした。一覧を読み直してください。',
-  export_failed: 'Excel に書き出せませんでした。「スプレッドシートで見る」から開き、ファイル → ダウンロード で保存してください。',
-  too_large: 'ファイルが大きすぎて渡せませんでした。「スプレッドシートで見る」から保存してください。',
+  not_found: 'ファイルが見つかりませんでした。画面を読み直してください。',
+  too_large: 'ファイルが大きすぎて渡せませんでした。管理者に伝えてください。',
   timeout: '時間がかかりすぎました。もう一度押してください。',
 };
 
@@ -49,12 +48,12 @@ export default function TaskEvalUI({ name, campus, allowed }: { name: string; ca
     if (allowed) load();
   }, [allowed]);
 
-  async function download(week: EvalWeek, file: EvalFile, format: 'xlsx' | 'pdf') {
+  async function download(week: EvalWeek) {
     if (busy) return;
-    setBusy(file.id);
+    setBusy(week.pdf.id);
     setStatus(null);
     try {
-      const res = await fetch(`/api/task-eval/download?id=${encodeURIComponent(file.id)}&format=${format}`, { cache: 'no-store' });
+      const res = await fetch(`/api/task-eval/download?id=${encodeURIComponent(week.pdf.id)}`, { cache: 'no-store' });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         setStatus({ week: week.week, text: reasonText(j?.reason) });
@@ -64,7 +63,7 @@ export default function TaskEvalUI({ name, campus, allowed }: { name: string; ca
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = format === 'xlsx' ? `${file.name}.xlsx` : file.name;
+      a.download = week.pdf.name;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -80,7 +79,7 @@ export default function TaskEvalUI({ name, campus, allowed }: { name: string; ca
     <div className="task">
       <div className="page-head">
         <h1>重要タスク評価</h1>
-        <p>{campus}／{name} さん。毎週の重要タスク評価（評価シートと A4版）を保存できます。</p>
+        <p>{campus}／{name} さん。毎週の重要タスク評価（A4版の PDF）を保存できます。</p>
       </div>
 
       <div className="task-body">
@@ -111,21 +110,10 @@ export default function TaskEvalUI({ name, campus, allowed }: { name: string; ca
                       <span className="teval-date">{dateText(w.created)} 作成</span>
                     </div>
                     <div className="teval-actions">
-                      {w.sheet && (
-                        <button type="button" disabled={!!busy} onClick={() => download(w, w.sheet!, 'xlsx')}>
-                          {busy === w.sheet.id ? '準備中…' : '評価シート（Excel）'}
-                        </button>
-                      )}
-                      {w.pdf && (
-                        <button type="button" disabled={!!busy} onClick={() => download(w, w.pdf!, 'pdf')}>
-                          {busy === w.pdf.id ? '準備中…' : 'A4版（PDF）'}
-                        </button>
-                      )}
-                      {w.sheet && (
-                        <a href={sheetOpenUrl(w.sheet.id)} target="_blank" rel="noopener noreferrer">スプレッドシートで見る</a>
-                      )}
+                      <button type="button" disabled={!!busy} onClick={() => download(w)}>
+                        {busy === w.pdf.id ? '準備中…' : 'A4版（PDF）をダウンロード'}
+                      </button>
                     </div>
-                    {!w.pdf && <p className="teval-sub">この週の A4版はありません。</p>}
                     {status?.week === w.week && <p className="task-note">{status.text}</p>}
                   </li>
                 ))}
