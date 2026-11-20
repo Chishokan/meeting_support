@@ -9,6 +9,7 @@ import PreshareDetail from '@/components/PreshareDetail';
 import PreshareList from '@/components/PreshareList';
 import ZoomButtons from '@/components/ZoomButtons';
 import ZoomMinutesBox from '@/components/ZoomMinutesBox';
+import AttendeePicker from '@/components/AttendeePicker';
 import { zoomErrorText } from '@/lib/zoom/link';
 import { formatSchedule, parseSchedule, splitSchedule } from '@/lib/zoom/schedule';
 import {
@@ -1189,10 +1190,15 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                 <span>場所</span>
                 <input value={meta.place} onChange={set('place')} placeholder="例：本部会議室 / オンライン" />
               </label>
-              <label className="wide">
+              {/* 出席者は、部門を選んで名前にチェックを入れる（components/AttendeePicker.tsx） */}
+              <div className="wide dm-att-field">
                 <span>出席者</span>
-                <input value={meta.attendees} onChange={set('attendees')} placeholder="例：直江、安東、池田、山中" />
-              </label>
+                <AttendeePicker
+                  value={meta.attendees}
+                  onChange={(v) => setMeta((m) => ({ ...m, attendees: v }))}
+                  campus={campus}
+                />
+              </div>
               <label className="wide">
                 <span>予定していた議題、または会議のレジュメ（任意）</span>
                 <textarea
@@ -1776,6 +1782,10 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
           me={name}
           onClose={() => setOpenPreshare(null)}
           onStart={openPreshare.row.id === shareId ? undefined : () => loadPreshare(openPreshare.row)}
+          onConfirmed={(next) => {
+            setPreshares((rows) => rows.map((r) => (r.id === next.id ? next : r)));
+            setOpenPreshare((o) => (o ? { ...o, row: next } : o));
+          }}
           onSaved={(next) => {
             setPreshares((rows) => rows.map((r) => (r.id === next.id ? next : r)));
             setOpenPreshare((o) => (o ? { ...o, row: next } : o));

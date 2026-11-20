@@ -1,20 +1,19 @@
 import { timingSafeEqual } from 'node:crypto';
 import { waitUntil } from '@vercel/functions';
-import { logInteraction } from '@/lib/core/log';
 import { listPreshareRows } from '@/lib/deptMinutesPreshareGas';
 import { jstNow, meetingIsOver } from '@/lib/zoom/due';
-import { advanceJob, inputFromPreshare } from '@/lib/zoom/minutesJob';
-import { jobStatuses, jobStoreReady } from '@/lib/zoom/minutesStore';
+import { runAuto } from '@/lib/zoom/autoMinutes';
+import { jobStoreReady } from '@/lib/zoom/minutesStore';
 import { parseSchedule } from '@/lib/zoom/schedule';
 
-// 毎朝の見回り：終わった会議の Zoom 録画から、議事録の下書きを自動で作る（Zoom連携）。
+// 毎朝の見回り：終わった会議の Zoom 録画から、議事録を自動で作って保存する（Zoom連携）。
 // -------------------------------------------------------------------------
 //   ・Vercel Cron（vercel.json）が毎日、深夜と明け方に叩く（…/cron/1、…/cron/2）。
 //     Vercel は Authorization: Bearer <CRON_SECRET> を付けて来る。CRON_SECRET が未設定なら受け付けない
 //   ・対象：事前共有から Zoom ミーティングを作った会議のうち、終わっていて（lib/zoom/due.ts）、
-//     議事録がまだ保存されておらず、下書きもできていないもの
+//     議事録がまだ保存されていないもの
 //   ・1回の実行（最大5分）で作れるのは1〜2件。残りがあれば、自分自身をもう一度呼んで続きを進める
-//   ・できた下書きは、事前共有のカードに「録画から下書きあり」と出る。人が確認して保存する
+//   ・できた議事録は、そのままスプレッドシートに保存する（lib/zoom/autoMinutes.ts）。先頭に自動作成の注記が入る
 //
 // 返事はすぐ返し、作業は返事のあとに続ける（呼び出し元を待たせない）。
 
@@ -52,51 +51,17 @@ async function work(self: string, started: number, skip: string[], depth: number
     const over = r.items.filter(
       (row) => row.zoomMeetingId && !row.minutesId && meetingIsOver(parseSchedule(row.date, now.today), now),
     );
-    const status = await jobStatuses(over.map((row) => row.id));
-    // 下書きができているものは済み。古い会議から順に。
-    const todo = over.filter((row) => status.get(row.id) !== 'done' && !tried.has(row.id)).reverse();
+    // 古い会議から順に。下書きまでできていて保存がまだのもの（画面で作ったまま保存していないものも含む）も、ここで保存する。
+    const todo = over.filter((row) => !tried.has(row.id)).reverse();
 
     for (const row of todo) {
       if (started + BUDGET_MS - Date.now() < START_MARGIN_MS) break;
-      let finished = false;
-      // 文字起こし → 議事録。1回で終わらなければ、時間の許すかぎり続きを進める。
-      for (let i = 0; i < 2; i++) {
-        const input = inputFromPreshare(row, { startedBy: '自動', deadline: started + BUDGET_MS });
-        if (!input) break;
-        const out = await advanceJob(input);
-        if (!out.ok) {
-          // 録画が無い・まだ処理中・ほかで作成中。次の見回りでまた見る。
-          if (out.reason === 'no_recording' || out.reason === 'processing' || out.reason === 'busy') summary.waiting++;
-          else summary.failed.push(`${row.title}(${out.reason})`);
-          finished = true;
-          break;
-        }
-        if (out.job.status === 'done') {
-          summary.made.push(row.title);
-          await logInteraction({
-            user: '自動',
-            campus: row.campus,
-            input: `[Zoom録画から議事録・自動] ${row.title || '（会議名未入力）'}｜文字起こし${out.job.transcript.length}字（${out.job.source}）`,
-            output: out.job.minutes,
-          }).catch(() => {});
-          finished = true;
-          break;
-        }
-        if (out.job.status === 'error') {
-          summary.failed.push(`${row.title}(${out.job.error})`);
-          finished = true;
-          break;
-        }
-        // 文字起こしはできたが、議事録づくりに失敗した。この見回りでは繰り返さない（次の見回りでやり直す）。
-        if (out.job.error) {
-          summary.failed.push(`${row.title}(${out.job.error})`);
-          finished = true;
-          break;
-        }
-        // 文字起こしまで済んだ。残り時間が足りなければ、議事録は次の呼び出しで作る。
-        if (started + BUDGET_MS - Date.now() < 150000) break;
-      }
-      if (finished) tried.add(row.id);
+      const out = await runAuto(row, started + BUDGET_MS);
+      if (out === 'saved') summary.made.push(row.title);
+      else if (out === 'waiting') summary.waiting++;
+      else if (out !== 'pending') summary.failed.push(`${row.title}(${out.failed})`);
+      // 途中まで進んだもの（pending）は、続きを次の呼び出しで進める。それ以外は、この見回りではもう試さない。
+      if (out !== 'pending') tried.add(row.id);
     }
     summary.left = todo.filter((row) => !tried.has(row.id)).length;
   } catch (e) {
