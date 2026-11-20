@@ -5,7 +5,7 @@ import { canDeletePreshare, missingForPreshare, type PreshareRow } from '@/lib/d
 import { listPreshareRows } from '@/lib/deptMinutesPreshareGas';
 import { canHostMeeting } from '@/lib/zoom/access';
 import { defaultZoomAccount, isZoomAccountId, zoomAccount, zoomAccountOptions, type ZoomAccountId } from '@/lib/zoom/accounts';
-import { ZoomError, createMeeting, deleteMeeting, updateMeeting, type MeetingInput } from '@/lib/zoom/client';
+import { ZoomError, createMeeting, deleteMeeting, getMeeting, updateMeeting, type MeetingInput } from '@/lib/zoom/client';
 import { parseSchedule } from '@/lib/zoom/schedule';
 import { deleteMeetingLinks, saveMeetingLink } from '@/lib/zoom/store';
 
@@ -70,13 +70,18 @@ async function ensureMeeting(
   try {
     if (existing?.zoomMeetingId && existing.zoomAccount === account) {
       try {
+        // v1.17.0〜v1.18.0 で作った会議は、パーソナルミーティングルーム（全部の会議で同じ番号）になっていることがある。
+        // そのままだと録画がどの会議のものか見分けられないので、更新のときに会議ごとの番号で作り直す
+        //（パーソナルミーティングルームそのものは、ほかの会議でも使われているので触らない）。
+        const cur = await getMeeting(account, existing.zoomMeetingId);
+        if (cur.usesPmi) throw new ZoomError('not_found', 'pmi');
         await updateMeeting(account, existing.zoomMeetingId, input);
         return {
           ok: true, action: 'updated', account,
           meetingId: existing.zoomMeetingId, joinUrl: s(existing.zoomJoinUrl), passcode: s(existing.zoomPasscode),
         };
       } catch (e) {
-        // Zoom 側で消されていたら、作り直す。それ以外の失敗はそのまま返す。
+        // Zoom 側で消されていた（またはパーソナルミーティングルームだった）ら、作り直す。それ以外の失敗はそのまま返す。
         if (!(e instanceof ZoomError) || e.reason !== 'not_found') throw e;
       }
     }
@@ -230,8 +235,13 @@ export async function DELETE(req: Request) {
   let zoom: { ok: true } | { ok: false; reason: string } | undefined;
   if (row.zoomMeetingId && isZoomAccountId(row.zoomAccount)) {
     try {
-      await deleteMeeting(row.zoomAccount, row.zoomMeetingId);
-      zoom = { ok: true };
+      // パーソナルミーティングルームは、ほかの会議でも使われているので消さない（事前共有だけ消す）。
+      const cur = await getMeeting(row.zoomAccount, row.zoomMeetingId);
+      if (cur.usesPmi) zoom = { ok: false, reason: 'pmi' };
+      else {
+        await deleteMeeting(row.zoomAccount, row.zoomMeetingId);
+        zoom = { ok: true };
+      }
     } catch (e) {
       const z = e instanceof ZoomError ? e : new ZoomError('upstream');
       // Zoom 側ですでに消されていたら、消せたのと同じ。
