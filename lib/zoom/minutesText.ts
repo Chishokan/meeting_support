@@ -17,6 +17,7 @@ function attemptReason(reason: string | undefined): string {
     case 'not_configured': return '未設定';
     case 'too_large': return '音声が大きすぎる';
     case 'rate_limited': return '利用枠の上限';
+    case 'quota': return '残高・利用枠の不足';
     case 'invalid_key': return 'キーが無効';
     case 'model_not_found': return 'モデル名が違う';
     case 'timeout': return '時間切れ';

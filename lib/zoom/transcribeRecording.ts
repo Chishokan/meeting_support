@@ -81,12 +81,19 @@ export async function transcribeWithOpenAI(audio: Uint8Array, ext: string, deadl
     if (!res.ok) {
       const body = (await res.text().catch(() => '')).slice(0, 300);
       console.error('[ZOOM_TRANSCRIBE] openai', res.status, body);
-      const reason = res.status === 401 || res.status === 403 ? 'invalid_key'
+      // OpenAI は 429 を「回数の上限」と「残高・利用枠の不足」の両方に使う。本文の code で見分ける。
+      let code = '';
+      try {
+        const e = (JSON.parse(body) as { error?: { code?: unknown; type?: unknown } }).error;
+        code = String(e?.code ?? e?.type ?? '').slice(0, 40);
+      } catch {}
+      const reason = code === 'insufficient_quota' ? 'quota'
+        : res.status === 401 || res.status === 403 ? 'invalid_key'
         : res.status === 404 ? 'model_not_found'
         : res.status === 413 ? 'too_large'
         : res.status === 429 ? 'rate_limited'
         : res.status >= 500 ? 'upstream_busy' : 'upstream_error';
-      return { ok: false, reason, detail: `HTTP ${res.status}` };
+      return { ok: false, reason, detail: `HTTP ${res.status}${code ? ` ${code}` : ''}` };
     }
     const j = (await res.json().catch(() => null)) as { text?: unknown } | null;
     const text = typeof j?.text === 'string' ? j.text.trim() : '';
