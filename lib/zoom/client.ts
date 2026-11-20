@@ -166,3 +166,95 @@ export async function getMeeting(id: ZoomAccountId, meetingId: string): Promise<
   const r = await call<RawMeeting>(account(id), 'GET', `/meetings/${encodeURIComponent(meetingId)}`);
   return toMeeting(r);
 }
+
+// ---------------------------------------------------------------------------
+// 録画（クラウドレコーディング）
+// ---------------------------------------------------------------------------
+// 必要なスコープ：cloud_recording:read:list_recording_files:admin
+
+export type RecordingFile = {
+  id: string;
+  // M4A（音声のみ）/ MP4（動画）/ TRANSCRIPT（Zoom の文字起こし・VTT）/ CHAT など
+  type: string;
+  size: number; // バイト
+  downloadUrl: string;
+  status: string; // completed になってから取りに行く
+};
+
+export type Recording = {
+  uuid: string; // 開催1回ごとの番号（同じミーティングIDで何度開いても別になる）
+  meetingId: string;
+  topic: string;
+  startTime: string; // ISO（UTC）
+  durationMin: number;
+  files: RecordingFile[];
+};
+
+type RawRecording = {
+  uuid?: string; id?: number | string; topic?: string; start_time?: string; duration?: number;
+  recording_files?: { id?: string; file_type?: string; file_size?: number; download_url?: string; status?: string }[];
+};
+
+// UUID に「/」が入っているときは、2回エンコードして渡す決まり。
+function meetingPathId(idOrUuid: string): string {
+  const once = encodeURIComponent(idOrUuid);
+  return idOrUuid.startsWith('/') || idOrUuid.includes('//') ? encodeURIComponent(once) : once;
+}
+
+/**
+ * ミーティングの録画ファイルの一覧。ミーティングIDを渡すと、いちばん新しい開催回の録画が返る。
+ * 録画が無い（まだ処理中・録画していない）ときは not_found になる。
+ */
+export async function getRecording(id: ZoomAccountId, meetingIdOrUuid: string): Promise<Recording> {
+  const r = await call<RawRecording>(account(id), 'GET', `/meetings/${meetingPathId(meetingIdOrUuid)}/recordings`);
+  if (!r?.uuid) throw new ZoomError('not_found', 'no recording');
+  return {
+    uuid: String(r.uuid),
+    meetingId: String(r.id ?? ''),
+    topic: String(r.topic ?? ''),
+    startTime: String(r.start_time ?? ''),
+    durationMin: Number(r.duration) || 0,
+    files: (r.recording_files ?? []).map((f) => ({
+      id: String(f.id ?? ''),
+      type: String(f.file_type ?? '').toUpperCase(),
+      size: Number(f.file_size) || 0,
+      downloadUrl: String(f.download_url ?? ''),
+      status: String(f.status ?? ''),
+    })),
+  };
+}
+
+// 録画ファイルのダウンロード先として開いてよいものだけを通す（Zoom のホストだけ）。
+function isZoomDownloadUrl(url: string): boolean {
+  return /^https:\/\/([a-z0-9-]+\.)*zoom\.us\//i.test(url);
+}
+
+/**
+ * 録画ファイルを取り出す。大きいファイルがあるので、上限を超えたら too_large で止める。
+ * ダウンロード先は別のホストへ転送されることがあり、そのとき Authorization ヘッダは落ちるので、
+ * Zoom の決まりどおりアクセストークンを URL に付けて渡す（この URL はログに出さない）。
+ */
+export async function downloadRecordingFile(
+  id: ZoomAccountId,
+  file: RecordingFile,
+  maxBytes: number,
+  timeoutMs = 120000,
+): Promise<Uint8Array> {
+  if (!isZoomDownloadUrl(file.downloadUrl)) throw new ZoomError('upstream', 'bad download url');
+  if (file.size > maxBytes) throw new ZoomError('upstream', 'too_large');
+  const token = await accessToken(account(id));
+  const url = `${file.downloadUrl}${file.downloadUrl.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`;
+  let res: Response;
+  try {
+    res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
+  } catch {
+    throw new ZoomError('upstream', 'download network');
+  }
+  if (!res.ok) throw failOf(res.status, null);
+  const buf = new Uint8Array(await res.arrayBuffer());
+  if (buf.byteLength > maxBytes) throw new ZoomError('upstream', 'too_large');
+  // サインイン画面などの HTML が返ってきたら失敗として扱う（トークンが通っていない）。
+  const head = Buffer.from(buf.subarray(0, 15)).toString('latin1').toLowerCase();
+  if (head.startsWith('<!doctype') || head.startsWith('<html')) throw new ZoomError('auth', 'download html');
+  return buf;
+}

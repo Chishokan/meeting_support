@@ -3702,3 +3702,31 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .dm-agenda-cands ul { margin: 4px 0 8px 18px; padding: 0; }
 .dm-agenda-cands-by { color: #7a848f; font-size: 12px; margin-left: 4px; }
 .dm-agenda-cands button { padding: 5px 12px; border-radius: 8px; border: 1px solid #1f5c99; background: #1f5c99; color: #fff; font-size: 13px; cursor: pointer; }
+
+/* 手順2：Zoom の録画から議事録をつくる（components/ZoomMinutesBox.tsx） */
+.dm-zoomrec {
+  margin: 0 0 16px; padding: 14px 16px; background: #f3f7ff; border: 1px solid #c9dafc; border-radius: 10px;
+}
+.dm-zoomrec-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 10px; }
+.dm-zoomrec-head strong { font-size: 14px; color: var(--navy); }
+.dm-zoomrec-head span { font-size: 12px; color: #5a6b7d; line-height: 1.6; }
+.dm-zoomrec-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dm-zoomrec-btn {
+  padding: 9px 18px; font-size: 13px; font-weight: 700; color: #fff; background: #0b5cff;
+  border: 1px solid #0b5cff; border-radius: 8px; cursor: pointer;
+}
+.dm-zoomrec-btn:hover { filter: brightness(1.06); }
+.dm-zoomrec-btn:disabled, .dm-zoomrec-sub:disabled { opacity: .55; cursor: default; filter: none; }
+.dm-zoomrec-sub {
+  padding: 7px 12px; font-size: 12px; font-weight: 700; color: var(--navy); background: #fff;
+  border: 1px solid #cdd8e3; border-radius: 8px; cursor: pointer;
+}
+.dm-zoomrec select { width: auto; max-width: 100%; padding: 7px 8px; font-size: 12px; border: 1px solid #cdd8e3; border-radius: 8px; background: #fff; }
+.dm-zoomrec-done { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: #2e6b4f; line-height: 1.7; }
+.dm-zoomrec-note { margin: 10px 0 0; font-size: 12px; color: #33475b; line-height: 1.7; }
+.dm-zoomrec-err { margin: 10px 0 0; font-size: 12px; color: #b3261e; line-height: 1.7; }
+.dm-zoomrec-fine { margin: 6px 0 0; font-size: 11px; color: #7a8794; line-height: 1.6; overflow-wrap: anywhere; }
+.pre-draft {
+  padding: 2px 8px; font-size: 11px; font-weight: 700; color: #0b5cff; background: #eaf1ff;
+  border: 1px solid #c9dafc; border-radius: 999px; white-space: nowrap;
+}

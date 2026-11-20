@@ -45,6 +45,8 @@ export default function PreshareList({
               <span className="dm-meet-count">
                 {past ? '議事録はまだありません' : row.user && `共有：${row.user}`}
               </span>
+              {/* Zoom の録画から下書きができている会議（［議事録をつくる］で読み込める） */}
+              {row.minutesJob === 'done' && <span className="pre-draft">録画から下書きあり</span>}
               <div className="pre-actions">
                 <button className="dm-detail" onClick={() => onOpen(row, when)}>議題を見る</button>
                 {/* Zoom ミーティングを作った会議だけ、［Zoomに参加］か［ホストとして開始］が出る */}
