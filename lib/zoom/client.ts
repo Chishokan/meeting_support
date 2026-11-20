@@ -36,6 +36,9 @@ export type ZoomMeeting = {
   joinUrl: string;
   passcode: string;
   startUrl: string; // ホストとして開始するURL。保存しない（期限があり、持つ人がホストになれるため）
+  // パーソナルミーティングID（PMI）を使ったミーティングか。
+  // PMI は全部の会議で同じ番号・同じ参加URLになり、録画がどの会議のものか見分けられないので使わない。
+  usesPmi: boolean;
 };
 
 export type MeetingInput = {
@@ -110,11 +113,19 @@ function account(id: ZoomAccountId): ZoomAccount {
   return a;
 }
 
-type RawMeeting = { id?: number | string; join_url?: string; password?: string; start_url?: string };
+type RawMeeting = {
+  id?: number | string; join_url?: string; password?: string; start_url?: string;
+  pmi?: number | string; settings?: { use_pmi?: boolean };
+};
 
 function toMeeting(r: RawMeeting | null): ZoomMeeting {
   if (!r?.id || !r.join_url) throw new ZoomError('upstream', 'empty');
-  return { id: String(r.id), joinUrl: String(r.join_url), passcode: String(r.password ?? ''), startUrl: String(r.start_url ?? '') };
+  // PMI を使ったミーティングは、use_pmi が true になるか、pmi（その番号）が返ってくる。
+  const usesPmi = r.settings?.use_pmi === true || (r.pmi != null && String(r.pmi) !== '');
+  return {
+    id: String(r.id), joinUrl: String(r.join_url), passcode: String(r.password ?? ''),
+    startUrl: String(r.start_url ?? ''), usesPmi,
+  };
 }
 
 // Zoom に渡す本文。自動クラウド録画は会議ごとに指定する（アカウント全体の設定に頼らない）。
@@ -126,7 +137,10 @@ function meetingBody(m: MeetingInput) {
     timezone: 'Asia/Tokyo',
     duration: m.durationMin,
     ...(m.agenda ? { agenda: m.agenda.slice(0, 2000) } : {}),
-    settings: { auto_recording: 'cloud' },
+    // use_pmi:false … 会議ごとに別のミーティングIDを作る。
+    //   Zoom の設定「ミーティングのスケジュール時にパーソナル ミーティング ID を使用する」がオンのアカウントでは、
+    //   指定しないと全部の会議がパーソナルミーティングルーム（同じ番号）になる。
+    settings: { auto_recording: 'cloud', use_pmi: false },
   };
 }
 

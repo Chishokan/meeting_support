@@ -122,7 +122,11 @@ export default function PreshareDetail({
       if (res.ok && j?.ok) {
         // Zoom だけ消せなかったとき：事前共有は消えているので、Zoom に残ったことだけ伝える。
         if (j.zoom && !j.zoom.ok) {
-          alert(`事前共有は削除しましたが、Zoom ミーティングは削除できませんでした。\n${zoomErrorText(j.zoom.reason)}`);
+          alert(
+            j.zoom.reason === 'pmi'
+              ? `事前共有を削除しました。\n${zoomErrorText('pmi')}`
+              : `事前共有は削除しましたが、Zoom ミーティングは削除できませんでした。\n${zoomErrorText(j.zoom.reason)}`,
+          );
         }
         onDeleted?.(row.id);
         return;
