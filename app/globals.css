@@ -410,8 +410,6 @@ button.primary:disabled { opacity: .5; cursor: default; }
   flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; margin-top: 1px;
   border-radius: 50%; background: var(--navy); color: #fff; font-size: 12px;
 }
-.task-pct { display: flex; align-items: center; gap: 8px; font-size: 15px; }
-.task-pct input { width: 7em; font-variant-numeric: tabular-nums; }
 .task-q textarea {
   width: 100%; min-height: 7.5em; resize: vertical; padding: 10px 12px;
   font-size: 15px; line-height: 1.7; font-family: inherit;

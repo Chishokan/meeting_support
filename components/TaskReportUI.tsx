@@ -1,13 +1,13 @@
 'use client';
 
-// 重要タスク報告（小中等部の週次）。対象週・校舎を選び、5つの設問に答えて送る。
+// 重要タスク報告（小中等部の週次）。対象週・校舎を選び、設問（マイルストーンごとの改善・工夫）に答えて送る。
 // 設問の文言は lib/taskReport.ts の QUESTIONS にある。
 
 import { useState, type FormEvent } from 'react';
 import { MAX_TEXT_LENGTH, QUESTIONS, TASK_REPORT_DEPT, type TaskAnswers, type WeekOption } from '@/lib/taskReport';
 
-const EMPTY: TaskAnswers = { progress: '', m1: '', m2: '', m3: '', other: '' };
-const PLACEHOLDER = 'いつから・誰に・何をしたか。結果は数字で';
+const EMPTY: TaskAnswers = { m1: '', m2: '', other: '' };
+const PLACEHOLDER = 'いつから・誰に・何をしたか。結果は数字で（声をかけた人数→申込の人数など）';
 
 const REASONS: Record<string, string> = {
   not_configured: '保存先（スプレッドシート連携の Apps Script）が未設定です。管理者に伝えてください。',
@@ -15,7 +15,6 @@ const REASONS: Record<string, string> = {
   forbidden: `${TASK_REPORT_DEPT}の職員だけが報告できます。`,
   bad_week: '対象週を選び直してください。',
   bad_school: '校舎を選び直してください。',
-  bad_progress: '1 は 0〜100 の数字で入れてください。',
 };
 
 export default function TaskReportUI({
@@ -112,21 +111,11 @@ export default function TaskReportUI({
                     {!q.required && <small>（任意）</small>}
                   </span>
                 </label>
-                {q.key === 'progress' ? (
-                  <div className="task-pct">
-                    <input
-                      id={`task-${q.key}`} type="number" min={0} max={100} step="any" inputMode="decimal"
-                      value={answers.progress} onChange={(e) => setAnswer('progress', e.target.value)}
-                    />
-                    <span>%</span>
-                  </div>
-                ) : (
-                  <textarea
-                    id={`task-${q.key}`} maxLength={MAX_TEXT_LENGTH}
-                    placeholder={q.key === 'other' ? '' : PLACEHOLDER}
-                    value={answers[q.key]} onChange={(e) => setAnswer(q.key, e.target.value)}
-                  />
-                )}
+                <textarea
+                  id={`task-${q.key}`} maxLength={MAX_TEXT_LENGTH}
+                  placeholder={q.key === 'other' ? '' : PLACEHOLDER}
+                  value={answers[q.key]} onChange={(e) => setAnswer(q.key, e.target.value)}
+                />
               </div>
             ))}
 
