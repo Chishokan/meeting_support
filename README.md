@@ -55,8 +55,12 @@
     スプレッドシート「成功事例」へ自動で1件1行記録し、ダッシュボードに全部門分を表示
     （抽出ロジック: lib/successCases.ts ／ 保存先: apps_script/Code.gs の saveSuccess_ / listSuccess_）
 - 重要タスク報告（左メニュー「小中等部」→「重要タスク報告」。/task-report）: lib/taskReport.ts
-  - 小中等部の教室担当が毎週、対象週（土〜金）と校舎を選んで5つの設問に答える。設問の文言は QUESTIONS、校舎は数値報告と同じ CAMPUSES_BY_DEPT
+  - 小中等部の教室担当が毎週、対象週（土〜金）と校舎を選んで設問に答える。設問の文言は QUESTIONS、校舎は数値報告と同じ CAMPUSES_BY_DEPT
+  - 2026-11-21 から、設問はマイルストーン2つ（中1・2模試、レベル模試の動員率7割／冬期講習 外部生（中1・2年）の目標動員率3割完了）の改善・工夫と、そのほか（任意）の3問。
+    それまでは進行表の%・テ対外部・おは勉・進行表の5問
   - 保存先はスプレッドシート「重要タスク報告」（apps_script/Code.gs の saveTaskReport_）。出し直すと追記（同じ週・校舎は新しいほうを使う）
+  - 見出しはシートが空のときだけ書く。設問を変えて本番に出したら、すぐに「重要タスク報告」シートの名前を変えて残す
+    （例：「重要タスク報告（〜11/20）」）。次の報告で、新しい見出しの「重要タスク報告」シートが自動でできる
   - Apps Script が再デプロイ前で saved の印が返らないときは、保存されていないとして画面に出す
 - AI壁打ち（左メニュー「小中等部」→「AI壁打ち」。/task-coach）: lib/taskCoach.ts（読み取り・入力チェック）、lib/taskCoachPrompt.ts（AIへの指示）、lib/taskCoachStore.ts（Apps Script）、lib/taskCoachDoc.ts（Word）
   - 重要タスク評価シート（apps_script/Code.gs の TASK_EVAL_BOOK_ID）の校舎タブを読み、項目ごとに AI と行動計画を相談する。校舎は COACH_SCHOOLS（評価シートのタブ名＝秋～冬行動計画の校舎の行の名前）
