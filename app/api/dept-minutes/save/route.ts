@@ -1,5 +1,6 @@
 import { getSession } from '@/lib/core/auth';
 import { extractDecisions, extractMinutes, extractQuality } from '@/lib/deptMinutesParse';
+import { deleteJobs } from '@/lib/zoom/minutesStore';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -59,6 +60,8 @@ export async function POST(req: Request) {
     // GAS(ContentService)は失敗時も HTTP 200 を返すため、本文の ok/reason を必ず確認する。
     const j = await res.json().catch(() => null);
     if (res.ok && j && j.ok === true) {
+      // 録画から作った下書き（文字起こし全文を含む）は、議事録を保存したら用済みなので消す。
+      if (preshareId) await deleteJobs(preshareId);
       return Response.json({
         ok: true,
         decisions: decisions.length,

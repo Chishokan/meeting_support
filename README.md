@@ -91,6 +91,12 @@
     （lib/deptMinutesPreshare.ts の canDeletePreshare）。議事録を保存済みのものは消せない。
     シートの行ごと消し（apps_script/Code.gs の deleteDeptPreshare_）、Zoom ミーティングを作ってあればそれも消す
     （Zoom のアプリにスコープ meeting:delete:meeting:admin が要る）。誰がいつ消したかは会話ログに残る
+  - 録画から議事録の下書き：手順2の「Zoom の録画から作る」（components/ZoomMinutesBox.tsx）→ app/api/zoom/minutes
+    - 流れ: lib/zoom/minutesJob.ts（録画の音声を取り出す → 文字起こし → 議事録の下書き。途中経過を置いて続きから進める）
+    - 文字起こし: lib/zoom/transcribeRecording.ts（OpenAI → Gemini → Zoom の文字起こし（予備）。順番は ZOOM_TRANSCRIBE_ORDER）
+    - 置き場: Supabase の zoom_minutes_jobs（supabase/migrations/0005。文字起こし全文を含むので14日で消す）
+    - 自動: app/api/zoom/webhook/[account]（Zoom の recording.completed を受けて下書きを作る。ZOOM_n_WEBHOOK_SECRET が要る）
+    - Zoom のアプリにスコープ cloud_recording:read:list_recording_files:admin が要る
   - 議事録テンプレート（項目・書き方）: lib/deptMinutesTemplate.ts ★ここを直せば AI の出力・
     画面のヘルプ・会議の質チェックにまとめて反映される
   - AI への指示: lib/deptMinutesPrompt.ts

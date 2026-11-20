@@ -64,3 +64,17 @@ export async function deleteMeetingLinks(preshareId: string): Promise<'ok' | 'no
     return 'error';
   }
 }
+
+/** 通知で届いたミーティングIDから、どの事前共有の会議かを引く。見つからなければ null。 */
+export async function findMeetingLink(account: string, meetingId: string): Promise<{ preshareId: string; campus: string } | null> {
+  const db = supabaseAdmin();
+  if (!db) return null;
+  try {
+    const { data, error } = await db
+      .from('zoom_meetings').select('preshare_id, campus').eq('account', account).eq('meeting_id', meetingId).maybeSingle();
+    if (error || !data) return null;
+    return { preshareId: String(data.preshare_id ?? ''), campus: String(data.campus ?? '') };
+  } catch {
+    return null;
+  }
+}
