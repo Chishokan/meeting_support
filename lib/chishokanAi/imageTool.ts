@@ -7,6 +7,13 @@
 // - スライドには、保存した画像の番号（id）を layout の image に入れて差し込む
 // 呼び出しは imageGen.ts。決まり（描かせないもの・日本語の文字）は knowledge/05_作業/10_チラシを作る.md・30_スライドの構成を作る.md。
 
+/**
+ * 画像の生成を使えないときに、画面とAIの回答で出す知らせ（2026-11-21 職員の指示）。
+ * GPT（OpenAI）・Gemini（Google）の API を使った画像生成は調整中。画像・挿絵・チラシの画像は NEP事業部に依頼する。
+ */
+export const IMAGE_PAUSED_NOTICE = 'GPT・Gemini（API）を使った画像生成は調整中のため、いまは使えません。';
+export const IMAGE_PAUSED_ALT = '画像・イラスト・スライドの挿絵や背景・チラシの画像は、NEP事業部への作成依頼の案を出します。';
+
 export const IMAGE_ASPECTS = ['1:1', '3:4', '4:3', '2:3', '3:2', '9:16', '16:9'] as const;
 export type ImageAspect = (typeof IMAGE_ASPECTS)[number];
 export const IMAGE_PURPOSES = ['チラシ', 'ポスター', 'サイネージ', 'スライド', '挿絵'] as const;

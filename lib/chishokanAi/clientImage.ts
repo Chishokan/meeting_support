@@ -1,8 +1,8 @@
 // 画面（ブラウザ）専用：画像を長辺1600pxに縮小して JPEG の base64 にする（会議AIと同じ）。
 // 智翔館AI の添付と、不具合報告の画面の写真で使う。
 
-// 画像は長辺1600pxに縮小してJPEG化（会議AIと同じ）。
-export async function imageToBase64(file: File): Promise<{ data: string; mime: string }> {
+// 画像は長辺1600pxに縮小してJPEG化（会議AIと同じ）。テスト問題の保存は、小さな字が読めるよう長辺 2400px・質 0.85 で使う。
+export async function imageToBase64(file: File, max = 1600, quality = 0.8): Promise<{ data: string; mime: string }> {
   const dataUrl: string = await new Promise((res, rej) => {
     const fr = new FileReader();
     fr.onload = () => res(String(fr.result));
@@ -18,8 +18,8 @@ export async function imageToBase64(file: File): Promise<{ data: string; mime: s
   let w = img.width;
   let h = img.height;
   const m = Math.max(w, h);
-  if (m > 1600) {
-    const s = 1600 / m;
+  if (m > max) {
+    const s = max / m;
     w = Math.round(w * s);
     h = Math.round(h * s);
   }
@@ -28,8 +28,10 @@ export async function imageToBase64(file: File): Promise<{ data: string; mime: s
   canvas.height = h;
   const ctx = canvas.getContext('2d');
   if (!ctx) return { data: dataUrl.split(',')[1] ?? '', mime: file.type || 'image/png' };
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
   ctx.drawImage(img, 0, 0, w, h);
-  return { data: canvas.toDataURL('image/jpeg', 0.8).split(',')[1] ?? '', mime: 'image/jpeg' };
+  return { data: canvas.toDataURL('image/jpeg', quality).split(',')[1] ?? '', mime: 'image/jpeg' };
 }
 
 

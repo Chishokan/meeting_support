@@ -2,6 +2,7 @@
 
 全職員向けの操作マニュアル（会議DX のメニュー画面・部門会議と、ヘルプデスクの要項QA・マニュアル・ご意見・不具合の報告）。v0.18.0 の画面で作成。
 職員にはヘルプデスクの「マニュアル」タブ（/helpdesk/manual）で配る。配るファイルは `public/manual/`、並べ方は `lib/manuals.ts`。
+`lib/manuals.ts` には分類（`category`）を必ず付ける（画面では分類ごとの目次と検索で探す。合う分類が無ければ `MANUAL_CATEGORIES` に足す）。
 
 | ファイル | 中身 |
 |---|---|
@@ -45,7 +46,7 @@
 
 | ファイル | 中身 |
 |---|---|
-| `../../public/manual/chishokan-ai-manual-v1.16.0.pdf` | 配布用の PDF（A4・22ページ）。ダウンロード時の名前は `智翔館AI利用マニュアル_v1.16.0.pdf` |
+| `../../public/manual/chishokan-ai-manual-v1.26.0.pdf` | 配布用の PDF（A4・24ページ）。ダウンロード時の名前は `智翔館AI利用マニュアル_v1.26.0.pdf`。v1.26.0 は原稿の文だけ直した（画面の写真は v1.16.0 のまま。上の［🗄 テスト問題を保存］・画像の知らせは写っていない） |
 | `chishokan-ai-manual.html` | 原稿（会議DX のマニュアルと同じ書式。PDF はここから作る） |
 | `images/ai_*.png` | 画面の写真（赤枠・番号つき） |
 | `chishokan-ai/shots.js` | 写真を撮るスクリプト。アプリを手元で起動し（`CHISHOKAN_AI_MEMBERS='*' npx next start -p 3124`）、AI の回答は架空の例に差し替えて撮る。右の欄（コンテキスト）は横に広い画面（1366px）で撮る |

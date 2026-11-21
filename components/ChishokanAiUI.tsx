@@ -18,6 +18,7 @@ import AiContextPanel, { type PinDraft, type PinProposalView, type SavedView } f
 import AiContextDiffDialog from '@/components/AiContextDiffDialog';
 import AiReportDialog from '@/components/AiReportDialog';
 import AiRequestDialog from '@/components/AiRequestDialog';
+import TestPaperDialog from '@/components/TestPaperDialog';
 import AiAgendaCard, { type AgendaProposalView } from '@/components/AiAgendaCard';
 import AiNepRequestCard, { type NepRequestView } from '@/components/AiNepRequestCard';
 import AiPreshareCards, { type PreshareButtonView } from '@/components/AiPreshareCards';
@@ -31,6 +32,9 @@ import {
   LONG_CONVERSATION_CHARS,
   SUMMARY_PROMPT,
   choiceNeedsInput,
+  testPaperChoice,
+  TEST_PAPER_ASK,
+  TEST_PAPER_TASK,
   mergeContext,
   normalizeContext,
   parseEvents,
@@ -57,6 +61,8 @@ import type { ConvoRow, Preset } from '@/lib/chishokanAi/savedRules';
 
 type Msg = {
   role: 'user' | 'assistant';
+  /** 画面だけで出した案内（AI には送らない。例：作業「テスト問題の保存・検索」を選んだときの聞き返し）。 */
+  local?: boolean;
   /** 画面に出す文（質問は添付名つき、回答は Markdown） */
   content: string;
   /** 質問のうち API に送る文（添付名を付けない） */
@@ -103,7 +109,7 @@ const MAX_TOTAL_BYTES = 3_500_000; // 送信全体の目安（Vercel のリク�
 /** API に送る履歴（エラーの知らせ・空の回答を除き、質問は添付名を付けない文にする）。 */
 function toApi(msgs: Msg[]): { role: 'user' | 'assistant'; content: string }[] {
   return msgs
-    .filter((m) => !m.error && (m.role === 'user' ? (m.api ?? m.content).trim() : m.content.trim()))
+    .filter((m) => !m.error && !m.local && (m.role === 'user' ? (m.api ?? m.content).trim() : m.content.trim()))
     .map((m) => ({ role: m.role, content: m.role === 'user' ? m.api ?? m.content : m.content }));
 }
 
@@ -198,6 +204,8 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   const abortRef = useRef<AbortController | null>(null);
   // よく使う作業（手順書）と、いま選んでいる作業
   const [tasks, setTasks] = useState<TaskButton[]>([]);
+  // 画像の生成を使えないあいだの知らせ（GPT・Gemini の API は調整中。サーバーが返したときだけ出す）
+  const [imageNotice, setImageNotice] = useState('');
   const [task, setTask] = useState<TaskButton | null>(null);
   const [feedbackDraft, setFeedbackDraft] = useState<{ index: number; text: string } | null>(null);
   const [report, setReport] = useState<{ context: ReportContext; kind?: string } | null>(null);
@@ -229,7 +237,10 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   useEffect(() => {
     fetch('/api/chishokan-ai', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => setTasks(Array.isArray(j?.tasks) ? j.tasks : []))
+      .then((j) => {
+        setTasks(Array.isArray(j?.tasks) ? j.tasks : []);
+        setImageNotice(typeof j?.imageNotice === 'string' ? j.imageNotice : '');
+      })
       .catch(() => {});
   }, []);
   const endRef = useRef<HTMLDivElement>(null);
@@ -810,6 +821,17 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
 
   // 選択肢を押したとき。添付・書き込みが要るもの（「画像を添付し直す」など）は送らずに入力欄へ入れ、続きを促す。
   function chooseOption(label: string) {
+    // 「テスト問題の保存・検索」の聞き返し：保存は小窓を開き、検索は文の例を入力欄に入れる（AI には送らない）。
+    const tp = testPaperChoice(label);
+    if (tp === 'save') { openTestPaper(); return; }
+    if (tp === 'search') {
+      const t = tasks.find((x) => x.id === TEST_PAPER_TASK);
+      if (t) setTask(t);
+      setInput(t?.starter ?? '');
+      setAttachNote('学校・学年・科目・実施回などを書き換えて、送信してください。');
+      setTimeout(() => inputRef.current?.focus(), 0);
+      return;
+    }
     const need = choiceNeedsInput(label);
     if (!need) { ask(label); return; }
     setInput(need === 'write' ? `${label}：\n` : label);
@@ -820,7 +842,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   // いちばん新しい回答を作り直す（覚えている PDF・画像は付け直す）。
   async function regenerate() {
     const last = messages[messages.length - 1];
-    if (busy || !last || last.role !== 'assistant') return;
+    if (busy || !last || last.role !== 'assistant' || last.local) return;
     const base = messages.slice(0, -1);
     const start: Msg = { role: 'assistant', content: '', turn: last.turn, taskLabel: last.taskLabel };
     setMessages([...base, start]);
@@ -906,9 +928,23 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     });
   }
 
+  // テスト問題を保存する小窓（画面の上の［🗄 テスト問題を保存］で開く）
+  const [testPaper, setTestPaper] = useState(false);
+  function openTestPaper() {
+    ensureConvoId();
+    setTestPaper(true);
+  }
+
   // 作業ボタン：作業を選び、入力欄が空なら文の例を入れる（そのまま直して送れる）。
   function chooseTask(t: TaskButton | null) {
     setTask(t);
+    // 「テスト問題の保存・検索」は、まず「どちらですか？」と聞く（AI を待たずに画面だけで出す）。
+    if (t?.id === TEST_PAPER_TASK) {
+      if (busy) return;
+      const ask: Msg = { role: 'assistant', content: TEST_PAPER_ASK, local: true, taskLabel: t.button };
+      setMessages((prev) => [...prev.filter((m) => !(m.local && m.content === TEST_PAPER_ASK)), ask]);
+      return;
+    }
     if (t && !input.trim()) setInput(t.starter);
     setTimeout(() => inputRef.current?.focus(), 0);
   }
@@ -967,6 +1003,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
       <div className="page-head">
         <h1>智翔館AI（試用版）</h1>
         <p>社内の資料をもとに答えます。資料づくりや文章の手直しにも使えます。</p>
+        {imageNotice && <p className="ai-notice ai-head-notice">🛠 {imageNotice}</p>}
         <div className="ai-head-links">
           <details className="ai-about">
             <summary>使い方と注意</summary>
@@ -974,6 +1011,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
               <li>社内のこと（日付・料金・方針など）は社内の資料だけで答え、出典を付けます。Web は見ません</li>
               <li>PDF・画像・Word・Excel・PowerPoint は添付、Google のファイルはリンクを貼ると読みます（決められたフォルダの中だけ・1回に3件まで）</li>
               <li>業績の数字（売上・利益）は持っていません</li>
+              {imageNotice && <li>{imageNotice}</li>}
               <li>右の欄の「コンテキスト」に置いた文は、質問のたびにAIに渡します（担当・決まり・前の回答など、会話の前提を置く）</li>
               <li>
                 {saved?.enabled
@@ -998,6 +1036,9 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           </button>
           <button type="button" className="ai-report-open ai-request-open" onClick={openRequest}>
             💡 要望を送る
+          </button>
+          <button type="button" className="ai-report-open ai-testpaper-open" onClick={openTestPaper}>
+            🗄 テスト問題を保存
           </button>
         </div>
       </div>
@@ -1058,6 +1099,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
             </button>
             <button type="button" className="ai-report-open" onClick={() => openReport()}>⚠ 不具合を報告</button>
             <button type="button" className="ai-report-open ai-request-open" onClick={openRequest}>💡 要望を送る</button>
+            <button type="button" className="ai-report-open ai-testpaper-open" onClick={openTestPaper}>🗄 テスト問題を保存</button>
           </span>
         </div>
       )}
@@ -1142,7 +1184,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
                       )}
                     </div>
                   )}
-                  {m.content && !m.error && !streaming && (
+                  {m.content && !m.error && !m.local && !streaming && (
                     <div className="msg-actions">
                       <CopyButton text={() => toPlainText(m.content)} label="回答をコピー" className="msg-action" />
                       <button type="button" className="msg-action" title="この回答を、会話の前提として右の欄に置く" onClick={() => pinAnswer(m)}>
@@ -1357,6 +1399,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
       )}
       {report && <AiReportDialog context={report.context} initialKind={report.kind} onClose={() => setReport(null)} />}
       {request && <AiRequestDialog context={request} onClose={() => setRequest(null)} />}
+      {testPaper && <TestPaperDialog conversationId={convoIdRef.current} onClose={() => setTestPaper(false)} />}
     </div>
   );
 }
