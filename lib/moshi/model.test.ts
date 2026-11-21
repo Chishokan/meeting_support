@@ -6,10 +6,11 @@ import {
   choiceRanks, cleanExam, cleanResult, computeStats, DEFAULT_JUDGE_OPTIONS, DEFAULT_SUBJECTS, devBins, judgeOf, parseRule, reportFigures, ruleMax,
   scoreBins, trendRows, yearExams, emptyOutside, emptyScores, examMax, fitScores, historyOf,
   campusOfVenue, cleanKenItem, devBinsOf, kenFitOf, kenFits, kenJudgeDetail, kenSchoolGroup, kenFirstChoiceMean, kenHistory, kenPoints, prevRecordFor, studentHistory, honbanFirstChoiceMean, pointsOf, kenChoiceRank, kenExamRef, kenNames, kenStatsOf, scoreBinsOf, kenExams, kenGuessFromFileName, kenIdMap, kenRoster, kenScores, kenTable, parseCsv, inputSheetRows, jpDate, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
-  scoresToCell, subjectMax, parseInputSheetCsv, toCsv,
+  scoresToCell, subjectMax, parseInputSheetCsv, toCsv, SUBJECT_KEYS,
   type MoshiExam, type MoshiResult, type Scores,
 } from './model.ts';
 import { REFERENCES, TO_REF, refSchoolByCode, refSchoolFor, referenceForDate } from './reference.ts';
+import { PAST_EXAMS, matchPastQuestions, pastBinOf, pastBinRange, pastExamById, pastMax, pastN, pastRank } from './pastData.ts';
 
 function exam(p: Partial<MoshiExam> = {}): MoshiExam {
   return {
@@ -503,13 +504,18 @@ test('cleanExam：換算の基準と判定基準', () => {
   });
   assert.ok(ok.ok);
   if (ok.ok) {
-    assert.deepEqual(ok.value.outside, { source: '第2回 長崎県一斉模試', n: 967, mean: { ja: 55.4 }, sd: { k5: 81.7 } });
+    assert.deepEqual(ok.value.outside, { source: '第2回 長崎県一斉模試', n: 967, mean: { ja: 55.4 }, sd: { k5: 81.7 }, ref: '' });
     assert.deepEqual(ok.value.judges, [{ code: '40200', ref: '518-01', refName: '県立佐世保北 普通科', rule: '国数英1.5倍', bDev: 57, bScore: 424, capacity: null }]);
     assert.deepEqual(ok.value.judgeOptions, { step: 4, spread: 5 });
   }
   assert.deepEqual(cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, judges: [{ code: '40200', bDev: 'abc' }] }), { ok: false, reason: 'bad_judge', detail: '40200' });
   assert.deepEqual(cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, judges: [{ code: '40200', rule: '面接' }] }), { ok: false, reason: 'bad_rule', detail: '40200 面接' });
   assert.deepEqual(cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, outside: { n: '-1' } }), { ok: false, reason: 'bad_outside' });
+  // 過去の実施データの id は英小文字・数字・ハイフンだけ残す
+  const withRef = cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, outside: { ref: 'shuki-2023-10' } });
+  assert.ok(withRef.ok && withRef.value.outside.ref === 'shuki-2023-10');
+  const badRef = cleanExam({ name: 'x', subjects: DEFAULT_SUBJECTS, outside: { ref: '<script>' } });
+  assert.ok(badRef.ok && badRef.value.outside.ref === '');
 });
 
 // ---- 県一斉模試の取り込み（氏名と成績を一緒に扱わない） -----------------------------
@@ -794,4 +800,79 @@ test('受験しない：cleanResult で受け取り、集計（順位・平均�
   assert.ok(ok.ok && ok.value.absent === true && ok.value.examNo === '0301');
   const off = cleanResult({ id: 'row-abcdefgh', campus: '日宇校', name: 'x', scores: {} }, e);
   assert.ok(off.ok && off.value.absent === false);
+});
+
+// ---- 過去の実施データ（lib/moshi/pastData.ts） ----------------------------------
+
+test('過去の実施データ：度数分布から出した平均点・標準偏差が帳票の値と合う（読み取りの確かめ）', () => {
+  for (const p of PAST_EXAMS) {
+    for (const k of ['ja', 'en', 'ma', 'so', 'sc', 'k3', 'k5'] as const) {
+      const bins = p.bins[k];
+      const step = p.step[k];
+      const n = pastN(p, k);
+      const mid = (i: number) => (pastBinRange(step, i)[0] + pastBinRange(step, i)[1]) / 2;
+      const mean = bins.reduce((a, c, i) => a + c * mid(i), 0) / n;
+      const sd = Math.sqrt(bins.reduce((a, c, i) => a + c * (mid(i) - mean) ** 2, 0) / n);
+      // 階級の真ん中で数えるので、平均点は 1点・標準偏差は 0.5点 くらいまでの違いは出る
+      assert.ok(Math.abs(mean - p.mean[k]) < 1, `${p.id} ${k} 平均 ${mean.toFixed(1)} / ${p.mean[k]}`);
+      assert.ok(Math.abs(sd - p.sd[k]) < 0.5, `${p.id} ${k} 標準偏差 ${sd.toFixed(1)} / ${p.sd[k]}`);
+      assert.ok(n > 700 && n <= 800);
+    }
+    // 設問別：配点の合計は100点、得点率の平均から出した平均点が帳票の平均点と合う
+    for (const k of SUBJECT_KEYS) {
+      const qs = p.questions[k];
+      assert.equal(qs.reduce((a, q) => a + q.max, 0), 100, `${k} 配点`);
+      const est = qs.reduce((a, q) => a + (q.max * q.rate) / 100, 0);
+      assert.ok(Math.abs(est - p.mean[k]) < 1, `${k} 設問別から ${est.toFixed(1)} / ${p.mean[k]}`);
+    }
+  }
+  assert.equal(pastN(PAST_EXAMS[0], 'k5'), 793);
+  assert.equal(pastMax(PAST_EXAMS[0], 'k5'), 500);
+  assert.equal(pastMax(PAST_EXAMS[0], 'k3'), 300);
+  assert.equal(pastExamById('shuki-2023-10')?.held, '2023-10');
+  assert.equal(pastExamById(''), undefined);
+});
+
+test('過去の実施データ：階級と県内のおよその順位', () => {
+  const p = PAST_EXAMS[0];
+  assert.equal(pastBinOf(25, 0), 0);
+  assert.equal(pastBinOf(25, 25), 0);
+  assert.equal(pastBinOf(25, 26), 1);
+  assert.equal(pastBinOf(25, 500), 19);
+  assert.deepEqual(pastBinRange(5, 0), [0, 5]);
+  assert.deepEqual(pastBinRange(5, 19), [96, 100]);
+  // 五教科 426〜450 に2人、それより上は0人 → 450点は1位、426点は2〜3位
+  assert.deepEqual(pastRank(p, 'k5', 450), { rank: 1, n: 793 });
+  assert.ok([2, 3].includes(pastRank(p, 'k5', 426)!.rank));
+  // 帳票の得点順の一覧の「五教科の得点 → 県内順位」と、およそ合う（平均の違いが4位以内）
+  const pairs: [number, number][] = [[415, 6], [394, 19], [386, 21], [380, 27], [374, 38], [365, 50], [361, 55], [359, 61], [357, 66], [349, 83], [340, 90]];
+  const mae = pairs.reduce((a, [s, want]) => a + Math.abs(pastRank(p, 'k5', s)!.rank - want), 0) / pairs.length;
+  assert.ok(mae <= 4, `平均の違い ${mae.toFixed(1)}`);
+  // 満点の人は1位、0点はいちばん下のあたり
+  assert.equal(pastRank(p, 'k5', 500)?.rank, 1);
+  assert.ok((pastRank(p, 'k5', 0)?.rank ?? 0) >= 790);
+  // 平均点くらいなら真ん中くらい
+  const mid = pastRank(p, 'k5', 245)!.rank;
+  assert.ok(mid > 330 && mid < 460, String(mid));
+  // 満点が違う回・得点なしは出さない
+  assert.equal(pastRank(p, 'ja', 50, 120), null);
+  assert.equal(pastRank(p, 'ja', null), null);
+  assert.ok(pastRank(p, 'ja', 50, 100));
+});
+
+test('過去の実施データ：回の大問と設問の行を結ぶ（2つの大問で1行も）', () => {
+  const p = PAST_EXAMS[0];
+  assert.deepEqual(matchPastQuestions([31, 17, 34, 18], p.questions.ja), [[0], [1], [2], [3]]);
+  assert.deepEqual(matchPastQuestions([30, 14, 12, 19, 13, 12], p.questions.ma), [[0], [1], [2], [3], [4], [5]]);
+  // 社会は 1・2 / 3・4 / 5・6 で1行
+  assert.deepEqual(matchPastQuestions([20, 15, 17, 20, 14, 14], p.questions.so), [[0, 1], [2, 3], [4, 5]]);
+  assert.deepEqual(matchPastQuestions([35, 37, 28], p.questions.so), [[0], [1], [2]]);
+  // 配点・数が違えば null（別の問題）
+  assert.equal(matchPastQuestions([30, 15, 15, 16, 24], p.questions.ma), null);
+  assert.equal(matchPastQuestions([23, 19, 24, 17, 17], p.questions.so), null);
+  assert.equal(matchPastQuestions([31, 17, 34], p.questions.ja), null);
+  assert.equal(matchPastQuestions([31, 17, 34, 18, 5], p.questions.ja), null);
+  // 2026年11月の初期値の大問は、国語・英語だけ合う
+  const ok = DEFAULT_SUBJECTS.map((s) => [s.key, matchPastQuestions(s.questions.map((q) => q.max), p.questions[s.key]) != null]);
+  assert.deepEqual(Object.fromEntries(ok), { ja: true, en: true, ma: false, so: false, sc: false });
 });

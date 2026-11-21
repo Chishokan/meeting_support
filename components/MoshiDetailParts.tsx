@@ -41,7 +41,7 @@ export type NowRow = {
   mean: number | null;
   dev: number | null;
   rank: ReactNode;       // 順位の欄（「800 位」「12 位 / 36人中」）
-  inside?: ReactNode;    // 塾内順位の欄（県一斉模試だけ）
+  inside?: ReactNode;    // もう1つの順位の欄（県一斉模試は塾内順位、本番レベル模試は過去の実施データでの県内順位（推定））
   prevScore?: number | null;
   prevDev?: number | null;
 };

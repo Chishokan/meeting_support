@@ -4,6 +4,8 @@
 // 受験票の時間割・持ち物・注意事項・会場を決める。新しい回は「前の回をもとに作る」と配点・分野・時間割を写せる。
 // 成績表に使う「偏差値の換算（県全体の模試の平均点・標準偏差）」と「志望校の判定基準（B判定基準・判定教科・定員）」も
 // 回ごとに入れる（どちらも任意）。県一斉模試などの資料は lib/moshi/reference.ts に入れてあり、ボタン1つで写せる。
+// 同じ問題を前に県全体で実施したときの集計（過去の実施データ。lib/moshi/pastData.ts）も、ボタン1つで回に結べる
+// （偏差値の換算・県内のおよその順位・県全体の得点の分布・設問別の県平均）。
 
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -13,6 +15,7 @@ import {
 } from '@/lib/moshi/model';
 import { SCHOOLS, schoolName, toKenCode } from '@/lib/moshi/schools';
 import { REFERENCES, refSchoolFor, type Reference, type RefSchool } from '@/lib/moshi/reference';
+import { PAST_EXAMS, matchPastQuestions, pastExamById, pastN } from '@/lib/moshi/pastData';
 import { PageHead, StateNote, examOptionLabel, reasonText, useMoshiData } from './MoshiShared';
 
 type Draft = ReturnType<typeof newExamDraft> & { id?: string };
@@ -138,12 +141,25 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
     if (!window.confirm(`${reference.label}の平均点・標準偏差と、判定基準（${filled}校）を写します。いま入っている値は置きかわります（定員はそのまま）。よろしいですか？`)) return;
     setDraft({
       ...draft,
-      outside: { source: reference.label, n: draft.outside.n, mean: { ...reference.mean }, sd: { ...reference.sd } },
+      outside: { source: reference.label, n: draft.outside.n, mean: { ...reference.mean }, sd: { ...reference.sd }, ref: draft.outside.ref ?? '' },
       judges: draft.judges.map((j) => {
         const s = refFor(j);
         return s ? fromRef(j, s) : j;
       }),
     });
+  }
+  /** 過去の実施データ（同じ問題を前に県全体で実施したときの集計）を回に結ぶ：換算の平均点・標準偏差・母数も写す。 */
+  const [pastId, setPastId] = useState(PAST_EXAMS[0]?.id ?? '');
+  const linkedPast = pastExamById(draft?.outside.ref);
+  function applyPast() {
+    const p = pastExamById(pastId);
+    if (!p || !draft) return;
+    if (!window.confirm(`${p.label}（全県 ${pastN(p, 'k5')}人）の平均点・標準偏差で偏差値を換算し、県内のおよその順位・得点の分布・設問別の県平均を出します。いま入っている換算の値は置きかわります（判定基準はそのまま）。よろしいですか？`)) return;
+    setDraft({ ...draft, outside: { source: `${p.label}（全県）`, n: pastN(p, 'k5'), mean: { ...p.mean }, sd: { ...p.sd }, ref: p.id } });
+  }
+  function unlinkPast() {
+    if (!draft) return;
+    setDraft({ ...draft, outside: { ...draft.outside, ref: '' } });
   }
   // この回の受験者が志望校に書いた学校（多い順）
   const choiceCodes = useMemo(() => {
@@ -345,6 +361,52 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
                 </select>
                 <button type="button" className="ms-btn ms-btn-sub" onClick={applyReference}>この参考データを入れる</button>
                 <span className="ms-fine">平均点・標準偏差と、下の判定基準（基準の学校が決まっている行）を写します</span>
+              </div>
+            )}
+
+            {PAST_EXAMS.length > 0 && (
+              <div className="ms-past">
+                <h3 className="ms-h3">過去の実施データ（同じ問題を県全体で受けたときの集計）</h3>
+                <p className="ms-fine">
+                  本番レベル模試の問題を、前に長崎県統一模試として県全体で実施したときの全県の平均点・標準偏差・度数分布・設問別の平均です。
+                  結ぶと、偏差値をこの平均点・標準偏差で換算し、成績表と面談の画面に「県内順位（推定）」「県全体の得点の分布」「設問別の県平均」が出ます。
+                </p>
+                <div className="ms-ref-bar">
+                  <select value={pastId} onChange={(e) => setPastId(e.target.value)} aria-label="過去の実施データ">
+                    {PAST_EXAMS.map((p) => <option key={p.id} value={p.id}>{p.label}（全県 {pastN(p, 'k5')}人）</option>)}
+                  </select>
+                  <button type="button" className="ms-btn ms-btn-sub" onClick={applyPast}>この実施データを使う</button>
+                  {linkedPast
+                    ? <span className="ms-past-on">結んでいます：{linkedPast.label}<button type="button" className="ms-link" onClick={unlinkPast}>外す</button></span>
+                    : <span className="ms-fine">いまは結んでいません</span>}
+                </div>
+                {(() => {
+                  const p = pastExamById(pastId);
+                  if (!p) return null;
+                  return (
+                    <table className="ms-qtable ms-past-table">
+                      <thead><tr><th>教科</th><th>この回の大問の配点</th><th>実施データの設問（配点・全県の平均）</th><th>設問別の県平均</th></tr></thead>
+                      <tbody>
+                        {SUBJECT_KEYS.map((k) => {
+                          const mine = draft.subjects.find((s) => s.key === k)?.questions.map((q) => q.max) ?? [];
+                          const ok = matchPastQuestions(mine, p.questions[k]) != null;
+                          return (
+                            <tr key={k} className={ok ? '' : 'ms-past-ng'}>
+                              <th>{SUBJECT_NAMES[k]}</th>
+                              <td className="num">{mine.join('・') || '—'}</td>
+                              <td>{p.questions[k].map((q) => `${q.no} ${q.label} ${q.max}点（${q.rate}%）`).join('／')}</td>
+                              <td>{ok ? '出します' : '大問が合わないので出しません'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  );
+                })()}
+                <p className="ms-fine">
+                  大問が合わない教科は、問題用紙の大問の数・配点と、上の「教科ごとの大問」の設定を確かめてください（実施データと同じ問題なら、設定を問題用紙に合わせると設問別の県平均が出ます）。
+                  平均点・標準偏差・分布は教科の合計で使うので、大問が合わなくても使えます。
+                </p>
               </div>
             )}
 
