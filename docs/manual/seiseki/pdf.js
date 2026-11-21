@@ -1,8 +1,8 @@
-// 原稿の HTML を A4 の PDF にする（成績管理 生徒の追加 マニュアル）。
-//   node docs/manual/seiseki/pdf.js 原稿の絶対パス 出力.pdf
+// 原稿の HTML を A4 の PDF にする（成績管理のマニュアル）。ページの下に出す名前は3つ目に渡す（省くと「生徒の追加」）。
+//   node docs/manual/seiseki/pdf.js 原稿の絶対パス 出力.pdf [マニュアルの名前]
 const { chromium } = require('playwright');
 (async () => {
-  const [src, out] = process.argv.slice(2);
+  const [src, out, title = '成績管理 生徒の追加 マニュアル'] = process.argv.slice(2);
   const browser = await chromium.launch();
   const page = await browser.newPage();
   await page.goto('file://' + src, { waitUntil: 'networkidle' });
@@ -13,7 +13,7 @@ const { chromium } = require('playwright');
     margin: { top: '14mm', bottom: '16mm', left: '15mm', right: '15mm' },
     displayHeaderFooter: true,
     headerTemplate: '<div></div>',
-    footerTemplate: '<div style="width:100%;font-size:8px;color:#888;text-align:center;font-family:sans-serif"><span class="pageNumber"></span> / <span class="totalPages"></span>　成績管理 生徒の追加 マニュアル</div>',
+    footerTemplate: '<div style="width:100%;font-size:8px;color:#888;text-align:center;font-family:sans-serif"><span class="pageNumber"></span> / <span class="totalPages"></span>　' + title + '</div>',
   });
   await browser.close();
 })().catch((e) => { console.error(e); process.exit(1); });
