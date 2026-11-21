@@ -112,8 +112,8 @@ export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'helpdesk',
     name: 'ヘルプデスク',
-    desc: '要項の確認、操作マニュアル、ご意見・不具合の報告',
-    href: '/helpdesk',
+    desc: '操作マニュアル、ご意見・不具合の報告',
+    href: '/helpdesk/manual',
     status: 'ready',
   },
   // 給与アプリ（Color HRM）へ、ログインしたまま移る（統合計画 第3段階）。

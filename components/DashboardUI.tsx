@@ -436,12 +436,12 @@ export default function DashboardUI({
     <div className="dash-panel full">
       <h2>
         実施期間中の要項
-        <Link href="/helpdesk" className="panel-more">要項QAで聞く</Link>
+        <Link href="/ai" className="panel-more">智翔館AIで聞く</Link>
       </h2>
       {yoko.length === 0 ? (
         <p className="dash-empty">
           {loading ? <SkLines lines={2} /> : '実施中・開始間近の要項はありません。'}
-          {!loading && <> <Link href="/helpdesk">要項QA</Link>で確定済みの一覧を見られます。</>}
+          {!loading && <> 要項についての質問は<Link href="/ai">智翔館AI</Link>でできます。</>}
         </p>
       ) : (
         <div className="iqa-cards">
