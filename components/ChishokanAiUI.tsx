@@ -199,6 +199,8 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   const abortRef = useRef<AbortController | null>(null);
   // よく使う作業（手順書）と、いま選んでいる作業
   const [tasks, setTasks] = useState<TaskButton[]>([]);
+  // 画像の生成を使えないあいだの知らせ（GPT・Gemini の API は調整中。サーバーが返したときだけ出す）
+  const [imageNotice, setImageNotice] = useState('');
   const [task, setTask] = useState<TaskButton | null>(null);
   const [feedbackDraft, setFeedbackDraft] = useState<{ index: number; text: string } | null>(null);
   const [report, setReport] = useState<{ context: ReportContext; kind?: string } | null>(null);
@@ -230,7 +232,10 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   useEffect(() => {
     fetch('/api/chishokan-ai', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => setTasks(Array.isArray(j?.tasks) ? j.tasks : []))
+      .then((j) => {
+        setTasks(Array.isArray(j?.tasks) ? j.tasks : []);
+        setImageNotice(typeof j?.imageNotice === 'string' ? j.imageNotice : '');
+      })
       .catch(() => {});
   }, []);
   const endRef = useRef<HTMLDivElement>(null);
@@ -980,6 +985,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
       <div className="page-head">
         <h1>智翔館AI（試用版）</h1>
         <p>社内の資料をもとに答えます。資料づくりや文章の手直しにも使えます。</p>
+        {imageNotice && <p className="ai-notice ai-head-notice">🛠 {imageNotice}</p>}
         <div className="ai-head-links">
           <details className="ai-about">
             <summary>使い方と注意</summary>
@@ -987,6 +993,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
               <li>社内のこと（日付・料金・方針など）は社内の資料だけで答え、出典を付けます。Web は見ません</li>
               <li>PDF・画像・Word・Excel・PowerPoint は添付、Google のファイルはリンクを貼ると読みます（決められたフォルダの中だけ・1回に3件まで）</li>
               <li>業績の数字（売上・利益）は持っていません</li>
+              {imageNotice && <li>{imageNotice}</li>}
               <li>右の欄の「コンテキスト」に置いた文は、質問のたびにAIに渡します（担当・決まり・前の回答など、会話の前提を置く）</li>
               <li>
                 {saved?.enabled

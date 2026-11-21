@@ -49,7 +49,7 @@ import { runCreateMathMaterial, runCreateMathQuiz } from '@/lib/chishokanAi/math
 import { MATH_QUIZ_TOOL } from '@/lib/chishokanAi/mathQuizTool';
 import { runTaskEvaluation, TASK_EVAL_TOOL } from '@/lib/chishokanAi/taskEval';
 import { carriedNote, CARRY_MAX_FILES, isHeavy } from '@/lib/chishokanAi/attachCarry';
-import { GENERATE_IMAGE_TOOL, IMAGE_MAX_PER_TURN } from '@/lib/chishokanAi/imageTool';
+import { GENERATE_IMAGE_TOOL, IMAGE_MAX_PER_TURN, IMAGE_PAUSED_ALT, IMAGE_PAUSED_NOTICE } from '@/lib/chishokanAi/imageTool';
 import { imageGenerationEnabled, runGenerateImage, type ImageSource } from '@/lib/chishokanAi/imageGen';
 import { checkNepRequest, nepRequestToolResult, NEP_MAX_PER_TURN, PROPOSE_NEP_REQUEST_TOOL } from '@/lib/chishokanAi/nepRequest';
 import { SEARCH_TEST_PAPERS_TOOL } from '@/lib/chishokanAi/testPapers';
@@ -180,7 +180,9 @@ export async function GET() {
   if (!session) return new Response('unauthorized', { status: 401 });
   if (!canUseChishokanAi(session.name)) return new Response('forbidden', { status: 403 });
   const tasks = await listTasks(path.join(process.cwd(), KNOWLEDGE_ROOT), readFileDetailed);
-  return Response.json({ tasks: taskButtons(tasks) }, { headers: { 'Cache-Control': 'no-store' } });
+  // 画像の生成を使えないあいだは、画面の上に知らせを出す（GPT・Gemini の API は調整中）
+  const imageNotice = imageGenerationEnabled() ? '' : `${IMAGE_PAUSED_NOTICE}${IMAGE_PAUSED_ALT}`;
+  return Response.json({ tasks: taskButtons(tasks), imageNotice }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function POST(req: Request) {
@@ -243,7 +245,7 @@ export async function POST(req: Request) {
     // 会議の記録（議事録・決定事項・ToDo・事前共有）を読む道具と、議題の追加の案
     MEETING_RECORDS_TOOL,
     PROPOSE_AGENDA_TOOL,
-    // 画像を作る道具（OpenAI か Google の API キーがあり、止めていないときだけ。2026-11-19 から一旦停止）
+    // 画像を作る道具（OpenAI か Google の API キーがあり、止めていないときだけ。2026-11-19 から停止。調整中）
     ...(imageGenerationEnabled() ? [GENERATE_IMAGE_TOOL] : []),
     // NEPへの作成依頼の案（画像・挿絵・チラシなどの制作は NEP に頼む。押すまで送らない）
     PROPOSE_NEP_REQUEST_TOOL,
