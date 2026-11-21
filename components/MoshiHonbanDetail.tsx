@@ -6,6 +6,7 @@
 //   過去テスト一覧：県一斉模試と本番レベル模試の回（押すとその回に切り替わる）
 //   成績表：印刷するのと同じ個人成績表（A4 横）
 // 前回は、この回より前のいちばん新しい回（県一斉模試も含む。2026年11月なら10月の県一斉模試。lib/moshi/model.ts の prevRecordFor）。
+// 回に過去の実施データ（同じ問題を県全体で受けたときの集計）を結んであれば、県内順位（推定）・県全体の得点の分布・設問別の県平均も出す。
 
 import { useMemo, useState } from 'react';
 import {
@@ -16,9 +17,10 @@ import {
 import { schoolName } from '@/lib/moshi/schools';
 import { FitSheet, ReportSheet, f1 } from './MoshiReportSheet';
 import { NowTable, ORDER, PastTable, RADAR_ORDER, RadarMulti, TabBar, TrendView } from './MoshiDetailParts';
+import { PastDistView, pastOf, pastQuestionCells, pastRankText } from './MoshiPast';
 
 type Tab = 'score' | 'judge' | 'past' | 'sheet';
-type Sub = 'now' | 'q' | 'radar' | 'trend';
+type Sub = 'now' | 'q' | 'dist' | 'radar' | 'trend';
 
 export function HonbanDetail({ stats, statsList, row, kenitsu, prev, onPick }: {
   stats: ExamStats; statsList: ExamStats[]; row: RowStat; kenitsu: KenitsuResult[]; prev: PrevRecord | null;
@@ -31,6 +33,9 @@ export function HonbanDetail({ stats, statsList, row, kenitsu, prev, onPick }: {
   const figs = useMemo(() => reportFigures(stats, row), [stats, row]);
   const outside = figs.some((f) => f.outside);
   const trend = useMemo(() => trendRows(statsList, exam, r, kenitsu), [statsList, exam, r, kenitsu]);
+  const past = pastOf(exam);
+  const cur: Sub = sub === 'dist' && !past ? 'now' : sub;
+  const subs: [Sub, string][] = [['now', '今回の成績'], ['q', '設問別得点'], ...(past ? [['dist', '県全体の分布'] as [Sub, string]] : []), ['radar', '教科別レーダーチャート'], ['trend', '教科別偏差値推移']];
   return (
     <section className="kd">
       <div className="kd-head">
@@ -40,17 +45,19 @@ export function HonbanDetail({ stats, statsList, row, kenitsu, prev, onPick }: {
       <TabBar<Tab> tabs={[['score', '成績一覧'], ['judge', '志望校判定'], ['past', '過去テスト一覧'], ['sheet', '成績表']]} value={tab} onChange={setTab} />
       {tab === 'score' && (
         <div className="kd-panel">
-          <TabBar<Sub> sub tabs={[['now', '今回の成績'], ['q', '設問別得点'], ['radar', '教科別レーダーチャート'], ['trend', '教科別偏差値推移']]} value={sub} onChange={setSub} />
-          {sub === 'now' && (
+          <TabBar<Sub> sub tabs={subs} value={cur} onChange={setSub} />
+          {cur === 'now' && (
             <>
               <h3 className="kd-h">今回の成績</h3>
               <NowTable
                 meanHead={outside ? '県平均' : '平均点'} rankHead="順位（塾内）" prevHead={prev ? `前回（${prev.label}）` : undefined}
+                insideHead={past ? '県内順位（推定）' : undefined}
                 rows={ORDER.map((key) => {
                   const f = figs.find((x) => x.key === key)!;
                   return {
                     key, score: f.score, max: f.max, mean: f.mean, dev: f.dev,
                     rank: f.rank != null ? <><b>{f.rank}</b><small> 位 / {f.rankN}人中</small></> : '—',
+                    inside: past ? (pastRankText(past, key, f.score, f.max) || '—') : undefined,
                     prevScore: prev?.stats[key]?.score ?? null, prevDev: prev?.stats[key]?.dev ?? null,
                   };
                 })}
@@ -58,13 +65,21 @@ export function HonbanDetail({ stats, statsList, row, kenitsu, prev, onPick }: {
               <p className="kd-note">
                 {outside ? `平均点・偏差値は${exam.outside?.source || '県一斉模試'}の平均点・標準偏差で換算した参考値（県一斉模試の偏差値と同じものさし）。` : '平均点・偏差値は、この回を受けた智翔館の受験者の中でのもの。'}
                 順位はこの回を受けた智翔館の中での順位。
+                {past && `県内順位（推定）は、同じ問題を県全体で受けた人（${past.label}・全県）の得点の分布から出した目安。`}
                 {prev && `前回は${prev.name}の${prev.kind === 'ken' ? '得点・偏差値（業者の値）' : '得点・偏差値'}。`}
               </p>
             </>
           )}
-          {sub === 'q' && <QuestionTable stats={stats} row={row} />}
-          {sub === 'radar' && <HbRadar stats={stats} statsList={statsList} row={row} prev={prev} outside={outside} />}
-          {sub === 'trend' && <TrendView trend={trend} />}
+          {cur === 'q' && <QuestionTable stats={stats} row={row} />}
+          {cur === 'dist' && past && (
+            <PastDistView
+              past={past}
+              scores={Object.fromEntries(figs.map((f) => [f.key, f.score]))}
+              maxes={Object.fromEntries(figs.map((f) => [f.key, f.max]))}
+            />
+          )}
+          {cur === 'radar' && <HbRadar stats={stats} statsList={statsList} row={row} prev={prev} outside={outside} />}
+          {cur === 'trend' && <TrendView trend={trend} />}
         </div>
       )}
       {tab === 'judge' && <div className="kd-panel"><HbJudge stats={stats} row={row} prev={prev} /></div>}
@@ -79,12 +94,14 @@ export function HonbanDetail({ stats, statsList, row, kenitsu, prev, onPick }: {
 function QuestionTable({ stats, row }: { stats: ExamStats; row: RowStat }) {
   const { exam } = stats;
   const r = row.r;
+  const past = pastOf(exam);
+  const pq = pastQuestionCells(exam, past);
   return (
     <>
       <h3 className="kd-h">設問別得点</h3>
       <div className="kd-scroll">
         <table className="kd-table kd-q">
-          <thead><tr><th>教科</th><th>大問</th><th>分野</th><th>配点</th><th>得点</th><th>得点率</th><th>塾平均</th><th className="kd-qbar-h">得点率のグラフ（線は塾平均）</th></tr></thead>
+          <thead><tr><th>教科</th><th>大問</th><th>分野</th><th>配点</th><th>得点</th><th>得点率</th><th>塾平均</th>{pq && <th>県平均</th>}<th className="kd-qbar-h">得点率のグラフ（線は塾平均）</th></tr></thead>
           <tbody>
             {SUBJECT_KEYS.map((k) => {
               const qs = subjectOf(exam, k).questions;
@@ -103,6 +120,11 @@ function QuestionTable({ stats, row }: { stats: ExamStats; row: RowStat }) {
                     <td className="num"><b>{taken ? score ?? 0 : '—'}</b></td>
                     <td className={`num${low ? ' kd-low' : ''}`}>{rate == null ? '—' : `${Math.round(rate * 100)}%`}</td>
                     <td className="num">{mean == null ? '—' : `${Math.round(mean * 100)}%`}</td>
+                    {pq && (() => {
+                      const c = pq[k]?.[i];
+                      if (c === 'skip') return null;
+                      return <td className="num kd-ken-mean" rowSpan={c ? c.span : 1}>{c ? `${c.rate}%` : '—'}</td>;
+                    })()}
                     <td className="kd-graph">
                       <div className="kd-track kd-qtrack">
                         {rate != null && <div className="kd-bar" style={{ width: `${Math.round(rate * 100)}%`, background: low ? '#e0675a' : '#5b9bd5' }} />}
@@ -116,7 +138,10 @@ function QuestionTable({ stats, row }: { stats: ExamStats; row: RowStat }) {
           </tbody>
         </table>
       </div>
-      <p className="kd-note">得点率が塾平均より低い大問は赤。塾平均は、この回を受けた智翔館の受験者の得点率の平均です。</p>
+      <p className="kd-note">
+        得点率が塾平均より低い大問は赤。塾平均は、この回を受けた智翔館の受験者の得点率の平均です。
+        {pq && `県平均は、同じ問題を県全体で受けた人（${past!.label}）の得点率の平均（大問の配点が合う教科だけ。2つの大問で1つの値のところもあります）。`}
+      </p>
     </>
   );
 }
