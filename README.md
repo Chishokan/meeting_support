@@ -807,27 +807,27 @@ DB（Supabase など）に移すときは、この表をそのままテーブル
 
 ## ヘルプデスク（要項QA・マニュアル・ご意見・不具合の報告）
 困ったときに開く画面をまとめた、総合メニューのアプリ（URL は **`/helpdesk`**）。全部門が利用できる（どれも個人情報を含まないため）。
-上のタブで「要項QA」「マニュアル」「ご意見・不具合の報告」を切り替える。要項QAとご意見・不具合の報告は、v0.16 までは会議DXの左メニューにあった。
+上のタブで「マニュアル」「ご意見・不具合の報告」を切り替える。ご意見・不具合の報告は、v0.16 までは会議DXの左メニューにあった。
+要項QAのタブは v1.25.0 でなくした（要項についての質問は智翔館AIでできるため）。`/helpdesk` はマニュアルへ移す。
 
 | タブ | URL | 中身 |
 |---|---|---|
-| 要項QA | `/helpdesk` | 下の「要項QA」の節 |
-| マニュアル | `/helpdesk/manual` | 操作マニュアル（PDF）と動画マニュアルのダウンロード・再生。並べる資料は lib/manuals.ts、ファイルは public/manual/ |
+| マニュアル | `/helpdesk/manual` | 操作マニュアル（PDF）と動画マニュアルのダウンロード・再生。分類ごとの目次・検索・種類の絞り込み（components/ManualBrowser.tsx）。並べる資料と分類は lib/manuals.ts、ファイルは public/manual/ |
 | ご意見・不具合の報告 | `/helpdesk/feedback` | アプリへの意見・不具合の報告と、管理部門の回答（components/InquiryUI.tsx、API は app/api/inquiry/route.ts） |
 
 - 画面: app/(helpdesk)/helpdesk/（専用レイアウト・サイドバー無し。ヘッダは門配管理などと同じ components/AppHeader.tsx）
-- 旧 URL の `/yoko-qa` は `/helpdesk` へ、`/inquiry` は `/helpdesk/feedback` へ転送する（API の URL は変えていない）
-- ダッシュボードの「実施期間中の要項」は会議DXに残したまま。「要項QAで聞く」からヘルプデスクの要項QAへ移る
+- 旧 URL の `/yoko-qa` は `/helpdesk/manual` へ、`/inquiry` は `/helpdesk/feedback` へ転送する（API の URL は変えていない）
+- ダッシュボードの「実施期間中の要項」は会議DXに残したまま。右上の「智翔館AIで聞く」から智翔館AI（/ai）へ移る
 - マニュアルのファイル（public/manual/）は、ログインしている人だけが開ける（middleware.ts が見張る。静的ファイルは画面のレイアウトの
   ログイン確認を通らないため）。Vercel の関数は約4.5MBより大きいファイルを返せないので、API を通さず静的ファイルとして配る
 - 操作マニュアルの原稿・写真・作り方は docs/manual/（README.md）。作り直したら PDF を public/manual/ に置き、lib/manuals.ts の版を直す
 
-## 要項QA（実施要項の確認）
-講習会・イベントの実施要項について、申込方法・申込期限・受講料・支払い方法・日程などを
-AI が答える（ヘルプデスクの「要項QA」・`/helpdesk`）。全部門が利用できる（個人情報を含まないため）。
+## 要項（実施要項）
+講習会・イベントの実施要項（申込方法・申込期限・受講料・支払い方法・日程など）。
+v1.24 まではヘルプデスクの「要項QA」で AI が答えていたが、v1.25.0 で画面をなくした（質問は智翔館AIでできる）。
+要項のカードは会議DXのダッシュボード「実施期間中の要項」に出る。
 
-- 画面: app/(helpdesk)/helpdesk/page.tsx ／ components/YokoQaUI.tsx
-- API: app/api/yoko-qa/route.ts（GET＝要項の一覧、POST＝QA のストリーム）
+- API: app/api/yoko-qa/route.ts（GET＝要項の一覧。ダッシュボードが使う。POST＝QA のストリームは、画面をなくしたので今は使っていない）
 - 読み込み: lib/core/knowledgeDocs.ts ／ プロンプト: lib/yokoQaPrompt.ts
 - 要項の本体: knowledge/40_要項/ 配下の Markdown
 

@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 
-// 要項QAはヘルプデスクへ移した。古いリンク・ブックマークはそちらへ送る。
+// 要項QAはなくした（要項についての質問は智翔館AIでできる）。古いリンク・ブックマークはヘルプデスクのマニュアルへ送る。
 export default function YokoQaPage() {
-  redirect('/helpdesk');
+  redirect('/helpdesk/manual');
 }
