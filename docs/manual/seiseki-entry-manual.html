@@ -231,7 +231,7 @@ kbd { display: inline-block; padding: 0 .4em; border: 1px solid var(--line); bor
   <dl>
     <dt>対象</dt><dd>本番レベル模試の得点を入れる職員（採点した先生・校舎の担当者）</dd>
     <dt>アプリ</dt><dd>智翔館アプリ「成績管理」（v1.24.0・2026年11月の画面）</dd>
-    <dt>版</dt><dd>v1.0.0</dd>
+    <dt>版</dt><dd>v1.1.0</dd>
     <dt>最新版</dt><dd>智翔館アプリのヘルプデスク「マニュアル」タブからダウンロードできます</dd>
     <dt>作成</dt><dd>2026年11月</dd>
   </dl>
@@ -292,7 +292,7 @@ kbd { display: inline-block; padding: 0 .4em; border: 1px solid var(--line); bor
       <li><span class="n">4</span><div><b>得点</b>／<b>名簿・志望校</b>　得点を入れるときは「得点」。「名簿・志望校」は名簿と［受験しない］の設定（第4章）です。</div></li>
       <li><span class="n">5</span><div><b>教科</b>　「5教科」はすべての教科を並べます。教科を押すと、その教科の列だけになります（2-2）。</div></li>
       <li><span class="n">6</span><div><b>未入力がある人だけ</b>　チェックを入れると、得点がそろっていない人だけを出します（2-2）。</div></li>
-      <li><span class="n">7</span><div><b>操作のボタン</b>　色で分けています。<b>名簿（紺）</b>［＋ 生徒を追加］、<b>取り込み（橙）</b>［入力シートを取り込む（CSV）］［貼り付けで取り込む］、<b>書き出し（緑）</b>［入力シートを書き出す（CSV）］（第3章）。</div></li>
+      <li><span class="n">7</span><div><b>操作のボタン</b>　色で分けています。<b>名簿（紺）</b>［＋ 生徒を追加］、<b>書き出し（緑）</b>［入力シートを書き出す（CSV）］、<b>取り込み（橙）</b>［入力シートを取り込む（CSV）］（第3章）。書き出して、取り込む順に左から並んでいます。</div></li>
       <li><span class="n">8</span><div><b>入力の進み具合</b>　教科ごとに「入れ終わった人数／受験する人数」。途中の人や赤いセルがあれば、その数も出ます。</div></li>
     </ol>
     <div class="box tip">
@@ -380,11 +380,10 @@ kbd { display: inline-block; padding: 0 .4em; border: 1px solid var(--line); bor
       <li><span class="k">手順4</span><span class="t">取り込む（橙）</span><span class="d">［入力シートを取り込む（CSV）］</span></li>
     </ol>
   </div>
-  <figure class="fig-actions"><img src="images/seiseki_in_04_actions.png" alt="操作のボタン"><figcaption>図4　取り込み（橙）と書き出し（緑）のボタン</figcaption></figure>
+  <figure class="fig-actions"><img src="images/seiseki_in_04_actions.png" alt="操作のボタン"><figcaption>図4　書き出し（緑）と取り込み（橙）のボタン</figcaption></figure>
   <ol class="legend">
     <li><span class="n">1</span><div><span class="btn">入力シートを書き出す（CSV）</span>　いまの名簿と得点を、入力シートの形の CSV ファイルにします（3-1）。</div></li>
     <li><span class="n">2</span><div><span class="btn">入力シートを取り込む（CSV）</span>　得点を入れた CSV ファイルを読み込みます（3-3）。</div></li>
-    <li><span class="n">3</span><div><span class="btn">貼り付けで取り込む</span>　Excel やスプレッドシートの行（受験番号から合計まで）をコピーして貼り付けて取り込みます。確認の画面は 3-3 と同じです。</div></li>
   </ol>
 
   <section class="sec" id="s3-1">
@@ -485,7 +484,7 @@ kbd { display: inline-block; padding: 0 .4em; border: 1px solid var(--line); bor
   </ol>
   <ul class="plain">
     <li>［受験しない］にしても、名簿からは消えません。入れていた得点も残ります。</li>
-    <li>書き出す入力シート（CSV）にも入りません。取り込みや貼り付けでその生徒に得点が入ると、「受験した」に戻ります。</li>
+    <li>書き出す入力シート（CSV）にも入りません。入力シートの取り込みでその生徒に得点が入ると、「受験した」に戻ります。</li>
   </ul>
 </article>
 
