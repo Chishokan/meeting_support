@@ -62,10 +62,25 @@ export function findUnit(book: Book, unit: string): Unit | undefined {
   return book.units.find((x) => norm(x.unit) === u) ?? (u.length >= 2 && !/^\d+$/.test(u) ? book.units.find((x) => norm(x.unit).startsWith(u)) : undefined);
 }
 
-/** 区分の名前を探す（「part1」「Part 1」「Let's Talk 1」などの揺れを許す。「Part3」で「Part3, T&S」も当てる）。 */
+/** 区分の名前を探す（「part1」「Part 1」「Let's Talk 1」などの揺れを許す。「Part3」で「Part3, T&S」、「Part2」で「Part1, 2」も当てる）。 */
 export function findSection(unit: Unit, name: string): Section | undefined {
   const n = norm(name);
-  return unit.sections.find((s) => norm(s.id) === n) ?? unit.sections.find((s) => norm(s.id).startsWith(n) && n.length >= 4);
+  return (
+    unit.sections.find((s) => norm(s.id) === n) ??
+    unit.sections.find((s) => sectionAliases(s.id).includes(n)) ??
+    unit.sections.find((s) => norm(s.id).startsWith(n) && n.length >= 4)
+  );
+}
+
+/** 区分の名前を「,」で分けた呼び名（「Part1, 2」→ part1・part2、「Part3, L&T, T&S」→ part3・l&t・t&s）。 */
+function sectionAliases(id: string): string[] {
+  let head = '';
+  return id.split(/[,，]/).map((p) => {
+    const t = norm(p);
+    if (/^\d+$/.test(t)) return head + t;
+    head = t.replace(/\d+$/, '');
+    return t;
+  });
 }
 
 /** 学年・Unit・区分の一覧（AI と職員に見せる）。 */

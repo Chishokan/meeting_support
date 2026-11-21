@@ -22,7 +22,7 @@ export const ENGLISH_WORD_QUIZ_TOOL: Anthropic.Tool = {
     type: 'object',
     properties: {
       grade: { type: 'string', enum: ['中1', '中2', '中3'], description: '学年（教材の冊子）' },
-      unit: { type: 'string', description: 'Unit の番号（例：4）' },
+      unit: { type: 'string', description: "Unit の番号（例：4）。Unit 以外は名前（プレステップ、Let's Start2、Let's Read1 など）" },
       sections: { type: 'array', items: { type: 'string' }, description: "範囲にする区分の名前（例：[\"Part1\", \"Part2\"]、Let's Talk1）。省くと Unit のすべて" },
       source: { type: 'string', enum: ['words', 'kwt'], description: 'words：Key Words の単語（既定）／kwt：巻末の Key Words TEST（文の穴埋め）' },
       star_only: { type: 'boolean', description: '☆（よく出る）の語だけにする（words のときだけ）' },

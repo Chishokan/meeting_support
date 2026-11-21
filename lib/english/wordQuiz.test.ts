@@ -3,8 +3,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildWordQuiz, findSection, kwtParts, rangeList } from './wordQuiz.ts';
 import { CHU1 } from './data/chu1.ts';
+import { CHU2 } from './data/chu2.ts';
+import { CHU3 } from './data/chu3.ts';
 
-const BOOKS = [CHU1];
+const BOOKS = [CHU1, CHU2, CHU3];
 let seed = 1;
 const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
@@ -69,13 +71,39 @@ test('buildWordQuiz：KWT', () => {
 });
 
 test('buildWordQuiz：無い範囲は、入っている範囲を返す', () => {
-  const r = buildWordQuiz(BOOKS, { grade: '中2', unit: '1' });
+  const r = buildWordQuiz(BOOKS, { grade: '中2', unit: '9' });
   assert.ok(!r.ok);
-  if (!r.ok) assert.match(r.message, /中1 Unit4/);
+  if (!r.ok) assert.match(r.message, /中2 Unit8/);
+  const g = buildWordQuiz(BOOKS, { grade: '高1', unit: '1' });
+  assert.ok(!g.ok);
+  if (!g.ok) assert.match(g.message, /中3 Unit6/);
   const s = buildWordQuiz(BOOKS, { grade: '中1', unit: '4', sections: ['Part9'] });
   assert.ok(!s.ok);
   if (!s.ok) assert.match(s.message, /区分：Part1／Part2/);
   assert.match(rangeList(BOOKS), /Part1（28語・☆7・KWT3問）/);
+});
+
+test('元データ：全学年で、語・KWT の形がそろっている', () => {
+  for (const b of BOOKS) {
+    assert.ok(b.units.length, b.grade);
+    for (const u of b.units) {
+      const ids = u.sections.map((s) => s.id);
+      assert.equal(new Set(ids).size, ids.length, `${b.grade} ${u.unit} の区分の名前が重なる`);
+      const kwt = u.sections.flatMap((s) => s.kwt);
+      assert.equal(new Set(kwt.map((k) => k.no)).size, kwt.length, `${b.grade} ${u.unit} の KWT の番号が重なる`);
+      for (const k of kwt) assert.match(k.en, /\[\[.+?\]\]/, `${b.grade} ${u.unit} KWT(${k.no})`);
+      for (const s of u.sections) for (const w of s.words) assert.ok(w.en && w.ja && w.pron, `${b.grade} ${u.unit} ${s.id}:${w.en}`);
+      assert.ok(u.sections.some((s) => s.words.length || s.kwt.length), `${b.grade} ${u.unit} が空`);
+    }
+  }
+  // 各学年の Unit の数（Let's Read なども1つと数える）
+  assert.deepEqual(BOOKS.map((b) => b.units.filter((u) => /^\d+$/.test(u.unit)).length), [10, 8, 6]);
+});
+
+test('中3：「Part2」で「Part1, 2」を選べる', () => {
+  const r = buildWordQuiz(BOOKS, { grade: '3', unit: '1', sections: ['Part2'] });
+  assert.ok(r.ok);
+  if (r.ok) assert.equal(r.value.range, '中3 Unit1（Part1, 2）');
 });
 
 test('findSection・kwtParts', () => {
