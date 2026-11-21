@@ -33,12 +33,15 @@ async function band(page, top, bottom, padTop = 12, padBottom = 14) {
   return { x: 236, y: Math.max(0, t.y - padTop), width: W - 236, height: b.y + b.height + padBottom - Math.max(0, t.y - padTop) };
 }
 const LAST_ROW = '[data-grid] tbody tr:last-child';
-async function shot(page, name, marks, clip) {
+// video：動画（../video/seiseki-entry）だけで使う枠（マニュアルの写真には付けない）
+async function shot(page, name, marks, clip, video = []) {
   await page.waitForTimeout(250);
   const list = [];
   for (const [n, sel, pad] of marks) list.push({ n, ...(await box(page, sel, pad ?? 4)) });
+  const vlist = [];
+  for (const [n, sel, pad] of video) vlist.push({ n, ...(await box(page, sel, pad ?? 4)) });
   await page.screenshot({ path: `${OUT}/${name}.png`, clip });
-  boxes[name] = { marks: list, clip };
+  boxes[name] = { marks: list, clip, video: vlist };
 }
 const cell = (row, k, i) => `[data-grid="scores"] tbody tr:nth-child(${row}) td.ms-s-${k}.ms-cell-td >> nth=${i}`;
 
@@ -75,7 +78,10 @@ const cell = (row, k, i) => `[data-grid="scores"] tbody tr:nth-child(${row}) td.
     [6, '.ms-toolbar .ms-check', 4],
     [7, '.ms-actions', 4],
     [8, '.ms-progress', 4],
-  ], { x: 236, y: 0, width: W - 236, height: 640 });
+  ], { x: 236, y: 0, width: W - 236, height: 640 }, [
+    [9, 'button:has-text("入力シートを書き出す（CSV）")', 5],
+    [10, 'button:has-text("入力シートを取り込む（CSV）")', 5],
+  ]);
 
   // 2. 大問ごとに入れる（0007 の英語を Tab で右へ入れ、自動で保存されたところ）
   const vals = ['21', '24', '7', '25'];
@@ -108,12 +114,11 @@ const cell = (row, k, i) => `[data-grid="scores"] tbody tr:nth-child(${row}) td.
   await page.click('.ms-toolbar .ms-seg >> nth=1 >> button:has-text("5教科")');
   await page.waitForTimeout(2200);
 
-  // 4. 操作のボタン（名簿・取り込み・書き出し）
+  // 4. 操作のボタン（名簿・書き出し・取り込み）
   const a = await page.locator('.ms-actions').boundingBox();
   await shot(page, 'seiseki_in_04_actions', [
     [1, 'button:has-text("入力シートを書き出す（CSV）")', 4],
     [2, 'button:has-text("入力シートを取り込む（CSV）")', 4],
-    [3, 'button:has-text("貼り付けで取り込む")', 4],
   ], { x: a.x - 14, y: a.y - 8, width: a.width + 28, height: a.height + 16 });
 
   // 5. 書き出した CSV に社会の得点を入れて（Excel で入れた想定）取り込む。0003 の社会2 は配点を超える値にしておく

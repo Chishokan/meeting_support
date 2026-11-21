@@ -116,9 +116,9 @@ export const MANUALS: ManualDoc[] = [
     title: '成績管理 成績入力 マニュアル',
     desc: '本番レベル模試の得点の入れ方。画面で大問ごとに入れる（Enter・Tab、教科を絞る、途中・赤いセル、Excel からの貼り付け、自動保存）、入力シート（CSV）を書き出して Excel で入れて取り込む、受験しない生徒の設定、困ったとき。得点を入れる職員向け。画面の写真つき',
     kind: 'pdf',
-    href: '/manual/seiseki-entry-manual-v1.0.0.pdf',
-    downloadName: '成績管理_成績入力マニュアル_v1.0.0.pdf',
-    meta: 'v1.0.0｜PDF・A4・13ページ｜約1.8MB',
+    href: '/manual/seiseki-entry-manual-v1.1.0.pdf',
+    downloadName: '成績管理_成績入力マニュアル_v1.1.0.pdf',
+    meta: 'v1.1.0｜PDF・A4・13ページ｜約1.8MB',
   },
   {
     id: 'event-list',
