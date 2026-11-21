@@ -1,0 +1,516 @@
+<title>成績管理 成績入力 マニュアル</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+/* 縦1段の手引き。画面の写真に付けた赤い番号と、本文の赤い番号を対応させて読む。 */
+:root {
+  --bg: #f4f6f8;
+  --paper: #ffffff;
+  --ink: #1c2430;
+  --muted: #5b6573;
+  --navy: #1f4e78;
+  --navy-soft: #e8f0f8;
+  --line: #dde2e8;
+  --mark: #e0262f;
+  --warn-bg: #fff5e6;
+  --warn-line: #d98a1c;
+  --shot-frame: #cfd6de;
+  --font: 'BIZ UDPGothic', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+    --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+    --shot-frame: #3a4553; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+  --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+  --shot-frame: #3a4553; color-scheme: dark;
+}
+
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font); font-size: 15.5px; line-height: 1.85;
+  font-variant-numeric: tabular-nums;
+}
+.page {
+  max-width: 880px; margin: 0 auto;
+  padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px;
+}
+.sheet {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+  padding: clamp(20px, 4vw, 40px); min-width: 0;
+}
+
+/* 表紙 */
+.cover { display: grid; gap: 18px; }
+.cover .org { font-size: 13px; letter-spacing: .12em; color: var(--muted); }
+.cover h1 { margin: 0; font-size: clamp(28px, 5vw, 40px); line-height: 1.3; text-wrap: balance; color: var(--navy); }
+.cover .lead { margin: 0; max-width: 40em; }
+.cover dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 18px; font-size: 14px; }
+.cover dt { color: var(--muted); }
+.cover dd { margin: 0; }
+.note-sample { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; margin: 0; }
+
+/* 目次 */
+.toc h2 { font-size: 18px; margin: 0 0 10px; }
+.toc ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 14px; }
+.toc > ol > li > a { font-weight: 700; }
+.toc ol ol { display: grid; gap: 2px; margin-top: 4px; padding-left: 1.2em; font-size: 14px; }
+.toc a { color: var(--ink); text-decoration: none; }
+.toc a:hover, .toc a:focus-visible { color: var(--navy); text-decoration: underline; }
+
+/* 見出し */
+.chapter { display: grid; gap: 22px; }
+.chapter > header { display: grid; gap: 6px; border-bottom: 3px solid var(--navy); padding-bottom: 12px; }
+.eyebrow { font-size: 13px; letter-spacing: .14em; color: var(--navy); font-weight: 700; }
+.chapter h2 { margin: 0; font-size: clamp(22px, 3.6vw, 28px); line-height: 1.35; text-wrap: balance; }
+.chapter > header p { margin: 0; color: var(--muted); }
+section.sec { display: grid; gap: 14px; min-width: 0; }
+section.sec + section.sec { border-top: 1px solid var(--line); padding-top: 24px; }
+h3 { margin: 0; font-size: 19px; line-height: 1.45; text-wrap: balance; display: flex; gap: 10px; align-items: baseline; }
+h3 .no { color: var(--navy); font-size: 15px; flex: none; }
+h4 { margin: 6px 0 0; font-size: 16px; }
+p { margin: 0; }
+a { color: var(--navy); }
+
+/* 画面写真の赤い番号と同じ形 */
+.n {
+  display: inline-grid; place-items: center; flex: none;
+  width: 1.6em; height: 1.6em; border-radius: 50%;
+  background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 1;
+  vertical-align: .05em;
+}
+.btn {
+  display: inline-block; padding: 0 .5em; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--navy-soft); color: var(--navy); font-weight: 700; font-size: .92em; line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* 写真 */
+figure { margin: 0; display: grid; gap: 8px; break-inside: avoid; min-width: 0; }
+figure img {
+  display: block; width: 100%; max-width: 100%; height: auto;
+  border: 1px solid var(--shot-frame); border-radius: 10px; background: #fff;
+}
+figcaption { font-size: 13px; color: var(--muted); }
+.video video { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--shot-frame); background: #0e1520; }
+.print-only { display: none; }
+.fig-narrow img { max-width: 520px; }
+.fig-card img { max-width: 480px; }
+.side-by-side { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px; align-items: start; }
+.w-sidebar { width: 238px; }
+.w-side { width: 340px; }
+.phones { display: flex; flex-wrap: wrap; gap: 20px; }
+.phones figure { width: min(240px, 100%); }
+
+/* 番号の説明 */
+.legend { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.legend li { display: grid; grid-template-columns: 1.6em 1fr; gap: 10px; align-items: start; }
+.legend .n { margin-top: .2em; font-size: 13px; }
+.legend b { font-weight: 700; }
+
+/* 手順 */
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: st; display: grid; gap: 10px; }
+.steps > li { counter-increment: st; display: grid; grid-template-columns: 2em 1fr; gap: 8px; }
+.steps > li::before {
+  content: counter(st); width: 1.75em; height: 1.75em; border-radius: 6px; margin-top: .15em;
+  display: grid; place-items: center; background: var(--navy); color: var(--paper); font-weight: 700; font-size: 14px;
+}
+ul.plain { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
+
+/* 補足 */
+.box { border-radius: 10px; padding: 14px 18px; display: grid; gap: 6px; border: 1px solid var(--line); }
+.box > .box-title { font-weight: 700; font-size: 14px; letter-spacing: .04em; }
+.box.tip { background: var(--navy-soft); border-color: transparent; }
+.box.tip > .box-title { color: var(--navy); }
+.box.warn { background: var(--warn-bg); border-color: transparent; border-left: 4px solid var(--warn-line); }
+.box.warn > .box-title { color: var(--warn-line); }
+.box.recommend { border: 2px solid var(--navy); }
+.box.recommend > .box-title { color: var(--navy); font-size: 15px; }
+
+/* 流れ図 */
+.loop { display: grid; gap: 10px; }
+.loop ol { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.loop li {
+  position: relative; border: 1.5px solid var(--navy); border-radius: 10px; padding: 10px 12px;
+  display: grid; gap: 2px; background: var(--paper);
+}
+.loop li .k { font-size: 12px; color: var(--navy); font-weight: 700; letter-spacing: .08em; }
+.loop li .t { font-weight: 700; line-height: 1.4; }
+.loop li .d { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.loop li:not(:last-child)::after {
+  content: "→"; position: absolute; right: -10px; top: 50%; transform: translate(50%, -50%);
+  color: var(--navy); font-weight: 700; background: var(--paper); line-height: 1;
+}
+.loop .back {
+  border: 1.5px dashed var(--navy); border-radius: 10px; padding: 6px 12px; text-align: center;
+  color: var(--navy); font-weight: 700; font-size: 14px;
+}
+
+/* 表 */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+th { background: var(--navy-soft); color: var(--ink); font-weight: 700; }
+td.num { white-space: nowrap; font-weight: 700; }
+
+footer.end { text-align: center; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 680px) {
+  .side-by-side { grid-template-columns: minmax(0, 1fr); }
+  .w-sidebar, .w-side { width: auto; max-width: min(340px, 100%); }
+  .loop ol { grid-template-columns: 1fr 1fr; }
+  .loop li:nth-child(2)::after { content: none; }
+}
+@media (max-width: 420px) {
+  .loop ol { grid-template-columns: 1fr; }
+  .loop li::after { content: none !important; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+@media print {
+  :root { --bg: #fff; }
+  body { font-size: 10.5pt; line-height: 1.75; }
+  .page { max-width: none; padding: 0; gap: 0; }
+  .sheet { border: 0; border-radius: 0; padding: 0; }
+  .cover { min-height: 240mm; align-content: center; }
+  .toc, .chapter { break-before: page; }
+  section.sec { break-before: auto; }
+  .page, .cover, .chapter, section.sec, figure { display: block; }
+  .chapter > * + *, section.sec > * + * { margin-top: 12px; }
+  .chapter > header + * { margin-top: 18px; }
+  section.sec + section.sec { margin-top: 22px; }
+  .cover > * + * { margin-top: 14px; }
+  figcaption { margin-top: 4px; }
+  h3, h4 { break-after: avoid; }
+  figure, .box, .loop, table, .legend li { break-inside: avoid; }
+  figure img { max-height: 200mm; width: auto; max-width: 100%; }
+  .side-by-side { display: flow-root; }
+  .side-by-side > figure { float: left; margin: 0 8mm 4mm 0; }
+  .side-by-side > figure img { width: 100%; max-height: none; }
+  .w-sidebar { width: 60mm; }
+  .w-side { width: 78mm; }
+  a { color: var(--ink); text-decoration: none; }
+  footer.end { display: none; }
+  .video { display: none; }
+  .print-only { display: block; color: var(--muted); }
+}
+.fig-login img { max-width: 560px; }
+.fig-color img { max-width: 420px; }
+.fig-bar img { max-width: 520px; }
+.mail { font-family: var(--font); white-space: pre-wrap; background: var(--paper); border: 1px dashed var(--shot-frame); border-radius: 10px; padding: 14px 18px; font-size: 14px; line-height: 1.75; margin: 0; }
+@media print { .fig-login img { width: 120mm; } .fig-color img { width: 85mm; } .fig-bar img { width: 110mm; } }
+.fig-menu img { max-width: 620px; }
+.fig-import img { max-width: 760px; }
+.numtable { table-layout: fixed; }
+.numtable th:nth-child(1) { width: 30%; }
+.numtable th:nth-child(2) { width: 32%; }
+@media print { .fig-menu img { width: 125mm; }  }
+.fig-actions img { max-width: 760px; }
+.fig-dialog img { max-width: 640px; }
+.csvtable td:first-child { white-space: nowrap; font-weight: 700; }
+.csvtable td.in { color: var(--mark); font-weight: 700; }
+kbd { display: inline-block; padding: 0 .4em; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; font-family: var(--font); font-size: .9em; line-height: 1.5; background: var(--paper); }
+@media print { .fig-actions img { width: 170mm; } .fig-dialog img { width: 140mm; } }
+</style>
+
+<div class="page">
+
+<header class="sheet cover" id="top">
+  <div class="org">株式会社智翔館　社内向け</div>
+  <h1>成績管理<br>成績入力 マニュアル</h1>
+  <p class="lead">本番レベル模試の得点を、成績管理の「成績入力」の画面に入れる方法をまとめています。入れ方は2つあります。<b>画面で直接入れる</b>方法（第2章）と、<b>入力シート（CSV）を書き出して Excel で入れ、取り込む</b>方法（第3章）です。教科ごとに入れ方を変えてもかまいません。</p>
+  <dl>
+    <dt>対象</dt><dd>本番レベル模試の得点を入れる職員（採点した先生・校舎の担当者）</dd>
+    <dt>アプリ</dt><dd>智翔館アプリ「成績管理」（v1.24.0・2026年11月の画面）</dd>
+    <dt>版</dt><dd>v1.1.0</dd>
+    <dt>最新版</dt><dd>智翔館アプリのヘルプデスク「マニュアル」タブからダウンロードできます</dd>
+    <dt>作成</dt><dd>2026年11月</dd>
+  </dl>
+  <p class="note-sample">※ 写真に写っている生徒・職員の氏名と得点は、説明のために用意した架空の例です。</p>
+</header>
+
+<nav class="sheet toc" aria-label="目次">
+  <h2>目次</h2>
+  <ol>
+    <li><a href="#ch1">第1章　成績入力の画面</a>
+      <ol>
+        <li><a href="#s1-1">1-1　画面を開く</a></li>
+        <li><a href="#s1-2">1-2　画面の見方</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch2">第2章　画面で得点を入れる</a>
+      <ol>
+        <li><a href="#s2-1">2-1　大問ごとに入れる</a></li>
+        <li><a href="#s2-2">2-2　教科を絞って入れる（途中・赤いセル）</a></li>
+        <li><a href="#s2-3">2-3　Excel からコピーしてまとめて貼る</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch3">第3章　入力シート（CSV）で入れる</a>
+      <ol>
+        <li><a href="#s3-1">3-1　入力シートを書き出す</a></li>
+        <li><a href="#s3-2">3-2　Excel で得点を入れる</a></li>
+        <li><a href="#s3-3">3-3　入力シートを取り込む</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch4">第4章　受験しない生徒</a></li>
+    <li><a href="#ch5">第5章　困ったとき</a></li>
+  </ol>
+</nav>
+
+<article class="sheet chapter" id="ch1">
+  <header>
+    <div class="eyebrow">第1章</div>
+    <h2>成績入力の画面</h2>
+    <p>得点は、回（模試）ごと・校舎ごとの表に入れます。入れたものは自動で保存されます。保存のボタンはありません。</p>
+  </header>
+
+  <section class="sec" id="s1-1">
+    <h3><span class="no">1-1</span>画面を開く</h3>
+    <ol class="steps">
+      <li><div>智翔館アプリの総合メニューで<span class="btn">成績管理</span>のカードを押します。</div></li>
+      <li><div>左のメニューの<b>成績入力</b>を押します（成績管理を開くと、はじめにこの画面が出ます）。</div></li>
+      <li><div>上の<b>回</b>と<b>校舎</b>を選びます。その校舎の名簿の生徒が、受験番号の順に並びます。</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s1-2">
+    <h3><span class="no">1-2</span>画面の見方</h3>
+    <figure><img src="images/seiseki_in_01_screen.png" alt="成績入力の画面"><figcaption>図1　成績入力の画面（得点・5教科の表示）</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>回</b>　得点を入れる模試の回を選びます（例：2026 本番レベル模試 11月）。</div></li>
+      <li><span class="n">2</span><div><b>校舎</b>　名簿は校舎ごとです。自分の校舎を選びます。</div></li>
+      <li><span class="n">3</span><div><b>保存の状態</b>　「保存しました（時刻）」と出ていれば保存されています。</div></li>
+      <li><span class="n">4</span><div><b>得点</b>／<b>名簿・志望校</b>　得点を入れるときは「得点」。「名簿・志望校」は名簿と［受験しない］の設定（第4章）です。</div></li>
+      <li><span class="n">5</span><div><b>教科</b>　「5教科」はすべての教科を並べます。教科を押すと、その教科の列だけになります（2-2）。</div></li>
+      <li><span class="n">6</span><div><b>未入力がある人だけ</b>　チェックを入れると、得点がそろっていない人だけを出します（2-2）。</div></li>
+      <li><span class="n">7</span><div><b>操作のボタン</b>　色で分けています。<b>名簿（紺）</b>［＋ 生徒を追加］、<b>書き出し（緑）</b>［入力シートを書き出す（CSV）］、<b>取り込み（橙）</b>［入力シートを取り込む（CSV）］（第3章）。書き出して、取り込む順に左から並んでいます。</div></li>
+      <li><span class="n">8</span><div><b>入力の進み具合</b>　教科ごとに「入れ終わった人数／受験する人数」。途中の人や赤いセルがあれば、その数も出ます。</div></li>
+    </ol>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <p>名簿に生徒がいないとき（あとから入った生徒など）は、［＋ 生徒を追加］で足します。足し方は「成績管理 生徒の追加 マニュアル」をご覧ください。</p>
+    </div>
+  </section>
+</article>
+
+<article class="sheet chapter" id="ch2">
+  <header>
+    <div class="eyebrow">第2章</div>
+    <h2>画面で得点を入れる</h2>
+    <p>答案を見ながら、表に大問ごとの得点を打ち込みます。入れてから約1秒で自動で保存されます。</p>
+  </header>
+
+  <section class="sec" id="s2-1">
+    <h3><span class="no">2-1</span>大問ごとに入れる</h3>
+    <ol class="steps">
+      <li><div>表示が「得点」になっていることを確かめます。</div></li>
+      <li><div>得点を入れる欄を押して、数字を打ちます。<b>0点は「0」と入れます</b>（空欄は「まだ入れていない」の意味です）。</div></li>
+      <li><div><kbd>Tab</kbd> で右の大問へ、<kbd>Enter</kbd> で下の生徒へ進みます（<kbd>Shift</kbd>＋<kbd>Enter</kbd> で上、矢印キーでも動けます）。</div></li>
+      <li><div>教科の<b>計</b>は自動で出ます。<b>合計</b>は、5教科すべてに得点が入ると出ます。</div></li>
+      <li><div>上に「<b>保存しました（時刻）</b>」と出れば保存されています。</div></li>
+    </ol>
+    <figure><img src="images/seiseki_in_02_type.png" alt="得点を入れたところ"><figcaption>図2　受験番号 0007 の英語を入れたところ</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>入れた得点</b>　大問ごとに1つずつ。欄の上の数字が大問の番号、その下が配点です。</div></li>
+      <li><span class="n">2</span><div><b>計</b>　その教科の合計が自動で出ます。</div></li>
+      <li><span class="n">3</span><div><b>保存の状態</b>　「入力中（まもなく保存）」→「保存中…」→「保存しました（時刻）」と変わります。</div></li>
+    </ol>
+    <div class="box tip">
+      <div class="box-title">ほかの先生と同時に入れても大丈夫です</div>
+      <p>保存するのは、変えた教科の得点だけです。同じ生徒の国語と数学を別の先生が同時に入れても、消えません。同じ教科を同時に直したときは、あとから保存したほうが残ります。</p>
+    </div>
+    <div class="box warn">
+      <div class="box-title">閉じる前に</div>
+      <p>保存が終わる前に画面を閉じようとすると、確認が出ます。「保存しました」と出てから閉じてください。</p>
+    </div>
+  </section>
+
+  <section class="sec" id="s2-2">
+    <h3><span class="no">2-2</span>教科を絞って入れる（途中・赤いセル）</h3>
+    <p>採点した教科だけを入れるときは、教科のボタンでその教科に絞ると、列が少なくなり入れやすくなります。大問の見出しに分野も出ます。</p>
+    <figure><img src="images/seiseki_in_03_subject.png" alt="数学に絞った表"><figcaption>図3　数学に絞ったところ</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>教科のボタン</b>　押した教科の列だけになります。「5教科」で元に戻ります。</div></li>
+      <li><span class="n">2</span><div><b>大問の見出し</b>　大問の番号・配点・分野です。</div></li>
+      <li><span class="n">3</span><div><b>黄色いセル（途中）</b>　その教科の大問が一部だけ入っていて、ここが空いています。入れ忘れがないか確かめてください。</div></li>
+      <li><span class="n">4</span><div><b>赤いセル</b>　数字として読めない値か、配点を超える値です（例：30点の大問に 45）。この大問は<b>空欄として保存</b>されるので、正しい得点に直してください。</div></li>
+      <li><span class="n">5</span><div><b>入力の進み具合</b>　途中の人数と、赤いセルの数が出ます。</div></li>
+    </ol>
+    <div class="box tip">
+      <div class="box-title">未入力がある人だけ</div>
+      <p><span class="btn">未入力がある人だけ</span>にチェックを入れると、表に出している教科の得点がそろっていない人（まだの人・途中の人）だけになります。入れ終わった人は表から消えるので、残りがひと目で分かります。</p>
+    </div>
+  </section>
+
+  <section class="sec" id="s2-3">
+    <h3><span class="no">2-3</span>Excel からコピーしてまとめて貼る</h3>
+    <p>Excel やスプレッドシートに得点がまとまっているときは、範囲をコピーして表に貼り付けられます。</p>
+    <ol class="steps">
+      <li><div>Excel で、大問の得点の範囲（生徒の行 × 大問の列）を選んでコピーします。</div></li>
+      <li><div>成績入力の表で、貼りはじめる欄（範囲の左上にあたる欄）を押し、<kbd>Ctrl</kbd>＋<kbd>V</kbd>（Mac は <kbd>⌘</kbd>＋<kbd>V</kbd>）で貼り付けます。</div></li>
+      <li><div>押した欄から右・下へ広がって入ります。「貼り付けました（○行）」と出て、自動で保存されます。</div></li>
+    </ol>
+    <div class="box warn">
+      <div class="box-title">貼る前に確かめること</div>
+      <p>得点は、表に<b>いま出ている行と列の順</b>に入ります。コピーした生徒の並びが表（受験番号の順）と同じか確かめてください。「未入力がある人だけ」や教科の絞り込みをしていると、出ている行・列だけに順に入ります。</p>
+    </div>
+  </section>
+</article>
+
+<article class="sheet chapter" id="ch3">
+  <header>
+    <div class="eyebrow">第3章</div>
+    <h2>入力シート（CSV）で入れる</h2>
+    <p>Excel でまとめて入れたいときは、入力シートを書き出し、得点を入れてから取り込みます。</p>
+  </header>
+  <div class="loop">
+    <ol>
+      <li><span class="k">手順1</span><span class="t">書き出す（緑）</span><span class="d">［入力シートを書き出す（CSV）］</span></li>
+      <li><span class="k">手順2</span><span class="t">Excel で入れる</span><span class="d">大問の列に得点を入れる</span></li>
+      <li><span class="k">手順3</span><span class="t">CSV のまま保存</span><span class="d">ブック（.xlsx）にしない</span></li>
+      <li><span class="k">手順4</span><span class="t">取り込む（橙）</span><span class="d">［入力シートを取り込む（CSV）］</span></li>
+    </ol>
+  </div>
+  <figure class="fig-actions"><img src="images/seiseki_in_04_actions.png" alt="操作のボタン"><figcaption>図4　書き出し（緑）と取り込み（橙）のボタン</figcaption></figure>
+  <ol class="legend">
+    <li><span class="n">1</span><div><span class="btn">入力シートを書き出す（CSV）</span>　いまの名簿と得点を、入力シートの形の CSV ファイルにします（3-1）。</div></li>
+    <li><span class="n">2</span><div><span class="btn">入力シートを取り込む（CSV）</span>　得点を入れた CSV ファイルを読み込みます（3-3）。</div></li>
+  </ol>
+
+  <section class="sec" id="s3-1">
+    <h3><span class="no">3-1</span>入力シートを書き出す</h3>
+    <ol class="steps">
+      <li><div>回と校舎を選びます。</div></li>
+      <li><div>緑の<span class="btn">入力シートを書き出す（CSV）</span>を押します。</div></li>
+      <li><div>「<b>2026 本番レベル模試 11月_日野校_入力シート.csv</b>」のような名前のファイルがダウンロードされます。Excel でそのまま開けます。</div></li>
+    </ol>
+    <ul class="plain">
+      <li>受験する生徒の名簿・志望校と、いま入っている得点が入ります。「受験しない」にした生徒（第4章）は入りません。</li>
+      <li>教科ごとに分けて入れるときも、同じファイルを使えます（入れなかった教科は、取り込んでも今の得点のままです）。</li>
+    </ul>
+  </section>
+
+  <section class="sec" id="s3-2">
+    <h3><span class="no">3-2</span>Excel で得点を入れる</h3>
+    <p>ファイルの1行目が見出し、2行目からが生徒1人ずつの行です。得点を入れるのは<b>大問の列だけ</b>です。</p>
+    <div class="table-wrap">
+      <table class="csvtable">
+        <thead><tr><th>列（見出し）</th><th>中身</th><th>入れる・直す</th></tr></thead>
+        <tbody>
+          <tr><td>校舎</td><td>日野校 など</td><td>直さない（選んでいる校舎の行だけを読みます）</td></tr>
+          <tr><td>受験番号</td><td>0001 など</td><td>直さない（Excel で「1」と出ても大丈夫です）</td></tr>
+          <tr><td>氏名・性別</td><td>性別は 0＝男・1＝女</td><td>直さない</td></tr>
+          <tr><td>第一〜第四<br>第一〜第四志望校名</td><td>志望校のコードと学校名</td><td>直さない</td></tr>
+          <tr><td>国語1・国語2 … 理科6</td><td>大問ごとの得点</td><td class="in">ここに得点を入れる</td></tr>
+          <tr><td>国語計 … 理科計・合計</td><td>書き出したときの合計</td><td>直さなくてよい（取り込みでは読みません）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ul class="plain">
+      <li>大問の数は回によって違います（2026年11月は 国語4・英語4・数学5・社会5・理科6）。見出しが「数学1〜数学5」のように並んでいます。</li>
+      <li>0点は「0」と入れます。空欄の大問は、取り込んでも<b>今の得点のまま</b>です（画面で入れた得点は消えません）。</li>
+      <li>得点を入れたら、<b>CSV のまま上書き保存</b>します。Excel で「この形式のままにしますか」と聞かれたら、CSV のままにしてください。</li>
+    </ul>
+    <div class="box warn">
+      <div class="box-title">してはいけないこと</div>
+      <ul class="plain">
+        <li>1行目の見出しを消したり、名前を変えたりしない（見出しで列を探して読みます）</li>
+        <li>行を足さない。名簿にいない生徒は、画面の［＋ 生徒を追加］で足します</li>
+        <li>ほかの回のファイルを使わない（大問の数が違う教科は読みません）</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec" id="s3-3">
+    <h3><span class="no">3-3</span>入力シートを取り込む</h3>
+    <ol class="steps">
+      <li><div>書き出したときと同じ<b>回・校舎</b>を選びます。</div></li>
+      <li><div>橙の<span class="btn">入力シートを取り込む（CSV）</span>を押し、得点を入れた CSV ファイルを選びます。</div></li>
+      <li><div>確認の画面が出ます（まだ取り込まれていません）。人数と「気をつけること」を確かめます。</div></li>
+      <li><div><span class="btn">取り込む（追加 ○人・更新 ○人）</span>を押します。取り込んだ得点は自動で保存されます。</div></li>
+    </ol>
+    <figure class="fig-dialog"><img src="images/seiseki_in_05_import.png" alt="取り込む前の確認の画面"><figcaption>図5　取り込む前の確認の画面</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>ファイル</b>　選んだファイルの名前です。違うときは<span class="btn">別のファイルを選ぶ</span>を押します。</div></li>
+      <li><span class="n">2</span><div><b>読めた人数</b>　「追加」は名簿にいない受験番号の人（名簿に行が足されます）、「更新」は名簿にいる人です。ふだんは<b>追加 0人</b>になります。</div></li>
+      <li><span class="n">3</span><div><b>気をつけること</b>　読めなかった得点などが黄色の字で出ます（下の表）。</div></li>
+      <li><span class="n">4</span><div><span class="btn">取り込む</span>　押すと取り込みます。やめるときは<span class="btn">やめる</span>。</div></li>
+    </ol>
+    <figure><img src="images/seiseki_in_06_done.png" alt="取り込んだあと"><figcaption>図6　取り込んだあと（社会に絞って表示）</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>知らせ</b>　追加・更新した人数です。中身が変わらなかった人は「変わりのない ○人はそのまま」と出ます。押すと消えます。</div></li>
+      <li><span class="n">2</span><div><b>入力の進み具合</b>　取り込んだ教科の人数が増えます。</div></li>
+      <li><span class="n">3</span><div><b>空欄にした大問</b>　「気をつけること」に出た大問は空欄（黄色＝途中）になっています。画面で正しい得点を入れてください。</div></li>
+      <li><span class="n">4</span><div><b>保存の状態</b>　「保存しました（時刻）」と出れば完了です。</div></li>
+    </ol>
+    <h4>確認の画面に出る「気をつけること」</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>出ることば</th><th>どうすればよいか</th></tr></thead>
+        <tbody>
+          <tr><td>○行目：○○ の得点が読めないか配点を超えているので、空欄にしました</td><td>そのまま取り込み、画面でその大問を直します（または CSV を直して取り込み直します）。</td></tr>
+          <tr><td>ほかの校舎の行（○○校 ○人）は読みませんでした</td><td>選んでいる校舎と違う行です。その校舎を選び直して取り込みます。</td></tr>
+          <tr><td>○○の大問の列の数が今回の回と合わないので、その教科の得点は読みませんでした</td><td>別の回のファイルです。いまの回で書き出し直して、入れ直してください。</td></tr>
+          <tr><td>同じ受験番号の行が前にあるので、この行は読みませんでした</td><td>CSV に同じ生徒の行が2つあります。いらない行を消して取り込み直します。</td></tr>
+          <tr><td>「受験しない」にしている ○人に得点が入っています</td><td>取り込むと、その生徒は「受験した」に戻ります（第4章）。欠席の生徒なら、CSV のその行の得点を消してください。</td></tr>
+          <tr><td>読める行がありませんでした</td><td>入力シートの CSV か、校舎の選び間違いがないか確かめます。</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</article>
+
+<article class="sheet chapter" id="ch4">
+  <header>
+    <div class="eyebrow">第4章</div>
+    <h2>受験しない生徒</h2>
+    <p>名簿にいても、その回を受けない生徒（欠席など）は［受験しない］にします。得点の表・受験票・成績表・順位表に出なくなり、入力の進み具合の人数からも外れます。</p>
+  </header>
+  <figure><img src="images/seiseki_in_07_absent.png" alt="受験しないにチェックを入れた名簿"><figcaption>図7　「名簿・志望校」の表示で、受験番号 0008 を［受験しない］にしたところ</figcaption></figure>
+  <ol class="legend">
+    <li><span class="n">1</span><div><b>名簿・志望校</b>　表示を切り替えます。</div></li>
+    <li><span class="n">2</span><div><b>受験しない</b>の列です。</div></li>
+    <li><span class="n">3</span><div><b>チェック</b>を入れると、その行が薄くなります（自動で保存）。外すと元に戻ります。</div></li>
+    <li><span class="n">4</span><div><b>人数</b>　「ほかに受験しない ○人」と出ます。得点の表の下にも「受験しない生徒 ○人は、この表に出していません」と出ます。</div></li>
+  </ol>
+  <ul class="plain">
+    <li>［受験しない］にしても、名簿からは消えません。入れていた得点も残ります。</li>
+    <li>書き出す入力シート（CSV）にも入りません。入力シートの取り込みでその生徒に得点が入ると、「受験した」に戻ります。</li>
+  </ul>
+</article>
+
+<article class="sheet chapter" id="ch5">
+  <header>
+    <div class="eyebrow">第5章</div>
+    <h2>困ったとき</h2>
+  </header>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>こんなとき</th><th>どうすればよいか</th></tr></thead>
+      <tbody>
+        <tr><td>生徒が表にいない</td><td>回と校舎を確かめます。「名簿・志望校」で［受験しない］になっていないか見ます。名簿にいなければ［＋ 生徒を追加］で足します（成績管理 生徒の追加 マニュアル）。</td></tr>
+        <tr><td>赤いセルが消えない</td><td>0 からその大問の配点までの数字にします（全角の数字でもかまいません）。</td></tr>
+        <tr><td>入れた得点を消したい</td><td>画面でその欄の数字を消します（空欄として保存されます）。CSV で空欄にして取り込んでも、得点は消えません。</td></tr>
+        <tr><td>合計が出ない</td><td>合計は5教科すべてに得点が入ると出ます。まだの教科がないか、進み具合で確かめます。</td></tr>
+        <tr><td>まちがった CSV を取り込んだ</td><td>画面で直すか、正しい CSV をもう一度取り込みます（得点が入っている教科は置きかわります）。</td></tr>
+        <tr><td>取り込みで「追加 ○人」と出る</td><td>名簿にない受験番号の行があります。取り込むと名簿に行が足されるので、受験番号と校舎を確かめてから取り込みます。</td></tr>
+        <tr><td>「保存できませんでした」と出る</td><td>横の<span class="btn">もう一度保存</span>を押します。何度も出るときは、ページを読み込み直してから入れ直し、管理者に連絡してください。</td></tr>
+        <tr><td>「成績管理の保存先…が未設定です」と出る</td><td>保存先の設定がまだです。管理者に連絡してください。</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>ご不明な点や不具合は、ヘルプデスクの「ご意見・不具合の報告」からお知らせください。</p>
+</article>
+
+<footer class="end"><a href="#top">↑ 表紙へ戻る</a></footer>
+
+</div>

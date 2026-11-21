@@ -4,23 +4,27 @@
 //   - 「得点」と「名簿・志望校」の2つの表示。教科を1つに絞ると、その教科の列だけになる（採点した先生が自分の教科だけ入れる）
 //   - Enter で下へ、Tab で右へ。スプレッドシートからコピーした得点は、セルに貼り付けると右下へ広げて入る
 //   - 入れたら少し置いて自動で保存する（変えた教科・項目だけを送るので、同じ生徒の別の教科を別の先生が同時に入れても消えない）
-//   - 名簿は「前の回から写す」か「貼り付けで取り込む」（入力シートの行をそのまま貼れる）
+//   - 名簿は「前の回から写す」か［＋ 生徒を追加］（県一斉模試を受けた生徒は「県一斉模試の取り込み」で入る）
+//   - 入力シートの CSV：［入力シートを書き出す（CSV）］で出し、Excel で得点を入れて［入力シートを取り込む（CSV）］で戻せる
+//     （取り込む前に、追加・更新の人数と気をつけることを見せる。読み方は lib/moshi/model.ts の parseInputSheetCsv）
 // 計算・読み取りの決まりは lib/moshi/model.ts。
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import {
   SUBJECT_KEYS, SUBJECT_NAMES, byExamNo, campusInfo, campusOfExamNo, emptyScores, examMax, inputSheetRows,
-  isPartial, nameKey, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, subjectMax,
+  isPartial, nameKey, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parseInputSheetCsv, parseScore, planPaste, subjectMax,
   subjectOf, subjectTotal, toCsv, toHalf,
   type Gender, type MoshiExam, type MoshiResult, type SubjectKey,
 } from '@/lib/moshi/model';
 import { SCHOOLS, schoolName, toKenCode } from '@/lib/moshi/schools';
 import type { ResultField } from '@/lib/moshi/store';
 import {
-  ExamCampusBar, PageHead, StateNote, downloadCsv, newId, reasonText, useExamCampus, useMoshiData,
+  ExamCampusBar, PageHead, StateNote, downloadCsv, newId, readCsvFile, reasonText, useExamCampus, useMoshiData,
 } from './MoshiShared';
 
 type View = 'scores' | 'roster';
+/** 取り込む入力シートの CSV ファイル。 */
+type ImportSource = { fileName: string; text: string };
 type Dirty = { fields: Set<ResultField>; isNew: boolean; ver: number };
 type SaveState = { status: 'idle' | 'saving' | 'saved' | 'error'; at?: string; message?: string };
 
@@ -47,7 +51,8 @@ export default function MoshiEntryUI({ name }: { name: string }) {
   const [save, setSave] = useState<SaveState>({ status: 'idle' });
   const [pending, setPending] = useState(0);
   const [order, setOrder] = useState<string[]>([]);
-  const [pasteOpen, setPasteOpen] = useState(false);
+  const [importing, setImporting] = useState<ImportSource | null>(null);
+  const csvInput = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState('');
 
   const resultsRef = useRef<MoshiResult[]>([]);
@@ -331,10 +336,20 @@ export default function MoshiEntryUI({ name }: { name: string }) {
     setOrder((o) => o.filter((x) => x !== r.id));
   }
 
+  // 入力シートの CSV：受験する生徒だけ（「受験しない」の生徒は入力欄と同じく出さない）
   function exportCsv() {
     if (!exam) return;
-    const csv = toCsv(inputSheetRows(exam, mine, schoolName));
-    downloadCsv(`${exam.name}_${campus}.csv`, csv);
+    const csv = toCsv(inputSheetRows(exam, takers, schoolName));
+    downloadCsv(`${exam.name}_${campusInfo(campus)?.label ?? campus}_入力シート.csv`, csv);
+  }
+
+  async function pickCsv(f: File | undefined) {
+    if (!f) return;
+    try {
+      setImporting({ fileName: f.name, text: await readCsvFile(f) });
+    } catch {
+      setNotice('CSV ファイルを読めませんでした。');
+    }
   }
 
   // ---- 表示 ----------------------------------------------------------------
@@ -379,11 +394,27 @@ export default function MoshiEntryUI({ name }: { name: string }) {
           {view === 'scores' && (
             <label className="ms-check"><input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} />未入力がある人だけ</label>
           )}
-          <span className="ms-spacer" />
-          <button type="button" className="ms-btn" onClick={addStudent}>＋ 生徒を追加</button>
-          {prev && <button type="button" className="ms-btn ms-btn-sub" onClick={copyPrev}>前の回から名簿を写す</button>}
-          <button type="button" className="ms-btn ms-btn-sub" onClick={() => setPasteOpen(true)}>貼り付けで取り込む</button>
-          <button type="button" className="ms-btn ms-btn-sub" onClick={exportCsv} disabled={!mine.length}>入力シートの形で書き出す</button>
+        </div>
+
+        <div className="ms-actions ms-noprint">
+          <div className="ms-act-group" role="group" aria-label="名簿">
+            <span className="ms-act-h">名簿</span>
+            <button type="button" className="ms-btn" onClick={addStudent}>＋ 生徒を追加</button>
+            {prev && <button type="button" className="ms-btn ms-btn-sub" onClick={copyPrev}>前の回から名簿を写す</button>}
+          </div>
+          {/* 書き出して → Excel で入れて → 取り込む の順に左から並べる */}
+          <div className="ms-act-group ms-act-out" role="group" aria-label="書き出し">
+            <span className="ms-act-h">書き出し</span>
+            <button type="button" className="ms-btn ms-btn-out" onClick={exportCsv} disabled={!takers.length} title="受験する生徒の名簿・志望校・大問ごとの得点を、入力シートと同じ列の CSV に書き出します">入力シートを書き出す（CSV）</button>
+          </div>
+          <div className="ms-act-group ms-act-in" role="group" aria-label="取り込み">
+            <span className="ms-act-h">取り込み</span>
+            <button type="button" className="ms-btn ms-btn-in" onClick={() => csvInput.current?.click()} title="書き出した入力シートに得点を入れた CSV を読み込みます（取り込む前に確認の画面が出ます）">入力シートを取り込む（CSV）</button>
+            <input
+              ref={csvInput} type="file" accept=".csv,text/csv" hidden
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; void pickCsv(f); }}
+            />
+          </div>
         </div>
 
         <div className="ms-progress ms-noprint">
@@ -400,7 +431,7 @@ export default function MoshiEntryUI({ name }: { name: string }) {
         {!rows.length ? (
           <div className="ms-note">
             <p>この回の{campusInfo(campus)?.label}の名簿がまだありません。</p>
-            <p>「前の回から名簿を写す」か「貼り付けで取り込む」（入力シートの行をそのまま貼れます）、「＋ 生徒を追加」で始めてください。</p>
+            <p>「前の回から名簿を写す」「入力シートを取り込む（CSV）」か、「＋ 生徒を追加」で始めてください。</p>
           </div>
         ) : view === 'scores' ? (
           <div className="ms-grid-wrap">
@@ -461,45 +492,55 @@ export default function MoshiEntryUI({ name }: { name: string }) {
           </div>
         )}
 
-        {pasteOpen && (
-          <PasteDialog
-            exam={exam} campus={campus} current={mine}
-            onClose={() => setPasteOpen(false)}
+        {importing && (
+          <ImportDialog
+            source={importing} exam={exam} campus={campus} current={mine}
+            onClose={() => setImporting(null)}
+            onPickFile={() => csvInput.current?.click()}
             onApply={(plan) => {
-              const changed: string[] = [];
+              // 変える中身は、いまの行から先に決めてから1回で反映する（状態の更新の中で決めると、保存する項目の印付けが漏れる）
+              const now = new Map(resultsRef.current.map((r) => [r.id, r]));
+              const nextById = new Map<string, MoshiResult>();
+              const marks: [string, ResultField[]][] = [];
+              let back = 0;
               for (const u of plan.update) {
+                const r = now.get(u.target.id);
+                if (!r) continue;
                 const fields: ResultField[] = [];
-                updateRowSilently(u.target.id, (r) => {
-                  const next = { ...r, scores: { ...r.scores } };
-                  if (u.row.examNo && u.row.examNo !== r.examNo) { next.examNo = u.row.examNo; fields.push('examNo'); }
-                  if (u.row.name && u.row.name !== r.name) { next.name = u.row.name; fields.push('name'); }
-                  if (u.row.gender && u.row.gender !== r.gender) { next.gender = u.row.gender; fields.push('gender'); }
-                  if (u.row.choices.some(Boolean)) { next.choices = u.row.choices.map((c, i) => c || r.choices[i] || ''); fields.push('choices'); }
-                  if (u.row.scores) {
-                    for (const k of SUBJECT_KEYS) {
-                      if (u.row.scores[k].some((v) => v != null)) { next.scores[k] = u.row.scores[k]; fields.push(k); }
-                    }
+                const next = { ...r, scores: { ...r.scores } };
+                if (u.row.examNo && u.row.examNo !== r.examNo) { next.examNo = u.row.examNo; fields.push('examNo'); }
+                if (u.row.name && u.row.name !== r.name) { next.name = u.row.name; fields.push('name'); }
+                if (u.row.gender && u.row.gender !== r.gender) { next.gender = u.row.gender; fields.push('gender'); }
+                if (u.row.choices.some(Boolean)) {
+                  const ch = u.row.choices.map((c, i) => c || r.choices[i] || '');
+                  if (ch.some((c, i) => c !== (r.choices[i] ?? ''))) { next.choices = ch; fields.push('choices'); }
+                }
+                if (u.row.scores) {
+                  for (const k of SUBJECT_KEYS) {
+                    const v = u.row.scores[k];
+                    if (v.some((x) => x != null) && v.some((x, i) => x !== (r.scores[k]?.[i] ?? null))) { next.scores[k] = v; fields.push(k); }
                   }
-                  return next;
-                });
-                if (fields.length) { markDirty(u.target.id, fields); changed.push(u.target.id); }
+                  // 得点がある＝受験した。「受験しない」にしていたら外す（得点が入力欄から見えなくならないように）
+                  if (r.absent) { next.absent = false; fields.push('absent'); back++; }
+                }
+                if (fields.length) { nextById.set(r.id, next); marks.push([r.id, fields]); }
               }
+              if (nextById.size) setResults((rs) => rs.map((r) => nextById.get(r.id) ?? r));
+              for (const [id, fields] of marks) markDirty(id, fields);
+              const changed = marks.map(([id]) => id);
               addRows(plan.add.map((p) => ({
                 examNo: p.examNo, name: p.name, gender: p.gender, choices: [0, 1, 2, 3].map((i) => p.choices[i] ?? ''),
                 scores: p.scores ?? emptyScores(exam), comment: '',
               })));
-              setPasteOpen(false);
-              setNotice(`取り込みました（追加 ${plan.add.length}人・更新 ${changed.length}人）。`);
+              setImporting(null);
+              const same = plan.update.length - changed.length;
+              setNotice(`取り込みました（追加 ${plan.add.length}人・更新 ${changed.length}人${same ? `・変わりのない ${same}人はそのまま` : ''}）。${back ? `「受験しない」にしていた ${back}人は得点があったので、受験したことにしました。` : ''}`);
             }}
           />
         )}
       </div>
     </div>
   );
-
-  function updateRowSilently(id: string, fn: (r: MoshiResult) => MoshiResult) {
-    setResults((rs) => rs.map((r) => (r.id === id ? fn(r) : r)));
-  }
 }
 
 function toInput(r: MoshiResult) {
@@ -645,44 +686,47 @@ const RosterRow = memo(function RosterRow({ r, ri, onUpdate, onKey, onRemove }: 
   );
 });
 
-// ---- 貼り付けで取り込む -----------------------------------------------------
+// ---- 取り込み（入力シートの CSV） ------------------------------------------------
 
-function PasteDialog({ exam, campus, current, onClose, onApply }: {
-  exam: MoshiExam; campus: string; current: MoshiResult[];
-  onClose: () => void; onApply: (plan: ReturnType<typeof planPaste>) => void;
+function ImportDialog({ source, exam, campus, current, onClose, onPickFile, onApply }: {
+  source: ImportSource; exam: MoshiExam; campus: string; current: MoshiResult[];
+  onClose: () => void; onPickFile: () => void; onApply: (plan: ReturnType<typeof planPaste>) => void;
 }) {
-  const [text, setText] = useState('');
-  const parsed = useMemo(() => parsePaste(text, exam, toKenCode), [text, exam]);
+  const parsed = useMemo(() => parseInputSheetCsv(source.text, exam, campus, toKenCode), [source, exam, campus]);
   const plan = useMemo(() => planPaste(parsed.rows, current), [parsed, current]);
   const others = parsed.rows.filter((p) => p.examNo && campusOfExamNo(p.examNo) && campusOfExamNo(p.examNo) !== campus);
   const withScores = parsed.rows.filter((p) => p.scores).length;
+  const backFromAbsent = plan.update.filter((u) => u.row.scores && u.target.absent).length;
+  const label = campusInfo(campus)?.label ?? campus;
   useEffect(() => {
     const h = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
   return (
-    <div className="ms-modal" role="dialog" aria-modal="true" aria-label="貼り付けで取り込む" onClick={onClose}>
+    <div className="ms-modal" role="dialog" aria-modal="true" aria-label="入力シートを取り込む（CSV）" onClick={onClose}>
       <div className="ms-modal-box" onClick={(e) => e.stopPropagation()}>
-        <h2>貼り付けで取り込む（{campusInfo(campus)?.label}）</h2>
+        <h2>入力シートを取り込む（CSV）（{label}）</h2>
         <p className="ms-fine">
-          スプレッドシートで行を選んでコピーし、下に貼り付けます。次のどちらの形でも読めます。<br />
-          ・名簿：受験番号（県一斉模試の4桁）・氏名・性別（0/1 か 男/女）・第一〜第四志望（県一斉のコードか学校名）<br />
-          ・入力シートの行：B列（受験番号）〜AT列（合計）。A列から選んでも、非表示の列を含んでいても読めます。大問の得点も入ります
+          ［入力シートを書き出す（CSV）］で出したファイル（Excel で得点を入れて保存し直したものでもかまいません）を読みます。
+          1行目の見出しで列を当てるので、「計」「合計」の列は読みません（大問の得点だけを使います）。校舎の列があれば、{label}の行だけを読みます。
         </p>
-        <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="ここに貼り付け" autoFocus />
-        {text.trim() && (
-          <div className="ms-paste-sum">
-            <p>読めた行：{parsed.rows.length}人（得点あり {withScores}人）→ 追加 {plan.add.length}人・名簿にある人の更新 {plan.update.length}人</p>
-            {others.length > 0 && <p className="warn">{others.length}人は受験番号が{[...new Set(others.map((o) => campusOfExamNo(o.examNo)))].join('・')}の番号です。校舎の選び間違いがないか確かめてください。</p>}
-            {parsed.warnings.slice(0, 6).map((w) => <p key={w} className="warn">{w}</p>)}
-            {parsed.warnings.length > 6 && <p className="warn">ほか {parsed.warnings.length - 6} 件</p>}
-            <p className="ms-fine">空欄の項目は、いまの名簿の値を残します。得点は、貼った行に得点が入っている教科だけを置きかえます。</p>
-          </div>
-        )}
+        <p className="ms-file">
+          <span>ファイル：<b>{source.fileName}</b></span>
+          <button type="button" className="ms-btn ms-btn-sub" onClick={onPickFile}>別のファイルを選ぶ</button>
+        </p>
+        <div className="ms-paste-sum">
+          <p>読めた行：{parsed.rows.length}人（得点あり {withScores}人）→ 追加 {plan.add.length}人・名簿にある人の更新 {plan.update.length}人</p>
+          {!parsed.rows.length && <p className="warn">読める行がありませんでした。入力シートの CSV か、校舎の選び間違いがないか確かめてください。</p>}
+          {others.length > 0 && <p className="warn">{others.length}人は受験番号が{[...new Set(others.map((o) => campusOfExamNo(o.examNo)))].join('・')}の番号です。校舎の選び間違いがないか確かめてください。</p>}
+          {backFromAbsent > 0 && <p className="warn">「受験しない」にしている {backFromAbsent}人に得点が入っています。取り込むと受験したことになります。</p>}
+          {parsed.warnings.slice(0, 6).map((w) => <p key={w} className="warn">{w}</p>)}
+          {parsed.warnings.length > 6 && <p className="warn">ほか {parsed.warnings.length - 6} 件</p>}
+          <p className="ms-fine">空欄の項目は、いまの名簿の値を残します。得点は、取り込む行に得点が入っている教科だけを置きかえます。</p>
+        </div>
         <div className="ms-modal-actions">
           <button type="button" className="ms-btn ms-btn-sub" onClick={onClose}>やめる</button>
-          <button type="button" className="ms-btn" disabled={!parsed.rows.length} onClick={() => onApply(plan)}>取り込む</button>
+          <button type="button" className="ms-btn ms-btn-in" disabled={!parsed.rows.length} onClick={() => onApply(plan)}>取り込む（追加 {plan.add.length}人・更新 {plan.update.length}人）</button>
         </div>
       </div>
     </div>

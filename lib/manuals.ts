@@ -11,7 +11,7 @@ export const MANUAL_CATEGORIES = [
   { id: 'login', label: 'ログイン', desc: 'はじめに。パスワードの決め方とログインのしかた' },
   { id: 'chishokan-ai', label: '智翔館AI', desc: '質問のしかた、資料の渡し方、よく使う作業' },
   { id: 'meeting', label: '会議DX・部門会議', desc: '会議DXの画面、部門会議（事前共有・議事録）、ヘルプデスク' },
-  { id: 'seiseki', label: '成績管理', desc: '本番レベル模試の名簿と受験票' },
+  { id: 'seiseki', label: '成績管理', desc: '本番レベル模試の名簿・受験票と成績入力' },
   { id: 'event', label: 'イベント申込管理', desc: '声掛け名簿と申込の状況（教室担当者向け）' },
 ] as const;
 
@@ -134,6 +134,16 @@ export const MANUALS: ManualDoc[] = [
     downloadName: '成績管理_生徒の追加_動画マニュアル.mp4',
     meta: '約2分半｜MP4｜約7.6MB',
     poster: '/manual/seiseki-student-poster.jpg',
+  },
+  {
+    id: 'seiseki-entry',
+    category: 'seiseki',
+    title: '成績管理 成績入力 マニュアル',
+    desc: '本番レベル模試の得点の入れ方。画面で大問ごとに入れる（Enter・Tab、教科を絞る、途中・赤いセル、Excel からの貼り付け、自動保存）、入力シート（CSV）を書き出して Excel で入れて取り込む、受験しない生徒の設定、困ったとき。得点を入れる職員向け。画面の写真つき',
+    kind: 'pdf',
+    href: '/manual/seiseki-entry-manual-v1.1.0.pdf',
+    downloadName: '成績管理_成績入力マニュアル_v1.1.0.pdf',
+    meta: 'v1.1.0｜PDF・A4・13ページ｜約1.8MB',
   },
   {
     id: 'event-list',

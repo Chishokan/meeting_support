@@ -15,18 +15,9 @@ import {
   nameKey,
   type KenRosterRow, type KenScoresResult, type KenitsuResult, type MoshiExam, type MoshiResult,
 } from '@/lib/moshi/model';
-import { ExamCampusBar, NO_KEN, PageHead, StateNote, newId, reasonText, useExamCampus, useMoshiData } from './MoshiShared';
+import { ExamCampusBar, NO_KEN, PageHead, StateNote, newId, readCsvFile, reasonText, useExamCampus, useMoshiData } from './MoshiShared';
 
 /** CSV ファイルを文字にする（UTF-8 で読めなければ Shift_JIS。県一斉模試の集計結果は Shift_JIS）。 */
-async function readCsvFile(f: File): Promise<string> {
-  const buf = await f.arrayBuffer();
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
-  } catch {
-    return new TextDecoder('shift_jis').decode(buf);
-  }
-}
-
 function countBy<T>(items: T[], key: (x: T) => string): Record<string, number> {
   const m: Record<string, number> = {};
   for (const x of items) m[key(x)] = (m[key(x)] ?? 0) + 1;
