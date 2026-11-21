@@ -3,6 +3,12 @@
 智翔館アプリ群の本番リリースごとの変更を記録する。
 バージョンの付け方と本番に出す手順は [docs/release.md](docs/release.md) を参照。
 
+## [未リリース]
+
+### 追加
+- ヘルプデスクのマニュアルに動画「成績管理 成績入力」（約3分30秒・音読さんのナレーション）を足した（public/manual/seiseki-entry.mp4。
+  作り方は docs/manual/video/seiseki-entry）
+
 ## [1.24.2] - 2026-11-21
 
 ### 変更

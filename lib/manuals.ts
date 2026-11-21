@@ -121,6 +121,16 @@ export const MANUALS: ManualDoc[] = [
     meta: 'v1.1.0｜PDF・A4・13ページ｜約1.8MB',
   },
   {
+    id: 'seiseki-entry-video',
+    title: '動画：成績管理 成績入力',
+    desc: '本番レベル模試の得点の入れ方（画面で大問ごとに入れる・教科を絞る・黄色と赤のセル、入力シート（CSV）の書き出しと取り込み、受験しない生徒）を、画面と音声で説明します（得点を入れる職員向け）',
+    kind: 'video',
+    href: '/manual/seiseki-entry.mp4',
+    downloadName: '成績管理_成績入力_動画マニュアル.mp4',
+    meta: '約3分半｜MP4｜約8.1MB',
+    poster: '/manual/seiseki-entry-poster.jpg',
+  },
+  {
     id: 'event-list',
     title: 'イベント申込管理 教室担当者マニュアル',
     desc: 'イベントの声掛け名簿の使い方。名簿の見方と「次にすること」、スイッチでの記録（チラシ・声掛け・保護者へ案内）と保存の見方、一括で記録、絞り込みと並び順、申込の状況（申込済・名簿外の申込）、名簿にいない生徒の追加、困ったとき。教室担当の職員（小中等部・RED個別・高等部）向け。画面の写真つき',
