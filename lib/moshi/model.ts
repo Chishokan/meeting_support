@@ -883,6 +883,88 @@ export function inputSheetRows(exam: MoshiExam, results: MoshiResult[], schoolNa
   return [head, ...body];
 }
 
+/**
+ * 入力シートの CSV を読む（［入力シートを書き出す（CSV）］で出したもの。Excel で得点を入れて保存し直したものでもよい。
+ * Excel の保存で受験番号の頭の 0 が落ちていても読める）。
+ *   - 1行目の見出し（受験番号・氏名・性別・第一〜第四・第一志望校名…・国語1…）で列を当てる。
+ *     「計」「合計」の列は読まない（Excel で大問の得点を直して計が古いままでも、大問の得点だけを使う）
+ *   - 校舎の列があれば、いま選んでいる校舎の行だけを読む（ほかの校舎の行は数だけ知らせる）
+ *   - 教科の大問の列が今回の回と合わない（別の回の CSV など）教科は、得点を読まない
+ *   - 見出しに大問の列が無い CSV（前の入力シートをそのまま CSV で保存したものなど）は、貼り付けと同じ読み方（parsePaste）にする
+ */
+export function parseInputSheetCsv(text: string, exam: MoshiExam, campus: string, mapLegacy?: (code: string) => string): PasteResult {
+  const all = parseCsv(text);
+  const squash = (r: string[]) => r.map((h) => h.replace(/[\s　]+/g, ''));
+  const hi = all.findIndex((r, i) => i < 10 && squash(r).includes('受験番号') && squash(r).includes('氏名'));
+  const head = hi === -1 ? [] : squash(all[hi]);
+  if (hi === -1 || !SUBJECT_KEYS.some((k) => head.includes(`${SUBJECT_NAMES[k]}1`))) {
+    return parsePaste(all.map((r) => r.map((c) => c.replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\n'), exam, mapLegacy);
+  }
+  const at = (n: string) => head.indexOf(n);
+  const iCampus = at('校舎');
+  const iNo = at('受験番号');
+  const iName = at('氏名');
+  const iGender = at('性別');
+  const iCode = ['第一', '第二', '第三', '第四'].map(at);
+  const iSchool = ['第一志望校名', '第二志望校名', '第三志望校名', '第四志望校名'].map(at);
+  const warnings: string[] = [];
+  const cols = {} as Record<SubjectKey, number[] | null>;
+  const mismatch: string[] = [];
+  for (const k of SUBJECT_KEYS) {
+    const n = subjectOf(exam, k).questions.length;
+    const idx = Array.from({ length: n }, (_, i) => at(`${SUBJECT_NAMES[k]}${i + 1}`));
+    const extra = at(`${SUBJECT_NAMES[k]}${n + 1}`) !== -1;
+    cols[k] = null;
+    if (idx.every((i) => i === -1) && !extra) continue; // その教科の列が無い（名簿だけの CSV）
+    if (idx.some((i) => i === -1) || extra) { mismatch.push(SUBJECT_NAMES[k]); continue; }
+    cols[k] = idx;
+  }
+  if (mismatch.length) {
+    warnings.push(`${mismatch.join('・')}の大問の列の数が今回の回と合わないので、${mismatch.length > 1 ? 'これらの教科' : 'その教科'}の得点は読みませんでした（別の回の CSV ではないか確かめてください）`);
+  }
+  const cell = (r: string[], i: number) => (i === -1 ? '' : (r[i] ?? '').trim());
+  const rows: PastedRow[] = [];
+  const others: Record<string, number> = {};
+  const seen = new Set<string>();
+  for (let li = hi + 1; li < all.length; li++) {
+    const r = all[li];
+    const lineNo = li + 1;
+    const c = cell(r, iCampus);
+    if (c && campus) {
+      const info = MOSHI_CAMPUSES.find((x) => x.name === c || x.label === c);
+      if (info?.name !== campus) { others[info?.name ?? c] = (others[info?.name ?? c] ?? 0) + 1; continue; }
+    }
+    const rawNo = toHalf(cell(r, iNo)).replace(/\s/g, '');
+    const examNo = /^\d{1,10}$/.test(rawNo) ? normalizeExamNo(rawNo) : '';
+    const name = normalizeName(cell(r, iName));
+    const gender = normalizeGender(cell(r, iGender));
+    const choices = [0, 1, 2, 3].map((i) => normalizeChoice(cell(r, iCode[i]) || cell(r, iSchool[i]), mapLegacy));
+    const sc = {} as Scores;
+    let any = false;
+    let bad = '';
+    for (const k of SUBJECT_KEYS) {
+      const idx = cols[k];
+      sc[k] = subjectOf(exam, k).questions.map((q, i) => {
+        if (!idx) return null;
+        const v = parseScore(cell(r, idx[i]), q.max);
+        if (!v.ok) { bad ||= `${SUBJECT_NAMES[k]}${i + 1}`; return null; }
+        if (v.value != null) any = true;
+        return v.value;
+      });
+    }
+    const scores = any ? sc : null;
+    if (!name && !scores) continue;
+    const label = examNo ? `${lineNo}行目（受験番号 ${examNo}）` : `${lineNo}行目`;
+    if (examNo && seen.has(examNo)) { warnings.push(`${label}：同じ受験番号の行が前にあるので、この行は読みませんでした`); continue; }
+    if (examNo) seen.add(examNo);
+    if (bad) warnings.push(`${label}：${bad} の得点が読めないか配点を超えているので、空欄にしました`);
+    rows.push({ examNo, name, gender, choices, scores });
+  }
+  const o = Object.entries(others);
+  if (o.length) warnings.unshift(`ほかの校舎の行（${o.map(([k, n]) => `${k} ${n}人`).join('・')}）は読みませんでした。校舎を選び直して取り込んでください`);
+  return { rows, warnings };
+}
+
 // ---- 成績表（元の帳票「公立高校・高専本番レベル模試」の形） ----------------------
 
 export type Figure = {

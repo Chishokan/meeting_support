@@ -2,6 +2,7 @@
 
 全職員向けの操作マニュアル（会議DX のメニュー画面・部門会議と、ヘルプデスクの要項QA・マニュアル・ご意見・不具合の報告）。v0.18.0 の画面で作成。
 職員にはヘルプデスクの「マニュアル」タブ（/helpdesk/manual）で配る。配るファイルは `public/manual/`、並べ方は `lib/manuals.ts`。
+`lib/manuals.ts` には分類（`category`）を必ず付ける（画面では分類ごとの目次と検索で探す。合う分類が無ければ `MANUAL_CATEGORIES` に足す）。
 
 | ファイル | 中身 |
 |---|---|
@@ -45,7 +46,7 @@
 
 | ファイル | 中身 |
 |---|---|
-| `../../public/manual/chishokan-ai-manual-v1.16.0.pdf` | 配布用の PDF（A4・22ページ）。ダウンロード時の名前は `智翔館AI利用マニュアル_v1.16.0.pdf` |
+| `../../public/manual/chishokan-ai-manual-v1.26.0.pdf` | 配布用の PDF（A4・24ページ）。ダウンロード時の名前は `智翔館AI利用マニュアル_v1.26.0.pdf`。v1.26.0 は原稿の文だけ直した（画面の写真は v1.16.0 のまま。上の［🗄 テスト問題を保存］・画像の知らせは写っていない） |
 | `chishokan-ai-manual.html` | 原稿（会議DX のマニュアルと同じ書式。PDF はここから作る） |
 | `images/ai_*.png` | 画面の写真（赤枠・番号つき） |
 | `chishokan-ai/shots.js` | 写真を撮るスクリプト。アプリを手元で起動し（`CHISHOKAN_AI_MEMBERS='*' npx next start -p 3124`）、AI の回答は架空の例に差し替えて撮る。右の欄（コンテキスト）は横に広い画面（1366px）で撮る |
@@ -74,6 +75,26 @@
 - 写真の生徒・職員の氏名は架空。本番のスプレッドシートには何も書き込んでいない
 - 小中等部の職員として撮るため、手元の写しだけ `lib/moshi/access.ts` の MOSHI_DEPTS に小中等部を足して撮った
 - ［＋ 生徒を追加］の受験番号のきまり（300番台）・画面の文言・ボタンを変えたら、原稿と写真を直し、PDF を作り直して `lib/manuals.ts` の版・ファイル名を直す
+
+# 成績管理 成績入力 マニュアル（v1.1.0）
+
+本番レベル模試の得点の入れ方をまとめた手引き（画面の見方、画面で大問ごとに入れる・教科を絞る・途中と赤いセル・Excel からの貼り付け、
+入力シート（CSV）の書き出し・Excel での入れ方・取り込みと確認の画面、受験しない生徒、困ったとき）。得点を入れる職員向け。v1.24.0 の画面で作成し、v1.1.0 で［貼り付けで取り込む］をなくしたボタンの並び（名簿・書き出し・取り込み）に直した（2026年11月）。
+生徒の足し方は「生徒の追加 マニュアル」に任せ、ここでは触れない。
+
+| ファイル | 中身 |
+|---|---|
+| `../../public/manual/seiseki-entry-manual-v1.1.0.pdf` | 配布用の PDF（A4・13ページ）。ダウンロード時の名前は `成績管理_成績入力マニュアル_v1.1.0.pdf` |
+| `seiseki-entry-manual.html` | 原稿（生徒の追加 マニュアルと同じ書式。PDF はここから作る） |
+| `images/seiseki_in_*.png` | 画面の写真（赤枠・番号つき） |
+| `seiseki/entry-seed.mjs` | 写真用の架空のデータ（回＝2026 本番レベル模試 11月、日野校 0001〜0008 の架空の生徒と途中までの得点）を `.data/moshi.json` に作る（`node --experimental-strip-types docs/manual/seiseki/entry-seed.mjs`） |
+| `seiseki/entry-shots.js` | 写真を撮るスクリプト。成績管理の保存先を設定せずにアプリを手元で起動し（`npx next dev -p 3125`）、`node docs/manual/seiseki/entry-shots.js 出力フォルダ http://localhost:3125`。写真の中で得点を入れ、書き出した CSV に社会の得点を足して取り込むので、撮り直すときは entry-seed.mjs からやり直す |
+| `seiseki/entry-annotate.py` | 撮った写真に赤枠と番号を付ける（`python3 docs/manual/seiseki/entry-annotate.py 撮った写真のフォルダ docs/manual/images`。切り取りは撮るときに済ませている） |
+| `seiseki/pdf.js` | 原稿の HTML を A4 の PDF にする（`node docs/manual/seiseki/pdf.js 原稿の絶対パス 出力.pdf '成績管理 成績入力 マニュアル'`） |
+
+- 写真の生徒・職員の氏名と得点は架空。本番のスプレッドシートには何も書き込んでいない
+- 成績入力の画面の文言・ボタン（色・並び）、入力シートの列、取り込みの確認の文言を変えたら、原稿と写真を直し、PDF を作り直して `lib/manuals.ts` の版・ファイル名を直す
+- 動画版（15枚・3分半ほど。ナレーションは音読さん）の台本・写真・作り方は `video/seiseki-entry/`（写真はこのスクリプトの出力から作る）
 
 # イベント申込管理 教室担当者マニュアル（v1.0.0）
 
