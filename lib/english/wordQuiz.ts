@@ -45,6 +45,9 @@ export type WordQuizOptions = {
 export const PER_SHEET = { words: 40, kwt: 12 } as const;
 export const MAX_COUNT = { words: 120, kwt: 36 } as const;
 
+/** Unit の呼び名（数字なら「Unit4」、プレステップ・Let's Read1 などはそのまま）。 */
+export const unitLabel = (u: Unit) => (/^\d+$/.test(u.unit) ? `Unit${u.unit}` : u.unit);
+
 const norm = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\s,，・、'’]/g, '').replace(/[〜~]/g, '-');
 
 export function findBook(books: Book[], grade: string): Book | undefined {
@@ -55,7 +58,8 @@ export function findBook(books: Book[], grade: string): Book | undefined {
 
 export function findUnit(book: Book, unit: string): Unit | undefined {
   const u = norm(unit).replace(/^unit/, '');
-  return book.units.find((x) => norm(x.unit) === u);
+  // 「プレ」→プレステップ、「Let's Start」→Let's Start2 のような、頭だけの呼び方も当てる
+  return book.units.find((x) => norm(x.unit) === u) ?? (u.length >= 2 && !/^\d+$/.test(u) ? book.units.find((x) => norm(x.unit).startsWith(u)) : undefined);
 }
 
 /** 区分の名前を探す（「part1」「Part 1」「Let's Talk 1」などの揺れを許す。「Part3」で「Part3, T&S」も当てる）。 */
@@ -69,7 +73,7 @@ export function rangeList(books: Book[]): string {
   const lines: string[] = [];
   for (const b of books) {
     for (const u of b.units) {
-      lines.push(`- ${b.grade} Unit${u.unit}「${u.title}」：${u.sections.map((s) => `${s.id}（${s.words.length}語${s.words.some((w) => w.star) ? `・☆${s.words.filter((w) => w.star).length}` : ''}${s.kwt.length ? `・KWT${s.kwt.length}問` : ''}）`).join('／')}`);
+      lines.push(`- ${b.grade} ${unitLabel(u)}「${u.title}」：${u.sections.map((s) => `${s.id}（${s.words.length}語${s.words.some((w) => w.star) ? `・☆${s.words.filter((w) => w.star).length}` : ''}${s.kwt.length ? `・KWT${s.kwt.length}問` : ''}）`).join('／')}`);
     }
   }
   return lines.join('\n');
@@ -101,18 +105,18 @@ export function buildWordQuiz(books: Book[], o: WordQuizOptions): { ok: true; va
   const book = findBook(books, String(o.grade ?? ''));
   if (!book) return { ok: false, message: `学年「${o.grade}」の元データがありません。入っている範囲：\n${rangeList(books)}` };
   const unit = findUnit(book, String(o.unit ?? ''));
-  if (!unit) return { ok: false, message: `${book.grade}の Unit「${o.unit}」の元データがまだありません。入っている範囲：\n${rangeList(books)}` };
+  if (!unit) return { ok: false, message: `${book.grade}の Unit「${o.unit}」の元データがありません。入っている範囲：\n${rangeList([book])}` };
   const names = (o.sections ?? []).map((s) => String(s).trim()).filter(Boolean);
   const sections: Section[] = [];
   for (const n of names) {
     const s = findSection(unit, n);
-    if (!s) return { ok: false, message: `${book.grade} Unit${unit.unit} に区分「${n}」がありません。区分：${unit.sections.map((x) => x.id).join('／')}` };
+    if (!s) return { ok: false, message: `${book.grade} ${unitLabel(unit)} に区分「${n}」がありません。区分：${unit.sections.map((x) => x.id).join('／')}` };
     if (!sections.includes(s)) sections.push(s);
   }
   if (!sections.length) sections.push(...unit.sections);
   const source: Source = o.source === 'kwt' ? 'kwt' : 'words';
   const direction: Direction = o.direction === 'en-ja' || o.direction === 'mix' ? o.direction : 'ja-en';
-  const range = `${book.grade} Unit${unit.unit}${names.length ? `（${sections.map((s) => s.id).join('・')}）` : ''}`;
+  const range = `${book.grade} ${unitLabel(unit)}${names.length ? `（${sections.map((s) => s.id).join('・')}）` : ''}`;
 
   let base: (Word | KwtItem)[];
   if (source === 'kwt') {

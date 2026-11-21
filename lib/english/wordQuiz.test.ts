@@ -79,7 +79,7 @@ test('buildWordQuiz：無い範囲は、入っている範囲を返す', () => {
 });
 
 test('findSection・kwtParts', () => {
-  const u = CHU1.units[0];
+  const u = CHU1.units.find((x) => x.unit === '4')!;
   assert.equal(findSection(u, 'Project1')?.id, "Project1, Let's Listen1");
   assert.equal(findSection(u, '4-1~3')?.id, '4-1〜3');
   assert.deepEqual(kwtParts("[[It]] is a [[large]] [[country]]."), [
