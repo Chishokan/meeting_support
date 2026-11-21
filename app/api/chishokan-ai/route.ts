@@ -47,6 +47,7 @@ import { runCreateSlides, runSlideTemplates } from '@/lib/chishokanAi/slides';
 import { MATH_MATERIAL_TOOL } from '@/lib/chishokanAi/mathMaterialTool';
 import { runCreateMathMaterial, runCreateMathQuiz } from '@/lib/chishokanAi/mathMaterial';
 import { MATH_QUIZ_TOOL } from '@/lib/chishokanAi/mathQuizTool';
+import { ENGLISH_WORD_QUIZ_TOOL, runCreateEnglishWordQuiz } from '@/lib/chishokanAi/englishQuizTool';
 import { runTaskEvaluation, TASK_EVAL_TOOL } from '@/lib/chishokanAi/taskEval';
 import { carriedNote, CARRY_MAX_FILES, isHeavy } from '@/lib/chishokanAi/attachCarry';
 import { GENERATE_IMAGE_TOOL, IMAGE_MAX_PER_TURN, IMAGE_PAUSED_ALT, IMAGE_PAUSED_NOTICE } from '@/lib/chishokanAi/imageTool';
@@ -240,6 +241,8 @@ export async function POST(req: Request) {
     CREATE_SLIDES_TOOL,
     MATH_MATERIAL_TOOL,
     MATH_QUIZ_TOOL,
+    // 英語の単語テスト（教材の元データから選ぶ。2026-11-21）
+    ENGLISH_WORD_QUIZ_TOOL,
     PROPOSE_CONTEXT_TOOL,
     TASK_EVAL_TOOL,
     // 会議の記録（議事録・決定事項・ToDo・事前共有）を読む道具と、議題の追加の案
@@ -259,6 +262,7 @@ export async function POST(req: Request) {
   let templateReads = 0;
   let slidesMade = 0;
   let mathMade = 0;
+  let englishMade = 0;
   // 作った画像（会話ログ用）と、この回答で作った画像（続けて直すときの元にする）
   const imagesMade: CreatedDoc[] = [];
   // 議題の追加の案（1回の回答で3つまで）
@@ -547,6 +551,16 @@ export async function POST(req: Request) {
                 if (!r.inputError) mathMade++;
                 out = r.toolResult;
               }
+            } else if (block.name === ENGLISH_WORD_QUIZ_TOOL.name) {
+              // 英語の単語テストは1回の回答で2組まで（「Part1 と Part2 で別々に」くらい）
+              if (englishMade >= 2) {
+                out = '英語の単語テストのファイルは1回の回答で2組までです。前の呼び出しの結果に出たURLを伝えてください。';
+              } else {
+                const r = await runCreateEnglishWordQuiz(input, { campus: session.campus, user: session.name }, ac.signal);
+                createdDocs.push(...r.created);
+                if (!r.inputError) englishMade++;
+                out = r.toolResult;
+              }
             } else if (block.name === GENERATE_IMAGE_TOOL.name) {
               if (imagesMade.filter((d) => d.ok).length >= IMAGE_MAX_PER_TURN) {
                 out = `画像は1回の回答で${IMAGE_MAX_PER_TURN}枚までです。作った画像のリンクを伝えてください。`;
@@ -644,6 +658,8 @@ export async function POST(req: Request) {
             opened.push(
               block.name === CREATE_DOC_TOOL.name || block.name === CREATE_SLIDES_TOOL.name || block.name === MATH_MATERIAL_TOOL.name || block.name === MATH_QUIZ_TOOL.name
                 ? `${block.name}:${String(input.title ?? '')}`
+                : block.name === ENGLISH_WORD_QUIZ_TOOL.name
+                  ? `${block.name}:${[input.grade, input.unit ? `Unit${input.unit}` : '', Array.isArray(input.sections) ? input.sections.join('・') : '', input.source, input.count].filter(Boolean).join(' ')}`
                 : block.name === PROPOSE_CONTEXT_TOOL.name
                   ? `${block.name}:${String(input.id || input.name || '')}`
                   : block.name === SEARCH_TEST_PAPERS_TOOL.name
