@@ -323,6 +323,23 @@ export const EMPTY_ANSWER_PROMPT = '（アプリから自動で送っていま�
  * 押すと文字だけが送られて、AI が「添付がありません」「情報が書かれていません」と返していた。
  * 画面は、これらを押したら送らずに入力欄へ入れ、添付・書き込みを促す。
  */
+/** 作業「テスト問題の保存・検索」の id。 */
+export const TEST_PAPER_TASK = 'test-papers';
+
+/** 作業「テスト問題の保存・検索」を選んだときに、画面だけで出す聞き返し（AI には送らない）。 */
+export const TEST_PAPER_ASK = 'テスト問題の保存と検索、どちらですか？\n\n```選択肢\n🗄 テスト問題を保存\n検索する\n```';
+
+/**
+ * 選択肢が「テスト問題を保存」（小窓を開く）か「検索する」（文の例を入力欄に入れる）か。
+ * AI が同じ2つで聞き返したときも、同じ動きにする。
+ */
+export function testPaperChoice(label: string): 'save' | 'search' | null {
+  const s = label.replace(/^[\s🗄️]+/u, '').trim();
+  if (s === 'テスト問題を保存' || s === 'テスト問題を保存する') return 'save';
+  if (s === '検索する' || s === 'テスト問題を検索する') return 'search';
+  return null;
+}
+
 export function choiceNeedsInput(label: string): 'attach' | 'write' | null {
   if (/添付|貼り直|貼る|貼って|アップロード|(画像|PDF|写真|ファイル)を(送|付け)/.test(label)) return 'attach';
   if (/(書いて|入力して|文字で)(伝え|送|お知らせ|教え)/.test(label)) return 'write';

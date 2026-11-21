@@ -5,6 +5,8 @@
 //   中：得点の分布 ／ 教科のバランス ／ 設問別得点
 //   右：教科別偏差値推移（表とグラフ） ／ 偏差値の分布 ／ 前回との比較（前回＝この回より前のいちばん新しい回。11月なら10月の県一斉模試）／ 成績のポイント
 //   （「先生から」の欄は置かない。県一斉模試の成績表と同じ）
+// 回に過去の実施データ（同じ問題を県全体で受けたときの集計。lib/moshi/pastData.ts）を結んであれば、得点表に「県内順位(推定)」、
+// 得点の分布は県全体の分布、設問別得点に「県平均」を出す（components/MoshiPast.tsx）。
 // 印刷も画面（成績表の画面・面談の画面）もこの1つを使う。画面では FitSheet で幅に合わせて縮める。
 // 数字の計算は lib/moshi/model.ts（reportFigures・judgeOf・scoreBins・devBins・trendRows）。
 
@@ -15,6 +17,8 @@ import {
   type Bin, type ExamStats, type KenitsuResult, type MoshiExam, type RowStat, type StatKey, type TrendRow,
 } from '@/lib/moshi/model';
 import { schoolName } from '@/lib/moshi/schools';
+import { pastN, pastRank } from '@/lib/moshi/pastData';
+import { pastDistBins, pastOf, pastQuestionCells, pastWhen } from './MoshiPast';
 
 // 表題（元の帳票と同じ）。回の名前は右上の年月で示す。
 export const REPORT_TITLE = '公立高校・高専本番レベル模試';
@@ -80,6 +84,8 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
   const points = pointsOf(now, prev?.stats ?? null, k5.mean);
   const first = r.choices.map((c, i) => ({ c, i })).find((x) => x.c) ?? null;
   const firstJudge = first ? judgeOf(stats, row, first.c) : null;
+  const past = pastOf(exam);
+  const pq = useMemo(() => pastQuestionCells(exam, past), [exam, past]);
 
   return (
     <article className="rs-sheet">
@@ -106,7 +112,8 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
             <tr><th>平均点</th>{figs.map((f) => <td key={f.key}>{f1(f.mean)}</td>)}</tr>
             <tr><th>偏差値</th>{figs.map((f) => <td key={f.key}>{f1(f.dev)}</td>)}</tr>
             <tr><th>{anyOutside ? '順位(塾内)' : '順位'}</th>{figs.map((f) => <td key={f.key}>{f.rank == null ? '' : anyOutside ? `${f.rank}/${f.rankN}` : f.rank}</td>)}</tr>
-            <tr><th>母数</th>{figs.map((f) => <td key={f.key}>{f.n || ''}</td>)}</tr>
+            {past && <tr><th>県内順位(推定)</th>{figs.map((f) => <td key={f.key}>{pastRank(past, f.key, f.score, f.max)?.rank ?? ''}</td>)}</tr>}
+            <tr><th>母数</th>{figs.map((f) => <td key={f.key}>{(past ? pastN(past, f.key) : f.n) || ''}</td>)}</tr>
           </tbody>
         </table>
 
@@ -162,13 +169,15 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
 
       {/* ---- 中 ---- */}
       <section className="rs-col">
-        <div className="rs-pill rs-pill-orange">得点の分布</div>
-        <ScoreDist bins={scoreBins(stats, row)} />
+        <div className="rs-pill rs-pill-orange">得点の分布{past && <small className="rs-pill-note">県全体（{pastWhen(past)}実施・{pastN(past, 'k5')}人）</small>}</div>
+        {past
+          ? <ScoreDist bins={pastDistBins(past, 'k5', k5.score)} label="五教科の県全体の得点の分布" />
+          : <ScoreDist bins={scoreBins(stats, row)} />}
         <div className="rs-pill rs-pill-blue">教科のバランス</div>
         <Balance stats={stats} row={row} />
         <table className="rs-q">
-          <colgroup><col className="rs-q-c1" /><col /><col className="rs-q-c3" /><col className="rs-q-c3" /><col className="rs-q-c5" /><col className="rs-q-c6" /></colgroup>
-          <thead><tr><th colSpan={2} className="rs-q-title">設問別得点</th><th>配点</th><th>得点</th><th>得点率</th><th>{anyOutside ? '塾平均' : '平均'}</th></tr></thead>
+          <colgroup><col className="rs-q-c1" /><col /><col className="rs-q-c3" /><col className="rs-q-c3" /><col className="rs-q-c5" /><col className="rs-q-c6" />{pq && <col className="rs-q-c6" />}</colgroup>
+          <thead><tr><th colSpan={2} className="rs-q-title">設問別得点</th><th>配点</th><th>得点</th><th>得点率</th><th>{anyOutside ? '塾平均' : '平均'}</th>{pq && <th>県平均</th>}</tr></thead>
           <tbody>
             {SUBJECT_KEYS.map((k) => subjectOf(exam, k).questions.map((q, i) => {
               const taken = row.sub[k] != null;
@@ -184,6 +193,11 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
                   <td>{taken ? score ?? 0 : ''}</td>
                   <td className={`rs-q-rate${rate != null && rate < mean ? ' low' : ''}`}>{rate == null ? '' : `${Math.round(rate * 100)}%`}</td>
                   <td>{stats.overall.sub[k] ? `${Math.round(mean * 100)}%` : ''}</td>
+                  {pq && (() => {
+                    const c = pq[k]?.[i];
+                    if (c === 'skip') return null;
+                    return <td rowSpan={c ? c.span : 1}>{c ? `${c.rate}%` : ''}</td>;
+                  })()}
                 </tr>
               );
             }))}
@@ -238,10 +252,11 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
 
       <footer className="rs-foot">
         {anyOutside
-          ? `平均点・偏差値は${exam.outside?.source || '県全体の模試'}の平均点・標準偏差で換算した参考値（偏差値は25.0〜75.0）。順位・設問別の平均・得点の分布は智翔館の受験者（五教科 ${k5.rankN}人）。`
+          ? `平均点・偏差値は${exam.outside?.source || '県全体の模試'}の平均点・標準偏差で換算した参考値（偏差値は25.0〜75.0）。${past ? '順位(塾内)・設問別の塾平均' : '順位・設問別の平均・得点の分布'}は智翔館の受験者（五教科 ${k5.rankN}人）。`
           : `平均点・偏差値・母数・分布は、この回を受けた智翔館の中3生の中でのもの（五教科 ${k5.n}人）。`}
         {(exam.judges ?? []).length > 0 && `判定は${exam.outside?.source ? `${exam.outside.source}の` : ''}志望校別判定基準（B判定基準）による目安。仮想順位は定員の中での入学後のおよその順位。`}
         得点率が平均より低い設問は赤字。{prev && `前回は${prev.name}（${prev.kind === 'ken' ? '県一斉模試の得点・偏差値' : '本番レベル模試'}）。`}
+        {past && `県内順位(推定)・得点の分布・設問別の県平均は、同じ問題を${pastWhen(past)}に県全体で受けた${pastN(past, 'k5')}人（${past.label}）の集計による目安。`}
       </footer>
     </article>
   );
@@ -261,7 +276,7 @@ export function padRows(rows: TrendRow[], min: number): (TrendRow | null)[] {
 // ---- グラフ ----------------------------------------------------------------
 
 /** 得点の分布（縦棒・高い点から）。自分の入る棒だけ濃くして「あなた」と書く。 */
-export function ScoreDist({ bins }: { bins: Bin[] }) {
+export function ScoreDist({ bins, label = '五教科の得点の分布' }: { bins: Bin[]; label?: string }) {
   const W = 330, H = 150, left = 22, right = 4, top = 10, bottom = 44;
   const maxC = Math.max(1, ...bins.map((b) => b.count));
   const step = niceStep(maxC);
@@ -272,7 +287,7 @@ export function ScoreDist({ bins }: { bins: Bin[] }) {
   const ticks: number[] = [];
   for (let t = 0; t <= yMax; t += step) ticks.push(t);
   return (
-    <svg className="rs-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="五教科の得点の分布">
+    <svg className="rs-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label}>
       {ticks.map((t) => (
         <g key={t}>
           <line x1={left} x2={W - right} y1={y(t)} y2={y(t)} className="rs-gl" />
