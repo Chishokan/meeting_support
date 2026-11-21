@@ -282,6 +282,16 @@ export function pct(rate: number): string {
   return `${Math.round(rate * 100)}%`;
 }
 
+/** CSV ファイルを文字列に（UTF-8 で読めなければ Shift_JIS＝Excel で保存した CSV として読む）。 */
+export async function readCsvFile(f: File): Promise<string> {
+  const buf = await f.arrayBuffer();
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch {
+    return new TextDecoder('shift_jis').decode(buf);
+  }
+}
+
 export function downloadCsv(filename: string, csv: string) {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);

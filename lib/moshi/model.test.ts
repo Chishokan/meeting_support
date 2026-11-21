@@ -6,7 +6,7 @@ import {
   choiceRanks, cleanExam, cleanResult, computeStats, DEFAULT_JUDGE_OPTIONS, DEFAULT_SUBJECTS, devBins, judgeOf, parseRule, reportFigures, ruleMax,
   scoreBins, trendRows, yearExams, emptyOutside, emptyScores, examMax, fitScores, historyOf,
   campusOfVenue, cleanKenItem, devBinsOf, kenFitOf, kenFits, kenJudgeDetail, kenSchoolGroup, kenFirstChoiceMean, kenHistory, kenPoints, prevRecordFor, studentHistory, honbanFirstChoiceMean, pointsOf, kenChoiceRank, kenExamRef, kenNames, kenStatsOf, scoreBinsOf, kenExams, kenGuessFromFileName, kenIdMap, kenRoster, kenScores, kenTable, parseCsv, inputSheetRows, jpDate, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
-  scoresToCell, subjectMax,
+  scoresToCell, subjectMax, parseInputSheetCsv, toCsv,
   type MoshiExam, type MoshiResult, type Scores,
 } from './model.ts';
 import { REFERENCES, TO_REF, refSchoolByCode, refSchoolFor, referenceForDate } from './reference.ts';
@@ -281,6 +281,69 @@ test('入力シートの形の書き出し：性別は 0/1、計と合計を入�
   assert.deepEqual(r.slice(4, 12), ['40200', '', '', '', '佐世保北', '佐世保西', '', '']);
   assert.equal(r[16], 100); // 国語計
   assert.equal(r[r.length - 1], 100);
+});
+
+test('入力シートの CSV：書き出したものをそのまま取り込める（校舎の列で今の校舎の行だけ）', () => {
+  const e = exam();
+  const rs = [
+    res({ examNo: '0001', name: '山田　太郎', gender: '女', choices: ['518-01', '佐世保西', '', ''], s: { ja: [31, 17, 34, 18], sc: [10, 0, null, 5, 8, 9] } }, e),
+    res({ examNo: '0301', name: '佐藤　次郎', gender: '男' }, e),
+    res({ examNo: '0002', name: '鈴木　花子', campus: '大野校', s: { en: [20, 20, 20, 20] } }, e),
+  ];
+  const csv = toCsv(inputSheetRows(e, rs, (v) => (v === '518-01' ? '佐世保北' : v)));
+  const r = parseInputSheetCsv(csv, e, '日宇校');
+  assert.equal(r.rows.length, 2);
+  assert.deepEqual(r.rows[0], {
+    examNo: '0001', name: '山田　太郎', gender: '女', choices: ['518-01', '佐世保西', '', ''],
+    scores: { ja: [31, 17, 34, 18], en: [null, null, null, null], ma: [null, null, null, null, null], so: [null, null, null, null, null], sc: [10, 0, null, 5, 8, 9] },
+  });
+  assert.deepEqual(r.rows[1], { examNo: '0301', name: '佐藤　次郎', gender: '男', choices: ['', '', '', ''], scores: null });
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /大野校 1人/);
+  // 名簿への当て方は貼り付けと同じ
+  const plan = planPaste(r.rows, rs.slice(0, 2));
+  assert.equal(plan.update.length, 2);
+  assert.equal(plan.add.length, 0);
+});
+
+test('入力シートの CSV：Excel で直したもの（頭の0が落ちた・計が古いまま・Shift_JIS 由来の見出しの空白）', () => {
+  const e = exam();
+  const csv = toCsv(inputSheetRows(e, [res({ examNo: '0007', name: '山田　太郎', s: { ja: [31, 17, 34, 18] } }, e)], (v) => v));
+  const lines = csv.replace(/^\uFEFF/, '').trim().split('\r\n').map((l) => l.split(','));
+  lines[0][2] = '氏 名';
+  lines[1][1] = '7';
+  lines[1][12] = '30'; // 国語1 を 31 → 30（国語計は 100 のまま）
+  lines[1][17] = '25'; // 英語1 を足す
+  const r = parseInputSheetCsv(lines.map((l) => l.join(',')).join('\n'), e, '日宇校');
+  assert.equal(r.warnings.length, 0);
+  assert.equal(r.rows[0].examNo, '0007');
+  assert.equal(r.rows[0].name, '山田　太郎');
+  assert.deepEqual(r.rows[0].scores?.ja, [30, 17, 34, 18]);
+  assert.deepEqual(r.rows[0].scores?.en, [25, null, null, null]);
+});
+
+test('入力シートの CSV：大問の数が違う教科は読まない・配点超え・同じ番号・見出しの無い CSV', () => {
+  const e = exam();
+  const csv = toCsv(inputSheetRows(e, [
+    res({ examNo: '0001', name: '山田　太郎', s: { ja: [31, 17, 34, 18], ma: [10, 10, 10, 10, 10] } }, e),
+    res({ examNo: '0001', name: '山田　二郎' }, e),
+  ], (v) => v));
+  const e6 = exam({ subjects: DEFAULT_SUBJECTS.map((s) => (s.key === 'ma' ? { ...s, questions: [...s.questions, { max: 10, topic: '' }] } : s)) });
+  const r = parseInputSheetCsv(csv, e6, '日宇校');
+  assert.equal(r.rows.length, 1);
+  assert.deepEqual(r.rows[0].scores?.ja, [31, 17, 34, 18]);
+  assert.deepEqual(r.rows[0].scores?.ma, [null, null, null, null, null, null]);
+  assert.ok(r.warnings.some((w) => /数学の大問の列の数/.test(w)));
+  assert.ok(r.warnings.some((w) => /同じ受験番号/.test(w)));
+
+  const over = csv.replace('\r\n日宇校,0001,山田　太郎,,,,,,,,,,31,', '\r\n日宇校,0001,山田　太郎,,,,,,,,,,999,');
+  const r2 = parseInputSheetCsv(over, e, '日宇校');
+  assert.equal(r2.rows[0].scores?.ja[0], null);
+  assert.ok(r2.warnings.some((w) => /国語1 の得点が読めない/.test(w)));
+
+  // 見出しの無い CSV は貼り付けと同じに読む
+  const plain = parseInputSheetCsv('0001,山田 太郎,0,518-01\n0002,鈴木 花子,1', e, '日宇校');
+  assert.deepEqual(plain.rows.map((x) => [x.examNo, x.name, x.gender, x.choices[0]]), [['0001', '山田　太郎', '男', '518-01'], ['0002', '鈴木　花子', '女', '']]);
 });
 
 test('jpDate・emptyScores', () => {
