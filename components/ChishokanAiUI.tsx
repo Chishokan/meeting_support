@@ -32,6 +32,9 @@ import {
   LONG_CONVERSATION_CHARS,
   SUMMARY_PROMPT,
   choiceNeedsInput,
+  testPaperChoice,
+  TEST_PAPER_ASK,
+  TEST_PAPER_TASK,
   mergeContext,
   normalizeContext,
   parseEvents,
@@ -58,6 +61,8 @@ import type { ConvoRow, Preset } from '@/lib/chishokanAi/savedRules';
 
 type Msg = {
   role: 'user' | 'assistant';
+  /** 画面だけで出した案内（AI には送らない。例：作業「テスト問題の保存・検索」を選んだときの聞き返し）。 */
+  local?: boolean;
   /** 画面に出す文（質問は添付名つき、回答は Markdown） */
   content: string;
   /** 質問のうち API に送る文（添付名を付けない） */
@@ -104,7 +109,7 @@ const MAX_TOTAL_BYTES = 3_500_000; // 送信全体の目安（Vercel のリク�
 /** API に送る履歴（エラーの知らせ・空の回答を除き、質問は添付名を付けない文にする）。 */
 function toApi(msgs: Msg[]): { role: 'user' | 'assistant'; content: string }[] {
   return msgs
-    .filter((m) => !m.error && (m.role === 'user' ? (m.api ?? m.content).trim() : m.content.trim()))
+    .filter((m) => !m.error && !m.local && (m.role === 'user' ? (m.api ?? m.content).trim() : m.content.trim()))
     .map((m) => ({ role: m.role, content: m.role === 'user' ? m.api ?? m.content : m.content }));
 }
 
@@ -816,6 +821,17 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
 
   // 選択肢を押したとき。添付・書き込みが要るもの（「画像を添付し直す」など）は送らずに入力欄へ入れ、続きを促す。
   function chooseOption(label: string) {
+    // 「テスト問題の保存・検索」の聞き返し：保存は小窓を開き、検索は文の例を入力欄に入れる（AI には送らない）。
+    const tp = testPaperChoice(label);
+    if (tp === 'save') { openTestPaper(); return; }
+    if (tp === 'search') {
+      const t = tasks.find((x) => x.id === TEST_PAPER_TASK);
+      if (t) setTask(t);
+      setInput(t?.starter ?? '');
+      setAttachNote('学校・学年・科目・実施回などを書き換えて、送信してください。');
+      setTimeout(() => inputRef.current?.focus(), 0);
+      return;
+    }
     const need = choiceNeedsInput(label);
     if (!need) { ask(label); return; }
     setInput(need === 'write' ? `${label}：\n` : label);
@@ -826,7 +842,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   // いちばん新しい回答を作り直す（覚えている PDF・画像は付け直す）。
   async function regenerate() {
     const last = messages[messages.length - 1];
-    if (busy || !last || last.role !== 'assistant') return;
+    if (busy || !last || last.role !== 'assistant' || last.local) return;
     const base = messages.slice(0, -1);
     const start: Msg = { role: 'assistant', content: '', turn: last.turn, taskLabel: last.taskLabel };
     setMessages([...base, start]);
@@ -922,6 +938,13 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   // 作業ボタン：作業を選び、入力欄が空なら文の例を入れる（そのまま直して送れる）。
   function chooseTask(t: TaskButton | null) {
     setTask(t);
+    // 「テスト問題の保存・検索」は、まず「どちらですか？」と聞く（AI を待たずに画面だけで出す）。
+    if (t?.id === TEST_PAPER_TASK) {
+      if (busy) return;
+      const ask: Msg = { role: 'assistant', content: TEST_PAPER_ASK, local: true, taskLabel: t.button };
+      setMessages((prev) => [...prev.filter((m) => !(m.local && m.content === TEST_PAPER_ASK)), ask]);
+      return;
+    }
     if (t && !input.trim()) setInput(t.starter);
     setTimeout(() => inputRef.current?.focus(), 0);
   }
@@ -1161,7 +1184,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
                       )}
                     </div>
                   )}
-                  {m.content && !m.error && !streaming && (
+                  {m.content && !m.error && !m.local && !streaming && (
                     <div className="msg-actions">
                       <CopyButton text={() => toPlainText(m.content)} label="回答をコピー" className="msg-action" />
                       <button type="button" className="msg-action" title="この回答を、会話の前提として右の欄に置く" onClick={() => pinAnswer(m)}>
