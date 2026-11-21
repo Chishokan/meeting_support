@@ -12,6 +12,7 @@
  *   - action:'listDeptDecisions' … 部門横断の決定事項一覧（決め事の見える化）
  *   - action:'saveDeptPreshare' … 部門会議の事前共有（会議情報と議題・レジュメ） → 「部門会議事前共有」シートに1会議1行
  *   - action:'listDeptPreshare' … ダッシュボードの「部門会議の事前共有」用の一覧
+ *   - action:'deleteDeptPreshare' … 事前共有の削除（議事録を保存する前のものだけ）
  *   - action:'appendReport' … 「報告」からの事前報告      → Google ドキュメント（REPORT_DOC_ID）に新セクション追記
  *   - action:'appendProgress' … 「中間報告」の進捗報告     → 同ドキュメントの【中間報告タブ】に追記＋「中間報告状況」シートに記録
  *   - action:'listProgress' … ダッシュボード用の直近報告者  → 「中間報告状況」シートを新しい順に返す
@@ -362,6 +363,14 @@ function doPost(e) {
     if (action === 'listDeptPreshare') {
       return json_(listDeptPreshare_(data));
     }
+
+    // 事前共有の削除（2026-11-19）
+    if (action === 'deleteDeptPreshare') return json_(deleteDeptPreshare_(data));
+
+    // 部門会議の議題の追加（智翔館AI の［議題に追加する］）と、事前共有がまだ無い会議の「議題の候補」（2026-11-18）
+    if (action === 'addDeptAgenda') return json_(addDeptAgenda_(data));
+    if (action === 'listAgendaCandidates') return json_(listAgendaCandidates_(data));
+    if (action === 'useAgendaCandidates') return json_(useAgendaCandidates_(data));
 
     if (action === 'saveMinutes') {
       appendRow_(
@@ -884,7 +893,11 @@ function listDeptDecisions_(data) {
 //（ダッシュボードの「部門会議の事前共有」で、出席者が議題・レジュメを見ながら会議を進めるため）。
 // ★列は見出し名で引く（colOf_）。「議事録ID」はこの会議の議事録を保存したときに入る。
 var DEPT_PRESHARE_SHEET = '部門会議事前共有';
-var DEPT_PRESHARE_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '場所', '出席者', '議題・レジュメ', '事前共有ID', '更新日時', '更新者', '議事録ID'];
+// 末尾の5列は Zoom連携（2026-11-19）。事前共有を出したときにアプリが Zoom ミーティングを作った会議だけ入る。
+// 「文字起こし元」は、録画から議事録を自動で作るとき（今後の追加）に使う。
+var DEPT_PRESHARE_ZOOM_HEADERS = ['Zoomアカウント', 'ZoomミーティングID', '参加URL', 'パスコード', '文字起こし元'];
+var DEPT_PRESHARE_HEADERS = ['日時', '部門', '入力者', '会議名', '開催日時', '場所', '出席者', '議題・レジュメ', '事前共有ID', '更新日時', '更新者', '議事録ID']
+  .concat(DEPT_PRESHARE_ZOOM_HEADERS);
 
 function preshareCell_(r, name) {
   return cellStr_(r[colOf_(DEPT_PRESHARE_HEADERS, name) - 1]);
@@ -913,11 +926,110 @@ function saveDeptPreshare_(data) {
     '更新者': cur ? (data.user || '') : '',
     '議事録ID': cur ? preshareCell_(cur, '議事録ID') : ''
   };
+  // Zoom の列：data.zoom が来たときだけ書き換える。来ないとき（議題だけ直したときなど）は元の値を残す。
+  var z = data.zoom && typeof data.zoom === 'object' ? data.zoom : null;
+  var zoomIn = z ? {
+    'Zoomアカウント': z.account, 'ZoomミーティングID': z.meetingId, '参加URL': z.joinUrl,
+    'パスコード': z.passcode, '文字起こし元': z.transcript
+  } : null;
+  DEPT_PRESHARE_ZOOM_HEADERS.forEach(function (h) {
+    var kept = cur ? preshareCell_(cur, h) : '';
+    rec[h] = zoomIn && zoomIn[h] != null && String(zoomIn[h]) !== '' ? String(zoomIn[h]) : kept;
+  });
   var values = H.map(function (h) { return String(rec[h]); });
   // appendRow は手入力と同じ解釈で書くため、「- 9月の実績」で始まる議題が数式とみなされたり、
   // 開催日時が日付に化けたりする。先に文字列書式を付けてから setValues で書く。
   sh.getRange(row || sh.getLastRow() + 1, 1, 1, H.length).setNumberFormat('@').setValues([values]);
-  return { ok: true, id: id, updated: Boolean(row), ts: rec['日時'] };
+  // zoomSaved：Zoom の列を書いたか。アプリ側が「Apps Script が古くて Zoom の列を知らない」と見分けるのに使う。
+  return { ok: true, id: id, updated: Boolean(row), ts: rec['日時'], zoomSaved: Boolean(z) };
+}
+
+// ---- 部門会議の議題の追加（智翔館AI から。2026-11-18） ------------------------------------
+// 次の部門会議の事前共有があれば、その「議題・レジュメ」の末尾に「・【追加】議題（補足）〔追加した人 月/日〕」の1行を足す。
+// 事前共有がまだ無い（または議事録を保存した会議だった）ときは「議題の候補」に残し、会議の担当者が
+// 「部門会議議事録」の画面で事前共有を作るときに取り込む。どちらも「議題の候補」シートに1行残す（あとから追えるように）。
+var AGENDA_SHEET = '議題の候補';
+var AGENDA_HEADERS = ['日時', '部門', '追加した人', '議題', '補足', '状態', '事前共有ID', '取り込んだ日時', '取り込んだ人', '候補ID'];
+
+function agendaCell_(r, name) {
+  return cellStr_(r[colOf_(AGENDA_HEADERS, name) - 1]);
+}
+
+function addDeptAgenda_(data) {
+  var item = String(data.item || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  var detail = String(data.detail || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  var campus = String(data.campus || '').trim();
+  var user = String(data.user || '').trim();
+  if (!item || !campus) return { ok: false, reason: 'empty' };
+  var stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'M/d');
+  var line = '・【追加】' + item + (detail ? '（' + detail + '）' : '') + '〔' + user + ' ' + stamp + '〕';
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var log = sheetWithHeaders_(AGENDA_SHEET, AGENDA_HEADERS);
+    var id = Utilities.getUuid();
+    if (data.preshareId) {
+      var H = DEPT_PRESHARE_HEADERS;
+      var sh = sheetWithHeaders_(DEPT_PRESHARE_SHEET, H);
+      var row = findRowById_(sh, colOf_(H, '事前共有ID'), data.preshareId);
+      if (row) {
+        var cur = sh.getRange(row, 1, 1, H.length).getValues()[0];
+        if (!preshareCell_(cur, '議事録ID')) {
+          var agenda = preshareCell_(cur, '議題・レジュメ').replace(/\s+$/, '');
+          var next = (agenda ? agenda + '\n' : '') + line;
+          // 文字列として書く（「・」「-」で始まる行が数式・日付に化けないように）
+          sh.getRange(row, colOf_(H, '議題・レジュメ')).setNumberFormat('@').setValue(next);
+          sh.getRange(row, colOf_(H, '更新日時')).setNumberFormat('@').setValue(nowJp_(''));
+          sh.getRange(row, colOf_(H, '更新者')).setNumberFormat('@').setValue(user);
+          var rec = [nowJp_(''), preshareCell_(cur, '部門'), user, item, detail, '事前共有に追加', String(data.preshareId), '', '', id];
+          log.getRange(log.getLastRow() + 1, 1, 1, rec.length).setNumberFormat('@').setValues([rec]);
+          return { ok: true, saved: 'agenda', target: 'preshare', line: line, title: preshareCell_(cur, '会議名'), date: preshareCell_(cur, '開催日時'), campus: preshareCell_(cur, '部門') };
+        }
+      }
+    }
+    var cand = [nowJp_(''), campus, user, item, detail, '候補', '', '', '', id];
+    log.getRange(log.getLastRow() + 1, 1, 1, cand.length).setNumberFormat('@').setValues([cand]);
+    return { ok: true, saved: 'agenda', target: 'candidate', line: line, id: id, campus: campus };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// その部門の「議題の候補」（まだ取り込んでいないもの・古い順）
+function listAgendaCandidates_(data) {
+  var campus = String(data.campus || '').trim();
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(AGENDA_SHEET);
+  if (!sh || sh.getLastRow() < 2) return { ok: true, saved: 'agenda', items: [] };
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, AGENDA_HEADERS.length).getValues();
+  var items = [];
+  for (var i = 0; i < values.length; i++) {
+    var r = values[i];
+    if (agendaCell_(r, '状態') !== '候補') continue;
+    if (campus && agendaCell_(r, '部門') !== campus) continue;
+    items.push({ id: agendaCell_(r, '候補ID'), ts: agendaCell_(r, '日時'), campus: agendaCell_(r, '部門'), user: agendaCell_(r, '追加した人'), item: agendaCell_(r, '議題'), detail: agendaCell_(r, '補足') });
+  }
+  return { ok: true, saved: 'agenda', items: items.slice(-30) };
+}
+
+// 候補を取り込んだ印を付ける（事前共有の議題に入れたあと）
+function useAgendaCandidates_(data) {
+  var ids = Array.isArray(data.ids) ? data.ids.map(String) : [];
+  if (!ids.length) return { ok: true, saved: 'agenda', count: 0 };
+  var sh = sheetWithHeaders_(AGENDA_SHEET, AGENDA_HEADERS);
+  if (sh.getLastRow() < 2) return { ok: true, saved: 'agenda', count: 0 };
+  var idCol = colOf_(AGENDA_HEADERS, '候補ID');
+  var vals = sh.getRange(2, idCol, sh.getLastRow() - 1, 1).getValues();
+  var n = 0;
+  for (var i = 0; i < vals.length; i++) {
+    if (ids.indexOf(String(vals[i][0])) === -1) continue;
+    var row = i + 2;
+    sh.getRange(row, colOf_(AGENDA_HEADERS, '状態')).setValue('取り込み済み');
+    sh.getRange(row, colOf_(AGENDA_HEADERS, '取り込んだ日時')).setNumberFormat('@').setValue(nowJp_(''));
+    sh.getRange(row, colOf_(AGENDA_HEADERS, '取り込んだ人')).setValue(String(data.user || ''));
+    n++;
+  }
+  return { ok: true, saved: 'agenda', count: n };
 }
 
 // 部門会議の事前共有の一覧（新しい順・最大100件）。
@@ -925,7 +1037,8 @@ function saveDeptPreshare_(data) {
 function listDeptPreshare_(data) {
   var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(DEPT_PRESHARE_SHEET);
-  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+  // zoomColumns：この Apps Script が Zoom の列を読み書きできる印（アプリ側が、古い Apps Script と見分けるのに使う）。
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [], zoomColumns: true };
   var values = sh.getRange(2, 1, sh.getLastRow() - 1, DEPT_PRESHARE_HEADERS.length).getValues();
   var items = [];
   for (var i = 0; i < values.length; i++) {
@@ -937,12 +1050,15 @@ function listDeptPreshare_(data) {
       place: preshareCell_(r, '場所'), attendees: preshareCell_(r, '出席者'),
       agenda: preshareCell_(r, '議題・レジュメ'),
       editedAt: preshareCell_(r, '更新日時'), editedBy: preshareCell_(r, '更新者'),
-      minutesId: preshareCell_(r, '議事録ID')
+      minutesId: preshareCell_(r, '議事録ID'),
+      zoomAccount: preshareCell_(r, 'Zoomアカウント'), zoomMeetingId: preshareCell_(r, 'ZoomミーティングID'),
+      zoomJoinUrl: preshareCell_(r, '参加URL'), zoomPasscode: preshareCell_(r, 'パスコード'),
+      zoomTranscript: preshareCell_(r, '文字起こし元')
     });
   }
   items.reverse();
   if (items.length > 100) items = items.slice(0, 100);
-  return { ok: true, items: items };
+  return { ok: true, items: items, zoomColumns: true };
 }
 
 // 議事録を保存したとき、元になった事前共有に議事録IDを入れる（saveDeptMinutes_ から呼ぶ）。
@@ -953,6 +1069,32 @@ function linkDeptPreshare_(preshareId, minutesId) {
   var row = findRowById_(sh, colOf_(DEPT_PRESHARE_HEADERS, '事前共有ID'), preshareId);
   if (!row) return;
   sh.getRange(row, colOf_(DEPT_PRESHARE_HEADERS, '議事録ID')).setNumberFormat('@').setValue(String(minutesId));
+}
+
+// 部門会議の事前共有を1件消す（行ごと消す。消した行はスプレッドシートの「変更履歴」からしか戻せない）。
+// 議事録を保存済み（議事録IDが入っている）の事前共有は消さない（議事録との結び付きが切れるため）。
+// 誰が消してよいかはアプリ側で確かめている（lib/deptMinutesPreshare.ts の canDeletePreshare）。
+// deleted：行を消した印。アプリ側が、古い Apps Script（この action を知らない）と見分けるのに使う。
+function deleteDeptPreshare_(data) {
+  var id = String(data.id || '');
+  if (!id) return { ok: false, reason: 'empty' };
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(DEPT_PRESHARE_SHEET);
+  if (!sh) return { ok: false, reason: 'not_found' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var H = DEPT_PRESHARE_HEADERS;
+    // 行番号は、鍵を取ってから探す（ほかの人が同時に行を足したり消したりしてもずれないように）。
+    var row = findRowById_(sh, colOf_(H, '事前共有ID'), id);
+    if (!row) return { ok: false, reason: 'not_found' };
+    var minutesId = String(sh.getRange(row, colOf_(H, '議事録ID')).getValue() || '');
+    if (minutesId) return { ok: false, reason: 'has_minutes' };
+    sh.deleteRow(row);
+    return { ok: true, id: id, deleted: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // 全体研修会アンケート（/kenshu）。1人1行（研修会×部門×氏名）で持ち、送り直すと同じ行を上書きする。
@@ -2737,9 +2879,28 @@ function aiPlaceLogo_(slide, blob, cover, pageW, pageH) {
   var ratio = img.getHeight() > 0 ? img.getWidth() / img.getHeight() : 3;
   var h = pageH * pos.height;
   var w = h * ratio;
+  var left = cover ? pageW * pos.left : pageW - pageW * pos.right - w;
+  var top = pageH * pos.top;
+  // 表紙：左上にひな形の文字・飾り（シリーズ名のラベルなど）があって重なるときは、右上に置く（2026-11-18 中3セミナー②）
+  if (cover && aiOverlapsElements_(slide, img, left, top, w, h, pageW, pageH)) left = pageW - pageW * AI_SLIDE_LOGO_PAGE.right - w;
   img.setWidth(w).setHeight(h);
-  img.setLeft(cover ? pageW * pos.left : pageW - pageW * pos.right - w).setTop(pageH * pos.top);
+  img.setLeft(left).setTop(top);
   try { img.setTitle('ロゴ'); } catch (e) {}
+}
+
+// 枠（x, y, w, h）が、スライドの要素（背景＝ページのほとんどを覆うもの と self を除く）と重なるか
+function aiOverlapsElements_(slide, self, x, y, w, h, pageW, pageH) {
+  var els = slide.getPageElements();
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i];
+    if (el === self) continue;
+    try {
+      var ew = el.getWidth(), eh = el.getHeight(), ex = el.getLeft(), ey = el.getTop();
+      if (ew * eh >= pageW * pageH * 0.8) continue;
+      if (x < ex + ew && ex < x + w && y < ey + eh && ey < y + h) return true;
+    } catch (e) {}
+  }
+  return false;
 }
 
 // スライドをいちばん後ろへ動かす。Slide.move(i) の i は「動かす前の並び」での位置なので、後ろへは枚数そのものを渡す。
@@ -2810,6 +2971,37 @@ function aiShapeTextInfo_(shape, slide) {
   return { text: text, size: Number(st.getFontSize()) || 0, font: st.getFontFamily() || '', bold: !!st.isBold(), color: color };
 }
 
+// 智翔館AI が作るスライドの書体。職員の指定（2026-11-19）で、ひな形の書体にかかわらず全部これにそろえる。
+var AI_SLIDE_FONT = 'Noto Sans JP';
+
+// スライドの文字をすべて font にする（太字・大きさ・色はそのまま）。表のセルとグループの中も見る。
+function aiForceFont_(slide, font) {
+  var els = slide.getPageElements();
+  for (var i = 0; i < els.length; i++) aiForceFontEl_(els[i], font);
+}
+function aiForceFontEl_(el, font) {
+  try {
+    var t = el.getPageElementType();
+    if (t === SlidesApp.PageElementType.SHAPE) {
+      var tr = el.asShape().getText();
+      if (tr.asString().replace(/\s/g, '')) tr.getTextStyle().setFontFamily(font);
+    } else if (t === SlidesApp.PageElementType.TABLE) {
+      var tb = el.asTable();
+      for (var r = 0; r < tb.getNumRows(); r++) {
+        for (var c = 0; c < tb.getNumColumns(); c++) {
+          try {
+            var ct = tb.getCell(r, c).getText();
+            if (ct.asString().replace(/\s/g, '')) ct.getTextStyle().setFontFamily(font);
+          } catch (e) {}
+        }
+      }
+    } else if (t === SlidesApp.PageElementType.GROUP) {
+      var ch = el.asGroup().getChildren();
+      for (var j = 0; j < ch.length; j++) aiForceFontEl_(ch[j], font);
+    }
+  } catch (e) {}
+}
+
 // ページ要素が文字を持つか（グループは中も見る）
 function aiElementHasText_(el) {
   try {
@@ -2824,18 +3016,27 @@ function aiElementHasText_(el) {
   return false;
 }
 
-// スライドの見出し：上の3割にある、いちばん大きい文字の枠（いちばん上の階層だけ）
+// スライドの見出し：上の3割にある大きい文字の枠（いちばん大きい文字の 75% 以上）のうち、いちばん上にあるもの（いちばん上の階層だけ）。
+// 2026-11-18：Canva から書き出したひな形（中3セミナー②）で、グラフの数字「7」や図の中の大きな語「眠る」を見出しと取り違え、
+// 見出しの色が差し色（オレンジ）になった。見出しは、ふつう大きい文字のうち、いちばん上にある。
 function aiFindHeading_(slide, pageH) {
   var els = slide.getPageElements();
-  var head = null;
-  var info = null;
+  var cands = [];
+  var max = 0;
   for (var i = 0; i < els.length; i++) {
     if (els[i].getPageElementType() !== SlidesApp.PageElementType.SHAPE) continue;
     if (els[i].getTop() > pageH * 0.3) continue;
     var x = aiShapeTextInfo_(els[i].asShape(), slide);
-    if (x && (!info || x.size > info.size)) { head = els[i]; info = x; }
+    if (!x) continue;
+    cands.push({ el: els[i], info: x });
+    if (x.size > max) max = x.size;
   }
-  return head ? { el: head, info: info } : null;
+  var best = null;
+  for (var j = 0; j < cands.length; j++) {
+    if (cands[j].info.size < max * 0.75) continue;
+    if (!best || cands[j].el.getTop() < best.el.getTop()) best = cands[j];
+  }
+  return best;
 }
 
 function aiMode_(list) {
@@ -2908,11 +3109,11 @@ function aiTemplateStyle_(slides, pageW, pageH) {
   var bodySize = bodySizes.length ? bodySizes[Math.floor(bodySizes.length / 2)] : 16 * k;
   return {
     k: k,
-    headFont: aiMode_(heads.map(function (x) { return x.font; })) || 'BIZ UDPGothic',
+    headFont: AI_SLIDE_FONT,
     headColor: headColor,
     headBold: heads.length ? heads.filter(function (x) { return x.bold; }).length * 2 >= heads.length : true,
     headSize: Math.max(22 * k, Math.min(40 * k, headSize)),
-    bodyFont: aiMode_(bodies.map(function (x) { return x.font; })) || aiMode_(heads.map(function (x) { return x.font; })) || 'BIZ UDPGothic',
+    bodyFont: AI_SLIDE_FONT,
     bodyColor: bodyColor,
     bodySize: Math.max(13 * k, Math.min(20 * k, bodySize)),
     accent: accent,
@@ -3058,7 +3259,8 @@ function aiBuildLayoutSlide_(pres, orig, spec, style, pageW, pageH, warnings, n)
       var pts = (spec.points || []).map(String);
       var bx = aiPutText_(dup, pts.join('\n'), L, top, W, H, { size: style.bodySize * 1.15, font: body.font, color: body.color });
       try { bx.shape.getText().getListStyle().applyListPreset(SlidesApp.ListPreset.DISC_CIRCLE_SQUARE); } catch (e) {}
-      try { bx.shape.getText().getParagraphStyle().setSpaceBelow(bx.size * 0.5); } catch (e) {}
+      // 行と行のあいだは文字の大きさの0.6倍（2026-11-19：あとほんの少し開けると見やすい、と言われた）
+      try { bx.shape.getText().getParagraphStyle().setSpaceBelow(bx.size * 0.6); } catch (e) {}
     } else if (layout === 'columns') {
       var cols = (spec.columns || []).slice(0, 4);
       var gap = pageW * 0.02;
@@ -3096,10 +3298,38 @@ function aiBuildLayoutSlide_(pres, orig, spec, style, pageW, pageH, warnings, n)
       }
     }
   } else if (layout === 'message') {
-    var mh = pageH * 0.34;
-    var my = pageH * (lead ? 0.26 : 0.33);
-    aiPutText_(dup, title, L, my, W, mh, { size: style.headSize * 1.3, font: head.font, color: style.accent, bold: true, align: 'center', valign: 'middle' });
-    if (lead) aiPutText_(dup, lead, L, my + mh + pageH * 0.03, W, pageH * 0.18, { size: style.bodySize * 1.2, font: body.font, color: body.color, align: 'center' });
+    // 大きな一言。label（上の小さな見出し）と points（下の淡い地の囲みに入れる要点）は省いてよい。
+    // 2026-11-19：「本日のテーマ」「TOP10文化」の枚（ラベル→大きな一言→囲み）が見やすいと言われた
+    var mlabel = String(spec.label || '');
+    var mpts = (spec.points || []).map(String).filter(function (p) { return p; });
+    var labelColor = aiLum_(style.accent) > 0.7 ? '#1f3b57' : style.accent;
+    if (!mpts.length) {
+      var mh = pageH * 0.34;
+      var my = pageH * (lead ? 0.26 : 0.33);
+      if (mlabel) aiPutText_(dup, mlabel, L, my - pageH * 0.09, W, pageH * 0.08, { size: style.bodySize * 1.1, font: head.font, color: labelColor, bold: true, align: 'center', valign: 'middle' });
+      aiPutText_(dup, title, L, my, W, mh, { size: style.headSize * 1.3, font: head.font, color: style.accent, bold: true, align: 'center', valign: 'middle' });
+      if (lead) aiPutText_(dup, lead, L, my + mh + pageH * 0.03, W, pageH * 0.18, { size: style.bodySize * 1.2, font: body.font, color: body.color, align: 'center' });
+    } else {
+      var yy = pageH * 0.11;
+      if (mlabel) { aiPutText_(dup, mlabel, L, yy, W, pageH * 0.07, { size: style.bodySize * 1.05, font: head.font, color: labelColor, bold: true, align: 'center', valign: 'middle' }); yy += pageH * 0.08; }
+      var th2 = pageH * 0.22;
+      aiPutText_(dup, title, L, yy, W, th2, { size: style.headSize * 1.1, font: head.font, color: head.color, bold: true, align: 'center', valign: 'middle' });
+      yy += th2 + pageH * 0.01;
+      if (lead) { aiPutText_(dup, lead, L, yy, W, pageH * 0.08, { size: style.bodySize * 1.05, font: body.font, color: body.color, align: 'center', valign: 'middle' }); yy += pageH * 0.09; }
+      var pw = W * 0.8;
+      var px = L + (W - pw) / 2;
+      var py = yy + pageH * 0.02;
+      var ph = Math.max(pageH * 0.18, pageH * 0.9 - py);
+      var panel = dup.insertShape(SlidesApp.ShapeType.RECTANGLE, px, py, pw, ph);
+      try { panel.getFill().setSolidFill(style.light); panel.getBorder().setTransparent(); } catch (e) {}
+      var ppad = 24 * k;
+      var pb = aiPutText_(dup, mpts.join('\n'), px + ppad, py + ppad * 0.6, pw - ppad * 2, ph - ppad * 1.2,
+        { size: style.bodySize * 1.1, font: body.font, color: onLight, bold: true, valign: 'middle', align: mpts.length === 1 ? 'center' : 'start' });
+      if (mpts.length > 1) {
+        try { pb.shape.getText().getListStyle().applyListPreset(SlidesApp.ListPreset.DISC_CIRCLE_SQUARE); } catch (e) {}
+        try { pb.shape.getText().getParagraphStyle().setSpaceBelow(pb.size * 0.6); } catch (e) {}
+      }
+    }
   } else {
     // 表紙：ひな形のいちばん大きい文字があった位置に題名を置く。章の扉・その位置が分からないときは、左寄せの中ほど
     var bg = layout === 'title' ? prep.biggest : null;
@@ -3162,11 +3392,12 @@ function createAiSlides_(data) {
       var spec = specs[s] || {};
       // ひな形の見た目で自由に組む枚
       if (spec.layout) {
-        if (!style) style = { k: pageW / 720, headFont: 'BIZ UDPGothic', headColor: '#1f3b57', headBold: true, headSize: 28 * pageW / 720, bodyFont: 'BIZ UDPGothic', bodyColor: '#222222', bodySize: 16 * pageW / 720, accent: '#1f5c99', light: '#e6eef6', contentBase: orig.length > 1 ? 1 : 0 };
+        if (!style) style = { k: pageW / 720, headFont: AI_SLIDE_FONT, headColor: '#1f3b57', headBold: true, headSize: 28 * pageW / 720, bodyFont: AI_SLIDE_FONT, bodyColor: '#222222', bodySize: 16 * pageW / 720, accent: '#1f5c99', light: '#e6eef6', contentBase: orig.length > 1 ? 1 : 0 };
         var built = null;
         try { built = aiBuildLayoutSlide_(pres, orig, spec, style, pageW, pageH, warnings, s + 1); }
         catch (e) { warnings.push((s + 1) + '枚目：組みきれませんでした（' + String(e).slice(0, 80) + '）'); }
         if (built) {
+          try { aiForceFont_(built.slide, AI_SLIDE_FONT); } catch (e) {}
           if (spec.notes) { try { built.slide.getNotesPage().getSpeakerNotesShape().getText().setText(String(spec.notes).slice(0, 3000)); } catch (e) {} }
           if (logoBlob && !aiSlideHasLogo_(orig[built.base])) {
             try { aiPlaceLogo_(built.slide, logoBlob, spec.layout === 'title', pageW, pageH); } catch (e) { warnings.push((s + 1) + '枚目：ロゴを置けませんでした'); }
@@ -3211,6 +3442,7 @@ function createAiSlides_(data) {
       for (var i = 0; i < items.length; i++) {
         if (!done[items[i].key]) warnings.push((s + 1) + '枚目：見本の文字のまま「' + (items[i].type === 'text' ? items[i].text : '表').replace(/\s+/g, ' ').slice(0, 20) + '」');
       }
+      try { aiForceFont_(dup, AI_SLIDE_FONT); } catch (e) {}
       if (spec.notes) {
         try { dup.getNotesPage().getSpeakerNotesShape().getText().setText(String(spec.notes).slice(0, 3000)); } catch (e) {}
       }

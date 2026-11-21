@@ -55,14 +55,24 @@
     スプレッドシート「成功事例」へ自動で1件1行記録し、ダッシュボードに全部門分を表示
     （抽出ロジック: lib/successCases.ts ／ 保存先: apps_script/Code.gs の saveSuccess_ / listSuccess_）
 - 重要タスク報告（左メニュー「小中等部」→「重要タスク報告」。/task-report）: lib/taskReport.ts
-  - 小中等部の教室担当が毎週、対象週（土〜金）と校舎を選んで5つの設問に答える。設問の文言は QUESTIONS、校舎は数値報告と同じ CAMPUSES_BY_DEPT
+  - 小中等部の教室担当が毎週、対象週（土〜金）と校舎を選んで設問に答える。設問の文言は QUESTIONS、校舎は数値報告と同じ CAMPUSES_BY_DEPT
+  - 2026-11-21 から、設問はマイルストーン2つ（中1・2模試、レベル模試の動員率7割／冬期講習 外部生（中1・2年）の目標動員率3割完了）の改善・工夫と、そのほか（任意）の3問。
+    それまでは進行表の%・テ対外部・おは勉・進行表の5問
   - 保存先はスプレッドシート「重要タスク報告」（apps_script/Code.gs の saveTaskReport_）。出し直すと追記（同じ週・校舎は新しいほうを使う）
+  - 見出しはシートが空のときだけ書く。設問を変えて本番に出したら、すぐに「重要タスク報告」シートの名前を変えて残す
+    （例：「重要タスク報告（〜11/20）」）。次の報告で、新しい見出しの「重要タスク報告」シートが自動でできる
   - Apps Script が再デプロイ前で saved の印が返らないときは、保存されていないとして画面に出す
 - AI壁打ち（左メニュー「小中等部」→「AI壁打ち」。/task-coach）: lib/taskCoach.ts（読み取り・入力チェック）、lib/taskCoachPrompt.ts（AIへの指示）、lib/taskCoachStore.ts（Apps Script）、lib/taskCoachDoc.ts（Word）
   - 重要タスク評価シート（apps_script/Code.gs の TASK_EVAL_BOOK_ID）の校舎タブを読み、項目ごとに AI と行動計画を相談する。校舎は COACH_SCHOOLS（評価シートのタブ名＝秋～冬行動計画の校舎の行の名前）
   - 評価シートの読み取りは見出しの文字（「指標」「段階」「良い動き」など）で行う。表の形を大きく変えたら parseEvaluation を直す
   - 行動計画への書き込みは Code.gs の appendPlanActions_。「月日」の行で日付の列、その下の校舎の3行（外部・内部・他）で行を決め、「★行動」を書き足す
   - 毎週の評価を別ファイルで作ったら、TASK_EVAL_BOOK_ID を変えて Apps Script を再デプロイする
+- 重要タスク評価（左メニュー「小中等部」→「重要タスク評価」。/task-eval）: lib/taskEval.ts（ファイル名の読み取り）、lib/taskEvalStore.ts（読み込み）
+  - 小中等部でログインした人だけが、毎週の評価の A4版（PDF）をダウンロードできる。週ごと・新しい週から並ぶ。評価シート（スプレッドシート）は出さない
+  - ファイルはドライブ「15_AI利用データ」→「中等部重要タスクAI評価」（TASK_EVAL_FOLDER_ID）。
+    名前の決まり「YYYYMMDD_中等部重要タスクAI評価_A4版_MMDD-MMDD.pdf」に合うものだけを出す（同じ週が2つあれば作った日が新しいほう）
+  - 一覧は Apps Script の listDriveFolder、PDF は readDriveFile（どちらも智翔館AI と同じ。再デプロイ不要。PDF は 4MB まで）
+  - ダウンロードは一覧にある ID だけを受け付ける（フォルダの外のファイルは出さない）
 - 部門会議（「部門会議」メニュー。会議DXの基本機能。URL は /dept-minutes のまま）
   - 流れ（ループ）：1 会議情報を入力して［事前共有で報告する］→ 2 録音／録音ファイル添付／文字起こし貼り付け →
     3 AIが議事録化 → 入力者が確認・修正 → 保存（決定事項が全部門で見える）→
@@ -76,6 +86,33 @@
     - 並べ方・外し方（議事録を保存した会議と、開催日から3日過ぎた会議は外す）: lib/deptMinutesPreshare.ts
     - 保存先: 「部門会議事前共有」シート（1会議1行）。議事録を保存すると「議事録ID」が入る
       （apps_script/Code.gs の saveDeptPreshare_ / listDeptPreshare_ / linkDeptPreshare_）
+  - Zoom連携（v1.17.0〜）：［事前共有で報告する］のときに「Zoom ミーティングも作る」にチェックがあると、開催日時から
+    Zoom ミーティングを作り（自動クラウド録画）、事前共有のカードに［Zoomに参加］を出す。メールは送らない
+    - アカウントは公式1・公式2 の2つ（lib/zoom/accounts.ts。中等部は公式2、その他の部門は公式1 が既定で、画面で選べる）。
+      Vercel の ZOOM_1_… / ZOOM_2_…（.env.example）が未設定なら、Zoom の欄は画面に出ない
+    - 開催日時の読み取り: lib/zoom/schedule.ts（終了時刻が無ければ60分）。手順1の日付・開始・終了の入力も同じ形で書く
+    - Zoom API の呼び出し: lib/zoom/client.ts（Server-to-Server OAuth。作成・更新・開始用URLの取得）
+    - ［ホストとして開始］：管理部門（全部門の会議）と部門長権限者（自分の部門の会議）にだけ出す（lib/zoom/access.ts）。
+      共通ログインで入っているときだけ。開始用URLは保存せず、押すたびに取り直す（app/api/zoom/meetings/start）。誰がいつ開始したかは会話ログに残る
+    - 保存先: 「部門会議事前共有」シートの「Zoomアカウント」「ZoomミーティングID」「参加URL」「パスコード」列と、
+      Supabase の zoom_meetings（supabase/migrations/0004_zoom_meetings.sql。録画から議事録を自動で作るときに、どの会議の録画かを引くため）
+    - 設計書（録画からの議事録の自動生成までの全体）: https://claude.ai/artifact/VRvyBB8x3daSpYBEnJgr6o
+  - 事前共有の削除（v1.18.0〜）：詳細のポップアップの［削除］。その部門の人・事前共有した本人・管理部門が消せる
+    （lib/deptMinutesPreshare.ts の canDeletePreshare）。議事録を保存済みのものは消せない。
+    シートの行ごと消し（apps_script/Code.gs の deleteDeptPreshare_）、Zoom ミーティングを作ってあればそれも消す
+    （Zoom のアプリにスコープ meeting:delete:meeting:admin が要る）。誰がいつ消したかは会話ログに残る
+  - 録画から議事録の下書き：手順2の「Zoom の録画から作る」（components/ZoomMinutesBox.tsx）→ app/api/zoom/minutes
+    - 流れ: lib/zoom/minutesJob.ts（録画の音声を取り出す → 文字起こし → 議事録の下書き。途中経過を置いて続きから進める）
+    - 文字起こし: lib/zoom/transcribeRecording.ts（OpenAI → Gemini → Zoom の文字起こし（予備）。順番は ZOOM_TRANSCRIBE_ORDER）
+    - 置き場: Supabase の zoom_minutes_jobs（supabase/migrations/0005。文字起こし全文を含むので14日で消す）
+    - 自動（毎朝の見回り）: app/api/zoom/minutes/cron/[slot]（vercel.json の Cron が午前1時・5時に叩く。CRON_SECRET が要る）。
+      終わった会議（lib/zoom/due.ts。3日前まで）で議事録が未保存のものを、作ってそのまま保存する（lib/zoom/autoMinutes.ts。
+      保存の中身は画面の［保存］と同じ lib/deptMinutesSave.ts）。残りがあれば自分を呼び直して続ける
+    - 自動（録画完了の通知）: app/api/zoom/webhook/[account]（Zoom の recording.completed を受けてすぐ作る。ZOOM_n_WEBHOOK_SECRET が要る）
+    - Zoom のアプリにスコープ cloud_recording:read:list_recording_files:admin が要る
+  - 出席者：部門を選んで名前にチェック（components/AttendeePicker.tsx。職員の一覧は lib/core/staff.ts、文字列の扱いは lib/attendees.ts）
+  - 事前の確認：事前共有の詳細の「議題を確認しました」（app/api/dept-minutes/preshare/confirm。出席者本人だけ。
+    置き場は Supabase の preshare_confirms＝supabase/migrations/0006）
   - 議事録テンプレート（項目・書き方）: lib/deptMinutesTemplate.ts ★ここを直せば AI の出力・
     画面のヘルプ・会議の質チェックにまとめて反映される
   - AI への指示: lib/deptMinutesPrompt.ts

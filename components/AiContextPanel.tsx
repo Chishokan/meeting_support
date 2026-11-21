@@ -6,7 +6,8 @@
 // - 読んだ資料：この会話で AI が読んだ資料（次の質問にも自動で渡している）。外したり、コンテキストに固定したりできる。
 // - この会話：ファイルに書き出す・書き出したファイルから再開する。
 // - 保存した会話・履歴・いつものコンテキスト：メールアドレスでログインしたときだけ出す（サーバーに本人の分だけ保存。lib/chishokanAi/savedRules.ts）。
-// 画面が広いときは右に常に出し、狭いとき（スマホなど）は「📌 コンテキスト」で引き出す。
+// 画面の幅が 900px 以上（ノートPCを拡大表示したときも）なら右に常に出し、それより狭いとき（タブレットの縦・スマホ）は「📌 コンテキスト」で引き出す（app/globals.css）。
+// 狭い画面では、履歴がコンテキストの下に隠れて見つけにくいので、［🕘 過去の会話履歴を表示する］で「履歴だけ」の表示（view: 'history'）で引き出す（2026-11-20）。
 
 import { useEffect, useRef, useState } from 'react';
 import type { CarryContext } from '@/lib/chishokanAi/conversation';
@@ -77,6 +78,9 @@ type Props = {
   onClose: () => void;
   saved: SavedView | null;
   savedActions: SavedActions;
+  /** 'history' なら、保存した会話と履歴だけを出す（狭い画面の［🕘 過去の会話履歴を表示する］） */
+  view?: 'all' | 'history';
+  onView?: (v: 'all' | 'history') => void;
 };
 
 /** 保存した会話・履歴の1行。 */
@@ -93,6 +97,43 @@ function ConvoItem({ r, current, a, saved }: { r: ConvoRow; current: boolean; a:
         <button type="button" className="msg-action ai-pin-del" onClick={() => a.onDelete(r.id)} disabled={a.busy}>消す</button>
       </div>
     </li>
+  );
+}
+
+/** 保存した会話と履歴の一覧（右の欄と、狭い画面の「履歴だけ」の表示で使う）。historyOpen なら履歴をたたまない。 */
+function ConvoLists({ sv, a, historyOpen }: { sv: SavedView; a: SavedActions; historyOpen: boolean }) {
+  const curRow = [...sv.saved, ...sv.history].find((r) => r.id === a.currentId);
+  const history = sv.history.length === 0 ? (
+    <p className="ai-panel-empty">質問すると、ここに自動で残ります。</p>
+  ) : (
+    <ul className="ai-convo-list">
+      {sv.history.map((r) => <ConvoItem key={r.id} r={r} current={r.id === a.currentId} a={a} saved={false} />)}
+    </ul>
+  );
+  return (
+    <>
+      <h3 className="ai-panel-sub">保存した会話 <span>{sv.saved.length}/{SAVED_MAX}</span></h3>
+      {a.canSave && curRow?.kind !== '保存' && <SaveForm defaultTitle={a.defaultTitle} onSave={a.onSave} busy={a.busy} />}
+      {sv.saved.length > 0 && (
+        <ul className="ai-convo-list">
+          {sv.saved.map((r) => <ConvoItem key={r.id} r={r} current={r.id === a.currentId} a={a} saved />)}
+        </ul>
+      )}
+      {historyOpen ? (
+        <>
+          <h3 className="ai-panel-sub">最近の会話（自動で残る履歴） <span>{sv.history.length}</span></h3>
+          {history}
+        </>
+      ) : (
+        <details className="ai-history" open={sv.saved.length === 0 && sv.history.length > 0 && sv.history.length <= 5}>
+          <summary>履歴（最近の会話）<span>{sv.history.length}</span></summary>
+          {history}
+        </details>
+      )}
+      <p className="ai-panel-empty">
+        会話は自動で履歴に残ります（最後に使ってから{HISTORY_DAYS}日・{HISTORY_MAX}件まで）。ずっと残したい会話は「保存」（{SAVED_DAYS === 365 ? '1年' : `${SAVED_DAYS}日`}・{SAVED_MAX}件まで）。画面に出るのは本人の分だけです（記録は会話ログと同じく、社内のスプレッドシートに残ります）。
+      </p>
+    </>
   );
 }
 
@@ -178,6 +219,33 @@ export default function AiContextPanel(p: Props) {
   const newOnes = pending.filter((x) => !x.id);
   const full = p.pinned.length >= PIN_MAX_ITEMS;
   const carried = p.carry.reads.length + p.carry.texts.length;
+
+  if (p.view === 'history') {
+    return (
+      <>
+        {p.open && <div className="ai-panel-bg" onClick={p.onClose} />}
+        <aside className={`ai-panel ai-panel-history${p.open ? ' open' : ''}`} aria-label="過去の会話履歴">
+          <div className="ai-panel-head">
+            <h2>🕘 過去の会話履歴</h2>
+            <button type="button" className="ai-panel-close" onClick={p.onClose} aria-label="閉じる">×</button>
+          </div>
+          {p.saved?.enabled ? (
+            <>
+              <p className="ai-panel-lead">［開く］を押すと、その会話を開いて続きから質問できます。</p>
+              <ConvoLists sv={p.saved} a={p.savedActions} historyOpen />
+            </>
+          ) : (
+            <p className="ai-panel-empty">{p.saved?.message || '会話の履歴は、メールアドレスでログインしたときだけ残ります。'}</p>
+          )}
+          {p.onView && (
+            <button type="button" className="msg-action ai-panel-switch" onClick={() => p.onView?.('all')}>
+              📌 コンテキスト・読んだ資料を見る
+            </button>
+          )}
+        </aside>
+      </>
+    );
+  }
 
   return (
     <>
@@ -301,7 +369,6 @@ export default function AiContextPanel(p: Props) {
         {p.saved?.enabled && (() => {
           const sv = p.saved;
           const a = p.savedActions;
-          const curRow = [...sv.saved, ...sv.history].find((r) => r.id === a.currentId);
           return (
             <>
               <h3 className="ai-panel-sub">いつものコンテキスト <span>{sv.presets.length}/{PRESET_MAX}</span></h3>
@@ -327,26 +394,7 @@ export default function AiContextPanel(p: Props) {
                 </ul>
               )}
 
-              <h3 className="ai-panel-sub">保存した会話 <span>{sv.saved.length}/{SAVED_MAX}</span></h3>
-              {a.canSave && curRow?.kind !== '保存' && <SaveForm defaultTitle={a.defaultTitle} onSave={a.onSave} busy={a.busy} />}
-              {sv.saved.length > 0 && (
-                <ul className="ai-convo-list">
-                  {sv.saved.map((r) => <ConvoItem key={r.id} r={r} current={r.id === a.currentId} a={a} saved />)}
-                </ul>
-              )}
-              <details className="ai-history" open={sv.saved.length === 0 && sv.history.length > 0 && sv.history.length <= 5}>
-                <summary>履歴（最近の会話）<span>{sv.history.length}</span></summary>
-                {sv.history.length === 0 ? (
-                  <p className="ai-panel-empty">質問すると、ここに自動で残ります。</p>
-                ) : (
-                  <ul className="ai-convo-list">
-                    {sv.history.map((r) => <ConvoItem key={r.id} r={r} current={r.id === a.currentId} a={a} saved={false} />)}
-                  </ul>
-                )}
-              </details>
-              <p className="ai-panel-empty">
-                会話は自動で履歴に残ります（最後に使ってから{HISTORY_DAYS}日・{HISTORY_MAX}件まで）。ずっと残したい会話は「保存」（{SAVED_DAYS === 365 ? '1年' : `${SAVED_DAYS}日`}・{SAVED_MAX}件まで）。画面に出るのは本人の分だけです（記録は会話ログと同じく、社内のスプレッドシートに残ります）。
-              </p>
+              <ConvoLists sv={sv} a={a} historyOpen={false} />
             </>
           );
         })()}

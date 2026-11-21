@@ -1,14 +1,12 @@
 import { getSession } from '@/lib/core/auth';
-import { extractDecisions, extractMinutes, extractQuality } from '@/lib/deptMinutesParse';
+import { saveMinutesToSheet } from '@/lib/deptMinutesSave';
+import { deleteJobs } from '@/lib/zoom/minutesStore';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
-// 入力者が確認・編集した議事録を保存する。
-// Apps Script（APPS_SCRIPT_URL）に action:'saveDeptMinutes' を送り、GAS 側で
-//   ・「部門会議議事録」シートに1会議1行
-//   ・「部門決定事項」シートに1決定1行（部門横断の見える化のもと）
-// を記録する。APPS_SCRIPT_URL 未設定でもアプリは壊れない（画面側は localStorage に保持済み）。
+// 入力者が確認・編集した議事録を保存する（保存の中身は lib/deptMinutesSave.ts）。
+// APPS_SCRIPT_URL 未設定でもアプリは壊れない（画面側は localStorage に保持済み）。
 export async function POST(req: Request) {
   const session = getSession();
   if (!session) return Response.json({ ok: false, reason: 'unauthorized' }, { status: 401 });
@@ -17,57 +15,22 @@ export async function POST(req: Request) {
   const content = String(body?.content ?? '').trim();
   if (!content) return Response.json({ ok: false, reason: 'empty' }, { status: 400 });
 
-  const meta = (body?.meta ?? {}) as Record<string, unknown>;
-  // 保存するのは入力者が確認した最終テキスト。決定事項はそこから抜き出す
-  //（AIの生成時ではなく保存時に抜くので、人が直した内容がそのまま集計に載る）。
-  const minutes = extractMinutes(content);
-  const quality = extractQuality(content);
-  const decisions = extractDecisions(content);
-
-  const url = process.env.APPS_SCRIPT_URL;
-  if (!url) return Response.json({ ok: false, reason: 'not_configured', decisions: decisions.length });
-
-  // 既存の議事録を直して保存し直すときだけ id が付く（付いていなければ新規）。
-  const id = String(body?.id ?? '');
   // 事前共有した会議なら、その事前共有に議事録を結び付ける（ダッシュボードの事前共有から外れる）。
   const preshareId = String(body?.preshareId ?? '');
-
-  const payload = {
-    action: 'saveDeptMinutes',
-    id,
+  const r = await saveMinutesToSheet({
+    id: String(body?.id ?? ''),
     preshareId,
-    token: process.env.APPS_SCRIPT_TOKEN || '',
-    ts: new Date().toISOString(),
     campus: session.campus,
     user: session.name,
-    title: String(meta.title ?? ''),
-    date: String(meta.date ?? ''),
-    place: String(meta.place ?? ''),
-    attendees: String(meta.attendees ?? ''),
-    agenda: String(meta.agenda ?? ''),
-    minutes,
-    quality,
-    decisions,
-  };
+    meta: (body?.meta ?? {}) as Record<string, unknown>,
+    content,
+  });
 
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    // GAS(ContentService)は失敗時も HTTP 200 を返すため、本文の ok/reason を必ず確認する。
-    const j = await res.json().catch(() => null);
-    if (res.ok && j && j.ok === true) {
-      return Response.json({
-        ok: true,
-        decisions: decisions.length,
-        id: String(j.id ?? ''),
-        updated: j.updated === true,
-      });
-    }
-    return Response.json({ ok: false, reason: (j && j.reason) || 'upstream_error' }, { status: 502 });
-  } catch {
-    return Response.json({ ok: false, reason: 'network_error' }, { status: 502 });
+  if (r.ok) {
+    // 録画から作った下書き（文字起こし全文を含む）は、議事録を保存したら用済みなので消す。
+    if (preshareId) await deleteJobs(preshareId);
+    return Response.json({ ok: true, decisions: r.decisions, id: r.id, updated: r.updated });
   }
+  if (r.reason === 'not_configured') return Response.json({ ok: false, reason: 'not_configured', decisions: r.decisions });
+  return Response.json({ ok: false, reason: r.reason }, { status: 502 });
 }

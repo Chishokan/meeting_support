@@ -2,6 +2,8 @@
   "regions": ["hnd1"],
   "crons": [
     { "path": "/api/inquiry-board/alerts/daily", "schedule": "0 22 * * *" },
-    { "path": "/api/aptitude/purge", "schedule": "0 18 * * *" }
+    { "path": "/api/aptitude/purge", "schedule": "0 18 * * *" },
+    { "path": "/api/zoom/minutes/cron/1", "schedule": "0 16 * * *" },
+    { "path": "/api/zoom/minutes/cron/2", "schedule": "0 20 * * *" }
   ]
 }
