@@ -912,7 +912,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
     });
   }
 
-  // テスト問題を保存する小窓（［🗄 テスト問題を保存］と、作業「テスト問題を保存する」で開く）
+  // テスト問題を保存する小窓（画面の上の［🗄 テスト問題を保存］で開く）
   const [testPaper, setTestPaper] = useState(false);
   function openTestPaper() {
     ensureConvoId();
@@ -920,12 +920,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   }
 
   // 作業ボタン：作業を選び、入力欄が空なら文の例を入れる（そのまま直して送れる）。
-  // 「テスト問題を保存する」は AI に頼まず、保存の小窓を開く。
   function chooseTask(t: TaskButton | null) {
-    if (t?.id === 'save-test') {
-      openTestPaper();
-      return;
-    }
     setTask(t);
     if (t && !input.trim()) setInput(t.starter);
     setTimeout(() => inputRef.current?.focus(), 0);
