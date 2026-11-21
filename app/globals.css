@@ -3923,3 +3923,20 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 }
 /* 公立・私立のラジオは、小窓の入力欄の幅（100%）を受けない */
 .tp-modal .ai-report-kinds input[type='radio'] { width: auto; flex: none; margin: 0; padding: 0; border: none; }
+
+/* 本番レベル模試：過去の実施データ（同じ問題を県全体で受けたときの集計。components/MoshiPast.tsx） */
+.ms-past { margin: 14px 0 6px; padding: 12px 14px; border: 1px solid #dfe5ec; border-radius: 10px; background: #fbfcfd; }
+.ms-past .ms-h3 { margin-top: 0; }
+.ms-past-on { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #2e6b4f; font-weight: 700; }
+.ms-past-on .ms-link { padding: 0; font-weight: 400; }
+.ms-past-table { margin-top: 8px; font-size: 12.5px; }
+.ms-past-table td, .ms-past-table th { text-align: left; vertical-align: top; }
+.ms-past-table tr.ms-past-ng td:last-child { color: #b06a00; font-weight: 700; }
+.kd-dist { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px 18px; margin-top: 6px; }
+.kd-dist-one { margin: 0; padding: 8px 10px 4px; border: 1px solid #e3e7ec; border-radius: 10px; background: #fff; }
+.kd-dist-one figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 13px; color: #445; }
+.kd-dist-one figcaption b { font-size: 14px; color: #1b2430; }
+.kd-dist-rank { margin-left: auto; color: #1f4e78; font-weight: 700; }
+.kd-dist-one .rs-chart { width: 100%; height: auto; }
+.kd-ken-mean { color: #1f4e78; }
+.rs-pill-note { margin-left: 2mm; font-size: 7pt; font-weight: 400; }

@@ -89,6 +89,8 @@ export type OutsideStats = {
   n: number | null; // 母数（受験者数）
   mean: Partial<Record<StatKey, number | null>>;
   sd: Partial<Record<StatKey, number | null>>;
+  /** 同じ問題を前に県全体で実施したときの集計（lib/moshi/pastData.ts の id）。度数分布・県内のおよその順位・設問別の県平均に使う */
+  ref?: string;
 };
 
 /**
@@ -136,11 +138,17 @@ export type MoshiExam = {
 export const MAX_JUDGES = 120;
 
 export function emptyOutside(): OutsideStats {
-  return { source: '', n: null, mean: {}, sd: {} };
+  return { source: '', n: null, mean: {}, sd: {}, ref: '' };
 }
 
 export function cloneOutside(o: OutsideStats | null | undefined): OutsideStats {
-  return { source: o?.source ?? '', n: o?.n ?? null, mean: { ...(o?.mean ?? {}) }, sd: { ...(o?.sd ?? {}) } };
+  return { source: o?.source ?? '', n: o?.n ?? null, mean: { ...(o?.mean ?? {}) }, sd: { ...(o?.sd ?? {}) }, ref: o?.ref ?? '' };
+}
+
+/** 過去の実施データの id（英小文字・数字・ハイフン）。それ以外は '' にする。 */
+function cleanRef(v: unknown): string {
+  const s = String(v ?? '').trim();
+  return /^[a-z0-9-]{1,40}$/.test(s) ? s : '';
 }
 
 function numOrNull(v: unknown): number | null {
@@ -156,6 +164,7 @@ export function readExamExtras(cfg: Record<string, unknown> | null | undefined):
     n: numOrNull(o.n),
     mean: { ...((o.mean as OutsideStats['mean']) ?? {}) },
     sd: { ...((o.sd as OutsideStats['sd']) ?? {}) },
+    ref: cleanRef(o.ref),
   };
   const judges: JudgeLine[] = (Array.isArray(cfg?.judges) ? (cfg!.judges as Record<string, unknown>[]) : [])
     .map((j) => ({
@@ -490,10 +499,10 @@ function optNumber(v: unknown, min: number, max: number, int = false): number | 
 }
 
 function cleanOutside(raw: unknown): OutsideStats | null {
-  const o = (raw ?? {}) as { source?: unknown; n?: unknown; mean?: Record<string, unknown>; sd?: Record<string, unknown> };
+  const o = (raw ?? {}) as { source?: unknown; n?: unknown; mean?: Record<string, unknown>; sd?: Record<string, unknown>; ref?: unknown };
   const n = optNumber(o.n, 0, 1_000_000, true);
   if (n === undefined) return null;
-  const out: OutsideStats = { source: String(o.source ?? '').replace(/\s+/g, ' ').trim().slice(0, 60), n, mean: {}, sd: {} };
+  const out: OutsideStats = { source: String(o.source ?? '').replace(/\s+/g, ' ').trim().slice(0, 60), n, mean: {}, sd: {}, ref: cleanRef(o.ref) };
   for (const k of STAT_KEYS) {
     const m = optNumber(o.mean?.[k], 0, 1000);
     const d = optNumber(o.sd?.[k], 0, 1000);
