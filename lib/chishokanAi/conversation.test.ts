@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  testPaperChoice,
+  TEST_PAPER_ASK,
   buildCarryBlock,
   CARRY_KNOWLEDGE_CHARS,
   CARRY_MAX_READS,
@@ -151,4 +153,21 @@ test('choiceNeedsInput：添付・書き込みが要る選択肢を見分ける'
   assert.equal(choiceNeedsInput('この前提で作る'), null);
   assert.equal(choiceNeedsInput('大問1〜3のみでWordファイルを作成する'), null);
   assert.equal(choiceNeedsInput('新しく小テストを作ってほしい（学年・単元を伝える）'), null);
+});
+
+// --- 作業「テスト問題の保存・検索」の聞き返し（2026-11-21） ---
+
+test('testPaperChoice：保存は小窓、検索は入力欄', () => {
+  assert.equal(testPaperChoice('🗄 テスト問題を保存'), 'save');
+  assert.equal(testPaperChoice('テスト問題を保存'), 'save');
+  assert.equal(testPaperChoice('検索する'), 'search');
+  assert.equal(testPaperChoice('この前提で作る'), null);
+  assert.equal(testPaperChoice('テスト問題を保存した場所を教えて'), null);
+});
+
+test('TEST_PAPER_ASK の選択肢は2つ', () => {
+  const m = TEST_PAPER_ASK.match(/```選択肢\n([\s\S]*?)\n```/);
+  assert.ok(m);
+  assert.deepEqual(m[1].split('\n'), ['🗄 テスト問題を保存', '検索する']);
+  assert.ok(m[1].split('\n').every((l) => testPaperChoice(l) !== null));
 });
