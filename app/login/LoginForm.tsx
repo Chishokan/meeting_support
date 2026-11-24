@@ -16,7 +16,8 @@ const NOTICES: Record<string, string> = {
   relogin: '給与アプリへ移るには、メールアドレスとパスワードでログインし直してください。',
   handoff: 'ログインを引き継げませんでした（リンクの有効期限は1分です）。ここからログインしてください。',
   nodept: '所属部門が登録されていません。管理者にお問い合わせください。',
-  staff: '智翔館アプリは社員の方のみ利用できます。給与・シフトや講師育成は、給与アプリ（Color）に直接ログインしてください。',
+  // 給与アプリから移ってきた人のロールが、智翔館アプリに入れないとき（lib/core/hub.ts の HUB_LOGIN_ROLES）
+  staff: 'このアカウントでは智翔館アプリを利用できません。管理者にお問い合わせください。',
 };
 
 export default function LoginForm({ hubReady, legacy, forgotUrl }: { hubReady: boolean; legacy: boolean; forgotUrl: string }) {
