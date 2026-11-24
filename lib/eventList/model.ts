@@ -331,14 +331,22 @@ export function mapFormColumns(headers: string[]): FormColumns {
   };
 }
 
-const NO_WORDS = /^(0\s*(人|名)?|なし|無し|いない|しない|参加しない|不参加|本人のみ|生徒のみ|いいえ|no|×|✕|-|ー|―)?$/i;
+// 同伴の方がいない答え。かっこ書き（「いない（申込者のみ）」の（…））は外してから見る
+const NO_WORDS = /^(0\s*(人|名)?|ゼロ|なし|無し|ない|無い|いない|いません|おりません|しない|参加しない|不参加|(本人|生徒|申込者|申し込み者|申込み者|自分|1人|一人|ひとり)(のみ|だけ|で参加)|いいえ|no|×|✕|-|ー|―)?$/i;
+const KANJI_NUM: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
 
-/** 「一緒に参加される方の人数」などの答え → 人数。「1人」→1、「0人」「なし」→0、数の無い答え（「参加する」など）は 1。 */
+/**
+ * 「一緒に参加される方の人数」などの答え → 人数。
+ *   「1人」「２名」「二人」→ その数、「0人」「なし」「いない（申込者のみ）」→ 0、数の無い答え（「参加する」など）は 1。
+ */
 export function companionsOf(v: unknown): number {
   const t = s(v).normalize('NFKC');
-  if (NO_WORDS.test(t)) return 0;
-  const m = t.match(/\d+/);
-  return m ? Number(m[0]) : 1;
+  const base = t.replace(/[(\[][^)\]]*[)\]]/g, '').replace(/[\s、。,.]/g, '');
+  if (NO_WORDS.test(base)) return 0;
+  const m = base.match(/\d+/) ?? t.match(/\d+/);
+  if (m) return Number(m[0]);
+  const k = base.match(/([一二三四五六七八九十])(人|名)/);
+  return k ? KANJI_NUM[k[1]] : 1;
 }
 
 /** フォームの回答（見出しと行）を申込にする。氏名の無い行は捨てる。 */
