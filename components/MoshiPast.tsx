@@ -5,17 +5,23 @@
 //   ・県全体の得点の分布：帳票の度数分布表と同じきざみ（五教科25点・三教科15点・教科5点）で、本人の階級に色を付ける
 //   ・設問別の県平均：回の大問と実施データの設問が合う教科だけ（社会の「1・2」のように2つの大問で1行のときは2行ぶんにまたがる）
 // 回の設定の outside.ref で結ぶ（「模試の設定」の［この実施データを使う］）。
+// 大問が資料と合わない教科（問題が違う教科。2026年11月は数学）は資料を使わず、この回の結果（智翔館の受験者）だけで出す（pastUses）。
 
 import {
   SUBJECT_KEYS, subjectOf,
   type Bin, type MoshiExam, type StatKey, type SubjectKey,
 } from '@/lib/moshi/model';
-import { matchPastQuestions, pastBinOf, pastBinRange, pastExamById, pastMax, pastN, pastRank, type PastExam } from '@/lib/moshi/pastData';
+import { matchPastQuestions, pastBinOf, pastBinRange, pastExamById, pastMax, pastN, pastRank, pastUsesKey, type PastExam } from '@/lib/moshi/pastData';
 import { ScoreDist } from './MoshiReportSheet';
 
 /** 回に結んである過去の実施データ。 */
 export function pastOf(exam: MoshiExam): PastExam | undefined {
   return pastExamById(exam.outside?.ref);
+}
+
+/** その項目に資料を使うか（三教科・五教科はいつも。教科は大問が資料と合うときだけ）。 */
+export function pastUses(exam: MoshiExam, p: PastExam | undefined, key: StatKey): boolean {
+  return !!p && pastUsesKey(exam.subjects, p, key);
 }
 
 /** 実施年月の短い書き方（例「2023年10月」）。 */
@@ -67,12 +73,21 @@ export function pastQuestionCells(exam: MoshiExam, p: PastExam | undefined): Rec
 const DIST_KEYS: StatKey[] = ['k5', 'k3', 'ja', 'en', 'ma', 'so', 'sc'];
 const DIST_NAME: Record<StatKey, string> = { k5: '五教科', k3: '三教科', ja: '国語', en: '英語', ma: '数学', so: '社会', sc: '理科' };
 
-/** 面談の画面の「県全体の得点の分布」：7つのグラフ（本人の階級に色）と県内順位（推定）。 */
-export function PastDistView({ past, scores, maxes }: {
+/** この回の結果（智翔館の受験者）での分布。資料を使わない教科に出す。 */
+export type OwnDist = { bins: Bin[]; n: number; mean: number | null; rank: number | null };
+
+/**
+ * 面談の画面の「県全体の得点の分布」：7つのグラフ（本人の階級に色）と県内順位（推定）。
+ * 資料を使わない教科（大問が合わない教科）は、この回の結果の分布と塾内順位を出す（own）。
+ */
+export function PastDistView({ exam, past, scores, maxes, own }: {
+  exam: MoshiExam;
   past: PastExam;
   scores: Partial<Record<StatKey, number | null>>;
   maxes: Partial<Record<StatKey, number>>;
+  own: Partial<Record<StatKey, OwnDist>>;
 }) {
+  const selfKeys = DIST_KEYS.filter((k) => !pastUses(exam, past, k));
   return (
     <>
       <h3 className="kd-h">県全体の得点の分布</h3>
@@ -82,6 +97,20 @@ export function PastDistView({ past, scores, maxes }: {
       <div className="kd-dist">
         {DIST_KEYS.map((k) => {
           const score = scores[k] ?? null;
+          const o = own[k];
+          if (!pastUses(exam, past, k)) {
+            return (
+              <figure key={k} className="kd-dist-one kd-dist-self">
+                <figcaption>
+                  <b>{DIST_NAME[k]}</b>
+                  <span>今回の平均 {o?.mean != null ? `${o.mean.toFixed(1)}点` : '—'}</span>
+                  {score != null && o?.rank != null && <span className="kd-dist-rank">{score}点：塾内 {o.rank}位 / {o.n}人</span>}
+                </figcaption>
+                {o ? <ScoreDist bins={o.bins} label={`${DIST_NAME[k]}の今回の得点の分布`} /> : <p className="kd-note">まだ得点がありません。</p>}
+                <p className="kd-dist-src">この回の結果（智翔館 {o?.n ?? 0}人）</p>
+              </figure>
+            );
+          }
           const ok = maxes[k] == null || maxes[k] === pastMax(past, k);
           return (
             <figure key={k} className="kd-dist-one">
@@ -95,7 +124,10 @@ export function PastDistView({ past, scores, maxes }: {
           );
         })}
       </div>
-      <p className="kd-note">県内順位（推定）は、度数分布から出した目安です（同じ階級の中の人数は、となりの階級に合わせてなだらかに分けて数えます。{pastWhen(past)}の受験者の中での位置）。</p>
+      <p className="kd-note">
+        県内順位（推定）は、度数分布から出した目安です（同じ階級の中の人数は、となりの階級に合わせてなだらかに分けて数えます。{pastWhen(past)}の受験者の中での位置）。
+        {selfKeys.length > 0 && `${selfKeys.map((k) => DIST_NAME[k]).join('・')}は問題が資料と違うので、この回を受けた智翔館の受験者の分布と塾内順位です。`}
+      </p>
     </>
   );
 }
