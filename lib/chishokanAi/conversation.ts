@@ -188,7 +188,9 @@ export function statusFor(tool: string, input: Record<string, unknown>): string 
     case 'create_math_quiz':
       return `📝 小テストを Word にしています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
     case 'create_english_word_quiz':
-      return `📝 英語の単語テストを Word にしています${s(input.unit) ? `（${s(input.grade)} Unit${s(input.unit)}）` : ''}`;
+      return `📝 英語の単語テストを Word にしています${
+        input.source === 'verbs' ? '（不規則動詞）' : input.source === 'basic' ? '（基本単語）' : s(input.unit) ? `（${s(input.grade)} Unit${s(input.unit)}）` : ''
+      }`;
     case 'create_math_material':
       return `📐 数学の教材を Word にしています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
     case 'create_google_doc':

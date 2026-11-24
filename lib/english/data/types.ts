@@ -49,3 +49,36 @@ export type Book = {
   book: string;
   units: Unit[];
 };
+
+/** 基本単語の学年の目安（元の一覧のまま）。 */
+export type BasicLevel = '小学校' | '中1' | '中2';
+
+/** 基本単語の一覧（英単語一覧_中2まで.xlsx の「単語一覧」）の1語。 */
+export type BasicWord = {
+  /** 元の一覧の番号 */
+  no: number;
+  en: string;
+  /** 品詞（名詞・動詞・形容詞・副詞・熟語・数 など） */
+  pos: string;
+  ja: string;
+  /** 動詞の過去形・過去分詞（無い語は省く） */
+  past?: string;
+  pp?: string;
+  /** 動詞の変化（規則・不規則・助動詞） */
+  conj?: string;
+  level: BasicLevel;
+  /** 元の一覧の分類（人・家族、時・曜日・月、基数 など） */
+  category: string;
+  note?: string;
+};
+
+/** 不規則動詞の一覧（同じファイルの「不規則動詞」）の1語。 */
+export type IrregularVerb = {
+  no: number;
+  base: string;
+  past: string;
+  pp: string;
+  ja: string;
+  level: BasicLevel;
+  note?: string;
+};

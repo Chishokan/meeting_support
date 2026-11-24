@@ -3,6 +3,7 @@
 // 書式は数学の小テスト（lib/chishokanAi/mathQuizDoc.ts）にそろえる：B5縦、上に題名と範囲、右に氏名と点数の枠、下に注意と塾名。
 // - 単語（Key Words）：左右2列の表。1行に「番号・問題・答えを書く欄」。1枚に40問（左20・右20）まで
 // - Key Words TEST（巻末の文の穴埋め）：1問2行（日本文と、空欄のある英文）。1枚に12問まで
+// - 不規則動詞：1行に「番号・意味・原形・過去形・過去分詞」の表。書かせる形は空欄。1枚に20問まで
 // - 答え入りは、答えを書く欄・空欄に赤で答えを入れる
 // - 版（A・B）があるときは、版ごとにテストを分け、答え入りも版ごとに続けて入れる
 
@@ -51,7 +52,7 @@ function cell(children: Paragraph[], width: number, o: { bottom?: IBorderOptions
 function sheetHead(q: WordQuiz, label: string, total: number, page: number, pages: number, first: boolean, withAnswers: boolean): (Paragraph | Table)[] {
   const out: (Paragraph | Table)[] = [];
   if (!first) out.push(new Paragraph({ children: [new PageBreak()] }));
-  const kind = q.source === 'kwt' ? 'Key Words TEST' : '単語テスト';
+  const kind = q.source === 'kwt' ? 'Key Words TEST' : q.source === 'verbs' ? '不規則動詞テスト' : '単語テスト';
   const head = `英語　${kind}${label ? `　${label}` : ''}${pages > 1 ? `　（${page}/${pages}）` : ''}${withAnswers ? '　答え' : ''}`;
   const leftW = Math.round(TEXT_W * 0.5);
   const nameW = Math.round(TEXT_W * 0.32);
@@ -83,8 +84,16 @@ function sheetHead(q: WordQuiz, label: string, total: number, page: number, page
       ],
     })],
   }));
+  const firstQ = q.versions[0].questions[0];
+  const verbAsk = firstQ?.kind === 'verb' ? firstQ.ask : 'past-pp';
   const how = q.source === 'kwt'
     ? '日本文に合うように、下線部に適する語を書きなさい。'
+    : q.source === 'verbs'
+      ? verbAsk === 'all'
+        ? '意味に合う動詞の原形・過去形・過去分詞を書きなさい。'
+        : verbAsk === 'past'
+          ? '次の動詞の過去形を書きなさい。'
+          : '次の動詞の過去形・過去分詞を書きなさい。'
     : q.versions[0].questions.every((x) => x.kind === 'word' && x.toEn)
       ? '次の日本語を英語に直しなさい。'
       : q.versions[0].questions.every((x) => x.kind === 'word' && !x.toEn)
@@ -145,6 +154,51 @@ function kwtBlocks(qs: Extract<QuizQ, { kind: 'kwt' }>[], startNo: number, withA
   return out;
 }
 
+/** 不規則動詞：意味・原形・過去形・過去分詞の表。書かせる形は空欄（答え入りは赤）。 */
+function verbTable(qs: Extract<QuizQ, { kind: 'verb' }>[], startNo: number, withAnswers: boolean): Table {
+  const ask = qs[0]?.ask ?? 'past-pp';
+  const cols: ('base' | 'past' | 'pp')[] = ask === 'past' ? ['base', 'past'] : ['base', 'past', 'pp'];
+  const asked = (c: 'base' | 'past' | 'pp') => c !== 'base' || ask === 'all';
+  const noW = Math.round(10 * MM);
+  const jaW = Math.round((TEXT_W - noW) * (cols.length === 2 ? 0.36 : 0.31));
+  const formW = Math.floor((TEXT_W - noW - jaW) / cols.length);
+  const widths = [noW, jaW, ...cols.map((_, i) => (i === cols.length - 1 ? TEXT_W - noW - jaW - formW * (cols.length - 1) : formW))];
+  const headName = { base: '原形', past: '過去形', pp: '過去分詞' } as const;
+  const header = new TableRow({
+    height: { value: Math.round(7 * MM), rule: HeightRule.ATLEAST },
+    tableHeader: true,
+    children: [
+      cell([], noW, { bottom: LINE }),
+      cell([p([run('意味', { size: 18 })], { align: AlignmentType.CENTER })], jaW, { bottom: LINE }),
+      ...cols.map((c, i) => cell([p([run(headName[c], { size: 18 })], { align: AlignmentType.CENTER })], widths[i + 2], { bottom: LINE })),
+    ],
+  });
+  const rows = qs.map((q, i) => new TableRow({
+    height: { value: Math.round(8.6 * MM), rule: HeightRule.ATLEAST },
+    cantSplit: true,
+    children: [
+      cell([p([run(`(${startNo + i})`, { size: 18 })])], noW, { bottom: THIN }),
+      cell([p([run(q.ja, { size: q.ja.length > 12 ? 16 : 18 }), ...(withAnswers && q.note ? [run(`　※${q.note}`, { size: 14 })] : [])])], jaW, { bottom: THIN }),
+      ...cols.map((c, k) => {
+        const text = q[c];
+        const show = !asked(c);
+        return cell(
+          show || withAnswers ? [p([run(text, { size: text.length > 12 ? 17 : SIZE, color: show ? undefined : RED })], { align: AlignmentType.CENTER })] : [],
+          widths[k + 2],
+          { bottom: THIN },
+        );
+      }),
+    ],
+  }));
+  return new Table({
+    width: { size: TEXT_W, type: WidthType.DXA },
+    columnWidths: widths,
+    layout: TableLayoutType.FIXED,
+    borders: NO_BORDERS,
+    rows: [header, ...rows],
+  });
+}
+
 function footer(): Footer {
   return new Footer({
     children: [
@@ -174,6 +228,7 @@ export async function buildWordQuizDocx(q: WordQuiz, o: { withAnswers?: boolean 
       first = false;
       const startNo = s * per + 1;
       if (q.source === 'kwt') children.push(...kwtBlocks(qs as Extract<QuizQ, { kind: 'kwt' }>[], startNo, withAnswers));
+      else if (q.source === 'verbs') children.push(verbTable(qs as Extract<QuizQ, { kind: 'verb' }>[], startNo, withAnswers));
       else children.push(wordTable(qs as Extract<QuizQ, { kind: 'word' }>[], startNo, withAnswers));
     });
   }
