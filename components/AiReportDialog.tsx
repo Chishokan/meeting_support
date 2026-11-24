@@ -13,10 +13,12 @@ type Props = {
   context: ReportContext;
   /** 最初に選んでおく種類（エラーの回答から開いたときなど） */
   initialKind?: string;
+  /** ヘルプデスクを開ける人か（スタッフは開けないので、送ったあとの「ご意見・不具合を開く」を出さない。lib/roleAccess.ts） */
+  helpdesk?: boolean;
   onClose: () => void;
 };
 
-export default function AiReportDialog({ context, initialKind, onClose }: Props) {
+export default function AiReportDialog({ context, initialKind, helpdesk = true, onClose }: Props) {
   const [kind, setKind] = useState(initialKind && (REPORT_KINDS as readonly string[]).includes(initialKind) ? initialKind : '');
   const [detail, setDetail] = useState('');
   const [expected, setExpected] = useState('');
@@ -106,9 +108,13 @@ export default function AiReportDialog({ context, initialKind, onClose }: Props)
         </div>
         {state === 'done' ? (
           <div className="dm-modal-body">
-            <p className="ai-report-done">報告を送りました。ありがとうございます。回答はヘルプデスクの「ご意見・不具合」で確認できます。</p>
+            <p className="ai-report-done">
+              報告を送りました。ありがとうございます。{helpdesk && '回答はヘルプデスクの「ご意見・不具合」で確認できます。'}
+            </p>
             <div className="ai-report-actions">
-              <a className="msg-action" href="/helpdesk/feedback" target="_blank" rel="noopener noreferrer">ご意見・不具合を開く</a>
+              {helpdesk && (
+                <a className="msg-action" href="/helpdesk/feedback" target="_blank" rel="noopener noreferrer">ご意見・不具合を開く</a>
+              )}
               <button type="button" className="ai-report-submit" onClick={onClose}>閉じる</button>
             </div>
           </div>
