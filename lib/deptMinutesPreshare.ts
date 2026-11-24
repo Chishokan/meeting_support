@@ -32,6 +32,12 @@ export type PreshareRow = PreshareMeta & {
   canDelete?: boolean;
   // いま見ている人が、この会議の Zoom 録画から議事録の下書きを作れるか（lib/zoom/access.ts の canUseRecording）。
   canRecord?: boolean;
+  // この会議の Zoom のホスト担当（決めていなければ、事前共有した本人）。ホストとして開始できるのはこの人だけ。
+  zoomHost?: string;
+  // いま見ている人がホスト担当を替えられるか（その部門の人・事前共有した本人・管理部門）。
+  canSetHost?: boolean;
+  // いま見ている人はホスト担当だが、共通ログインで入っていないので開始できない。
+  hostLoginNeeded?: boolean;
   // 事前共有を見て「確認しました」を付けた人の名前（確認した順）。
   confirmed?: string[];
   // いま見ている人が「確認しました」を付けられるか（出席者に入っているか。lib/attendees.ts の isAttendee）。

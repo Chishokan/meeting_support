@@ -10,6 +10,8 @@ import PreshareList from '@/components/PreshareList';
 import ZoomButtons from '@/components/ZoomButtons';
 import ZoomMinutesBox from '@/components/ZoomMinutesBox';
 import AttendeePicker from '@/components/AttendeePicker';
+import { STAFF } from '@/lib/core/staff';
+import { splitAttendees } from '@/lib/attendees';
 import { zoomErrorText } from '@/lib/zoom/link';
 import { formatSchedule, parseSchedule, splitSchedule } from '@/lib/zoom/schedule';
 import {
@@ -206,6 +208,9 @@ function fmtDate(s: string) {
   return m ? `${Number(m[2])}/${Number(m[3])}` : s;
 }
 
+// 職員の一覧にある名前（Zoom のホスト担当に選べる人）。
+const STAFF_NAMES = new Set(STAFF.flatMap((g) => g.names));
+
 export default function DeptMinutesUI({ name, campus }: { name: string; campus: string }) {
   const [meta, setMeta] = useState<Meta>({ ...EMPTY_META, date: todayLocal() });
   const [source, setSource] = useState<Source>('record');
@@ -275,6 +280,8 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const [zoomDefault, setZoomDefault] = useState('');
   // 自分で選んだときだけ値が入る（null・'' のあいだは、事前共有済みの内容か部門の既定に従う）。
   const [zoomChoice, setZoomChoice] = useState<boolean | null>(null);
+  // Zoom のホスト担当（1人）。選ばなければ、事前共有する本人。
+  const [zoomHostChoice, setZoomHostChoice] = useState('');
   const [zoomAccountChoice, setZoomAccountChoice] = useState('');
   // 智翔館AI から足された、この部門の「議題の候補」（事前共有がまだ無かったときに足されたもの）
   const [agendaCands, setAgendaCands] = useState<AgendaCandidate[]>([]);
@@ -858,7 +865,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
         body: JSON.stringify({
           id: shareId,
           meta: sending,
-          ...(zoomOn ? { zoom: { create: true, account: zoomAccount } } : {}),
+          ...(zoomOn ? { zoom: { create: true, account: zoomAccount, host: zoomHost } } : {}),
         }),
       });
       const j = await res.json().catch(() => ({}));
@@ -908,6 +915,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     setShareSnap(d.preshareSnap ?? '');
     setZoomChoice(null);
     setZoomAccountChoice('');
+    setZoomHostChoice('');
     setOpenPreshare(null);
     setOpenMeeting(null);
     setNote('');
@@ -1054,6 +1062,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
     setShareSnap('');
     setZoomChoice(null);
     setZoomAccountChoice('');
+    setZoomHostChoice('');
     setShareMsg('');
     setShareErr('');
     setNote('');
@@ -1090,8 +1099,13 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
   const zoomWanted = zoomAccountChoice || shareRow?.zoomAccount || zoomDefault;
   const zoomAccount = zoomAccounts.some((a) => a.id === zoomWanted) ? zoomWanted : zoomDefault;
   // 事前共有は済んでいるが、Zoom ミーティングがまだ無い（または別のアカウントで作り直す）。
+  // ホスト担当に選べる人：自分と、出席者のうち職員の一覧にある人（いまの担当が別の人なら、その人も）。
+  const zoomHost = zoomHostChoice || shareRow?.zoomHost || name;
+  const zoomHostChoices = Array.from(
+    new Set([name, ...splitAttendees(meta.attendees).filter((n) => STAFF_NAMES.has(n)), zoomHost]),
+  );
   const zoomPending = zoomOn && Boolean(shareRow)
-    && (!shareRow?.zoomMeetingId || shareRow.zoomAccount !== zoomAccount);
+    && (!shareRow?.zoomMeetingId || shareRow.zoomAccount !== zoomAccount || (shareRow.zoomHost ?? shareRow.user) !== zoomHost);
 
   // 音声の読み込み中は区間数がまだ決まっていないので、phase も見て「処理中」と判断する
   //（ここを落とすと、1時間の音声の読み込み中だけ画面が無反応に見える）。
@@ -1271,9 +1285,17 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
                         {zoomAccounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
                       </select>
                     )}
+                    {zoomOn && (
+                      <label className="dm-zoom-host">
+                        ホスト担当
+                        <select value={zoomHost} onChange={(e) => setZoomHostChoice(e.target.value)}>
+                          {zoomHostChoices.map((n) => <option key={n} value={n}>{n}{n === name ? '（自分）' : ''}</option>)}
+                        </select>
+                      </label>
+                    )}
                     <span className="dm-zoom-text">
                       {zoomOn
-                        ? '開催日時の開始時刻で Zoom ミーティングを作り、事前共有のカードに［Zoomに参加］を出します（クラウド録画は自動で始まります）。'
+                        ? '開催日時の開始時刻で Zoom ミーティングを作り、事前共有のカードに［Zoomに参加］を出します。ホスト担当の方にだけ［ホストとして開始］が出て、開始するとクラウド録画が始まります（ホスト担当は出席者から選べます）。'
                         : '対面だけの会議など、Zoom を使わないときはこのままで構いません。'}
                     </span>
                   </div>
@@ -1804,6 +1826,7 @@ export default function DeptMinutesUI({ name, campus }: { name: string; campus: 
               setShareSnap('');
               setZoomChoice(null);
               setZoomAccountChoice('');
+              setZoomHostChoice('');
               setShareErr('');
               setShareMsg('事前共有を削除しました。もう一度出すときは［事前共有で報告する］を押してください。');
             }
