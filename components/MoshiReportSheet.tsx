@@ -18,7 +18,7 @@ import {
 } from '@/lib/moshi/model';
 import { schoolName } from '@/lib/moshi/schools';
 import { pastN, pastRank } from '@/lib/moshi/pastData';
-import { pastDistBins, pastOf, pastQuestionCells, pastWhen } from './MoshiPast';
+import { pastDistBins, pastOf, pastQuestionCells, pastUses, pastWhen } from './MoshiPast';
 
 // 表題（元の帳票と同じ）。回の名前は右上の年月で示す。
 export const REPORT_TITLE = '公立高校・高専本番レベル模試';
@@ -112,8 +112,8 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
             <tr><th>平均点</th>{figs.map((f) => <td key={f.key}>{f1(f.mean)}</td>)}</tr>
             <tr><th>偏差値</th>{figs.map((f) => <td key={f.key}>{f1(f.dev)}</td>)}</tr>
             <tr><th>{anyOutside ? '順位(塾内)' : '順位'}</th>{figs.map((f) => <td key={f.key}>{f.rank == null ? '' : anyOutside ? `${f.rank}/${f.rankN}` : f.rank}</td>)}</tr>
-            {past && <tr><th>県内順位(推定)</th>{figs.map((f) => <td key={f.key}>{pastRank(past, f.key, f.score, f.max)?.rank ?? ''}</td>)}</tr>}
-            <tr><th>母数</th>{figs.map((f) => <td key={f.key}>{(past ? pastN(past, f.key) : f.n) || ''}</td>)}</tr>
+            {past && <tr><th>県内順位(推定)</th>{figs.map((f) => <td key={f.key}>{pastUses(exam, past, f.key) ? pastRank(past, f.key, f.score, f.max)?.rank ?? '' : ''}</td>)}</tr>}
+            <tr><th>母数</th>{figs.map((f) => <td key={f.key}>{(past ? (pastUses(exam, past, f.key) ? pastN(past, f.key) : f.rankN) : f.n) || ''}</td>)}</tr>
           </tbody>
         </table>
 
@@ -257,6 +257,10 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
         {(exam.judges ?? []).length > 0 && `判定は${exam.outside?.source ? `${exam.outside.source}の` : ''}志望校別判定基準（B判定基準）による目安。仮想順位は定員の中での入学後のおよその順位。`}
         得点率が平均より低い設問は赤字。{prev && `前回は${prev.name}（${prev.kind === 'ken' ? '県一斉模試の得点・偏差値' : '本番レベル模試'}）。`}
         {past && `県内順位(推定)・得点の分布は、同じ問題を${pastWhen(past)}に県全体で受けた${pastN(past, 'k5')}人（${past.label}）の集計による目安。${pq ? `設問別の県平均は${past.questionsSource}。` : ''}`}
+        {past && (() => {
+          const self = SUBJECT_KEYS.filter((k) => !pastUses(exam, past, k));
+          return self.length ? `${self.map((k) => SUBJECT_NAMES[k]).join('・')}は問題が資料と違うので、平均点・偏差値・母数はこの回の智翔館の受験者のもの。` : '';
+        })()}
       </footer>
     </article>
   );

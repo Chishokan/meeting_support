@@ -10,14 +10,14 @@
 
 import { useMemo, useState } from 'react';
 import {
-  SUBJECT_KEYS, SUBJECT_NAMES, campusInfo, choiceKey, choiceRanks, honbanFirstChoiceMean, judgeOf, reportFigures, studentHistory, subjectMax,
+  SUBJECT_KEYS, SUBJECT_NAMES, campusInfo, choiceKey, choiceRanks, honbanFirstChoiceMean, judgeOf, reportFigures, scoreBinsOf, studentHistory, subjectMax,
   subjectOf, trendRows,
   type ExamStats, type KenitsuResult, type PrevRecord, type RowStat,
 } from '@/lib/moshi/model';
 import { schoolName } from '@/lib/moshi/schools';
 import { FitSheet, ReportSheet, f1 } from './MoshiReportSheet';
 import { NowTable, ORDER, PastTable, RADAR_ORDER, RadarMulti, TabBar, TrendView } from './MoshiDetailParts';
-import { PastDistView, pastOf, pastQuestionCells, pastRankText } from './MoshiPast';
+import { PastDistView, pastOf, pastQuestionCells, pastRankText, pastUses, type OwnDist } from './MoshiPast';
 
 type Tab = 'score' | 'judge' | 'past' | 'sheet';
 type Sub = 'now' | 'q' | 'dist' | 'radar' | 'trend';
@@ -57,7 +57,7 @@ export function HonbanDetail({ stats, statsList, row, kenitsu, prev, onPick }: {
                   return {
                     key, score: f.score, max: f.max, mean: f.mean, dev: f.dev,
                     rank: f.rank != null ? <><b>{f.rank}</b><small> 位 / {f.rankN}人中</small></> : '—',
-                    inside: past ? (pastRankText(past, key, f.score, f.max) || '—') : undefined,
+                    inside: past ? ((pastUses(exam, past, key) && pastRankText(past, key, f.score, f.max)) || '—') : undefined,
                     prevScore: prev?.stats[key]?.score ?? null, prevDev: prev?.stats[key]?.dev ?? null,
                   };
                 })}
@@ -66,6 +66,10 @@ export function HonbanDetail({ stats, statsList, row, kenitsu, prev, onPick }: {
                 {outside ? `平均点・偏差値は${exam.outside?.source || '県一斉模試'}の平均点・標準偏差で換算した参考値（県一斉模試の偏差値と同じものさし）。` : '平均点・偏差値は、この回を受けた智翔館の受験者の中でのもの。'}
                 順位はこの回を受けた智翔館の中での順位。
                 {past && `県内順位（推定）は、同じ問題を県全体で受けた人（${past.label}・全県）の得点の分布から出した目安。`}
+                {past && (() => {
+                  const self = SUBJECT_KEYS.filter((k) => !pastUses(exam, past, k));
+                  return self.length ? `${self.map((k) => SUBJECT_NAMES[k]).join('・')}は問題が資料と違うので、平均点・偏差値をこの回を受けた智翔館の受験者で出し、県内順位は出しません。` : '';
+                })()}
                 {prev && `前回は${prev.name}の${prev.kind === 'ken' ? '得点・偏差値（業者の値）' : '得点・偏差値'}。`}
               </p>
             </>
@@ -73,7 +77,9 @@ export function HonbanDetail({ stats, statsList, row, kenitsu, prev, onPick }: {
           {cur === 'q' && <QuestionTable stats={stats} row={row} />}
           {cur === 'dist' && past && (
             <PastDistView
+              exam={exam}
               past={past}
+              own={ownDists(stats, row)}
               scores={Object.fromEntries(figs.map((f) => [f.key, f.score]))}
               maxes={Object.fromEntries(figs.map((f) => [f.key, f.max]))}
             />
@@ -87,6 +93,22 @@ export function HonbanDetail({ stats, statsList, row, kenitsu, prev, onPick }: {
       {tab === 'sheet' && <div className="kd-panel ms-interview-card"><FitSheet max={1.6}><ReportSheet stats={stats} statsList={statsList} row={row} kenitsu={kenitsu} /></FitSheet></div>}
     </section>
   );
+}
+
+/** この回の結果（智翔館の受験者）での教科ごとの分布（5点きざみ）・平均点・塾内順位。資料を使わない教科のグラフに使う。 */
+function ownDists(stats: ExamStats, row: RowStat): Partial<Record<(typeof SUBJECT_KEYS)[number], OwnDist>> {
+  const out: Partial<Record<(typeof SUBJECT_KEYS)[number], OwnDist>> = {};
+  for (const k of SUBJECT_KEYS) {
+    const vals = stats.rows.map((x) => x.sub[k]).filter((v): v is number => v != null);
+    if (!vals.length) continue;
+    out[k] = {
+      bins: scoreBinsOf(vals, row.sub[k], subjectMax(stats.exam, k), 5),
+      n: vals.length,
+      mean: stats.overall.sub[k]?.mean ?? null,
+      rank: row.subRank[k] ?? null,
+    };
+  }
+  return out;
 }
 
 // ---- 設問別得点 -----------------------------------------------------------------
@@ -140,7 +162,7 @@ function QuestionTable({ stats, row }: { stats: ExamStats; row: RowStat }) {
       </div>
       <p className="kd-note">
         得点率が塾平均より低い大問は赤。塾平均は、この回を受けた智翔館の受験者の得点率の平均です。
-        {pq && `県平均は${past!.questionsSource}（${past!.label}の県全体の得点率をもとにしたもの）。大問の配点が資料と合う教科だけ出します。`}
+        {pq && `県平均は${past!.questionsSource}（${past!.label}の県全体の得点率をもとにしたもの）。大問の配点が資料と合う教科だけ出します（合わない教科は塾平均＝この回の結果だけの平均を見てください）。`}
       </p>
     </>
   );

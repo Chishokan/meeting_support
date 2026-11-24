@@ -15,7 +15,7 @@ import {
 } from '@/lib/moshi/model';
 import { SCHOOLS, schoolName, toKenCode } from '@/lib/moshi/schools';
 import { REFERENCES, refSchoolFor, type Reference, type RefSchool } from '@/lib/moshi/reference';
-import { PAST_EXAMS, matchPastQuestions, pastExamById, pastN } from '@/lib/moshi/pastData';
+import { PAST_EXAMS, matchPastQuestions, pastExamById, pastN, withPastRules } from '@/lib/moshi/pastData';
 import { PageHead, StateNote, examOptionLabel, reasonText, useMoshiData } from './MoshiShared';
 
 type Draft = ReturnType<typeof newExamDraft> & { id?: string };
@@ -155,7 +155,9 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
     const p = pastExamById(pastId);
     if (!p || !draft) return;
     if (!window.confirm(`${p.label}（全県 ${pastN(p, 'k5')}人）の平均点・標準偏差で偏差値を換算し、県内のおよその順位・得点の分布・設問別の県平均を出します。いま入っている換算の値は置きかわります（判定基準はそのまま）。よろしいですか？`)) return;
-    setDraft({ ...draft, outside: { source: `${p.label}（全県）`, n: pastN(p, 'k5'), mean: { ...p.mean }, sd: { ...p.sd }, ref: p.id } });
+    // 大問の合わない教科（問題が違う教科）は換算の値を入れず、この回の結果で出す
+    const linked = withPastRules({ subjects: draft.subjects, outside: { source: `${p.label}（全県）`, n: pastN(p, 'k5'), mean: { ...p.mean }, sd: { ...p.sd }, ref: p.id } });
+    setDraft({ ...draft, outside: linked.outside });
   }
   function unlinkPast() {
     if (!draft) return;
@@ -385,7 +387,7 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
                   if (!p) return null;
                   return (
                     <table className="ms-qtable ms-past-table">
-                      <thead><tr><th>教科</th><th>この回の大問の配点</th><th>実施データの設問（配点・平均）</th><th>設問別の県平均</th></tr></thead>
+                      <thead><tr><th>教科</th><th>この回の大問の配点</th><th>実施データの設問（配点・平均）</th><th>資料を使うか</th></tr></thead>
                       <tbody>
                         {SUBJECT_KEYS.map((k) => {
                           const mine = draft.subjects.find((s) => s.key === k)?.questions.map((q) => q.max) ?? [];
@@ -395,7 +397,7 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
                               <th>{SUBJECT_NAMES[k]}</th>
                               <td className="num">{mine.join('・') || '—'}</td>
                               <td>{p.questions[k].map((q) => `${q.no} ${q.label} ${q.max}点（${q.rate}%）`).join('／')}</td>
-                              <td>{ok ? '出します' : '大問が合わないので出しません'}</td>
+                              <td>{ok ? '出します' : '大問が合わない＝問題が違うので、この教科は平均点・偏差値・分布・設問別の平均をこの回の結果だけで出します'}</td>
                             </tr>
                           );
                         })}
@@ -405,8 +407,9 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
                 })()}
                 <p className="ms-fine">
                   設問別の平均は{pastExamById(pastId)?.questionsSource ?? ''}です。
-                  大問が合わない教科は、問題用紙の大問の数・配点と、上の「教科ごとの大問」の設定を確かめてください（設定を問題用紙に合わせ、資料の大問とも同じなら設問別の県平均が出ます）。
-                  平均点・標準偏差・分布は教科の合計で使うので、大問が合わなくても使えます。
+                  大問が資料と合わない教科は問題が違うとみて、資料を使わず、この回を受けた智翔館の受験者だけで平均点・偏差値・得点の分布・設問別の平均を出します
+                  （県内順位（推定）も出しません）。三教科・五教科は資料の値を使います。
+                  「教科ごとの大問」を直したときは、もう一度［この実施データを使う］を押してください。
                 </p>
               </div>
             )}

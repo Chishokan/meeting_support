@@ -173,3 +173,41 @@ export function matchPastQuestions(examMaxes: number[], past: PastQuestion[]): n
   }
   return i === examMaxes.length ? out : null;
 }
+
+type SubjectsLike = { key: SubjectKey; questions: { max: number }[] }[];
+
+/**
+ * 回の大問が資料と合う教科。合わない教科は「問題が違う」とみて、資料（平均点・標準偏差・度数分布・設問別の平均）を使わず、
+ * この回の結果（智翔館の受験者）だけで出す。三教科・五教科は、いつも資料の値を使う。
+ */
+export function pastSubjectsMatched(subjects: SubjectsLike, p: PastExam): Record<SubjectKey, boolean> {
+  const out = {} as Record<SubjectKey, boolean>;
+  for (const k of Object.keys(p.questions) as SubjectKey[]) {
+    const qs = subjects.find((s) => s.key === k)?.questions ?? [];
+    out[k] = matchPastQuestions(qs.map((q) => q.max), p.questions[k]) != null;
+  }
+  return out;
+}
+
+/** 資料を使う項目か（三教科・五教科はいつも使う。教科は大問が合うときだけ）。 */
+export function pastUsesKey(subjects: SubjectsLike, p: PastExam, key: StatKey): boolean {
+  if (key === 'k3' || key === 'k5') return true;
+  return pastSubjectsMatched(subjects, p)[key] ?? false;
+}
+
+/**
+ * 過去の実施データを結んだ回の、換算の平均点・標準偏差から、大問の合わない教科の値を外す
+ * （外した教科は、成績表・面談の平均点・偏差値をこの回の結果で出す）。結んでいない回はそのまま返す。
+ * 「模試の設定」で結ぶときと、読み込んだ回（前に結んで保存した回）の両方に使う。
+ */
+export function withPastRules<E extends { subjects: SubjectsLike; outside?: { ref?: string; mean: Partial<Record<StatKey, number | null>>; sd: Partial<Record<StatKey, number | null>> } }>(exam: E): E {
+  const p = pastExamById(exam.outside?.ref);
+  if (!p || !exam.outside) return exam;
+  const ok = pastSubjectsMatched(exam.subjects, p);
+  const drop = (Object.keys(ok) as SubjectKey[]).filter((k) => !ok[k]);
+  if (!drop.some((k) => exam.outside!.mean[k] != null || exam.outside!.sd[k] != null)) return exam;
+  const mean = { ...exam.outside.mean };
+  const sd = { ...exam.outside.sd };
+  for (const k of drop) { delete mean[k]; delete sd[k]; }
+  return { ...exam, outside: { ...exam.outside, mean, sd } };
+}
