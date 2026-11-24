@@ -3942,3 +3942,11 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .rs-pill-note { margin-left: 2mm; font-size: 7pt; font-weight: 400; }
 .kd-dist-self { background: #fbfaf6; border-color: #eadfc6; }
 .kd-dist-src { margin: 2px 0 4px; font-size: 11.5px; color: #8a6a2a; }
+
+/* Zoom のホスト担当（components/ZoomButtons.tsx・PreshareDetail.tsx・DeptMinutesUI.tsx） */
+.zoom-host { font-size: 12px; color: #5a6b7d; white-space: nowrap; }
+.pre-host { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.pre-host select { width: auto; max-width: 100%; padding: 4px 6px; font-size: 13px; border: 1px solid #cdd8e3; border-radius: 6px; background: #fff; }
+.pre-host-note { font-size: 12px; color: #7a8794; }
+.dm-zoom-host { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--navy); }
+.dm-zoom-host select { width: auto; max-width: 100%; padding: 6px 8px; font-size: 13px; font-weight: 400; border: 1px solid #cdd8e3; border-radius: 8px; background: #fff; }

@@ -38,7 +38,7 @@ export function zoomErrorText(reason: string | undefined | null): string {
     case 'pmi':
       return 'この会議はパーソナルミーティングルームで作られていたため、Zoom 側は削除していません（ほかの会議でも使われるためです）。';
     case 'forbidden':
-      return 'ホストとして開始できるのは、その部門の部門長と管理部門の方です（共通ログインで入っているときだけ）。';
+      return 'ホストとして開始できるのは、この会議のホスト担当の方だけです（共通ログインで入っているときだけ）。ほかの方は［Zoomに参加］から入ってください。';
     case 'gas_outdated':
       return 'Apps Script が古いため、Zoom ミーティングの情報を保存できませんでした。管理者に Apps Script の更新（再デプロイ）を依頼してください。';
     default:

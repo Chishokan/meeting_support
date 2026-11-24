@@ -39,6 +39,8 @@ export type ZoomMeeting = {
   // パーソナルミーティングID（PMI）を使ったミーティングか。
   // PMI は全部の会議で同じ番号・同じ参加URLになり、録画がどの会議のものか見分けられないので使わない。
   usesPmi: boolean;
+  // いま開かれているか（'started'）。まだなら 'waiting'。作成・更新の返事には無いことがある。
+  status: string;
 };
 
 export type MeetingInput = {
@@ -115,7 +117,7 @@ function account(id: ZoomAccountId): ZoomAccount {
 
 type RawMeeting = {
   id?: number | string; join_url?: string; password?: string; start_url?: string;
-  pmi?: number | string; settings?: { use_pmi?: boolean };
+  pmi?: number | string; settings?: { use_pmi?: boolean }; status?: string;
 };
 
 function toMeeting(r: RawMeeting | null): ZoomMeeting {
@@ -124,7 +126,7 @@ function toMeeting(r: RawMeeting | null): ZoomMeeting {
   const usesPmi = r.settings?.use_pmi === true || (r.pmi != null && String(r.pmi) !== '');
   return {
     id: String(r.id), joinUrl: String(r.join_url), passcode: String(r.password ?? ''),
-    startUrl: String(r.start_url ?? ''), usesPmi,
+    startUrl: String(r.start_url ?? ''), usesPmi, status: String(r.status ?? ''),
   };
 }
 
