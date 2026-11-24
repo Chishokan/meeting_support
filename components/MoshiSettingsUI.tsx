@@ -385,7 +385,7 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
                   if (!p) return null;
                   return (
                     <table className="ms-qtable ms-past-table">
-                      <thead><tr><th>教科</th><th>この回の大問の配点</th><th>実施データの設問（配点・全県の平均）</th><th>設問別の県平均</th></tr></thead>
+                      <thead><tr><th>教科</th><th>この回の大問の配点</th><th>実施データの設問（配点・平均）</th><th>設問別の県平均</th></tr></thead>
                       <tbody>
                         {SUBJECT_KEYS.map((k) => {
                           const mine = draft.subjects.find((s) => s.key === k)?.questions.map((q) => q.max) ?? [];
@@ -404,7 +404,8 @@ export default function MoshiSettingsUI({ name }: { name: string }) {
                   );
                 })()}
                 <p className="ms-fine">
-                  大問が合わない教科は、問題用紙の大問の数・配点と、上の「教科ごとの大問」の設定を確かめてください（実施データと同じ問題なら、設定を問題用紙に合わせると設問別の県平均が出ます）。
+                  設問別の平均は{pastExamById(pastId)?.questionsSource ?? ''}です。
+                  大問が合わない教科は、問題用紙の大問の数・配点と、上の「教科ごとの大問」の設定を確かめてください（設定を問題用紙に合わせ、資料の大問とも同じなら設問別の県平均が出ます）。
                   平均点・標準偏差・分布は教科の合計で使うので、大問が合わなくても使えます。
                 </p>
               </div>

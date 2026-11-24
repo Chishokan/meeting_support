@@ -256,7 +256,7 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
           : `平均点・偏差値・母数・分布は、この回を受けた智翔館の中3生の中でのもの（五教科 ${k5.n}人）。`}
         {(exam.judges ?? []).length > 0 && `判定は${exam.outside?.source ? `${exam.outside.source}の` : ''}志望校別判定基準（B判定基準）による目安。仮想順位は定員の中での入学後のおよその順位。`}
         得点率が平均より低い設問は赤字。{prev && `前回は${prev.name}（${prev.kind === 'ken' ? '県一斉模試の得点・偏差値' : '本番レベル模試'}）。`}
-        {past && `県内順位(推定)・得点の分布・設問別の県平均は、同じ問題を${pastWhen(past)}に県全体で受けた${pastN(past, 'k5')}人（${past.label}）の集計による目安。`}
+        {past && `県内順位(推定)・得点の分布は、同じ問題を${pastWhen(past)}に県全体で受けた${pastN(past, 'k5')}人（${past.label}）の集計による目安。${pq ? `設問別の県平均は${past.questionsSource}。` : ''}`}
       </footer>
     </article>
   );

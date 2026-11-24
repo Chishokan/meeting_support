@@ -140,7 +140,7 @@ function QuestionTable({ stats, row }: { stats: ExamStats; row: RowStat }) {
       </div>
       <p className="kd-note">
         得点率が塾平均より低い大問は赤。塾平均は、この回を受けた智翔館の受験者の得点率の平均です。
-        {pq && `県平均は、同じ問題を県全体で受けた人（${past!.label}）の得点率の平均（大問の配点が合う教科だけ。2つの大問で1つの値のところもあります）。`}
+        {pq && `県平均は${past!.questionsSource}（${past!.label}の県全体の得点率をもとにしたもの）。大問の配点が資料と合う教科だけ出します。`}
       </p>
     </>
   );
