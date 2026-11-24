@@ -100,6 +100,11 @@ test('元データ：全学年で、語・KWT の形がそろっている', () =
   assert.deepEqual(BOOKS.map((b) => b.units.filter((u) => /^\d+$/.test(u.unit)).length), [10, 8, 6]);
 });
 
+test('元データ：中2 Unit1 の区分ごとの語の数', () => {
+  const u = CHU2.units.find((x) => x.unit === '1')!;
+  assert.deepEqual(u.sections.map((s) => s.words.length), [26, 8, 4, 5, 4, 29, 25]);
+});
+
 test('中3：「Part2」で「Part1, 2」を選べる', () => {
   const r = buildWordQuiz(BOOKS, { grade: '3', unit: '1', sections: ['Part2'] });
   assert.ok(r.ok);

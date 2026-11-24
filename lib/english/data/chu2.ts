@@ -1,4 +1,4 @@
-// フォレスタ英語 中2（F39_BS2【25赤初版】）の Key Words と巻末の Key Words TEST。中1 の復習のページ（Unit10・Let's Read2）は中1 のデータにある。Unit1 Part1〜3 の Key Words のページ（画像 001〜046）は画像が無いため語が無く、KWT だけを入れている。
+// フォレスタ英語 中2（F39_BS2【25赤初版】）の Key Words と巻末の Key Words TEST。中1 の復習のページ（Unit10・Let's Read2）は中1 のデータにある。
 // ページは教材の印刷のページ（画像のファイルの番号は、これに1を足したもの）。
 // 画像から書き写したもの。直すときは画像と見比べる。
 
@@ -18,9 +18,36 @@ export const CHU2: Book = {
       sections: [
         {
           id: "Part1",
-          textbook: "（Key Words のページの画像が無い）",
-          page: 0,
-          words: [],
+          textbook: "P5〜P7",
+          page: 30,
+          words: W([
+            ["will", "ウィル", "～するでしょう，～するつもりです", 1],
+            ["won't", "ウォント", "will notの短縮形", 1],
+            ["it'll", "イトゥル", "it willの短縮形", 1],
+            ["I'll", "アイル", "I willの短縮形", 1],
+            ["forget-forgot", "フォーゲット-フォーガット", "～を忘れる[原形-過去形]", 1],
+            ["send", "センド", "～を送る", 1],
+            ["carry", "キャリィ", "～を運ぶ", 1],
+            ["sunny", "サニィ", "晴れた", 1],
+            ["heavy", "ヘヴィ", "重い", 1],
+            ["cloudy", "クラウディ", "曇りの", 1],
+            ["reach", "リーチ", "（目標に）手が届く", 0],
+            ["move", "ムーヴ", "～を移動する", 0],
+            ["invite", "インバイト", "～を招待する", 0],
+            ["website", "ウェブサイト", "ウェブサイト，ホームページ", 0],
+            ["step", "ステップ", "ステップ，段階", 0],
+            ["low", "ロウ", "最低値", 0],
+            ["information", "インフォメイション", "情報", 0],
+            ["high", "ハイ", "最高値", 0],
+            ["weather", "ウェザァ", "天気", 0],
+            ["online", "オンライン", "ネットで，オンラインで", 0],
+            ["hard", "ハード", "激しく", 0],
+            ["we'd", "ウィード", "we wouldの短縮形", 0],
+            ["sign up", "サイン アップ", "申し込む", 0],
+            ["～, don't you?", "ドウント ユー", "（あなたは）～ですよね?", 0],
+            ["degree", "ディグリー", "摂氏～度(℃)", 0],
+            ["video clip", "ヴィデオウ クリップ", "動画", 0],
+          ]),
           kwt: K([
             [1, "次の日曜日は曇りでしょう。", "It [[will]] be [[cloudy]] next Sunday."],
             [2, "私はこの重いかばんを選ぶつもりです。", "[[I'll]] choose this [[heavy]] bag."],
@@ -31,9 +58,18 @@ export const CHU2: Book = {
         },
         {
           id: "Part2",
-          textbook: "（Key Words のページの画像が無い）",
-          page: 0,
-          words: [],
+          textbook: "P8,P9",
+          page: 34,
+          words: W([
+            ["be going to ～", "ビィ ゴウイング トゥ", "～するつもり", 1],
+            ["partner", "パートナー", "パートナー，相棒", 1],
+            ["take part in ～", "テイク パート イン", "～に参加する", 1],
+            ["skill", "スキル", "スキル，腕前", 0],
+            ["end", "エンド", "終わり", 0],
+            ["until", "アンティル", "～まで(ずっと)", 0],
+            ["hand in ～", "ハンド イン", "～を提出する", 0],
+            ["get a haircut", "ゲット ア ヘアーカット", "髪を切る", 0],
+          ]),
           kwt: K([
             [6, "私は今日，髪を切るつもりです。", "I [[am]] [[going]] [[to]] get a haircut today."],
             [7, "彼はパートナーを探しています。", "He is looking for a [[partner]]."],
@@ -42,9 +78,14 @@ export const CHU2: Book = {
         },
         {
           id: "Part3",
-          textbook: "（Key Words のページの画像が無い）",
-          page: 0,
-          words: [],
+          textbook: "P10,P11",
+          page: 38,
+          words: W([
+            ["introduce", "イントロデュース", "～を紹介する", 1],
+            ["history", "ヒストリィ", "歴史", 1],
+            ["health", "ヘルス", "健康", 1],
+            ["recipe", "レシピ", "レシピ，調理法", 0],
+          ]),
           kwt: K([
             [9, "彼は中国料理のレシピを紹介するつもりです。", "He is going to [[introduce]] Chinese food recipes."],
             [10, "私は歴史が重要だと思います。", "I think that [[history]] is important."],
@@ -52,10 +93,28 @@ export const CHU2: Book = {
           ]),
         },
         {
+          id: "教科書本文",
+          textbook: "P6〜P11",
+          page: 42,
+          words: W([
+            ["talent show", "タレント ショー", "タレントショー", 0],
+            ["give it a try", "ギブ イット ア トライ", "やってみる，試してみる", 0],
+            ["video game commentary", "ヴィデオ ゲーム コメンタリー", "ゲーム実況", 0],
+            ["gaming", "ゲーミング", "ゲームの", 0],
+            ["Maori", "マオリ", "マオリ[民族名]", 0],
+          ]),
+          kwt: [],
+        },
+        {
           id: "1-1〜3",
-          textbook: "（Key Words のページの画像が無い）",
-          page: 0,
-          words: [],
+          textbook: "P5〜P11",
+          page: 44,
+          words: W([
+            ["move", "ムーヴ", "～を移動する", 1],
+            ["information", "インフォメイション", "情報", 1],
+            ["sign up", "サイン アップ", "申し込む", 1],
+            ["weather", "ウェザァ", "天気", 1],
+          ]),
           kwt: K([
             [12, "私はオンラインで申し込むつもりです。", "I'll [[sign]] [[up]] online."],
             [13, "私はもっと情報が欲しいです。", "I want more [[information]]."],
