@@ -10,7 +10,7 @@ import {
   type MoshiExam, type MoshiResult, type Scores,
 } from './model.ts';
 import { REFERENCES, TO_REF, refSchoolByCode, refSchoolFor, referenceForDate } from './reference.ts';
-import { PAST_EXAMS, matchPastQuestions, pastBinOf, pastBinRange, pastExamById, pastMax, pastN, pastRank } from './pastData.ts';
+import { PAST_EXAMS, matchPastQuestions, pastBinOf, pastBinRange, pastExamById, pastMax, pastN, pastRank, pastSubjectsMatched, pastUsesKey, withPastRules } from './pastData.ts';
 
 function exam(p: Partial<MoshiExam> = {}): MoshiExam {
   return {
@@ -818,11 +818,15 @@ test('過去の実施データ：度数分布から出した平均点・標準�
       assert.ok(Math.abs(sd - p.sd[k]) < 0.5, `${p.id} ${k} 標準偏差 ${sd.toFixed(1)} / ${p.sd[k]}`);
       assert.ok(n > 700 && n <= 800);
     }
-    // 設問別：配点の合計は100点、得点率の平均から出した平均点が帳票の平均点と合う
+    // 設問別：配点の合計は100点、得点率は 0〜100%
     for (const k of SUBJECT_KEYS) {
       const qs = p.questions[k];
       assert.equal(qs.reduce((a, q) => a + q.max, 0), 100, `${k} 配点`);
-      const est = qs.reduce((a, q) => a + (q.max * q.rate) / 100, 0);
+      assert.ok(qs.every((q) => q.rate >= 0 && q.rate <= 100 && q.label));
+    }
+    // 国語・英語は大問の並びが帳票と同じなので、得点率の平均から出した平均点が帳票の平均点と合う
+    for (const k of ['ja', 'en'] as const) {
+      const est = p.questions[k].reduce((a, q) => a + (q.max * q.rate) / 100, 0);
       assert.ok(Math.abs(est - p.mean[k]) < 1, `${k} 設問別から ${est.toFixed(1)} / ${p.mean[k]}`);
     }
   }
@@ -863,16 +867,47 @@ test('過去の実施データ：階級と県内のおよその順位', () => {
 test('過去の実施データ：回の大問と設問の行を結ぶ（2つの大問で1行も）', () => {
   const p = PAST_EXAMS[0];
   assert.deepEqual(matchPastQuestions([31, 17, 34, 18], p.questions.ja), [[0], [1], [2], [3]]);
-  assert.deepEqual(matchPastQuestions([30, 14, 12, 19, 13, 12], p.questions.ma), [[0], [1], [2], [3], [4], [5]]);
-  // 社会は 1・2 / 3・4 / 5・6 で1行
-  assert.deepEqual(matchPastQuestions([20, 15, 17, 20, 14, 14], p.questions.so), [[0, 1], [2, 3], [4, 5]]);
-  assert.deepEqual(matchPastQuestions([35, 37, 28], p.questions.so), [[0], [1], [2]]);
+  assert.deepEqual(matchPastQuestions([30, 14, 15, 16, 13, 12], p.questions.ma), [[0], [1], [2], [3], [4], [5]]);
+  assert.deepEqual(matchPastQuestions([23, 19, 24, 17, 17], p.questions.so), [[0], [1], [2], [3], [4]]);
+  // 資料が2つの大問をまとめた1行のときは、2行ぶんにまたがる
+  const grouped = [{ no: '1・2', label: '歴史', max: 35, rate: 51 }, { no: '3・4', label: '地理', max: 37, rate: 50 }, { no: '5・6', label: '公民', max: 28, rate: 53 }];
+  assert.deepEqual(matchPastQuestions([20, 15, 17, 20, 14, 14], grouped), [[0, 1], [2, 3], [4, 5]]);
+  assert.deepEqual(matchPastQuestions([35, 37, 28], grouped), [[0], [1], [2]]);
   // 配点・数が違えば null（別の問題）
   assert.equal(matchPastQuestions([30, 15, 15, 16, 24], p.questions.ma), null);
-  assert.equal(matchPastQuestions([23, 19, 24, 17, 17], p.questions.so), null);
+  assert.equal(matchPastQuestions([30, 14, 12, 19, 13, 12], p.questions.ma), null);
   assert.equal(matchPastQuestions([31, 17, 34], p.questions.ja), null);
   assert.equal(matchPastQuestions([31, 17, 34, 18, 5], p.questions.ja), null);
-  // 2026年11月の初期値の大問は、国語・英語だけ合う
+  // 2026年11月の初期値の大問は、数学だけ合わない（数学は初期値 5問 30・15・15・16・24、資料 6問 30・14・15・16・13・12）
   const ok = DEFAULT_SUBJECTS.map((s) => [s.key, matchPastQuestions(s.questions.map((q) => q.max), p.questions[s.key]) != null]);
-  assert.deepEqual(Object.fromEntries(ok), { ja: true, en: true, ma: false, so: false, sc: false });
+  assert.deepEqual(Object.fromEntries(ok), { ja: true, en: true, ma: false, so: true, sc: true });
+});
+
+test('過去の実施データ：大問の合わない教科（数学）は資料を使わず、この回の結果だけで出す', () => {
+  const p = PAST_EXAMS[0];
+  assert.deepEqual(pastSubjectsMatched(DEFAULT_SUBJECTS, p), { ja: true, en: true, ma: false, so: true, sc: true });
+  assert.equal(pastUsesKey(DEFAULT_SUBJECTS, p, 'ma'), false);
+  assert.equal(pastUsesKey(DEFAULT_SUBJECTS, p, 'ja'), true);
+  assert.equal(pastUsesKey(DEFAULT_SUBJECTS, p, 'k5'), true); // 三教科・五教科はいつも資料
+  // 換算の値から数学だけ外れる（ほかの教科・三教科・五教科は残る）
+  const e = exam({ outside: { source: 'x', n: 793, mean: { ...p.mean }, sd: { ...p.sd }, ref: p.id } });
+  const w = withPastRules(e);
+  assert.equal(w.outside.mean.ma, undefined);
+  assert.equal(w.outside.sd.ma, undefined);
+  assert.equal(w.outside.mean.ja, 55.4);
+  assert.equal(w.outside.mean.k5, 244.8);
+  assert.equal(e.outside.mean.ma, 36.3); // 元の回は変えない
+  // 成績表の数学の偏差値・平均点は、この回の受験者で出る（ほかの教科は資料の値）
+  const rows = [res({ s: { ja: [31, 17, 34, 18], ma: [30, 15, 15, 16, 24] } }, w), res({ s: { ja: [10, 5, 10, 5], ma: [10, 5, 5, 5, 5] } }, w)];
+  const st = computeStats(w, rows);
+  const figs = reportFigures(st, st.rows.find((x) => x.r.id === rows[0].id)!);
+  assert.equal(figs.find((f) => f.key === 'ja')!.mean, 55.4);
+  assert.equal(figs.find((f) => f.key === 'ma')!.outside, false);
+  assert.equal(figs.find((f) => f.key === 'ma')!.mean, 65);
+  // 数学の大問を資料に合わせれば、数学も資料を使う
+  const fixed = exam({ subjects: DEFAULT_SUBJECTS.map((s) => (s.key === 'ma' ? { ...s, questions: [30, 14, 15, 16, 13, 12].map((max) => ({ max, topic: '' })) } : s)), outside: { source: 'x', n: 793, mean: { ...p.mean }, sd: { ...p.sd }, ref: p.id } });
+  assert.equal(withPastRules(fixed).outside.mean.ma, 36.3);
+  // 結んでいない回はそのまま
+  const plain = exam();
+  assert.equal(withPastRules(plain), plain);
 });

@@ -3,10 +3,13 @@
 // 全県の平均点・標準偏差・度数分布・設問別の平均正答率を借りて、偏差値・県内のおよその順位・設問別の県平均を出す。
 // 「模試の設定」の［この実施データを使う］で回の設定（outside.ref）に結ぶ。
 //
-// 出典：長崎県統一模試 中学3年 秋期模試（2023年10月実施。主催・長崎学習塾協会）の帳票（紙）から読み取った。
-//   ・全県の平均点・標準偏差（得点順の一覧の上の表）と、所属内（その年の智翔館）の平均点
-//   ・長崎県統一模試 度数分布表（五教科25点・三教科15点・教科5点きざみ。教科ごとの人数は欠席などで少し違う）
-//   ・個人成績票の「設問別得点」の平均（全県の得点率）。社会は 1・2、3・4、5・6 をまとめた3行
+// 出典：長崎県統一模試 中学3年 秋期模試（2023年10月実施。主催・長崎学習塾協会）
+//   ・全県の平均点・標準偏差（得点順の一覧の上の表）と、所属内（その年の智翔館）の平均点：帳票（紙）から読み取った
+//   ・度数分布（五教科25点・三教科15点・教科5点きざみ。教科ごとの人数は欠席などで少し違う）：帳票の度数分布表から読み取り、
+//     スプレッドシート「2024三高高専本番レベル模試入力シート」の「202310月データ」タブと同じ値であることを確かめた
+//     （そのタブの三教科の列は五教科の人数の写しになっているので、三教科は帳票の値を使う。三教科の標準偏差もタブの 49.9 ではなく帳票の 48.6）
+//   ・設問別の平均の得点率：同じスプレッドシートの「成績表 のコピー」タブの「平均」（2024年の本番レベル模試の成績表。
+//     本番レベル模試の大問の並びに合わせてある）。英語4の配点はタブでは33だが、合計が100点になる 32 にした
 //   生徒ごとの行（氏名・得点）は読んでいない。読み取りは、度数分布から出した平均点・標準偏差が帳票の値と合うことで確かめた（テスト）。
 // ★別の年の問題を使う回が来たら、PAST_EXAMS に1つ足す。
 //
@@ -32,6 +35,7 @@ export type PastExam = {
   step: Record<StatKey, number>;     // 度数分布のきざみ（いちばん下だけ 0〜step、あとは step×k+1〜step×(k+1)）
   bins: Record<StatKey, number[]>;   // 度数分布の人数（低い点から）
   questions: Record<SubjectKey, PastQuestion[]>;
+  questionsSource: string; // 設問別の平均の出どころ（画面の注に出す）
 };
 
 // 度数分布表の人数は帳票と同じ「高い点から」の並びで書き、下で低い点からに並べかえる
@@ -77,27 +81,28 @@ export const PAST_EXAMS: PastExam[] = [
       ma: [
         { no: '1', label: '小問集合（計算）', max: 30, rate: 60 },
         { no: '2', label: '資料の整理、確率', max: 14, rate: 42 },
-        { no: '3', label: '2次関数のグラフ', max: 12, rate: 35 },
-        { no: '4', label: '立体図形', max: 19, rate: 22 },
+        { no: '3', label: '2次関数のグラフ', max: 15, rate: 35 },
+        { no: '4', label: '平面・空間融合問題', max: 16, rate: 22 },
         { no: '5', label: '平面図形', max: 13, rate: 22 },
-        { no: '6', label: '規則性の問題', max: 12, rate: 8 },
+        { no: '6', label: '数学的思考力を問う問題', max: 12, rate: 8 },
       ],
       so: [
-        { no: '1・2', label: '歴史', max: 35, rate: 51 },
-        { no: '3・4', label: '地理', max: 37, rate: 50 },
-        { no: '5・6', label: '公民', max: 28, rate: 53 },
+        { no: '1', label: '江戸時代までの歴史', max: 23, rate: 48 },
+        { no: '2', label: '明治からの歴史', max: 19, rate: 47 },
+        { no: '3', label: '日本地理', max: 24, rate: 50 },
+        { no: '4', label: '現代社会', max: 17, rate: 53 },
+        { no: '5', label: '憲法と人権', max: 17, rate: 50 },
       ],
       sc: [
-        { no: '1', label: '生物の分類', max: 12, rate: 67 },
-        { no: '2', label: '力とばね', max: 12, rate: 42 },
-        { no: '3', label: '物質の性質', max: 11, rate: 56 },
-        { no: '4', label: '火山と火成岩', max: 13, rate: 57 },
-        { no: '5', label: '植物のつくり', max: 12, rate: 44 },
-        { no: '6', label: '電流と磁界', max: 14, rate: 46 },
-        { no: '7', label: '気体の性質', max: 13, rate: 34 },
-        { no: '8', label: '天気の変化', max: 13, rate: 28 },
+        { no: '1', label: '生物の分類', max: 15, rate: 67 },
+        { no: '2', label: '力とばね', max: 15, rate: 42 },
+        { no: '3', label: '物質の性質', max: 19, rate: 56 },
+        { no: '4', label: '火山と火成岩', max: 18, rate: 57 },
+        { no: '5', label: '電流と磁界', max: 18, rate: 44 },
+        { no: '6', label: '気体の性質', max: 15, rate: 46 },
       ],
     },
+    questionsSource: '2024年の本番レベル模試の成績表の平均',
   },
 ];
 
@@ -167,4 +172,42 @@ export function matchPastQuestions(examMaxes: number[], past: PastQuestion[]): n
     out.push(group);
   }
   return i === examMaxes.length ? out : null;
+}
+
+type SubjectsLike = { key: SubjectKey; questions: { max: number }[] }[];
+
+/**
+ * 回の大問が資料と合う教科。合わない教科は「問題が違う」とみて、資料（平均点・標準偏差・度数分布・設問別の平均）を使わず、
+ * この回の結果（智翔館の受験者）だけで出す。三教科・五教科は、いつも資料の値を使う。
+ */
+export function pastSubjectsMatched(subjects: SubjectsLike, p: PastExam): Record<SubjectKey, boolean> {
+  const out = {} as Record<SubjectKey, boolean>;
+  for (const k of Object.keys(p.questions) as SubjectKey[]) {
+    const qs = subjects.find((s) => s.key === k)?.questions ?? [];
+    out[k] = matchPastQuestions(qs.map((q) => q.max), p.questions[k]) != null;
+  }
+  return out;
+}
+
+/** 資料を使う項目か（三教科・五教科はいつも使う。教科は大問が合うときだけ）。 */
+export function pastUsesKey(subjects: SubjectsLike, p: PastExam, key: StatKey): boolean {
+  if (key === 'k3' || key === 'k5') return true;
+  return pastSubjectsMatched(subjects, p)[key] ?? false;
+}
+
+/**
+ * 過去の実施データを結んだ回の、換算の平均点・標準偏差から、大問の合わない教科の値を外す
+ * （外した教科は、成績表・面談の平均点・偏差値をこの回の結果で出す）。結んでいない回はそのまま返す。
+ * 「模試の設定」で結ぶときと、読み込んだ回（前に結んで保存した回）の両方に使う。
+ */
+export function withPastRules<E extends { subjects: SubjectsLike; outside?: { ref?: string; mean: Partial<Record<StatKey, number | null>>; sd: Partial<Record<StatKey, number | null>> } }>(exam: E): E {
+  const p = pastExamById(exam.outside?.ref);
+  if (!p || !exam.outside) return exam;
+  const ok = pastSubjectsMatched(exam.subjects, p);
+  const drop = (Object.keys(ok) as SubjectKey[]).filter((k) => !ok[k]);
+  if (!drop.some((k) => exam.outside!.mean[k] != null || exam.outside!.sd[k] != null)) return exam;
+  const mean = { ...exam.outside.mean };
+  const sd = { ...exam.outside.sd };
+  for (const k of drop) { delete mean[k]; delete sd[k]; }
+  return { ...exam, outside: { ...exam.outside, mean, sd } };
 }
