@@ -162,9 +162,9 @@ export const MANUALS: ManualDoc[] = [
     title: 'イベント申込管理 教室担当者マニュアル',
     desc: 'イベントの声掛け名簿の使い方。名簿の見方と「次にすること」、スイッチでの記録（チラシ・声掛け・保護者へ案内）と保存の見方、一括で記録、絞り込みと並び順、申込の状況（申込済・名簿外の申込）、名簿にいない生徒の追加、困ったとき。教室担当の職員（小中等部・RED個別・高等部）向け。画面の写真つき',
     kind: 'pdf',
-    href: '/manual/event-list-manual-v1.0.0.pdf',
-    downloadName: 'イベント申込管理_教室担当者マニュアル_v1.0.0.pdf',
-    meta: 'v1.0.0｜PDF・A4・15ページ｜約3.1MB',
+    href: '/manual/event-list-manual-v1.0.1.pdf',
+    downloadName: 'イベント申込管理_教室担当者マニュアル_v1.0.1.pdf',
+    meta: 'v1.0.1｜PDF・A4・15ページ｜約3.1MB',
   },
   {
     id: 'event-list-video',
