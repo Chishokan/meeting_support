@@ -46,14 +46,15 @@ const markId = (key: string, f: string) => `${key}|${f}`;
 // dept＝足す生徒の部門（管理部門だけが選べる。ほかの職員はログインした部門になる）
 type Editing = { student?: Student; app?: Application; init: StudentInput; dept: string };
 
+// 最初は「全員」（申込済の生徒も出る）。「することがある」を最初にしていたときは、申込済の生徒が出ず、申込が見えなかった
 const FILTERS: { key: Filter; label: string; test: (r: StudentRow) => boolean }[] = [
+  { key: 'all', label: '全員', test: () => true },
   { key: 'todo', label: 'することがある', test: (r) => r.todo !== '' },
   { key: 'urgent', label: '重点で未決', test: (r) => r.urgent },
   { key: 'none', label: '未着手', test: (r) => r.stage === 'none' },
   { key: 'thinking', label: '参加したい・検討中', test: (r) => r.stage === 'wants' || r.stage === 'considering' },
   { key: 'applied', label: '申込済', test: (r) => r.stage === 'applied' },
   { key: 'declined', label: '不参加', test: (r) => r.stage === 'declined' },
-  { key: 'all', label: '全員', test: () => true },
 ];
 
 export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: string[] }) {
@@ -61,7 +62,7 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   const [tracks, setTracks] = useState<Map<string, Track>>(new Map());
   const [view, setView] = useState<View>(admin ? 'overview' : 'list');
   const [campus, setCampus] = useState<string | null>(null); // null＝まだ選んでいない、''＝すべて
-  const [filter, setFilter] = useState<Filter>('todo');
+  const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<SortKey>('todo');
   const [grade, setGrade] = useState('');
   const [q, setQ] = useState('');
@@ -229,7 +230,7 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   // 足す生徒の部門の初めの値：同じ校舎の生徒がいればその部門、いなければ見ている部門
   const deptFor = (c: string) => state.students.find((st) => st.campus === c)?.dept ?? (deptView || DEFAULT_DEPT);
   const inCampus = activeCampus ? rows.filter((r) => r.student.campus === activeCampus) : rows;
-  const openCampus = (c: string) => { setCampus(c); setView('list'); setFilter('todo'); setGrade(''); setQ(''); };
+  const openCampus = (c: string) => { setCampus(c); setView('list'); setFilter('all'); setGrade(''); setQ(''); };
   // 管理部門だけ：見る部門のプルダウン
   const deptField = admin ? (
     <Field label="部門">
