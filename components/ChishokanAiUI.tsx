@@ -185,7 +185,8 @@ function Linkified({ text }: { text: string }) {
   );
 }
 
-export default function ChishokanAiUI({ name, campus }: { name: string; campus: string }) {
+// helpdesk：ヘルプデスクを開ける人か（スタッフは開けない。不具合報告・要望の窓で、ヘルプデスクへのリンクを出さない）
+export default function ChishokanAiUI({ name, campus, helpdesk = true }: { name: string; campus: string; helpdesk?: boolean }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1397,8 +1398,8 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           onClose={() => setDiffKey(null)}
         />
       )}
-      {report && <AiReportDialog context={report.context} initialKind={report.kind} onClose={() => setReport(null)} />}
-      {request && <AiRequestDialog context={request} onClose={() => setRequest(null)} />}
+      {report && <AiReportDialog context={report.context} initialKind={report.kind} helpdesk={helpdesk} onClose={() => setReport(null)} />}
+      {request && <AiRequestDialog context={request} helpdesk={helpdesk} onClose={() => setRequest(null)} />}
       {testPaper && <TestPaperDialog conversationId={convoIdRef.current} onClose={() => setTestPaper(false)} />}
     </div>
   );

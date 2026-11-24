@@ -11,6 +11,8 @@ import { REQUEST_KINDS } from '@/lib/chishokanAi/request';
 
 type Props = {
   context: { conversationId?: string; turn?: number; task?: string };
+  /** ヘルプデスクを開ける人か（スタッフは開けないので、送ったあとの「ご意見・不具合を開く」を出さない。lib/roleAccess.ts） */
+  helpdesk?: boolean;
   onClose: () => void;
 };
 
@@ -38,7 +40,7 @@ const HINTS: Record<string, { detail: string; scene: string }> = {
   },
 };
 
-export default function AiRequestDialog({ context, onClose }: Props) {
+export default function AiRequestDialog({ context, helpdesk = true, onClose }: Props) {
   const [kind, setKind] = useState('');
   const [detail, setDetail] = useState('');
   const [scene, setScene] = useState('');
@@ -109,9 +111,13 @@ export default function AiRequestDialog({ context, onClose }: Props) {
         </div>
         {state === 'done' ? (
           <div className="dm-modal-body">
-            <p className="ai-report-done">要望を送りました。ありがとうございます。回答はヘルプデスクの「ご意見・不具合」で確認できます。</p>
+            <p className="ai-report-done">
+              要望を送りました。ありがとうございます。{helpdesk && '回答はヘルプデスクの「ご意見・不具合」で確認できます。'}
+            </p>
             <div className="ai-report-actions">
-              <a className="msg-action" href="/helpdesk/feedback" target="_blank" rel="noopener noreferrer">ご意見・不具合を開く</a>
+              {helpdesk && (
+                <a className="msg-action" href="/helpdesk/feedback" target="_blank" rel="noopener noreferrer">ご意見・不具合を開く</a>
+              )}
               <button type="button" className="ai-report-submit" onClick={onClose}>閉じる</button>
             </div>
           </div>

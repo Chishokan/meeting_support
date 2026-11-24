@@ -1,8 +1,10 @@
 // 総合画面（メニュー）に並べる智翔館アプリの一覧。
-// ★アプリを増やすときはここに1件足すだけでメニューに出る。
+// ★アプリを増やすときはここに1件足すだけでメニューに出る（社員に。スタッフには下の★）。
 //   status: 'ready'（使える）／'soon'（準備中：カードは出すが開けない）
 //   canUse: 部門（や名前）で使える人を絞るときに指定する（省略すると全員）。
 //   external: 別の Web アプリ（別ドメイン）を開くカード。新しいタブで開く。
+// ★スタッフ（講師・アルバイト）には、lib/roleAccess.ts に足したアプリ（いまは会議DX・智翔館AI・イベント申込管理）だけを出す。
+//   スタッフに開くときは、lib/roleAccess.ts に id と画面・API の URL を足す（足さないと URL で開いても止まる）。
 
 import { canUseInquiryBoard, INQUIRY_BOARD_DEPTS } from './inquiryBoardAccess';
 import { canUseInterview, interviewAppUrl, INTERVIEW_DEPTS, type InterviewDept } from './interviewApp';
