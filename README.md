@@ -100,7 +100,11 @@
       Vercel の ZOOM_1_… / ZOOM_2_…（.env.example）が未設定なら、Zoom の欄は画面に出ない
     - 開催日時の読み取り: lib/zoom/schedule.ts（終了時刻が無ければ60分）。手順1の日付・開始・終了の入力も同じ形で書く
     - Zoom API の呼び出し: lib/zoom/client.ts（Server-to-Server OAuth。作成・更新・開始用URLの取得）
-    - ［ホストとして開始］：管理部門（全部門の会議）と部門長権限者（自分の部門の会議）にだけ出す（lib/zoom/access.ts）。
+    - ［Zoomに参加］は全員に出す。［ホストとして開始］は、その会議の「ホスト担当」の1人にだけ出す（lib/zoom/access.ts）。
+      ホスト担当は事前共有で Zoom ミーティングを作るときに選ぶ（選ばなければ事前共有した本人）。あとから替えるのは
+      事前共有の詳細の「ホスト担当」（app/api/zoom/meetings/host。その部門の人・事前共有した本人・管理部門）。
+      置き場は Supabase の zoom_meetings.host_name（supabase/migrations/0007）。
+      すでに開かれている会議は、確かめてからでないとホストで入り直せない。開始の記録は zoom_meetings.started_by / started_at と会話ログ
       共通ログインで入っているときだけ。開始用URLは保存せず、押すたびに取り直す（app/api/zoom/meetings/start）。誰がいつ開始したかは会話ログに残る
     - 保存先: 「部門会議事前共有」シートの「Zoomアカウント」「ZoomミーティングID」「参加URL」「パスコード」列と、
       Supabase の zoom_meetings（supabase/migrations/0004_zoom_meetings.sql。録画から議事録を自動で作るときに、どの会議の録画かを引くため）

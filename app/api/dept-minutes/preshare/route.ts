@@ -3,11 +3,12 @@ import { ADMIN_CAMPUS } from '@/lib/core/staff';
 import { logInteraction } from '@/lib/core/log';
 import { canDeletePreshare, missingForPreshare, type PreshareRow } from '@/lib/deptMinutesPreshare';
 import { listPreshareRows } from '@/lib/deptMinutesPreshareGas';
-import { canHostMeeting } from '@/lib/zoom/access';
+import { canHostMeeting, canSetHost, hostOf } from '@/lib/zoom/access';
+import { STAFF } from '@/lib/core/staff';
 import { defaultZoomAccount, isZoomAccountId, zoomAccount, zoomAccountOptions, type ZoomAccountId } from '@/lib/zoom/accounts';
 import { ZoomError, createMeeting, deleteMeeting, getMeeting, updateMeeting, type MeetingInput } from '@/lib/zoom/client';
 import { parseSchedule } from '@/lib/zoom/schedule';
-import { deleteMeetingLinks, saveMeetingLink } from '@/lib/zoom/store';
+import { deleteMeetingLinks, meetingHosts, saveMeetingLink } from '@/lib/zoom/store';
 import { canUseRecording } from '@/lib/zoom/access';
 import { deleteJobs, jobStatuses } from '@/lib/zoom/minutesStore';
 import { isAttendee } from '@/lib/attendees';
@@ -48,9 +49,10 @@ export async function GET() {
   // 録画から作った議事録の下書きがあるか（カードに出す）。見てよい人の分だけ引く。
   const usable = r.items.filter((row) => row.zoomMeetingId && !row.minutesId && canUseRecording(session, row, ADMIN_CAMPUS));
   // 下書きの状態と、出席者の「確認しました」を並べて引く。
-  const [jobs, confirms] = await Promise.all([
+  const [jobs, confirms, hosts] = await Promise.all([
     jobStatuses(usable.map((row) => row.id)),
     listConfirms(r.items.map((row) => row.id)),
+    meetingHosts(r.items.filter((row) => row.zoomMeetingId).map((row) => row.id)),
   ]);
 
   const items: PreshareRow[] = r.items.map((row) => ({
@@ -60,8 +62,16 @@ export async function GET() {
     minutesJob: jobs.get(row.id),
     confirmed: confirms.get(row.id) ?? [],
     canConfirm: isAttendee(session.name, row.attendees),
-    // ［ホストとして開始］を出すか。開始のときにもサーバで同じ判定をする（app/api/zoom/meetings/start）。
-    canHost: Boolean(row.zoomMeetingId) && canHostMeeting(session, row.campus, ADMIN_CAMPUS),
+    // Zoom のホスト担当（1人）。［ホストとして開始］はこの人にだけ出す。
+    // 開始のときにもサーバで同じ判定をする（app/api/zoom/meetings/start）。
+    ...(row.zoomMeetingId
+      ? {
+          zoomHost: hostOf(row, hosts.get(row.id)),
+          canHost: canHostMeeting(session, hostOf(row, hosts.get(row.id))),
+          canSetHost: !row.minutesId && canSetHost(session, row, ADMIN_CAMPUS),
+          hostLoginNeeded: typeof session.uid !== 'number' && session.name === hostOf(row, hosts.get(row.id)),
+        }
+      : { canHost: false }),
     // ［削除］を出すか。削除のときにもサーバで同じ判定をする（下の DELETE）。
     canDelete: canDeletePreshare(session, row, ADMIN_CAMPUS),
   }));
@@ -137,6 +147,9 @@ export async function POST(req: Request) {
   let schedule: ReturnType<typeof parseSchedule> = null;
   // 部門は、最初に事前共有した人の部門（上書きのときは元の行のもの）。対応表に残す。
   let campus = session.campus;
+  // ホスト担当。職員の一覧にある名前だけを受け付け、無ければ事前共有した本人にする。
+  const askedHost = typeof body?.zoom?.host === 'string' ? body.zoom.host.trim() : '';
+  const zoomHost = STAFF.some((g) => g.names.includes(askedHost)) ? askedHost : session.name;
   if (body?.zoom?.create === true) {
     const wanted = body.zoom.account;
     const account = isZoomAccountId(wanted) ? wanted : defaultZoomAccount(session.campus);
@@ -194,6 +207,7 @@ export async function POST(req: Request) {
             startTime: schedule.startTime,
             durationMin: schedule.durationMin,
             createdBy: session.name,
+            host: zoomHost,
           });
         }
       }
