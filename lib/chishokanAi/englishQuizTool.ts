@@ -6,7 +6,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { BOOKS } from '../english/books';
 import { BASIC_WORDS, IRREGULAR_VERBS } from '../english/data/basic';
-import { buildBasicQuiz, buildWordQuiz, MAX_COUNT, PER_SHEET, type BasicData, type BasicQuizOptions, type WordQuiz, type WordQuizOptions } from '../english/wordQuiz';
+import { MODAL_ITEMS } from '../english/data/modals';
+import { buildBasicQuiz, buildModalQuiz, buildWordQuiz, MAX_COUNT, modalGroupList, PER_SHEET, type BasicData, type BasicQuizOptions, type WordQuiz, type WordQuizOptions } from '../english/wordQuiz';
 import { buildWordQuizDocx } from '../english/wordQuizDoc';
 import { callGas } from './gas';
 import { readSaveResult, type MathRunResult } from './mathMaterial';
@@ -20,7 +21,8 @@ export const ENGLISH_WORD_QUIZ_TOOL: Anthropic.Tool = {
     '英語の単語テストを Word にして、ドライブに保存する。「テスト」と「答え入り」の2つのファイルができる。問題と答えは元データから選ぶので、問題・答えを渡さない（範囲と出し方だけを渡す）。' +
     '出す元（source）：words＝フォレスタ英語の Key Words の単語／kwt＝巻末の Key Words TEST（文の穴埋め）（この2つは grade・unit が要る）／' +
     'basic＝基本単語の一覧（中2までの約1,800語。categories〔曜日・月・数字・序数・不規則動詞・人・家族・食べ物 など〕・levels・pos で絞る）／' +
-    'verbs＝不規則動詞の変化（原形・過去形・過去分詞を書く表。levels で絞る）。' +
+    'verbs＝不規則動詞の変化（原形・過去形・過去分詞を書く表。levels で絞る）／' +
+    `modals＝助動詞の確認テスト（can・must・may・will・should の意味と書きかえ、May I ～? などの会話の答え。全${MAX_COUNT.modals}問を1枚。modal_groups で絞る。問題の数・出題形式・並びは選べない）。` +
     `1枚に入るのは、単語 ${PER_SHEET.words}問・Key Words TEST ${PER_SHEET.kwt}問・不規則動詞 ${PER_SHEET.verbs}問まで（多いと枚が増える）。` +
     '作業「英語の単語テストを作る」で、範囲と出し方が決まったら使う。範囲や分類の名前が違うと、作らずに選べるものの一覧を返す。',
   input_schema: {
@@ -29,7 +31,8 @@ export const ENGLISH_WORD_QUIZ_TOOL: Anthropic.Tool = {
       grade: { type: 'string', enum: ['中1', '中2', '中3'], description: '学年（教材の冊子）。words・kwt のときだけ' },
       unit: { type: 'string', description: "Unit の番号（例：4）。Unit 以外は名前（プレステップ、Let's Start2、Let's Read1 など）。words・kwt のときだけ" },
       sections: { type: 'array', items: { type: 'string' }, description: "範囲にする区分の名前（例：[\"Part1\", \"Part2\"]、Let's Talk1）。省くと Unit のすべて" },
-      source: { type: 'string', enum: ['words', 'kwt', 'basic', 'verbs'], description: 'words：教材の Key Words の単語（既定）／kwt：巻末の Key Words TEST（文の穴埋め）／basic：基本単語の一覧／verbs：不規則動詞の変化' },
+      source: { type: 'string', enum: ['words', 'kwt', 'basic', 'verbs', 'modals'], description: 'words：教材の Key Words の単語（既定）／kwt：巻末の Key Words TEST（文の穴埋め）／basic：基本単語の一覧／verbs：不規則動詞の変化／modals：助動詞の確認テスト' },
+      modal_groups: { type: 'array', items: { type: 'string' }, description: `modals のとき：範囲にするまとまり（${modalGroupList()}）。省くと全${MAX_COUNT.modals}問` },
       categories: { type: 'array', items: { type: 'string' }, description: 'basic のとき：分類（例：["曜日", "月"]、数字、序数、不規則動詞、人・家族、食べ物、重要熟語）。省くとすべて' },
       levels: { type: 'array', items: { type: 'string', enum: ['小学校', '中1', '中2'] }, description: 'basic・verbs のとき：学年の目安。省くとすべて' },
       pos: { type: 'array', items: { type: 'string' }, description: 'basic のとき：品詞（名詞・動詞・形容詞・副詞・熟語・前置詞 など）。省くとすべて' },
@@ -88,7 +91,9 @@ function answerList(q: { value: WordQuiz }): string {
       ? `(${i + 1}) ${x.prompt} → ${x.answer}`
       : x.kind === 'verb'
         ? `(${i + 1}) ${x.ja}：${x.base} - ${x.past} - ${x.pp}`
-        : `(${i + 1}) ${x.ja} → ${x.en.replace(/\[\[(.+?)\]\]/g, '［$1］')}`,
+        : x.kind === 'modal'
+          ? `(${i + 1}) ${x.prompt}：${x.body.replace(/\[\[(.+?)\]\]/g, '［$1］')}`
+          : `(${i + 1}) ${x.ja} → ${x.en.replace(/\[\[(.+?)\]\]/g, '［$1］')}`,
   );
   return rows.join('\n') + (v.questions.length > 60 ? `\n…ほか${v.questions.length - 60}問` : '');
 }
@@ -99,8 +104,13 @@ export async function runCreateEnglishWordQuiz(
   who: { campus: string; user: string },
   signal?: AbortSignal,
 ): Promise<MathRunResult> {
-  const basic = input.source === 'basic' || input.source === 'verbs';
-  const c = basic ? buildBasicQuiz(BASIC, toBasicOptions(input)) : buildWordQuiz(BOOKS, toOptions(input));
+  const basic = input.source === 'basic' || input.source === 'verbs' || input.source === 'modals';
+  const c =
+    input.source === 'modals'
+      ? buildModalQuiz(MODAL_ITEMS, { groups: Array.isArray(input.modal_groups) ? input.modal_groups.map(String).slice(0, 8) : [], title: typeof input.title === 'string' ? input.title : '' })
+      : basic
+        ? buildBasicQuiz(BASIC, toBasicOptions(input))
+        : buildWordQuiz(BOOKS, toOptions(input));
   if (!c.ok) return { toolResult: c.message, created: [{ ok: false, title: `英語の単語テスト：${basic ? String(input.source) : String(input?.unit ?? '')}`, note: c.message.slice(0, 120) }], inputError: true };
   const q = c.value;
   let test: Buffer;
@@ -131,7 +141,7 @@ export async function runCreateEnglishWordQuiz(
   const count = q.versions[0].questions.length;
   const per = PER_SHEET[q.source];
   const sheets = Math.ceil(count / per);
-  const summary = `${q.range}・${q.source === 'kwt' ? 'Key Words TEST' : q.source === 'verbs' ? '不規則動詞' : '単語'}・${count}問（範囲の${q.available}問から）・${sheets}枚${q.versions.length > 1 ? `×${q.versions.length}版` : ''}`;
+  const summary = `${q.range}・${q.source === 'kwt' ? 'Key Words TEST' : q.source === 'verbs' ? '不規則動詞' : q.source === 'modals' ? '助動詞の確認テスト' : '単語'}・${count}問（範囲の${q.available}問から）・${sheets}枚${q.versions.length > 1 ? `×${q.versions.length}版` : ''}`;
   if (!o.ok) {
     return {
       toolResult: `Word のファイルを保存できませんでした（${o.why}）。この回答では呼び直さない。職員にそのことを伝え、下の問題と答えを回答に書く。\n${answerList(c)}`,
