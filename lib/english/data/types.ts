@@ -82,3 +82,21 @@ export type IrregularVerb = {
   level: BasicLevel;
   note?: string;
 };
+
+/** 助動詞の確認テスト（中３夏期助動詞確認テスト.xlsx）の1問。 */
+export type ModalItem = {
+  /** 元のテストの番号 */
+  no: number;
+  /** まとまり（can・must・may・will・should・会話）。範囲を絞るときに使う */
+  group: ModalGroup;
+  /** 問い（例：can の意味）。「{ref}」は ref の問題の番号に置きかえる */
+  prompt: string;
+  /** 答える部分。[[ ]] が空欄（中が答え） */
+  body: string;
+  /** 答え入りにだけ出す注意 */
+  note?: string;
+  /** 「〇〇の答え」と前の問題を指すときの、その問題の no */
+  ref?: number;
+};
+
+export type ModalGroup = 'can' | 'must' | 'may' | 'will' | 'should' | '会話';

@@ -4,6 +4,7 @@
 // - 単語（Key Words）：左右2列の表。1行に「番号・問題・答えを書く欄」。1枚に40問（左20・右20）まで
 // - Key Words TEST（巻末の文の穴埋め）：1問2行（日本文と、空欄のある英文）。1枚に12問まで
 // - 不規則動詞：1行に「番号・意味・原形・過去形・過去分詞」の表。書かせる形は空欄。1枚に20問まで
+// - 助動詞の確認テスト：1行に「番号・問い・答える部分（空欄つき）」の表。全25問を1枚に
 // - 答え入りは、答えを書く欄・空欄に赤で答えを入れる
 // - 版（A・B）があるときは、版ごとにテストを分け、答え入りも版ごとに続けて入れる
 
@@ -52,7 +53,7 @@ function cell(children: Paragraph[], width: number, o: { bottom?: IBorderOptions
 function sheetHead(q: WordQuiz, label: string, total: number, page: number, pages: number, first: boolean, withAnswers: boolean): (Paragraph | Table)[] {
   const out: (Paragraph | Table)[] = [];
   if (!first) out.push(new Paragraph({ children: [new PageBreak()] }));
-  const kind = q.source === 'kwt' ? 'Key Words TEST' : q.source === 'verbs' ? '不規則動詞テスト' : '単語テスト';
+  const kind = q.source === 'kwt' ? 'Key Words TEST' : q.source === 'verbs' ? '不規則動詞テスト' : q.source === 'modals' ? '助動詞の確認テスト' : '単語テスト';
   const head = `英語　${kind}${label ? `　${label}` : ''}${pages > 1 ? `　（${page}/${pages}）` : ''}${withAnswers ? '　答え' : ''}`;
   const leftW = Math.round(TEXT_W * 0.5);
   const nameW = Math.round(TEXT_W * 0.32);
@@ -88,6 +89,8 @@ function sheetHead(q: WordQuiz, label: string, total: number, page: number, page
   const verbAsk = firstQ?.kind === 'verb' ? firstQ.ask : 'past-pp';
   const how = q.source === 'kwt'
     ? '日本文に合うように、下線部に適する語を書きなさい。'
+    : q.source === 'modals'
+      ? '下線部や（　）・〖　〗に、あてはまる意味や語を書きなさい。【　】の内容を参考にしなさい。'
     : q.source === 'verbs'
       ? verbAsk === 'all'
         ? '意味に合う動詞の原形・過去形・過去分詞を書きなさい。'
@@ -99,7 +102,8 @@ function sheetHead(q: WordQuiz, label: string, total: number, page: number, page
       : q.versions[0].questions.every((x) => x.kind === 'word' && !x.toEn)
         ? '次の英語の意味を日本語で書きなさい。'
         : '日本語は英語に、英語は日本語に直しなさい。';
-  out.push(p([run(how, { size: 20 })], { after: 160 }));
+  out.push(p([run(how, { size: 20 })], { after: q.source === 'modals' ? 0 : 160 }));
+  if (q.source === 'modals') out.push(p([run('※大文字、小文字、符号に注意して、見直しをすること！', { size: 18 })], { after: 120 }));
   return out;
 }
 
@@ -199,6 +203,45 @@ function verbTable(qs: Extract<QuizQ, { kind: 'verb' }>[], startNo: number, with
   });
 }
 
+/** 空欄の長さ（答えが分からないように、少し長めに）。日本語は1字に全角1つ、英語は2字に全角1つ。 */
+function blankFor(answer: string): string {
+  const wide = [...answer].filter((c) => c.charCodeAt(0) > 0xff).length;
+  const narrow = answer.length - wide;
+  return '　'.repeat(Math.max(3, wide + Math.ceil(narrow / 2) + 1));
+}
+
+/** 助動詞の確認テスト：1行に「番号・問い・答える部分」。答え入りは空欄に赤で答え。 */
+function modalTable(qs: Extract<QuizQ, { kind: 'modal' }>[], startNo: number, withAnswers: boolean): Table {
+  const noW = Math.round(9 * MM);
+  const qW = Math.round((TEXT_W - noW) * 0.3);
+  const bW = TEXT_W - noW - qW;
+  const rows = qs.map((q, i) => {
+    // 本文の改行（\n）は、同じ欄の中で行を変える
+    const parts = kwtParts(q.body).flatMap((x) =>
+      !x.blank
+        ? x.text.split('\n').map((t, k) => new TextRun({ text: t, font: FONT_JA, size: 19, break: k ? 1 : undefined }))
+        : [withAnswers ? run(` ${x.text} `, { size: 19, color: RED, underline: true }) : run(blankFor(x.text), { size: 19, underline: true })],
+    );
+    if (withAnswers && q.note) parts.push(run(`　※${q.note}`, { size: 15, color: RED }));
+    return new TableRow({
+      height: { value: Math.round(7.6 * MM), rule: HeightRule.ATLEAST },
+      cantSplit: true,
+      children: [
+        cell([p([run(`(${startNo + i})`, { size: 18 })])], noW, { bottom: THIN }),
+        cell([p([run(q.prompt, { size: q.prompt.length > 14 ? 17 : 19 })])], qW, { bottom: THIN }),
+        cell([new Paragraph({ spacing: { line: 320 }, children: parts })], bW, { bottom: THIN }),
+      ],
+    });
+  });
+  return new Table({
+    width: { size: TEXT_W, type: WidthType.DXA },
+    columnWidths: [noW, qW, bW],
+    layout: TableLayoutType.FIXED,
+    borders: NO_BORDERS,
+    rows,
+  });
+}
+
 function footer(): Footer {
   return new Footer({
     children: [
@@ -229,6 +272,7 @@ export async function buildWordQuizDocx(q: WordQuiz, o: { withAnswers?: boolean 
       const startNo = s * per + 1;
       if (q.source === 'kwt') children.push(...kwtBlocks(qs as Extract<QuizQ, { kind: 'kwt' }>[], startNo, withAnswers));
       else if (q.source === 'verbs') children.push(verbTable(qs as Extract<QuizQ, { kind: 'verb' }>[], startNo, withAnswers));
+      else if (q.source === 'modals') children.push(modalTable(qs as Extract<QuizQ, { kind: 'modal' }>[], startNo, withAnswers));
       else children.push(wordTable(qs as Extract<QuizQ, { kind: 'word' }>[], startNo, withAnswers));
     });
   }
