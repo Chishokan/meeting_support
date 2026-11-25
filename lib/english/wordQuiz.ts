@@ -3,10 +3,10 @@
 // 問題と答えは元データのまま使い、AI は書かない（答えの誤りを入れないため）。Word にするのは wordQuizDoc.ts。
 
 // 元データ（lib/english/data）は呼ぶ側が渡す（books.ts の BOOKS）。この中で読み込まないのは、テスト（node --test）で読み込めるようにするため。
-import type { BasicLevel, BasicWord, Book, IrregularVerb, KwtItem, Section, Unit, Word } from './data/types';
+import type { BasicLevel, BasicWord, Book, IrregularVerb, KwtItem, ModalGroup, ModalItem, Section, Unit, Word } from './data/types';
 
-/** words：単語（教材の Key Words・基本単語）／kwt：巻末の Key Words TEST／verbs：不規則動詞の変化 */
-export type Source = 'words' | 'kwt' | 'verbs';
+/** words：単語（教材の Key Words・基本単語）／kwt：巻末の Key Words TEST／verbs：不規則動詞の変化／modals：助動詞の確認テスト */
+export type Source = 'words' | 'kwt' | 'verbs' | 'modals';
 export type Direction = 'ja-en' | 'en-ja' | 'mix';
 
 /** 1問（Word に入れる形）。 */
@@ -14,7 +14,9 @@ export type QuizQ =
   | { kind: 'word'; prompt: string; answer: string; /** 日本語を見て英語を書く */ toEn: boolean; star: boolean }
   | { kind: 'kwt'; ja: string; en: string; note?: string }
   /** 不規則動詞：意味と、原形・過去形・過去分詞。ask にある形を書かせ、ほかは見せる（past だけのときは過去分詞の欄を出さない） */
-  | { kind: 'verb'; ja: string; base: string; past: string; pp: string; ask: VerbAsk; note?: string };
+  | { kind: 'verb'; ja: string; base: string; past: string; pp: string; ask: VerbAsk; note?: string }
+  /** 助動詞の確認テスト：問いと、[[ ]] の空欄がある答える部分（kwtParts で分ける） */
+  | { kind: 'modal'; prompt: string; body: string; note?: string };
 
 /** past-pp：原形を見て過去形・過去分詞を書く／past：原形を見て過去形を書く／all：意味を見て原形・過去形・過去分詞を書く */
 export type VerbAsk = 'past-pp' | 'past' | 'all';
@@ -49,8 +51,8 @@ export type WordQuizOptions = {
 };
 
 /** 1枚に入る数（wordQuizDoc.ts の書式に合わせた目安）。 */
-export const PER_SHEET = { words: 40, kwt: 12, verbs: 20 } as const;
-export const MAX_COUNT = { words: 120, kwt: 36, verbs: 90 } as const;
+export const PER_SHEET = { words: 40, kwt: 12, verbs: 20, modals: 25 } as const;
+export const MAX_COUNT = { words: 120, kwt: 36, verbs: 90, modals: 25 } as const;
 
 /** Unit の呼び名（数字なら「Unit4」、プレステップ・Let's Read1 などはそのまま）。 */
 export const unitLabel = (u: Unit) => (/^\d+$/.test(u.unit) ? `Unit${u.unit}` : u.unit);
@@ -339,4 +341,49 @@ export function buildBasicQuiz(data: BasicData, o: BasicQuizOptions): Result {
   const kind = source === 'verbs' ? '不規則動詞テスト' : '単語テスト';
   const title = (o.title ?? '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 40) || `英語 ${range} ${kind}`;
   return { ok: true, value: { title, range, source, versions, available } };
+}
+
+// ---- 助動詞の確認テスト ----
+
+/** 範囲にできるまとまり（名前 → 呼び方）。 */
+export const MODAL_GROUPS: { group: ModalGroup; label: string; aliases: string[] }[] = [
+  { group: 'can', label: 'can', aliases: ['can', 'could', 'be able to', 'beableto'] },
+  { group: 'must', label: 'must', aliases: ['must', 'have to', 'haveto', 'must not'] },
+  { group: 'may', label: 'may', aliases: ['may'] },
+  { group: 'will', label: 'will', aliases: ['will', 'be going to', 'begoingto'] },
+  { group: 'should', label: 'should・had better', aliases: ['should', 'had better', 'hadbetter', 'should・had better'] },
+  { group: '会話', label: '会話の表現', aliases: ['会話', '会話の表現', '会話表現', '会話文', 'May I', 'Shall I', 'Shall we', 'Will you', '依頼', '勧誘'] },
+];
+
+export const modalGroupList = () => MODAL_GROUPS.map((g) => g.label).join('・');
+
+export type ModalQuizOptions = {
+  /** まとまり（can・must・may・will・should・会話）。空なら全25問 */
+  groups?: string[];
+  title?: string;
+};
+
+/** 助動詞の確認テスト。元のテストの順のまま出す（「（8）の答え」のように前の問題を指すものがあるため、並べかえない）。 */
+export function buildModalQuiz(items: ModalItem[], o: ModalQuizOptions = {}): Result {
+  const groups: ModalGroup[] = [];
+  for (const s of o.groups ?? []) {
+    const n = norm(String(s));
+    if (!n || n === norm('すべて') || n === norm('全部') || n === 'all') continue;
+    const g = MODAL_GROUPS.find((x) => x.aliases.some((a) => norm(a) === n) || norm(x.label) === n);
+    if (!g) return { ok: false, message: `助動詞テストの範囲「${s}」がありません。選べるもの：${modalGroupList()}（省くと全${items.length}問）` };
+    if (!groups.includes(g.group)) groups.push(g.group);
+  }
+  const picked = items.filter((x) => !groups.length || groups.includes(x.group));
+  if (!picked.length) return { ok: false, message: '範囲に当てはまる問題がありません。' };
+  const newNo = new Map(picked.map((x, i) => [x.no, i + 1]));
+  const qs: QuizQ[] = picked.map((x) => ({
+    kind: 'modal',
+    prompt: x.prompt.replace('{ref}', String(x.ref !== undefined ? (newNo.get(x.ref) ?? x.ref) : '')),
+    body: x.body,
+    ...(x.note ? { note: x.note } : {}),
+  }));
+  const labels = MODAL_GROUPS.filter((g) => groups.includes(g.group)).map((g) => g.label);
+  const range = `助動詞${labels.length ? `（${labels.join('・')}）` : ''}`;
+  const title = (o.title ?? '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim().slice(0, 40) || `英語 ${range} 確認テスト`;
+  return { ok: true, value: { title, range, source: 'modals', versions: [{ label: '', questions: qs }], available: items.length } };
 }

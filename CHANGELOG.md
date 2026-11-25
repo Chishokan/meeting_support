@@ -3,6 +3,14 @@
 智翔館アプリ群の本番リリースごとの変更を記録する。
 バージョンの付け方と本番に出す手順は [docs/release.md](docs/release.md) を参照。
 
+## [1.33.0] - 2026-11-25
+
+### 追加
+- 智翔館AI：作業「英語の単語テストを作る」で、**助動詞の確認テスト**も作れるようにした（create_english_word_quiz の source＝modals）。
+  ドライブの「中３夏期助動詞確認テスト.xlsx」の全25問（can・must・may・will・should／had better の意味と書きかえ、May I ～? などの会話の答え方）を
+  lib/english/data/modals.ts に写し、元のテストの順で B5 1枚のテストと答え入りの Word にする。範囲は can・must・may・will・should・会話の表現で絞れる
+  （「（8）の答え」のような前の問題を指す番号は、絞ったときの番号に合わせる）
+
 ## [1.32.1] - 2026-11-24
 
 ### 変更
