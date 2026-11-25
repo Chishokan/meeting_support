@@ -124,8 +124,23 @@ async function clipOf(page, selectors, pad = 14) {
   await unmark(page);
   await r3.locator('.ev-badge.ok').click();
   await page.waitForSelector('.ev-modal');
+  const cancelBtn = page.locator('.ev-modal button', { hasText: 'この申込をキャンセルにする' });
+  await mark(page, [[cancelBtn, 1]]);
   await shot('event_08_answer', { clip: await clipOf(page, ['.ev-modal-body'], 16) });
-  await page.keyboard.press('Escape');
+  await unmark(page);
+
+  // 図12 申込をキャンセルにした行（撮ったら、キャンセルを取り消して元に戻す）
+  await cancelBtn.click();
+  await page.locator('.ev-ask button', { hasText: 'キャンセルにする' }).click();
+  await page.waitForSelector('.ev-modal', { state: 'detached' });
+  await page.waitForTimeout(2200);
+  await mark(page, [[r3.locator('.ev-badge.off'), 1, 3], [r3.locator('.ev-stage.cancelled'), 2, 3]]);
+  await shot('event_12_cancelled', { clip: await clipOf(page, ['.ev-list thead', r3], 14) });
+  await unmark(page);
+  await r3.locator('.ev-badge.off').click();
+  await page.locator('.ev-modal button', { hasText: 'キャンセルを取り消す' }).click();
+  await page.waitForSelector('.ev-modal', { state: 'detached' });
+  await page.waitForTimeout(2200);
 
   // 図9 名簿外の申込
   await page.locator('.ev-tabs button', { hasText: '名簿外の申込' }).click();
