@@ -15,7 +15,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { DEFAULT_DEPT, EVENT, NO_CAMPUS, ROSTER_COLUMNS } from './event';
 import {
-  ADDED_HEADERS, TRACK_HEADERS, addedFromSheet, deptByCampus, mergeStudents, parseApplications, parseRoster, trackFromSheet,
+  ADDED_HEADERS, addedFromSheet, deptByCampus, mergeStudents, parseApplications, parseRoster, trackFromSheet, trackToSheet,
   type Application, type Student, type StudentInput, type Track, type TrackField,
 } from './model';
 
@@ -191,11 +191,7 @@ export async function loadAll(): Promise<EventData | Fail> {
 
 /** 声掛けの記録を保存する。変えた項目（fields）だけを書き、保存後の行を返す。 */
 export async function saveTracks(items: TrackSave[], user: string): Promise<SaveResult> {
-  const toSheet = (f: TrackSave['fields']) => {
-    const o: Record<string, string> = {};
-    for (const [k, v] of Object.entries(f)) o[TRACK_HEADERS[k as TrackField]] = v ?? '';
-    return o;
-  };
+  const toSheet = trackToSheet;
   if (useLocal()) {
     const d = await readLocal();
     const ts = nowJp();

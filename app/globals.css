@@ -3722,6 +3722,15 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 
 .ev-badge.ok { min-height: 28px; border: 1px solid var(--ev-accent-bg); background: var(--ev-accent-bg); color: var(--ev-accent-text); font-weight: 700; border-radius: 12px; }
 .ev-badge.ok small { margin-left: 6px; font-size: 11px; font-weight: 500; }
+/* キャンセルにした申込：申込済（青）と見分けられるよう、灰色に取り消し線 */
+.ev-badge.off { min-height: 28px; border: 1px solid #c9ced6; background: #f1f2f4; color: #5b6472; font-weight: 700; border-radius: 12px; }
+.ev-badge.off small { margin-left: 6px; font-size: 11px; font-weight: 500; text-decoration: line-through; }
+.ev-stage.cancelled { background: #f1f2f4; color: #5b6472; font-weight: 700; }
+.ev-cancelnote { margin: 0 0 10px; padding: 8px 12px; border-radius: 8px; background: #f1f2f4; color: #3d4654; font-size: 13px; }
+.ev-modal-foot.ev-ask { align-items: center; flex-wrap: wrap; padding: 10px 12px; border-radius: 8px; background: #fdf1f0; font-size: 13.5px; }
+.ev-modal-foot.ev-ask small { display: block; color: var(--ev-sub); font-size: 12px; }
+.ev-modal-foot.ev-ask > span:first-child { flex: 1 1 220px; }
+.ev-ask-btns { display: flex; gap: 8px; margin-left: auto; }
 .ev-noapply { display: inline-block; padding: 2px 10px; border-radius: 12px; background: #eef1f5; color: var(--ev-sub2); font-size: 12px; font-weight: 500; }
 .ev-stage { border-radius: 12px; background: #eef1f5; color: var(--ev-sub2); font-weight: 500; }
 .ev-stage.applied { background: var(--ev-accent-bg); color: var(--ev-accent-text); font-weight: 700; }
