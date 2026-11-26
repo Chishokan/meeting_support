@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  SUBJECT_KEYS, SUBJECT_NAMES, STAT_KEYS, STAT_NAMES, campusInfo, choiceKey, choiceRanks, devBins, judgeOf, pointsOf, prevRecordFor, reportFigures,
+  SUBJECT_KEYS, SUBJECT_NAMES, STAT_KEYS, STAT_NAMES, campusInfo, choiceKey, choiceRanks, devBins, judgeOf, judgeSourceOf, pointsOf, prevRecordFor, reportFigures,
   scoreBins, subjectMax, subjectOf, trendRows,
   type Bin, type ExamStats, type KenitsuResult, type MoshiExam, type RowStat, type StatKey, type TrendRow,
 } from '@/lib/moshi/model';
@@ -118,53 +118,66 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
         </table>
 
         <div className="rs-pill rs-pill-green">志望校判定</div>
+        {/* 4つの志望校の枠は同じ高さで、列の下まで使う（判定の出ない学校・記入の無い枠でも下が空かないように） */}
+        <div className="rs-judges">
         {[0, 1, 2, 3].map((i) => {
           const choice = r.choices[i] ?? '';
           const j = judgeOf(stats, row, choice);
           const cr = ranks[i];
+          const pc = choice ? prev?.choices?.find((x) => x.code && choiceKey(x.code) === choiceKey(choice)) : undefined;
           return (
-            <div key={i} className="rs-judge">
+            <div key={i} className={`rs-judge${choice ? '' : ' rs-judge-empty'}`}>
               <div className="rs-j-head">
                 <span>第{i + 1}志望</span>
                 <b>{/^\d{3}-\d{2}$|^\d{5}$/.test(choice) ? choice : ''}</b>
-                <span>{schoolName(choice)}</span>
+                <span>{choice ? schoolName(choice) : '（記入なし）'}</span>
                 {j.line?.rule && <span className="rs-j-rule">判定教科：{j.line.rule}</span>}
               </div>
-              <table className="rs-j-table">
-                <tbody>
-                  <tr>
-                    <th>仮想順位</th>
-                    <td>{j.rank ? `${j.rank.rank}位` : ''}</td>
-                    <td>{j.rank ? `${j.rank.capacity}人中` : ''}</td>
-                    <th className="rs-j-g">A</th><th className="rs-j-g">B</th><th className="rs-j-g">C</th><th className="rs-j-g">D</th>
-                  </tr>
-                  <tr>
-                    <th>判定用得点</th>
-                    <td>{j.score ?? ''}</td>
-                    <td>{j.max ? `／${j.max}` : ''}</td>
-                    {(['A', 'B', 'C', 'D'] as const).map((g) => <td key={g}>{j.lines?.[g] ?? ''}</td>)}
-                  </tr>
-                </tbody>
-              </table>
-              <div className="rs-j-grade">
-                <span>判定</span><span className="rs-j-box">{j.grade ?? ''}</span>
-                {(() => {
-                  const pc = choice && prev?.choices?.find((x) => x.code && choiceKey(x.code) === choiceKey(choice));
-                  return pc ? <span className="rs-j-prev">{prev!.label} {pc.judge}{pc.prob ? `（${pc.prob}）` : ''}</span> : null;
-                })()}
-                {cr?.any && <span className="rs-j-inside">塾内の志望者 {cr.any.n}人中 {cr.any.rank}位</span>}
-              </div>
-              <div className="rs-j-next">
-                <span>次の判定まであと何点</span>
-                <span>
-                  {j.next
-                    ? <>あと <b>{j.next.gap}</b> 点で次の判定（{j.next.grade}）にアップします</>
-                    : j.grade === 'A' ? 'いちばん上の判定です' : <>あと<span className="rs-blank" />点で次の判定にアップします</>}
-                </span>
-              </div>
+              {choice && !j.line && (
+                <div className="rs-j-none">
+                  <span>この学校は判定基準の資料に無いため、判定は出していません。</span>
+                  {pc && <span className="rs-j-prev">{prev!.label} {pc.judge}{pc.prob ? `（${pc.prob}）` : ''}</span>}
+                  {cr?.any && <span className="rs-j-inside">塾内の志望者 {cr.any.n}人中 {cr.any.rank}位</span>}
+                </div>
+              )}
+              {j.line && (
+                <>
+                  <table className="rs-j-table">
+                    <thead>
+                      <tr>
+                        <th rowSpan={2} className="rs-j-c1">判定用得点</th>
+                        <th rowSpan={2} className="rs-j-c2">仮想順位</th>
+                        <th colSpan={4}>判定ライン（この点以上）</th>
+                      </tr>
+                      <tr>{(['A', 'B', 'C', 'D'] as const).map((g) => <th key={g} className="rs-j-g">{g}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>{j.score != null ? <><b>{Math.round(j.score * 10) / 10}</b>／{j.max}</> : '—'}</td>
+                        <td>{j.rank ? `${j.rank.rank}位／${j.rank.capacity}人中` : '—'}</td>
+                        {(['A', 'B', 'C', 'D'] as const).map((g) => <td key={g} className={j.grade === g ? 'rs-j-cur' : ''}>{j.lines?.[g] ?? ''}</td>)}
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div className="rs-j-grade">
+                    <span>判定</span><span className="rs-j-box">{j.grade ?? ''}</span>
+                    {pc && <span className="rs-j-prev">{prev!.label} {pc.judge}{pc.prob ? `（${pc.prob}）` : ''}</span>}
+                    {cr?.any && <span className="rs-j-inside">塾内の志望者 {cr.any.n}人中 {cr.any.rank}位</span>}
+                  </div>
+                  <div className="rs-j-next">
+                    <span>次の判定まで</span>
+                    <span>
+                      {j.score == null ? '判定教科の得点がそろっていないため、判定できません'
+                        : j.next ? <>あと <b>{j.next.gap}</b> 点で {j.next.grade} 判定にアップします</>
+                          : j.grade === 'A' ? 'いちばん上の判定です' : '—'}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           );
         })}
+        </div>
       </section>
 
       {/* ---- 中 ---- */}
@@ -254,7 +267,7 @@ export function ReportSheet({ stats, statsList, row, kenitsu = [] }: { stats: Ex
         {anyOutside
           ? `平均点・偏差値は${exam.outside?.source || '県全体の模試'}の平均点・標準偏差で換算した参考値（偏差値は25.0〜75.0）。${past ? '順位(塾内)・設問別の塾平均' : '順位・設問別の平均・得点の分布'}は智翔館の受験者（五教科 ${k5.rankN}人）。`
           : `平均点・偏差値・母数・分布は、この回を受けた智翔館の中3生の中でのもの（五教科 ${k5.n}人）。`}
-        {(exam.judges ?? []).length > 0 && `判定は${exam.outside?.source ? `${exam.outside.source}の` : ''}志望校別判定基準（B判定基準）による目安。仮想順位は定員の中での入学後のおよその順位。`}
+        {`判定は${judgeSourceOf(exam)}の志望校別判定基準（B判定基準）による目安。判定ラインは、その判定になる判定用得点（判定教科の倍率をかけた合計）。仮想順位は定員を入れた学校だけ（入学後のおよその順位）。`}
         得点率が平均より低い設問は赤字。{prev && `前回は${prev.name}（${prev.kind === 'ken' ? '県一斉模試の得点・偏差値' : '本番レベル模試'}）。`}
         {past && `県内順位(推定)・得点の分布は、同じ問題を${pastWhen(past)}に県全体で受けた${pastN(past, 'k5')}人（${past.label}）の集計による目安。${pq ? `設問別の県平均は${past.questionsSource}。` : ''}`}
         {past && (() => {

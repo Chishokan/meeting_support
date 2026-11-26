@@ -133,6 +133,12 @@ export type MoshiExam = {
   judges: JudgeLine[];        // 志望校の判定基準（任意）
   judgeOptions: JudgeOptions; // 判定・仮想順位の決まり
   createdAt: string; createdBy: string; updatedAt: string; updatedBy: string;
+  /**
+   * 読み込んだときに足す、参考データ（lib/moshi/reference.ts の referenceUpTo）の判定基準。保存しない。
+   * 回の判定基準（judges）に入っていない志望校は、ここから判定する（定員が無いので仮想順位は出ない）。
+   */
+  refJudges?: JudgeLine[];
+  refJudgeSource?: string; // その参考データの名前（判定の出典として成績表の下などに出す）
 };
 
 export const MAX_JUDGES = 120;
@@ -1081,12 +1087,21 @@ export type Judgement = {
 const GRADE_ORDER: JudgeGrade[] = ['A', 'B', 'C', 'D', 'E'];
 const LINE_OFFSET: Record<'A' | 'B' | 'C' | 'D', number> = { A: 1, B: 0, C: -1, D: -2 };
 
-/** 志望校の判定基準。志望校コード（県一斉の 518-01）で引く。前の5桁のコードで作った行は、基準の学校（ref）でも引ける。 */
+/**
+ * 志望校の判定基準。志望校コード（県一斉の 518-01）で引く。前の5桁のコードで作った行は、基準の学校（ref）でも引ける。
+ * 回の判定基準に無ければ、参考データの判定基準（refJudges）から引く。
+ */
 export function judgeLineFor(exam: MoshiExam, choice: string): JudgeLine | null {
   const key = choiceKey(choice);
   if (!key) return null;
   const js = exam.judges ?? [];
-  return js.find((j) => choiceKey(j.code) === key) ?? js.find((j) => j.ref && choiceKey(j.ref) === key) ?? null;
+  return js.find((j) => choiceKey(j.code) === key) ?? js.find((j) => j.ref && choiceKey(j.ref) === key)
+    ?? (exam.refJudges ?? []).find((j) => choiceKey(j.code) === key) ?? null;
+}
+
+/** 判定の出典（成績表の下などに出す）。参考データの名前。 */
+export function judgeSourceOf(exam: MoshiExam): string {
+  return exam.refJudgeSource || '県全体の模試';
 }
 
 /**
