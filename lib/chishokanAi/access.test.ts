@@ -12,7 +12,9 @@ test('使えるのは太田先生・瀬戸山先生と管理部門の方だけ',
   for (const n of STAFF.find((g) => g.campus === ADMIN_CAMPUS)!.names) assert.ok(canUseChishokanAi({ name: n, campus: ADMIN_CAMPUS }), n);
   assert.ok(canUseChishokanAi({ name: '大谷朋美', campus: 'LEC' }));
   assert.ok(canUseChishokanAi({ name: '小潟理紗', campus: '小中等部' }));
-  assert.ok(canUseChishokanAi({ name: '在津 太郎', campus: '小中等部' })); // 在津先生は名字で
+  assert.ok(canUseChishokanAi({ name: '在津 英晟', campus: '高等部' }));
+  assert.equal(canUseChishokanAi({ name: '在津太郎', campus: '高等部' }), false);
+  assert.ok(canUseChishokanAi({ name: '宮本珠里', campus: '' })); // スタッフ（部門なし）でも名前で
   assert.equal(canUseChishokanAi({ name: '安東瑞輝', campus: '小中等部' }), false);
   assert.equal(canUseChishokanAi({ name: '福元崇恭', campus: 'RED個別' }), false);
   assert.equal(canUseChishokanAi({ name: '', campus: '' }), false);
