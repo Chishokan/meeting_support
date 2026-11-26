@@ -12,7 +12,7 @@ const cut = (v: unknown, n: number) => (typeof v === 'string' ? v.slice(0, n) : 
 export async function POST(req: Request) {
   const session = getSession();
   if (!session) return new Response('unauthorized', { status: 401 });
-  if (!canUseChishokanAi(session.name)) return new Response('forbidden', { status: 403 });
+  if (!canUseChishokanAi(session)) return new Response('forbidden', { status: 403 });
   const body = await req.json().catch(() => ({}));
   const rating = body?.rating === 'up' ? '👍' : body?.rating === 'down' ? '👎' : '';
   if (!rating) return new Response('rating required', { status: 400 });

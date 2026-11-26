@@ -3,7 +3,7 @@
 // 中身の組み立ては lib/chishokanAi/report.ts。Apps Script の再デプロイは要らない（saveInquiry は前からある）。
 
 import { getSession } from '@/lib/core/auth';
-import { canUseChishokanAi } from '@/lib/chishokanAi/access';
+import { AI_DENIED_MESSAGE, canUseChishokanAi } from '@/lib/chishokanAi/access';
 import { callGas } from '@/lib/chishokanAi/gas';
 import { checkReport, formatReport, REPORT_CATEGORY } from '@/lib/chishokanAi/report';
 
@@ -16,7 +16,7 @@ const MAX_IMAGE_CHARS = 3_000_000; // base64 の長さ（画面で縮小して�
 export async function POST(req: Request) {
   const session = getSession();
   if (!session) return Response.json({ ok: false, message: 'ログインし直してください。' }, { status: 401 });
-  if (!canUseChishokanAi(session.name)) return Response.json({ ok: false, message: '試用メンバーではありません。' }, { status: 403 });
+  if (!canUseChishokanAi(session)) return Response.json({ ok: false, message: AI_DENIED_MESSAGE }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const c = checkReport(body);
