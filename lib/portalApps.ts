@@ -54,7 +54,7 @@ export const PORTAL_APPS: PortalApp[] = [
     desc: '社内の資料をもとに答えるAI。資料づくりや文章の手直しにも',
     href: '/ai',
     status: 'ready',
-    // 使えない人のカードは押せない（注意書きは出さない。2026-11-26 職員の指示）
+    // 使えない人のカードは押せず、「開発中」と出す（2026-11-26 職員の指示）
     canUse: (campus, name) => canUseChishokanAi({ name, campus }),
     devNote: '開発中です。画面や使い方が変わることがあります',
   },
