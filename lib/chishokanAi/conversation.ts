@@ -187,6 +187,10 @@ export function statusFor(tool: string, input: Record<string, unknown>): string 
       return `🖼 Google スライドを作っています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
     case 'create_math_quiz':
       return `📝 小テストを Word にしています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
+    case 'create_english_word_quiz':
+      return `📝 英語の単語テストを Word にしています${
+        input.source === 'verbs' ? '（不規則動詞）' : input.source === 'modals' ? '（助動詞）' : input.source === 'basic' ? '（基本単語）' : s(input.unit) ? `（${s(input.grade)} Unit${s(input.unit)}）` : ''
+      }`;
     case 'create_math_material':
       return `📐 数学の教材を Word にしています${s(input.title) ? `（${s(input.title).slice(0, 40)}）` : ''}`;
     case 'create_google_doc':
@@ -299,7 +303,7 @@ export function fakeLinkPrompt(urls: string[]): string {
   return (
     `（アプリから自動で送っています）あなたの回答に、道具で作っていないファイルの URL（${urls.join('、')}）がありました。` +
     '作り話の URL は開けないので、画面からは消しました。\n' +
-    'ファイルを作る必要があるなら、いま create_math_quiz・create_math_material・create_google_doc・create_google_slides のどれかを呼んで作り、' +
+    'ファイルを作る必要があるなら、いま create_math_quiz・create_math_material・create_english_word_quiz・create_google_doc・create_google_slides のどれかを呼んで作り、' +
     '道具の結果に出た URL だけを書いてください。作らないなら、URL を書かずに、ファイルはまだ作っていないことを1〜2文で伝えてください。' +
     '前の回答の繰り返し・長いお詫びは書かない。'
   );

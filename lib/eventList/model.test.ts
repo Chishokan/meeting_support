@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addedFromSheet, appLabel, autoPriority, bulkChanges, deptByCampus, mergeSaved, revertFields, sortRowsBy, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
+  addedFromSheet, appLabel, autoPriority, bulkChanges, cancelFromSheet, cancelToSheet, trackToSheet, deptByCampus, mergeSaved, revertFields, sortRowsBy, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
   normCampus, normGrade, normName, parseApplications, parseRoster, scopeData, shortDay, sortRows, summarize, trackFromSheet,
   type Student, type Track,
 } from './model.ts';
@@ -130,8 +130,40 @@ test('いまのフォームの見出しから列を当て、同伴の人数と�
   assert.deepEqual(apps.map(appLabel), ['生徒＋同伴1人', '生徒', '生徒']);
 });
 
+test('申込のキャンセル：キャンセルにした申込は数えず、段階は「キャンセル」。もう一度申し込めば申込済に戻る', () => {
+  const students = [st('S1', '青空 花'), st('S2', '海野 そら', '駅前校', '中1', '薬剤師')];
+  const head = ['タイムスタンプ', 'お名前', '一緒に参加される方の人数'];
+  const apps = parseApplications(head, [['2026/11/20 10:00:00', '青空花', '1人'], ['2026/11/21 10:00:00', '海野そら', 'いない（申込者のみ）']]);
+  const id1 = apps[0].id;
+  // シートには「キャンセル:申込ID」で書き、読むときに申込ID に戻す。「キャンセル:」で始まらない行（昔の手入力の日付）は読まない
+  assert.equal(cancelToSheet(id1), `キャンセル:${id1}`);
+  assert.equal(cancelFromSheet(`キャンセル:${id1}\n2026-11-17`), id1);
+  assert.deepEqual(trackToSheet({ cancel: id1, memo: 'x' }), { 申込: `キャンセル:${id1}`, メモ: 'x' });
+  assert.equal(trackFromSheet({ 生徒キー: 'S1', 申込: `キャンセル:${id1}` }).cancel, id1);
+  assert.deepEqual(cleanTrackFields({ cancel: ` ${id1} \n\n` }), { cancel: id1 });
+
+  const before = buildRows(students, [], apps, WORDS).rows;
+  assert.deepEqual(before.map((r) => [r.stage, r.apps.length, r.cancelled.length, r.companions]), [['applied', 1, 0, 1], ['applied', 1, 0, 0]]);
+  const after = buildRows(students, [tr('S1', { cancel: id1, reaction: '参加したい' }), tr('S2', { cancel: apps[1].id })], apps, WORDS).rows;
+  assert.deepEqual(after.map((r) => [r.stage, r.apps.length, r.cancelled.length, r.companions, r.studentApplied, r.todo, r.urgent]),
+    [['cancelled', 0, 1, 0, false, '', false], ['cancelled', 0, 1, 0, false, '', false]]);
+  const sum = summarize('駅前校', after);
+  assert.deepEqual([sum.applied, sum.cancelled, sum.studentApplied, sum.companions, sum.talked, sum.priorityOpen, sum.todo], [0, 2, 0, 0, 2, 0, 0]);
+  // キャンセルのあとで、もう一度フォームから申し込んだ（申込ID が別）→ 申込済。前の申込はキャンセルのまま残る
+  const again = parseApplications(head, [['2026/11/20 10:00:00', '青空花', '1人'], ['2026/11/25 09:00:00', '青空花', '2人']]);
+  const r = buildRows(students, [tr('S1', { cancel: id1 })], again, WORDS).rows[0];
+  assert.deepEqual([r.stage, r.apps.map((a) => a.at), r.cancelled.map((a) => a.at), r.companions], ['applied', ['2026/11/25 09:00:00'], ['2026/11/20 10:00:00'], 2]);
+  // キャンセルを取り消す（cancel を空にする）→ 申込済に戻る
+  assert.equal(buildRows(students, [tr('S1', { cancel: '' })], apps, WORDS).rows[0].stage, 'applied');
+});
+
 test('companionsOf', () => {
   assert.deepEqual(['1人', '２名', '0人', 'なし', '', '保護者と参加', '0'].map(companionsOf), [1, 2, 0, 0, 0, 1, 0]);
+  // かっこ書きの付いた「いない」は 0 人（フォームの選択肢「いない（申込者のみ）」を 1 人と数えていた）
+  assert.deepEqual(['いない（申込者のみ）', 'いない(申込者のみ)', 'いません', '申込者のみ', '本人だけ', '1人で参加', '1人（保護者）', '2人（父・母）', '二人', '3人以上']
+    .map(companionsOf), [0, 0, 0, 0, 0, 0, 1, 2, 2, 3]);
+  const one = parseApplications(['タイムスタンプ', 'お名前', '一緒に参加される方の人数'], [['2026/11/24 18:04:58', '安田姫菜', 'いない（申込者のみ）'], ['2026/11/24 17:58:39', '池田小晴', '1人']]);
+  assert.deepEqual(one.map((a) => [a.student, a.parent, a.companions, appLabel(a)]), [[true, false, 0, '生徒'], [true, true, 1, '生徒＋同伴1人']]);
 });
 
 test('アプリで足した生徒：入力を整え、名簿に合わせ、同じ氏名を見つける', () => {

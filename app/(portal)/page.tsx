@@ -1,18 +1,21 @@
 import Link from 'next/link';
 import { getSession } from '@/lib/core/auth';
 import { PORTAL_APPS } from '@/lib/portalApps';
+import { roleCanUseApp } from '@/lib/roleAccess';
 
 export default function PortalPage() {
-  // layout でログインを確認済み。ここでは部門（と名前）による出し分けにだけ使う。
+  // layout でログインを確認済み。ここではロールと部門（と名前）による出し分けにだけ使う。
+  // スタッフ（講師・アルバイト）には、開いているアプリ（lib/roleAccess.ts）のカードだけを出す。
   const s = getSession();
   const campus = s?.campus ?? '';
   const name = s?.name ?? '';
+  const apps = PORTAL_APPS.filter((a) => roleCanUseApp(s?.role, a.id));
 
   return (
     <div className="portal">
       <h1 className="portal-title">使うアプリを選んでください</h1>
       <div className="portal-grid">
-        {PORTAL_APPS.map((a) => {
+        {apps.map((a) => {
           const allowed = !a.canUse || a.canUse(campus, name, s?.role);
           if (!allowed && a.hideIfDenied) return null;
           const open = a.status === 'ready' && allowed;
@@ -21,8 +24,10 @@ export default function PortalPage() {
               <div className="portal-card-head">
                 <span className="portal-card-name">{a.name}</span>
                 {a.status === 'soon' && <span className="portal-badge">準備中</span>}
+                {a.devNote && <span className="portal-badge dev">開発中</span>}
               </div>
               <p className="portal-card-desc">{a.desc}</p>
+              {a.devNote && <p className="portal-card-note dev">{a.devNote}</p>}
               {a.status === 'ready' && !allowed && a.deniedNote && (
                 <p className="portal-card-note">{a.deniedNote}</p>
               )}

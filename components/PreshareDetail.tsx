@@ -10,7 +10,10 @@ import type { PreshareRow } from '@/lib/deptMinutesPreshare';
 import { useModalDismiss } from '@/lib/useModalDismiss';
 import ZoomButtons from '@/components/ZoomButtons';
 import { formatMeetingId, zoomErrorText, zoomJoinHref } from '@/lib/zoom/link';
-import { confirmSummary } from '@/lib/attendees';
+import { confirmSummary, splitAttendees } from '@/lib/attendees';
+import { STAFF } from '@/lib/core/staff';
+
+const STAFF_NAMES = new Set(STAFF.flatMap((g) => g.names));
 
 // 更新日時は時刻まで見せる（会議の直前に直すことがあるため）。
 function fmtStamp(s: string) {
@@ -51,12 +54,39 @@ export default function PreshareDetail({
   const [err, setErr] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [hostSaving, setHostSaving] = useState(false);
   // 押した直後の見た目（サーバの返事を待つあいだも、チェックがすぐ付いて見えるようにする）。
   const [pendingOn, setPendingOn] = useState<boolean | null>(null);
 
   // 事前に見たかどうか。出席者ごとに出し、出席者本人だけがチェックを付けられる（サーバでも確かめる）。
   const seen = confirmSummary(row.attendees, row.confirmed);
   const mine = Boolean(me) && (row.confirmed ?? []).includes(me as string);
+
+  // ホスト担当に選べる人：出席者のうち職員の一覧にある人と、いまの担当・事前共有した本人。
+  const hostChoices = Array.from(
+    new Set([row.zoomHost ?? '', row.user, ...splitAttendees(row.attendees).filter((n) => STAFF_NAMES.has(n))].filter(Boolean)),
+  );
+
+  async function changeHost(host: string) {
+    if (hostSaving || !host || host === row.zoomHost) return;
+    setErr('');
+    setHostSaving(true);
+    try {
+      const res = await fetch('/api/zoom/meetings/host', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preshareId: row.id, host }),
+      });
+      const j = await res.json().catch(() => ({}));
+      // 替えたあとは、ホストとして開始できる人が変わる。自分が担当になった・外れたを画面に反映する。
+      if (res.ok && j?.ok) onConfirmed?.({ ...row, zoomHost: host, canHost: host === me && !row.hostLoginNeeded });
+      else setErr(j?.reason === 'forbidden' ? 'ホスト担当を替えられるのは、その部門の方・事前共有した方・管理部門です。' : 'ホスト担当を替えられませんでした。時間をおいてお試しください。');
+    } catch {
+      setErr('ホスト担当を替えられませんでした。通信状況をご確認ください。');
+    } finally {
+      setHostSaving(false);
+    }
+  }
 
   async function toggleConfirm(on: boolean) {
     if (confirming) return;
@@ -214,6 +244,32 @@ export default function PreshareDetail({
               <div key={s.label} className="dm-modal-sub">{s.label}：{s.text}</div>
             ))}
             {zoomInfo && <div className="dm-modal-sub">Zoom：{zoomInfo}</div>}
+            {/* ホストとして開始できるのは、ホスト担当の1人だけ。替えられる人には選ぶ欄を出す */}
+            {zoomInfo && row.zoomHost && (
+              <div className="dm-modal-sub pre-host">
+                ホスト担当：
+                {onConfirmed && row.canSetHost ? (
+                  <select
+                    value={row.zoomHost}
+                    disabled={hostSaving}
+                    onChange={(e) => void changeHost(e.target.value)}
+                    aria-label="ホスト担当を替える"
+                  >
+                    <optgroup label="出席者・事前共有した人">
+                      {hostChoices.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </optgroup>
+                    {STAFF.map((g) => (
+                      <optgroup key={g.campus} label={g.campus}>
+                        {g.names.filter((n) => !hostChoices.includes(n)).map((n) => <option key={`${g.campus}/${n}`} value={n}>{n}</option>)}
+                      </optgroup>
+                    ))}
+                  </select>
+                ) : (
+                  <strong>{row.zoomHost}</strong>
+                )}
+                <span className="pre-host-note">（この方だけが［ホストとして開始］を押せます）</span>
+              </div>
+            )}
             {row.editedBy && (
               <div className="dm-modal-edited">
                 更新：{fmtStamp(row.editedAt)}　{row.editedBy}
@@ -295,7 +351,7 @@ export default function PreshareDetail({
             </>
           ) : (
             <>
-          <ZoomButtons row={row} detail />
+          <ZoomButtons row={row} />
           {onStart && (
             <button className="dm-modal-edit" onClick={onStart}>この会議の議事録をつくる</button>
           )}

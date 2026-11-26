@@ -4,7 +4,7 @@
 // 案の作り方は lib/chishokanAi/nepRequest.ts（propose_nep_request）。
 
 import { getSession, verifiedEmail } from '@/lib/core/auth';
-import { canUseChishokanAi } from '@/lib/chishokanAi/access';
+import { AI_DENIED_MESSAGE, canUseChishokanAi } from '@/lib/chishokanAi/access';
 import { callGas } from '@/lib/chishokanAi/gas';
 import { logAi } from '@/lib/chishokanAi/aiLog';
 import { checkNepRequest, formatNepRequest, NEP_REQUEST_CATEGORY } from '@/lib/chishokanAi/nepRequest';
@@ -15,7 +15,7 @@ export const maxDuration = 30;
 export async function POST(req: Request) {
   const session = getSession();
   if (!session) return Response.json({ ok: false, message: 'ログインし直してください。' }, { status: 401 });
-  if (!canUseChishokanAi(session.name)) return Response.json({ ok: false, message: '試用メンバーではありません。' }, { status: 403 });
+  if (!canUseChishokanAi(session)) return Response.json({ ok: false, message: AI_DENIED_MESSAGE }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const c = checkNepRequest(body ?? {});
   if (!c.ok) return Response.json({ ok: false, message: c.message }, { status: 400 });

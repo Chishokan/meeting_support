@@ -15,7 +15,7 @@ export const GATE_MESSAGES: Record<'login' | 'db', string> = {
 export function savedGate(): SavedGate {
   const session = getSession();
   if (!session) return { ok: false, status: 401, reason: 'unauthorized' };
-  if (!canUseChishokanAi(session.name)) return { ok: false, status: 403, reason: 'forbidden' };
+  if (!canUseChishokanAi(session)) return { ok: false, status: 403, reason: 'forbidden' };
   const email = verifiedEmail();
   if (!email) return { ok: false, status: 200, reason: 'login' };
   if (!storeAvailable()) return { ok: false, status: 200, reason: 'db' };

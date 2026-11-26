@@ -185,7 +185,8 @@ function Linkified({ text }: { text: string }) {
   );
 }
 
-export default function ChishokanAiUI({ name, campus }: { name: string; campus: string }) {
+// helpdesk：ヘルプデスクを開ける人か（スタッフは開けない。不具合報告・要望の窓で、ヘルプデスクへのリンクを出さない）
+export default function ChishokanAiUI({ name, campus, helpdesk = true }: { name: string; campus: string; helpdesk?: boolean }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1001,7 +1002,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
   return (
     <div className="iqa-page ai-has-panel">
       <div className="page-head">
-        <h1>智翔館AI（試用版）</h1>
+        <h1>智翔館AI</h1>
         <p>社内の資料をもとに答えます。資料づくりや文章の手直しにも使えます。</p>
         {imageNotice && <p className="ai-notice ai-head-notice">🛠 {imageNotice}</p>}
         <div className="ai-head-links">
@@ -1020,7 +1021,7 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
                 改善のため、質問と回答は社内の記録（会話ログ）に残しています
               </li>
               <li>生徒・保護者の名前や成績は入れないでください</li>
-              <li>試用期間中です。うまく動かないときは「不具合を報告」、こうしてほしいときは「要望を送る」から送ってください</li>
+              <li>うまく動かないときは「不具合を報告」、こうしてほしいときは「要望を送る」から送ってください</li>
             </ul>
           </details>
           {saved && (
@@ -1397,8 +1398,8 @@ export default function ChishokanAiUI({ name, campus }: { name: string; campus: 
           onClose={() => setDiffKey(null)}
         />
       )}
-      {report && <AiReportDialog context={report.context} initialKind={report.kind} onClose={() => setReport(null)} />}
-      {request && <AiRequestDialog context={request} onClose={() => setRequest(null)} />}
+      {report && <AiReportDialog context={report.context} initialKind={report.kind} helpdesk={helpdesk} onClose={() => setReport(null)} />}
+      {request && <AiRequestDialog context={request} helpdesk={helpdesk} onClose={() => setRequest(null)} />}
       {testPaper && <TestPaperDialog conversationId={convoIdRef.current} onClose={() => setTestPaper(false)} />}
     </div>
   );

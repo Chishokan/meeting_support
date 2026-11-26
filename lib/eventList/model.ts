@@ -36,15 +36,17 @@ export type Track = {
   reaction: Reaction;
   parent: string;    // 保護者へ案内した日
   link: string;      // 名簿外になった申込を、この生徒に結び付けたときの申込ID（複数は改行で区切る）
+  cancel: string;    // キャンセルにした申込の申込ID（複数は改行で区切る）。申込は残したまま、数えない
   priority: string;  // 重点の手入力（''＝自動、'1'＝重点にする、'0'＝重点から外す）
   memo: string;
   updatedAt: string;
   updatedBy: string;
 };
 
-// ★申込は Google フォームの回答だけで決める（手で「申込済」にする項目は v1.13.0 で外した。シートの「申込」の列は読まない）
-export type TrackField = 'flyer' | 'talk' | 'reaction' | 'parent' | 'link' | 'priority' | 'memo';
-export const TRACK_FIELDS: TrackField[] = ['flyer', 'talk', 'reaction', 'parent', 'link', 'priority', 'memo'];
+// ★申込は Google フォームの回答だけで決める（手で「申込済」にする項目は v1.13.0 で外した）。
+//   フォームから申し込んだあとで取りやめた申込は、画面で「キャンセル」にする（cancel。シートの「申込」の列に「キャンセル:申込ID」で書く）
+export type TrackField = 'flyer' | 'talk' | 'reaction' | 'parent' | 'link' | 'cancel' | 'priority' | 'memo';
+export const TRACK_FIELDS: TrackField[] = ['flyer', 'talk', 'reaction', 'parent', 'link', 'cancel', 'priority', 'memo'];
 
 export type Application = {
   id: string;          // 「回答日時|氏名（空白なし）」
@@ -65,9 +67,10 @@ export type PriorityKind = '' | 'pharma' | 'medical' | 'manual';
 export type PriorityWords = { pharma: string[]; medical: string[] };
 
 // 段階：どこまで進んだか（集計・絞り込みに使う）
-export type Stage = 'applied' | 'declined' | 'wants' | 'considering' | 'talked' | 'flyer' | 'none';
+//   cancelled＝フォームから申し込んだが、その申込をぜんぶキャンセルにした（申込には数えない。不参加と同じく、することは無い）
+export type Stage = 'applied' | 'cancelled' | 'declined' | 'wants' | 'considering' | 'talked' | 'flyer' | 'none';
 export const STAGE_LABEL: Record<Stage, string> = {
-  applied: '申込済', declined: '不参加', wants: '参加したい', considering: '検討中',
+  applied: '申込済', cancelled: 'キャンセル', declined: '不参加', wants: '参加したい', considering: '検討中',
   talked: '声掛け済', flyer: 'チラシ配布済', none: '未着手',
 };
 
@@ -75,7 +78,8 @@ export type StudentRow = {
   student: Student;
   track: Track;
   priority: PriorityKind;
-  apps: Application[];       // この生徒に結び付いた申込
+  apps: Application[];       // この生徒に結び付いた申込（キャンセルにしたものは入れない）
+  cancelled: Application[];  // この生徒に結び付いた申込のうち、キャンセルにしたもの
   studentApplied: boolean;   // 生徒の申込（フォーム）
   parentApplied: boolean;    // 保護者・同伴の方の申込（フォーム）
   companions: number;        // 一緒に参加する方の人数
@@ -122,7 +126,18 @@ export function linkIds(v: unknown): string[] {
 }
 
 export function emptyTrack(key: string): Track {
-  return { key, flyer: '', talk: '', reaction: '', parent: '', link: '', priority: '', memo: '', updatedAt: '', updatedBy: '' };
+  return { key, flyer: '', talk: '', reaction: '', parent: '', link: '', cancel: '', priority: '', memo: '', updatedAt: '', updatedBy: '' };
+}
+
+// キャンセルにした申込は、シートの「申込」の列に「キャンセル:申込ID」（複数は改行）で書く。
+// シートを開いた人にも「キャンセル」と読めるようにするため（申込ID だけだと、申込済に見える）。
+// この列は v1.13.0 まで手入力の申込の日付に使っていた。「キャンセル:」で始まらない行は読まない
+const CANCEL_MARK = 'キャンセル:';
+export function cancelToSheet(v: unknown): string {
+  return linkIds(v).map((id) => `${CANCEL_MARK}${id}`).join('\n');
+}
+export function cancelFromSheet(v: unknown): string {
+  return linkIds(v).filter((x) => x.startsWith(CANCEL_MARK)).map((x) => x.slice(CANCEL_MARK.length).trim()).filter(Boolean).join('\n');
 }
 
 /** 保存する値を整える（知らない項目・形の違う値は捨てる）。 */
@@ -136,6 +151,7 @@ export function cleanTrackFields(input: unknown): Partial<Record<TrackField, str
     else if (f === 'reaction') out[f] = (REACTIONS as string[]).includes(s(o[f])) ? s(o[f]) : '';
     else if (f === 'priority') out[f] = ['1', '0'].includes(s(o[f])) ? s(o[f]) : '';
     else if (f === 'link') out[f] = linkIds(o[f]).join('\n').slice(0, 1000);
+    else if (f === 'cancel') out[f] = linkIds(o[f]).filter((id) => id.length <= 200).slice(0, 10).join('\n');
     else out[f] = s(o[f]).slice(0, 500);
   }
   return out;
@@ -172,7 +188,7 @@ export function trackFromSheet(o: Record<string, unknown>): Track {
     key: s(o['生徒キー']),
     flyer: sheetDay(o['チラシ']), talk: sheetDay(o['声掛け']),
     reaction: ((REACTIONS as string[]).includes(r) ? r : '') as Reaction,
-    parent: sheetDay(o['保護者案内']), link: s(o['申込ひも付け']),
+    parent: sheetDay(o['保護者案内']), link: s(o['申込ひも付け']), cancel: cancelFromSheet(o['申込']),
     priority: ['1', '0'].includes(s(o['重点'])) ? s(o['重点']) : '', memo: s(o['メモ']),
     updatedAt: s(o['更新日時']), updatedBy: s(o['更新者']),
   };
@@ -180,8 +196,15 @@ export function trackFromSheet(o: Record<string, unknown>): Track {
 
 // 画面の項目名 → シートの見出し（apps_script/event.gs の EVENT_TRACK_HEADERS と同じ名前）
 export const TRACK_HEADERS: Record<TrackField, string> = {
-  flyer: 'チラシ', talk: '声掛け', reaction: '反応', parent: '保護者案内', link: '申込ひも付け', priority: '重点', memo: 'メモ',
+  flyer: 'チラシ', talk: '声掛け', reaction: '反応', parent: '保護者案内', link: '申込ひも付け', cancel: '申込', priority: '重点', memo: 'メモ',
 };
+
+/** 保存する項目（画面の名前 → 値）を、シートの見出し → 値にする。キャンセルは「キャンセル:申込ID」の形で書く。 */
+export function trackToSheet(fields: Partial<Record<TrackField, string>>): Record<string, string> {
+  const o: Record<string, string> = {};
+  for (const [k, v] of Object.entries(fields)) o[TRACK_HEADERS[k as TrackField]] = k === 'cancel' ? cancelToSheet(v) : v ?? '';
+  return o;
+}
 
 // ---- 名簿 -----------------------------------------------------------------
 
@@ -331,14 +354,22 @@ export function mapFormColumns(headers: string[]): FormColumns {
   };
 }
 
-const NO_WORDS = /^(0\s*(人|名)?|なし|無し|いない|しない|参加しない|不参加|本人のみ|生徒のみ|いいえ|no|×|✕|-|ー|―)?$/i;
+// 同伴の方がいない答え。かっこ書き（「いない（申込者のみ）」の（…））は外してから見る
+const NO_WORDS = /^(0\s*(人|名)?|ゼロ|なし|無し|ない|無い|いない|いません|おりません|しない|参加しない|不参加|(本人|生徒|申込者|申し込み者|申込み者|自分|1人|一人|ひとり)(のみ|だけ|で参加)|いいえ|no|×|✕|-|ー|―)?$/i;
+const KANJI_NUM: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
 
-/** 「一緒に参加される方の人数」などの答え → 人数。「1人」→1、「0人」「なし」→0、数の無い答え（「参加する」など）は 1。 */
+/**
+ * 「一緒に参加される方の人数」などの答え → 人数。
+ *   「1人」「２名」「二人」→ その数、「0人」「なし」「いない（申込者のみ）」→ 0、数の無い答え（「参加する」など）は 1。
+ */
 export function companionsOf(v: unknown): number {
   const t = s(v).normalize('NFKC');
-  if (NO_WORDS.test(t)) return 0;
-  const m = t.match(/\d+/);
-  return m ? Number(m[0]) : 1;
+  const base = t.replace(/[(\[][^)\]]*[)\]]/g, '').replace(/[\s、。,.]/g, '');
+  if (NO_WORDS.test(base)) return 0;
+  const m = base.match(/\d+/) ?? t.match(/\d+/);
+  if (m) return Number(m[0]);
+  const k = base.match(/([一二三四五六七八九十])(人|名)/);
+  return k ? KANJI_NUM[k[1]] : 1;
 }
 
 /** フォームの回答（見出しと行）を申込にする。氏名の無い行は捨てる。 */
@@ -449,23 +480,28 @@ export function buildRows(students: Student[], tracks: Track[], apps: Applicatio
   const { byStudent, unmatched } = matchApplications(students, tmap, apps);
   const rows = students.map((student) => {
     const track = tmap.get(student.key) ?? emptyTrack(student.key);
-    const mine = byStudent.get(student.key) ?? [];
+    // キャンセルにした申込は、申込には数えない（回答は残っているので、あとで取り消せる）
+    const off = new Set(linkIds(track.cancel));
+    const linked = byStudent.get(student.key) ?? [];
+    const mine = linked.filter((a) => !off.has(a.id));
+    const cancelled = linked.filter((a) => off.has(a.id));
     const studentApplied = mine.some((a) => a.student);
     const parentApplied = mine.some((a) => a.parent);
     const priority = effectivePriority(student, track, words);
-    const stage = stageOf(track, studentApplied || parentApplied);
+    const stage = stageOf(track, studentApplied || parentApplied, cancelled.length > 0);
     return {
-      student, track, priority, apps: mine, studentApplied, parentApplied, stage,
+      student, track, priority, apps: mine, cancelled, studentApplied, parentApplied, stage,
       companions: mine.reduce((n, a) => n + a.companions, 0),
       todo: todoOf(stage, track, priority, studentApplied, parentApplied),
-      urgent: priority !== '' && stage !== 'applied' && stage !== 'declined',
+      urgent: priority !== '' && stage !== 'applied' && stage !== 'declined' && stage !== 'cancelled',
     };
   });
   return { rows, unmatched };
 }
 
-export function stageOf(track: Track, applied: boolean): Stage {
+export function stageOf(track: Track, applied: boolean, cancelled = false): Stage {
   if (applied) return 'applied';
+  if (cancelled) return 'cancelled'; // 申込がぜんぶキャンセル（キャンセルのあとでもう一度申し込めば、上の applied になる）
   if (track.reaction === '不参加') return 'declined';
   if (track.reaction === '参加したい') return 'wants';
   if (track.reaction === '検討中') return 'considering';
@@ -481,6 +517,7 @@ export function todoOf(stage: Stage, track: Track, priority: PriorityKind, stude
     case 'applied':
       return !studentApplied && parentApplied ? '保護者のみ申込。本人も参加するか確かめる' : '';
     case 'declined':
+    case 'cancelled':
       return '';
     case 'wants':
       return track.parent ? 'QRからの申込を確かめる（まだなら、その場で一緒に申込）' : 'QRからの申込を後押し。保護者にも案内する';
@@ -496,7 +533,7 @@ export function todoOf(stage: Stage, track: Track, priority: PriorityKind, stude
 }
 
 // 並び順：重点でまだ決まっていない → することがある → 済んだ（申込済・不参加）。同じなら学年・氏名の順
-const STAGE_RANK: Record<Stage, number> = { none: 0, flyer: 1, talked: 2, wants: 3, considering: 4, applied: 8, declined: 9 };
+const STAGE_RANK: Record<Stage, number> = { none: 0, flyer: 1, talked: 2, wants: 3, considering: 4, applied: 8, cancelled: 9, declined: 10 };
 const PRIORITY_RANK: Record<PriorityKind, number> = { pharma: 0, medical: 1, manual: 2, '': 3 };
 
 export function sortRows(rows: StudentRow[]): StudentRow[] {
@@ -601,6 +638,7 @@ export type Summary = {
   studentApplied: number;
   parentApplied: number;  // 保護者・同伴の方がいる申込の数
   companions: number;     // 一緒に参加する方の人数の合計
+  cancelled: number;      // 申込をキャンセルにした生徒
   untouched: number;      // 未着手
   todo: number;           // することが残っている人数
   priority: number;       // 重点の人数
@@ -610,7 +648,7 @@ export type Summary = {
   lastUpdated: string;    // 記録の最終更新
 };
 
-const touched = (r: StudentRow) => !!r.track.talk || r.track.reaction !== '' || r.stage === 'applied';
+const touched = (r: StudentRow) => !!r.track.talk || r.track.reaction !== '' || r.stage === 'applied' || r.stage === 'cancelled';
 
 export function summarize(campus: string, rows: StudentRow[]): Summary {
   const c = (f: (r: StudentRow) => boolean) => rows.filter(f).length;
@@ -622,6 +660,7 @@ export function summarize(campus: string, rows: StudentRow[]): Summary {
     wants: c((r) => r.stage === 'wants'),
     considering: c((r) => r.stage === 'considering'),
     declined: c((r) => r.stage === 'declined'),
+    cancelled: c((r) => r.stage === 'cancelled'),
     applied: c((r) => r.stage === 'applied'),
     studentApplied: c((r) => r.studentApplied),
     parentApplied: c((r) => r.parentApplied),

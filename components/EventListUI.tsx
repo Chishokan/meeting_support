@@ -37,7 +37,7 @@ const reasonText = (r: unknown) => REASONS[String(r ?? '')] ?? `うまくいき�
 type Loaded = { students: Student[]; applications: Application[]; formStatus: 'ok' | 'not_set' | 'error'; fetchedAt: string; backend: string };
 type State = { status: 'loading' } | { status: 'error'; message: string } | ({ status: 'ready' } & Loaded);
 type View = 'overview' | 'list' | 'outside';
-type Filter = 'todo' | 'urgent' | 'none' | 'thinking' | 'applied' | 'declined' | 'all';
+type Filter = 'todo' | 'urgent' | 'none' | 'thinking' | 'applied' | 'cancelled' | 'declined' | 'all';
 type Change = { row: StudentRow; fields: Partial<Record<TrackField, string>> };
 // 項目ごとの保存の様子（「生徒の鍵|項目」で引く）：saving＝保存の途中、saved＝保存できたばかり（少しのあいだ ✓ を出す）
 type SaveMarks = { pending: ReadonlyMap<string, number>; saved: ReadonlySet<string> };
@@ -46,14 +46,16 @@ const markId = (key: string, f: string) => `${key}|${f}`;
 // dept＝足す生徒の部門（管理部門だけが選べる。ほかの職員はログインした部門になる）
 type Editing = { student?: Student; app?: Application; init: StudentInput; dept: string };
 
+// 最初は「全員」（申込済の生徒も出る）。「することがある」を最初にしていたときは、申込済の生徒が出ず、申込が見えなかった
 const FILTERS: { key: Filter; label: string; test: (r: StudentRow) => boolean }[] = [
+  { key: 'all', label: '全員', test: () => true },
   { key: 'todo', label: 'することがある', test: (r) => r.todo !== '' },
   { key: 'urgent', label: '重点で未決', test: (r) => r.urgent },
   { key: 'none', label: '未着手', test: (r) => r.stage === 'none' },
   { key: 'thinking', label: '参加したい・検討中', test: (r) => r.stage === 'wants' || r.stage === 'considering' },
   { key: 'applied', label: '申込済', test: (r) => r.stage === 'applied' },
+  { key: 'cancelled', label: 'キャンセル', test: (r) => r.stage === 'cancelled' },
   { key: 'declined', label: '不参加', test: (r) => r.stage === 'declined' },
-  { key: 'all', label: '全員', test: () => true },
 ];
 
 export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: string[] }) {
@@ -61,7 +63,7 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   const [tracks, setTracks] = useState<Map<string, Track>>(new Map());
   const [view, setView] = useState<View>(admin ? 'overview' : 'list');
   const [campus, setCampus] = useState<string | null>(null); // null＝まだ選んでいない、''＝すべて
-  const [filter, setFilter] = useState<Filter>('todo');
+  const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<SortKey>('todo');
   const [grade, setGrade] = useState('');
   const [q, setQ] = useState('');
@@ -229,7 +231,7 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
   // 足す生徒の部門の初めの値：同じ校舎の生徒がいればその部門、いなければ見ている部門
   const deptFor = (c: string) => state.students.find((st) => st.campus === c)?.dept ?? (deptView || DEFAULT_DEPT);
   const inCampus = activeCampus ? rows.filter((r) => r.student.campus === activeCampus) : rows;
-  const openCampus = (c: string) => { setCampus(c); setView('list'); setFilter('todo'); setGrade(''); setQ(''); };
+  const openCampus = (c: string) => { setCampus(c); setView('list'); setFilter('all'); setGrade(''); setQ(''); };
   // 管理部門だけ：見る部門のプルダウン
   const deptField = admin ? (
     <Field label="部門">
@@ -316,6 +318,12 @@ export default function EventListUI({ admin, rooms }: { admin: boolean; rooms: s
         <AppDetail
           app={detail.app} row={detail.row} onClose={() => setDetail(null)}
           onUnlink={(row, app) => { save([{ row, fields: { link: linkIds(row.track.link).filter((id) => id !== app.id).join('\n') } }]); setDetail(null); }}
+          onCancel={(row, app, off) => {
+            // キャンセルにする／取り消す：記録の cancel（申込ID の並び）に足す・外す。フォームの回答は消さない
+            const ids = linkIds(row.track.cancel).filter((id) => id !== app.id);
+            save([{ row, fields: { cancel: (off ? [...ids, app.id] : ids).join('\n') } }]);
+            setDetail(null);
+          }}
         />
       )}
     </div>
@@ -423,6 +431,7 @@ function Overview({ rows, campuses, unmatched, onOpen }: { rows: StudentRow[]; c
       <td className={`num ${s.priorityOpen > 0 ? 'ev-hot' : ''}`}>{s.priorityOpen}</td>
       <td className="num">{s.wants + s.considering}</td>
       <td className="num">{s.declined}</td>
+      <td className="num">{s.cancelled}</td>
       <td className={`num ${s.untouched > 0 ? 'ev-dim-hot' : ''}`}>{s.untouched}</td>
       <td className="ev-updated">{s.lastUpdated ? s.lastUpdated.slice(5) : '—'}</td>
     </tr>
@@ -442,7 +451,7 @@ function Overview({ rows, campuses, unmatched, onOpen }: { rows: StudentRow[]; c
           <thead>
             <tr>
               <th>校舎</th><th>対象</th><th>チラシ配布</th><th>声掛け</th><th>申込</th><th>申込の内訳（生徒／同伴の方）</th>
-              <th>重点の申込</th><th>重点で未決</th><th>参加したい・検討中</th><th>不参加</th><th>未着手</th><th>最終更新</th>
+              <th>重点の申込</th><th>重点で未決</th><th>参加したい・検討中</th><th>不参加</th><th>キャンセル</th><th>未着手</th><th>最終更新</th>
             </tr>
           </thead>
           <tbody>
@@ -452,7 +461,7 @@ function Overview({ rows, campuses, unmatched, onOpen }: { rows: StudentRow[]; c
         </table>
       </div>
       <p className="ev-hint">
-        校舎名を押すと、その校舎の声掛け名簿が開きます。「声掛け」は、声を掛けた日・反応・申込のどれかが入っている生徒の数です。
+        校舎名を押すと、その校舎の声掛け名簿が開きます。「声掛け」は、声を掛けた日・反応・申込のどれかが入っている生徒の数です。「キャンセル」は、フォームから申し込んだあとで取りやめた生徒で、申込の数には入りません。
         「重点」は、夢・志や志望校に薬剤師・医療系の言葉がある生徒と、教室担当が ★ を付けた生徒です。
       </p>
     </section>
@@ -560,7 +569,8 @@ function CampusList({
       <p className="ev-hint">
         チラシ・声掛け・保護者へ案内は、スイッチを押すとオンになり今日の日付が入ります（もう一度押すとオフ）。押した所に「保存中」が出て、保存できると ✓ が出ます。
         クラスで配ったあとなど、何人もまとめて付けるときは［一括で記録］を使ってください。
-        申込は、チラシの QR コードのフォームから申し込まれると自動で「申込済」になります（画面からは入れません）。★ を押すと、重点の付け外しができます。
+        申込は、チラシの QR コードのフォームから申し込まれると自動で「申込済」になります（画面からは入れません）。
+        申し込んだあとで取りやめた生徒は、「申込済」の印を押して［この申込をキャンセルにする］で「キャンセル」にできます（あとで取り消せます）。★ を押すと、重点の付け外しができます。
         記録を付けても行の並びはそのままです（上の「表示する生徒」「並び順」を選び直すか［最新にする］で並べ直します）。
       </p>
     </section>
@@ -747,7 +757,12 @@ function Row({ row, showCampus, today, onSave, marks, onDetail, onEdit }: {
               申込済<small>{appLabel(a)}</small>
             </button>
           ))}
-          {!row.apps.length && <span className="ev-noapply">未申込</span>}
+          {row.cancelled.map((a) => (
+            <button key={a.id} type="button" className="ev-badge off" onClick={() => onDetail(a, row)} title="フォームの回答を見る（キャンセルを取り消せます）">
+              キャンセル<small>{appLabel(a)}</small>
+            </button>
+          ))}
+          {!row.apps.length && !row.cancelled.length && <span className="ev-noapply">未申込</span>}
         </div>
       </td>
       <td className="ev-todo">{row.todo || <span className={`ev-stage ${row.stage}`}>{STAGE_LABEL[row.stage]}</span>}</td>
@@ -845,29 +860,46 @@ function Outside({ apps, rows, campuses, onLink, onDetail, onAdd }: {
 
 // ---- フォームの回答の詳細 ----------------------------------------------------
 
-function AppDetail({ app, row, onClose, onUnlink }: {
+function AppDetail({ app, row, onClose, onUnlink, onCancel }: {
   app: Application; row: StudentRow | null; onClose: () => void; onUnlink: (row: StudentRow, app: Application) => void;
+  onCancel: (row: StudentRow, app: Application, off: boolean) => void;
 }) {
+  const [ask, setAsk] = useState(false); // 「キャンセルにする」を押したあとの確かめ
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
   const linked = !!row && linkIds(row.track.link).includes(app.id);
+  const cancelled = !!row && linkIds(row.track.cancel).includes(app.id);
   return (
     <div className="ev-modal" role="dialog" aria-modal="true" aria-label="フォームの回答" onClick={onClose}>
       <div className="ev-modal-body" onClick={(e) => e.stopPropagation()}>
         <h2>フォームの回答{row && <small>（{row.student.campus}・{row.student.grade} {row.student.name}）</small>}</h2>
+        {cancelled && <p className="ev-cancelnote">この申込は<b>キャンセル</b>にしてあります（申込の数には入りません）。</p>}
         <dl>
           {app.answers.map(([h, v], i) => (
             <div key={i}><dt>{h}</dt><dd>{v}</dd></div>
           ))}
         </dl>
-        <div className="ev-modal-foot">
-          {linked && row && <button type="button" className="ev-btn ev-btn-sub" onClick={() => onUnlink(row, app)}>この生徒との結び付けを外す</button>}
-          <span className="ev-spacer" />
-          <button type="button" className="ev-btn" onClick={onClose}>閉じる</button>
-        </div>
+        {!row && <p className="ev-hint">キャンセルにするときは、先に「名簿外の申込」で名簿の生徒に結び付けるか、名簿に足してください。</p>}
+        {ask && row ? (
+          <div className="ev-modal-foot ev-ask" role="alertdialog" aria-label="キャンセルの確かめ">
+            <span><b>{row.student.name}</b> さんの申込をキャンセルにしますか？<small>フォームの回答は残り、あとで取り消せます。</small></span>
+            <span className="ev-ask-btns">
+              <button type="button" className="ev-btn ev-btn-sub" onClick={() => setAsk(false)}>やめる</button>
+              <button type="button" className="ev-btn ev-btn-danger" onClick={() => onCancel(row, app, true)}>キャンセルにする</button>
+            </span>
+          </div>
+        ) : (
+          <div className="ev-modal-foot">
+            {row && !cancelled && <button type="button" className="ev-btn ev-btn-danger" onClick={() => setAsk(true)}>この申込をキャンセルにする</button>}
+            {row && cancelled && <button type="button" className="ev-btn ev-btn-sub" onClick={() => onCancel(row, app, false)}>キャンセルを取り消す（申込に戻す）</button>}
+            {linked && row && <button type="button" className="ev-btn ev-btn-sub" onClick={() => onUnlink(row, app)}>この生徒との結び付けを外す</button>}
+            <span className="ev-spacer" />
+            <button type="button" className="ev-btn" onClick={onClose}>閉じる</button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -25,6 +25,6 @@ test('ミーティングIDを区切って見せる', () => {
 
 test('失敗の理由ごとに文を出す', () => {
   assert.match(zoomErrorText('bad_date'), /開催日時/);
-  assert.match(zoomErrorText('forbidden'), /部門長/);
+  assert.match(zoomErrorText('forbidden'), /ホスト担当/);
   assert.match(zoomErrorText('something_else'), /失敗/);
 });
