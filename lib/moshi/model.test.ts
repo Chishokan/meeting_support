@@ -6,10 +6,10 @@ import {
   choiceRanks, cleanExam, cleanResult, computeStats, DEFAULT_JUDGE_OPTIONS, DEFAULT_SUBJECTS, devBins, judgeOf, parseRule, reportFigures, ruleMax,
   scoreBins, trendRows, yearExams, emptyOutside, emptyScores, examMax, fitScores, historyOf,
   campusOfVenue, cleanKenItem, devBinsOf, kenFitOf, kenFits, kenJudgeDetail, kenSchoolGroup, kenFirstChoiceMean, kenHistory, kenPoints, prevRecordFor, studentHistory, honbanFirstChoiceMean, pointsOf, kenChoiceRank, kenExamRef, kenNames, kenStatsOf, scoreBinsOf, kenExams, kenGuessFromFileName, kenIdMap, kenRoster, kenScores, kenTable, parseCsv, inputSheetRows, jpDate, nextExamNo, normalizeChoice, normalizeExamNo, normalizeName, parsePaste, parseScore, planPaste, rankedRows, scoresFromCell,
-  scoresToCell, subjectMax, parseInputSheetCsv, toCsv, SUBJECT_KEYS,
+  scoresToCell, subjectMax, parseInputSheetCsv, toCsv, SUBJECT_KEYS, judgeLineFor, judgeSourceOf,
   type MoshiExam, type MoshiResult, type Scores,
 } from './model.ts';
-import { REFERENCES, TO_REF, refSchoolByCode, refSchoolFor, referenceForDate } from './reference.ts';
+import { REFERENCES, TO_REF, refJudgeLines, refSchoolByCode, refSchoolFor, referenceForDate, referenceUpTo } from './reference.ts';
 import { PAST_EXAMS, matchPastQuestions, pastBinOf, pastBinRange, pastExamById, pastMax, pastN, pastRank, pastSubjectsMatched, pastUsesKey, withPastRules } from './pastData.ts';
 
 function exam(p: Partial<MoshiExam> = {}): MoshiExam {
@@ -910,4 +910,29 @@ test('過去の実施データ：大問の合わない教科（数学）は資�
   // 結んでいない回はそのまま
   const plain = exam();
   assert.equal(withPastRules(plain), plain);
+});
+
+test('志望校の判定基準：回の判定基準に無い学校は、参考データ（その回までのいちばん新しい県一斉模試）から引く', () => {
+  const ref = referenceUpTo('2026-11-22')!;
+  assert.equal(ref.month, '2026-10');
+  assert.equal(referenceUpTo('')?.id, REFERENCES[0].id);
+  const lines = refJudgeLines(ref);
+  const e = exam({ judges: [], refJudges: lines, refJudgeSource: ref.label });
+  const l = judgeLineFor(e, '588-27');
+  assert.equal(l?.refName, '県立佐世保商業 国際コミュニケーション');
+  assert.equal(l?.rule, '英2倍');
+  assert.equal(l?.capacity, null);
+  assert.equal(judgeLineFor(e, '999-99'), null);
+  // 回の判定基準にあれば、そちら（定員など）を使う
+  const own = exam({ judges: [{ code: '588-27', ref: '588-27', refName: 'x', rule: '5科合計', bDev: 40, bScore: 200, capacity: 80 }], refJudges: lines });
+  assert.equal(judgeLineFor(own, '588-27')?.capacity, 80);
+  // 判定の出典は参考データの名前（換算に使う過去の実施データの名前ではない）
+  assert.equal(judgeSourceOf(e), '第2回 長崎県一斉模試 2026年10月');
+  assert.equal(judgeSourceOf(exam()), '県全体の模試');
+  // 判定が出る
+  const r = res({ choices: ['588-27', '', '', ''], s: { ja: [20, 10, 20, 10], en: [20, 20, 8, 20], ma: [20, 10, 10, 10, 10], so: [15, 10, 15, 10, 10], sc: [10, 10, 12, 12, 12, 10] } }, e);
+  const st = computeStats(e, [r]);
+  const j = judgeOf(st, st.rows[0], '588-27');
+  assert.ok(j.line && j.score != null && j.lines && j.grade);
+  assert.equal(j.max, 600);
 });
