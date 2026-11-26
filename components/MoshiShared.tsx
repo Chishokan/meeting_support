@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { CAMPUS_NAMES, SUBJECT_KEYS, campusInfo, round1, sortExams, type KenitsuExam, type KenitsuResult, type MoshiExam, type MoshiResult } from '@/lib/moshi/model';
 import { MOSHI_DEPTS } from '@/lib/moshi/access';
 import { withPastRules } from '@/lib/moshi/pastData';
+import { refJudgeLines, referenceUpTo } from '@/lib/moshi/reference';
 
 // ---- 失敗の理由 ------------------------------------------------------------
 
@@ -52,6 +53,16 @@ export type MoshiState =
   | { status: 'error'; message: string }
   | { status: 'ready'; exams: MoshiExam[]; results: MoshiResult[]; kenitsu: KenitsuResult[]; backend: string; fetchedAt: string };
 
+/**
+ * 読み込んだ回の下ごしらえ（画面で使う形にする。保存はしない）。
+ *  ・過去の実施データを結んだ回は、大問の合わない教科（問題が違う教科）の換算の値を外す（lib/moshi/pastData.ts の withPastRules）
+ *  ・参考データ（その回までに出た、いちばん新しい県一斉模試）の判定基準を refJudges に足す。回の判定基準に無い志望校も判定できる
+ */
+function prepareExam(e: MoshiExam): MoshiExam {
+  const ref = referenceUpTo(e.date);
+  return { ...withPastRules(e), refJudges: ref ? refJudgeLines(ref) : [], refJudgeSource: ref?.label ?? '' };
+}
+
 export function useMoshiData() {
   const [state, setState] = useState<MoshiState>({ status: 'loading' });
   const load = useCallback(async () => {
@@ -59,8 +70,7 @@ export function useMoshiData() {
       const res = await fetch('/api/moshi', { cache: 'no-store' });
       const j = await res.json().catch(() => null);
       if (!j?.ok) { setState({ status: 'error', message: reasonText(j?.reason) }); return false; }
-      // 過去の実施データを結んだ回は、大問の合わない教科（問題が違う教科）の換算の値を外して使う（lib/moshi/pastData.ts の withPastRules）
-      setState({ status: 'ready', exams: sortExams((j.exams as MoshiExam[]).map(withPastRules)), results: j.results, kenitsu: j.kenitsu ?? [], backend: j.backend, fetchedAt: j.fetchedAt });
+      setState({ status: 'ready', exams: sortExams((j.exams as MoshiExam[]).map(prepareExam)), results: j.results, kenitsu: j.kenitsu ?? [], backend: j.backend, fetchedAt: j.fetchedAt });
       return true;
     } catch {
       setState({ status: 'error', message: reasonText('network_error') });
@@ -72,7 +82,7 @@ export function useMoshiData() {
     setState((s) => (s.status === 'ready' ? { ...s, results: fn(s.results) } : s));
   }, []);
   const setExams = useCallback((fn: (es: MoshiExam[]) => MoshiExam[]) => {
-    setState((s) => (s.status === 'ready' ? { ...s, exams: sortExams(fn(s.exams).map(withPastRules)) } : s));
+    setState((s) => (s.status === 'ready' ? { ...s, exams: sortExams(fn(s.exams).map(prepareExam)) } : s));
   }, []);
   return { state, reload: load, setResults, setExams };
 }
