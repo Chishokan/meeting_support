@@ -8,7 +8,7 @@
 // 決まり（選べる学校・入力の確かめ・ファイル名）は lib/chishokanAi/testPapers.ts。
 
 import { getSession, verifiedEmail } from '@/lib/core/auth';
-import { canUseChishokanAi } from '@/lib/chishokanAi/access';
+import { AI_DENIED_MESSAGE, canUseChishokanAi } from '@/lib/chishokanAi/access';
 import { callGas } from '@/lib/chishokanAi/gas';
 import { logAi } from '@/lib/chishokanAi/aiLog';
 import { checkFile, checkMeta, checkSavedFiles, testLabel } from '@/lib/chishokanAi/testPapers';
@@ -22,7 +22,7 @@ const bad = (message: string, status = 400) => Response.json({ ok: false, messag
 function guard() {
   const session = getSession();
   if (!session) return { error: bad('ログインし直してください。', 401) };
-  if (!canUseChishokanAi(session.name)) return { error: bad('試用メンバーではありません。', 403) };
+  if (!canUseChishokanAi(session)) return { error: bad(AI_DENIED_MESSAGE, 403) };
   return { session };
 }
 

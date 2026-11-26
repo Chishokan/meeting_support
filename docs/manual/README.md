@@ -49,7 +49,7 @@
 | `../../public/manual/chishokan-ai-manual-v1.26.0.pdf` | 配布用の PDF（A4・24ページ）。ダウンロード時の名前は `智翔館AI利用マニュアル_v1.26.0.pdf`。v1.26.0 は原稿の文だけ直した（画面の写真は v1.16.0 のまま。上の［🗄 テスト問題を保存］・画像の知らせは写っていない） |
 | `chishokan-ai-manual.html` | 原稿（会議DX のマニュアルと同じ書式。PDF はここから作る） |
 | `images/ai_*.png` | 画面の写真（赤枠・番号つき） |
-| `chishokan-ai/shots.js` | 写真を撮るスクリプト。アプリを手元で起動し（`CHISHOKAN_AI_MEMBERS='*' npx next start -p 3124`）、AI の回答は架空の例に差し替えて撮る。右の欄（コンテキスト）は横に広い画面（1366px）で撮る |
+| `chishokan-ai/shots.js` | 写真を撮るスクリプト。アプリを手元で起動し（`npx next start -p 3124`。智翔館AIを使えるのは太田先生・瀬戸山先生と管理部門の方だけなので、shots.js のログイン（cookie）の部門を「総務・人事・支援・管理」にして撮る）、AI の回答は架空の例に差し替えて撮る。右の欄（コンテキスト）は横に広い画面（1366px）で撮る |
 | `chishokan-ai/annotate.py` | 撮った写真に赤枠と番号を付け、余白を切る（`python3 annotate.py 撮った写真のフォルダ docs/manual/images`） |
 | `chishokan-ai/pdf.js` | 原稿の HTML を A4 の PDF にする（`node pdf.js 原稿の絶対パス 出力.pdf`） |
 

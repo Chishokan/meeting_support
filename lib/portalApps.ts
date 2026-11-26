@@ -49,12 +49,12 @@ export type PortalApp = {
 export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'chishokan-ai',
-    name: '智翔館AI（試用版）',
+    name: '智翔館AI',
     desc: '社内の資料をもとに答えるAI。資料づくりや文章の手直しにも',
     href: '/ai',
     status: 'ready',
-    canUse: (_campus, name) => canUseChishokanAi(name),
-    deniedNote: '試用中です（試用メンバーのみ利用できます）',
+    canUse: (campus, name) => canUseChishokanAi({ name, campus }),
+    deniedNote: '太田先生・瀬戸山先生と管理部門の方のみ利用できます',
   },
   {
     id: 'meeting',

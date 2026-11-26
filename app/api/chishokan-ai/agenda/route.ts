@@ -3,7 +3,7 @@
 // 案の作り方は lib/chishokanAi/meetingRecords.ts（propose_agenda_item）。誰でも、どの部門の会議にも足せる（足した人と日付が行に残る）。
 
 import { getSession, verifiedEmail } from '@/lib/core/auth';
-import { canUseChishokanAi } from '@/lib/chishokanAi/access';
+import { AI_DENIED_MESSAGE, canUseChishokanAi } from '@/lib/chishokanAi/access';
 import { callGas } from '@/lib/chishokanAi/gas';
 import { logAi } from '@/lib/chishokanAi/aiLog';
 import { checkAgendaInput } from '@/lib/chishokanAi/meetingRecords';
@@ -15,7 +15,7 @@ export const maxDuration = 30;
 export async function POST(req: Request) {
   const session = getSession();
   if (!session) return Response.json({ ok: false, message: 'ログインし直してください。' }, { status: 401 });
-  if (!canUseChishokanAi(session.name)) return Response.json({ ok: false, message: '試用メンバーではありません。' }, { status: 403 });
+  if (!canUseChishokanAi(session)) return Response.json({ ok: false, message: AI_DENIED_MESSAGE }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const c = checkAgendaInput({ dept: body?.dept, item: body?.item, detail: body?.detail, meeting_id: body?.meetingId });
   if (!c.ok) return Response.json({ ok: false, message: c.message }, { status: 400 });
