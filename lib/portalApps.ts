@@ -43,6 +43,7 @@ export type PortalApp = {
   canUse?: (campus: string, name: string, role?: HubRole) => boolean;
   deniedNote?: string; // canUse で弾かれた人に出す一言
   hideIfDenied?: boolean; // canUse で弾かれた人にはカードそのものを出さない
+  devNote?: string; // 開発中のアプリ。カードに「開発中」の印とこの一言を、だれにでも出す
   external?: boolean;
 };
 
@@ -55,7 +56,7 @@ export const PORTAL_APPS: PortalApp[] = [
     status: 'ready',
     // 使えない人のカードは押せず、「開発中」と出す（2026-11-26 職員の指示）
     canUse: (campus, name) => canUseChishokanAi({ name, campus }),
-    deniedNote: '開発中',
+    devNote: '開発中です。画面や使い方が変わることがあります',
   },
   {
     id: 'meeting',
