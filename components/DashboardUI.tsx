@@ -25,6 +25,7 @@ import type { ProgressEntry } from '@/lib/progressPrompt';
 import type { SuccessRow } from '@/app/api/success/route';
 import type { MinutesRow } from '@/app/api/dept-minutes/list/route';
 import type { ShareRow } from '@/app/api/share-items/route';
+import { canUseChishokanAi } from '@/lib/chishokanAi/access';
 
 type ProgressItem = {
   ts: string;
@@ -432,16 +433,18 @@ export default function DashboardUI({
   );
 
   // 実施中・開始間近の要項。保護者対応でその場で見るものなので、全部門に同じものを出す。
+  // 智翔館AI への案内は、使える人（太田先生・瀬戸山先生・管理部門）にだけ出す
+  const aiOk = canUseChishokanAi({ name, campus });
   const yokoPanel = (
     <div className="dash-panel full">
       <h2>
         実施期間中の要項
-        <Link href="/ai" className="panel-more">智翔館AIで聞く</Link>
+        {aiOk && <Link href="/ai" className="panel-more">智翔館AIで聞く</Link>}
       </h2>
       {yoko.length === 0 ? (
         <p className="dash-empty">
           {loading ? <SkLines lines={2} /> : '実施中・開始間近の要項はありません。'}
-          {!loading && <> 要項についての質問は<Link href="/ai">智翔館AI</Link>でできます。</>}
+          {!loading && aiOk && <> 要項についての質問は<Link href="/ai">智翔館AI</Link>でできます。</>}
         </p>
       ) : (
         <div className="iqa-cards">

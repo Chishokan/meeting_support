@@ -43,18 +43,20 @@ export type PortalApp = {
   canUse?: (campus: string, name: string, role?: HubRole) => boolean;
   deniedNote?: string; // canUse で弾かれた人に出す一言
   hideIfDenied?: boolean; // canUse で弾かれた人にはカードそのものを出さない
+  devNote?: string; // 開発中のアプリ。カードに「開発中」の印とこの一言を、だれにでも出す
   external?: boolean;
 };
 
 export const PORTAL_APPS: PortalApp[] = [
   {
     id: 'chishokan-ai',
-    name: '智翔館AI（試用版）',
+    name: '智翔館AI',
     desc: '社内の資料をもとに答えるAI。資料づくりや文章の手直しにも',
     href: '/ai',
     status: 'ready',
-    canUse: (_campus, name) => canUseChishokanAi(name),
-    deniedNote: '試用中です（試用メンバーのみ利用できます）',
+    // 使えない人のカードは押せず、「開発中」と出す（2026-11-26 職員の指示）
+    canUse: (campus, name) => canUseChishokanAi({ name, campus }),
+    devNote: '開発中です。画面や使い方が変わることがあります',
   },
   {
     id: 'meeting',

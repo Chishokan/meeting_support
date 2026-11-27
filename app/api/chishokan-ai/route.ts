@@ -4,7 +4,7 @@
 // AIが read_file / grep_knowledge / list_dir で必要な資料だけを読んで答える（lib/chishokanAi/knowledgeTools.ts）。
 // 添付（PDF・画像・テキスト。Word・Excel・PowerPoint は画面側で文字にしてから送る）は今回の質問にだけ付ける。
 // 質問に Google ドライブのリンクがあれば、Apps Script で中身を読んで一緒に渡す（読めるフォルダは限定。lib/chishokanAi/driveFiles.ts）。
-// 試用中は使える人を絞っている（lib/chishokanAi/access.ts）。
+// 使えるのは太田先生・瀬戸山先生と管理部門の方だけ（lib/chishokanAi/access.ts）。
 //
 // 回答は 1行1つの JSON（NDJSON）で送る（決まりは lib/chishokanAi/conversation.ts）：
 //   文章の断片、作業中の表示（📄 …を読んでいます）、読んだ資料、次の質問に持ち越す資料、出典の注意、途中で切れた知らせ。
@@ -28,7 +28,7 @@ import { getSession } from '@/lib/core/auth';
 import { MODEL, THINKING } from '@/lib/systemPrompt';
 import { logAi } from '@/lib/chishokanAi/aiLog';
 import { sanitizeHistory, stripRoleBleed } from '@/lib/core/sanitize';
-import { canUseChishokanAi } from '@/lib/chishokanAi/access';
+import { AI_DENIED_MESSAGE, canUseChishokanAi } from '@/lib/chishokanAi/access';
 import { buildChishokanAiPrompt } from '@/lib/chishokanAi/prompt';
 import {
   KNOWLEDGE_ROOT,
@@ -179,7 +179,7 @@ function knownText(system: Anthropic.TextBlockParam[], convo: Anthropic.MessageP
 export async function GET() {
   const session = getSession();
   if (!session) return new Response('unauthorized', { status: 401 });
-  if (!canUseChishokanAi(session.name)) return new Response('forbidden', { status: 403 });
+  if (!canUseChishokanAi(session)) return new Response('forbidden', { status: 403 });
   const tasks = await listTasks(path.join(process.cwd(), KNOWLEDGE_ROOT), readFileDetailed);
   // 画像の生成を使えないあいだは、画面の上に知らせを出す（GPT・Gemini の API は調整中）
   const imageNotice = imageGenerationEnabled() ? '' : `${IMAGE_PAUSED_NOTICE}${IMAGE_PAUSED_ALT}`;
@@ -190,7 +190,7 @@ export async function POST(req: Request) {
   const requestStarted = Date.now();
   const session = getSession();
   if (!session) return new Response('unauthorized', { status: 401 });
-  if (!canUseChishokanAi(session.name)) return new Response('智翔館AIは試用中のため、まだ利用できません。', { status: 403 });
+  if (!canUseChishokanAi(session)) return new Response(AI_DENIED_MESSAGE, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const raw: Msg[] = Array.isArray(body?.messages) ? body.messages : [];

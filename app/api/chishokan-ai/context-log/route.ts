@@ -11,7 +11,7 @@ export const runtime = 'nodejs';
 export async function POST(req: Request) {
   const session = getSession();
   if (!session) return new Response('unauthorized', { status: 401 });
-  if (!canUseChishokanAi(session.name)) return new Response('forbidden', { status: 403 });
+  if (!canUseChishokanAi(session)) return new Response('forbidden', { status: 403 });
   const entry = checkPinLog(await req.json().catch(() => null));
   if (!entry) return new Response('bad request', { status: 400 });
   const e = pinLogEntry(entry);

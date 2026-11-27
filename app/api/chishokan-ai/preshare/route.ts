@@ -10,7 +10,7 @@
 import { getSession, verifiedEmail } from '@/lib/core/auth';
 import { ADMIN_CAMPUS } from '@/lib/core/staff';
 import { canDeletePreshare } from '@/lib/deptMinutesPreshare';
-import { canUseChishokanAi } from '@/lib/chishokanAi/access';
+import { AI_DENIED_MESSAGE, canUseChishokanAi } from '@/lib/chishokanAi/access';
 import { callGas } from '@/lib/chishokanAi/gas';
 import { logAi } from '@/lib/chishokanAi/aiLog';
 import {
@@ -58,7 +58,7 @@ const fieldsOf = (row: PreshareEditRow): PreshareFields => ({ title: row.title, 
 function guard() {
   const session = getSession();
   if (!session) return { error: Response.json({ ok: false, message: 'ログインし直してください。' }, { status: 401 }) };
-  if (!canUseChishokanAi(session.name)) return { error: Response.json({ ok: false, message: '試用メンバーではありません。' }, { status: 403 }) };
+  if (!canUseChishokanAi(session)) return { error: Response.json({ ok: false, message: AI_DENIED_MESSAGE }, { status: 403 }) };
   return { session };
 }
 

@@ -10,7 +10,7 @@
 
 import { useMemo, useState } from 'react';
 import {
-  SUBJECT_KEYS, SUBJECT_NAMES, campusInfo, choiceKey, choiceRanks, honbanFirstChoiceMean, judgeOf, reportFigures, scoreBinsOf, studentHistory, subjectMax,
+  SUBJECT_KEYS, SUBJECT_NAMES, campusInfo, choiceKey, choiceRanks, honbanFirstChoiceMean, judgeOf, judgeSourceOf, reportFigures, scoreBinsOf, studentHistory, subjectMax,
   subjectOf, trendRows,
   type ExamStats, type KenitsuResult, type PrevRecord, type RowStat,
 } from '@/lib/moshi/model';
@@ -265,7 +265,9 @@ function HbJudge({ stats, row, prev }: { stats: ExamStats; row: RowStat; prev: P
             </tr>
           </tbody>
         </table>
-        <p className="kd-big">あなたの今回の判定は <b>{j.grade ?? '—'}判定</b> です。</p>
+        {j.line
+          ? <p className="kd-big">あなたの今回の判定は <b>{j.grade ?? '—'}判定</b> です。</p>
+          : <p className="kd-big kd-big-sm">この学校は判定基準の資料に無いため、判定は出していません。</p>}
         {pc && <p className="kd-big kd-big-sm">前回（{prev!.name}）は <b>{pc.judge}判定</b>・合格確率 <b>{pc.prob}</b> でした。</p>}
         {j.lines && (
           <table className="kd-table kd-next">
@@ -277,7 +279,7 @@ function HbJudge({ stats, row, prev }: { stats: ExamStats; row: RowStat; prev: P
           </table>
         )}
         <p className="kd-note">
-          判定は{stats.exam.outside?.source ? `${stats.exam.outside.source}の` : ''}志望校別判定基準（B判定基準）による目安（判定のあいだは偏差値 {stats.exam.judgeOptions?.step ?? 3} ずつ）。
+          判定は{judgeSourceOf(stats.exam)}の志望校別判定基準（B判定基準）による目安（判定のあいだは偏差値 {stats.exam.judgeOptions?.step ?? 3} ずつ）。
           仮想順位は「模試の設定」で定員を入れた学校だけ。塾内の志望者は、この学校を4つの志望校のどれかに書いた智翔館の受験者。
           {pc && '前回の判定・合格確率は県一斉模試の集計（業者）の値。'}
         </p>

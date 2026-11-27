@@ -24,8 +24,10 @@ export default function PortalPage() {
               <div className="portal-card-head">
                 <span className="portal-card-name">{a.name}</span>
                 {a.status === 'soon' && <span className="portal-badge">準備中</span>}
+                {a.devNote && <span className="portal-badge dev">開発中</span>}
               </div>
               <p className="portal-card-desc">{a.desc}</p>
+              {a.devNote && <p className="portal-card-note dev">{a.devNote}</p>}
               {a.status === 'ready' && !allowed && a.deniedNote && (
                 <p className="portal-card-note">{a.deniedNote}</p>
               )}

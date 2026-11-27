@@ -10,7 +10,7 @@
 //
 // ★テストからも読めるよう、ここには import を置かない（型だけ）。
 
-import type { StatKey } from './model';
+import type { JudgeLine, StatKey } from './model';
 
 export type RefSchool = { ref: string; name: string; bDev: number; rule: string; bScore: number; max: number };
 export type Reference = {
@@ -280,6 +280,18 @@ export const TO_REF: Record<string, string> = {
 export function referenceForDate(date: string): Reference | undefined {
   const ym = String(date ?? '').slice(0, 7);
   return ym ? REFERENCES.find((r) => r.month === ym) : undefined;
+}
+
+/** その日（YYYY-MM-DD）までに出た、いちばん新しい参考データ。本番レベル模試の判定基準を借りるのに使う（11月の回なら10月の県一斉模試）。 */
+export function referenceUpTo(date: string): Reference | undefined {
+  const ym = String(date ?? '').slice(0, 7);
+  const list = [...REFERENCES].sort((a, b) => b.month.localeCompare(a.month));
+  return (ym ? list.find((r) => r.month <= ym) : undefined) ?? list[0];
+}
+
+/** 参考データの学校を、判定基準の行の形にする（定員は資料に無いので空）。回の判定基準に入っていない学校の判定に使う。 */
+export function refJudgeLines(ref: Reference): JudgeLine[] {
+  return ref.schools.map((s) => ({ code: s.ref, ref: s.ref, refName: s.name, rule: s.rule, bDev: s.bDev, bScore: s.bScore, capacity: null }));
 }
 
 export function referenceById(id: string): Reference | undefined {
