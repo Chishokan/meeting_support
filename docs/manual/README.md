@@ -135,14 +135,12 @@ v1.34.0（2026-11-26）の画面で作成。事前共有の出し方（部門会
 | `meeting-flow-manual.html` | 原稿（イベント申込管理のマニュアルと同じ書式） |
 | `images/mt_*.png` | 画面の写真（赤枠・番号つき） |
 | `meeting-flow/` | 写真を撮るスクリプト（`shots.js` ダッシュボード、`shots-ai.js` 智翔館AI、`data.js` 架空の事前共有）と PDF を作る `pdf.js` |
-| `../../public/manual/meeting-flow.mp4`・`meeting-flow-poster.jpg` | 動画（5分34秒・ナレーションは音読さん）と表紙。「部門会議の進め方」（dept-meeting.mp4）に替えて配る |
+| `../../public/manual/meeting-flow.mp4`・`meeting-flow-poster.jpg` | 動画（5分57秒・ナレーションは音読さん）と表紙。「部門会議の進め方」（dept-meeting.mp4）に替えて配る |
 | `video/meeting-flow/` | 動画の台本・音読さん用の原稿・作成スクリプト（作り方は `video/meeting-flow/README.md`） |
 
 - 写真は、アプリを手元で起動し（`CHISHOKAN_AI_MEMBERS='*' npx next dev -p 3127`）、事前共有・智翔館AI の API の応答を架空の例に差し替えて撮る。本番には何も書き込まない
   - `node docs/manual/meeting-flow/shots.js docs/manual/images http://localhost:3127`（`VIDEO=1` を付けると赤枠なしの写真と枠の位置 .json。動画用）
   - `node docs/manual/meeting-flow/shots-ai.js docs/manual/images <動画の写真フォルダ>`
 - PDF：`node docs/manual/meeting-flow/pdf.js <原稿の絶対パス> public/manual/meeting-flow-manual-v<版>.pdf`
-- **配っている動画（meeting-flow.mp4）は 2026-11-20（v1.23.1）の画面で作ったもの**。15枚目（Zoom のホスト）は、v1.32.0 で「会議ごとに1人のホスト担当」に
-  変わる前の説明（部門長・管理部門がホスト）のまま。台本（`video/meeting-flow/storyboard.mjs`・`台本_音読さん用.txt` の【15】）と写真は直してあるので、
-  【15】の mp3 を音読さんで作り直して `video/meeting-flow/audio/15_host.mp3` に置き、`node render.mjs` で作り直して差し替える
+- 動画は v1.34.0 の画面写真で作り直した（2026-11-27。15枚目の「ホスト担当」の読み上げも作り直し済み）。台本を直したら、そのスライドの mp3 を音読さんで作り直して `video/meeting-flow/audio/` に置き、`node render.mjs` で作り直す
 - Zoom のホスト担当・［ホストとして開始］の確認の文（`components/ZoomButtons.tsx`）・議題の追加（`components/AiAgendaCard.tsx`）を変えたら、第3・4章と写真・動画も直す

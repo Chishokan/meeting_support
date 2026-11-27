@@ -121,7 +121,7 @@ export const MANUALS: ManualDoc[] = [
     kind: 'video',
     href: '/manual/meeting-flow.mp4',
     downloadName: '部門会議の新しい流れ_動画マニュアル.mp4',
-    meta: '約5分半｜MP4｜約12MB',
+    meta: '約6分｜MP4｜約12MB',
     poster: '/manual/meeting-flow-poster.jpg',
   },
   {
