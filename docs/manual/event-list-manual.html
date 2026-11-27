@@ -229,7 +229,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
   <p class="lead">イベントの申込をふやすために、教室担当が<b>「誰に・何をするか」</b>を名簿で見て、チラシ・声掛け・反応を記録する画面の使い方をまとめています。申込は、チラシの QR コード（Google フォーム）から申し込まれると、名簿に自動で出ます。</p>
   <dl>
     <dt>対象</dt><dd>教室担当の職員（小中等部・RED個別・高等部）</dd>
-    <dt>アプリ</dt><dd>智翔館アプリ「イベント申込管理」（v1.34.0・2026年11月の画面）</dd>
+    <dt>アプリ</dt><dd>智翔館アプリ「イベント申込管理」（v1.36.0・2026年11月の画面）</dd>
     <dt>いまのイベント</dt><dd>トップリーダーと学ぶワークショップ2026 〜薬剤師編〜（長崎国際大学 薬学部 × 智翔館）12月3日（木）19:30〜21:00</dd>
     <dt>最新版</dt><dd>智翔館アプリのヘルプデスク「マニュアル」タブからダウンロードできます</dd>
     <dt>作成</dt><dd>2026年11月</dd>
@@ -255,7 +255,11 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
         <li><a href="#s3-3">3-3　何人もまとめて記録する（一括で記録）</a></li>
       </ol>
     </li>
-    <li><a href="#ch4">第4章　絞り込みと並び順</a></li>
+    <li><a href="#ch4">第4章　絞り込みと並び順</a>
+      <ol>
+        <li><a href="#s4-1">4-1　名簿を CSV で取り出す</a></li>
+      </ol>
+    </li>
     <li><a href="#ch5">第5章　申込の状況を見る</a>
       <ol>
         <li><a href="#s5-1">5-1　申込済・未申込</a></li>
@@ -292,7 +296,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
   <figure class="fig-menu"><img src="images/event_01_menu.png" alt="総合メニューのイベント申込管理のカード"><figcaption>図1　総合メニューの「イベント申込管理」<span class="n">1</span></figcaption></figure>
   <div class="box tip">
     <div class="box-title">スマホでも使えます</div>
-    <p>教室で声を掛けながら、スマホで記録できます。表は横に動かせます。氏名の下にも「次にすること」が出ます。</p>
+    <p>教室で声を掛けながら、スマホで記録できます。表は横に動かせます。<b>氏名の列は左に残る</b>ので、右のメモまで動かしても、誰の行か分かります。氏名の下にも「次にすること」が出ます。</p>
   </div>
   <figure class="fig-phone"><img src="images/event_11_phone.png" alt="スマホの声掛け名簿"><figcaption>図2　スマホで開いた声掛け名簿</figcaption></figure>
 </article>
@@ -315,6 +319,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
       <li><span class="n">5</span><div><span class="btn">＋ 生徒を追加</span>　名簿にいない生徒を足します（5-3）。</div></li>
       <li><span class="n">6</span><div><span class="btn">最新にする</span>　名簿と申込を読み直します。左に、読み込んだ時刻か、保存の様子（保存中…／✓ 保存しました）が出ます。</div></li>
       <li><span class="n">7</span><div><b>名簿</b>　ここで記録します。左に赤い線がある行は、重点でまだ決まっていない生徒です。</div></li>
+      <li><span class="n">8</span><div><span class="btn">CSVで取り出す</span>　いま表示している生徒の名簿を、CSV（Excel で開けるファイル）で保存します（4-1）。</div></li>
     </ol>
   </section>
 
@@ -372,7 +377,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
     <ol class="steps">
       <li><div>スイッチを押します。つまみが右に動いて色が付き、<b>オン</b>になります。</div></li>
       <li><div>スイッチの下に<b>「保存中…」</b>と出ます<span class="n">1</span>。画面の右上<span class="n">2</span>と下<span class="n">3</span>にも「保存中…」と出ます。</div></li>
-      <li><div>保存できると、スイッチの下が<b>「済 11/25」</b>（今日の日付）になり、少しのあいだ <b>✓</b> が出ます。</div></li>
+      <li><div>保存できると、スイッチの下が<b>「済 11/27」</b>（今日の日付）になり、少しのあいだ <b>✓</b> が出ます。</div></li>
     </ol>
     <figure><img src="images/event_04_saving.png" alt="スイッチを押した直後"><figcaption>図5　「声掛け」のスイッチを押した直後（保存中）</figcaption></figure>
     <figure><img src="images/event_05_saved.png" alt="保存できたところ"><figcaption>図6　保存できたところ。「済」と今日の日付、✓ が出ます<span class="n">1</span></figcaption></figure>
@@ -381,7 +386,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
         <thead><tr><th>見た目</th><th>意味</th></tr></thead>
         <tbody>
           <tr><td>つまみが左・灰色・「未」</td><td>オフ（まだしていない）</td></tr>
-          <tr><td>つまみが右・青・「済 11/25」</td><td>オン（その日にした）</td></tr>
+          <tr><td>つまみが右・青・「済 11/27」</td><td>オン（その日にした）</td></tr>
           <tr><td>「保存中…」</td><td>保存している途中。<b>このあいだは、同じスイッチをもう一度押しても変わりません</b></td></tr>
           <tr><td>✓</td><td>保存できた（少しすると消えます）</td></tr>
         </tbody>
@@ -457,6 +462,19 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
     <li>「氏名」の並びは、漢字の文字の順です（名簿にふりがなが無いので、五十音順ではありません）。生徒を探すときは「氏名で絞り込み」が早いです。</li>
     <li>学年が入っていない生徒は、学年の並びではいちばん後ろに並びます。</li>
   </ul>
+
+  <section class="sec" id="s4-1">
+    <h3><span class="no">4-1</span>名簿を CSV で取り出す</h3>
+    <p><span class="btn">CSVで取り出す</span>（図3 の <span class="n">8</span>）を押すと、<b>いま表示している生徒</b>の名簿が、CSV のファイルで保存されます。Excel でそのまま開けます。</p>
+    <ul class="plain">
+      <li><b>校舎ごとに取り出す</b>　先に「校舎」で校舎を選んでから押します。ファイルの名前は「イベント名簿_駅前校_2026-11-27.csv」のように、校舎と日付が入ります。</li>
+      <li>「すべての校舎」のまま押すと、全部の校舎が1つのファイルに、校舎ごとにまとまって入ります。</li>
+      <li><b>申し込んだ生徒だけ取り出す</b>　表示する生徒「申込済」を選んでから押します（当日の参加者の名簿に使えます）。学年・氏名の絞り込みも、そのまま効きます。</li>
+      <li>入るもの：部門・校舎・学年・学校・氏名・重点・夢・志・志望校、チラシ・声掛け・保護者へ案内の日付、反応、申込（申込済／キャンセル／未申込）、参加する人・同伴の人数・申込日時、進み具合、次にすること、メモ、更新日時・更新者。</li>
+      <li>フォームに書かれた電話番号・メールアドレス・先生への質問は入りません。必要なときは、申込済の印を押して回答を見てください。</li>
+      <li>取り出したファイルには生徒の氏名が入っています。使い終わったら消し、社外に送らないでください。</li>
+    </ul>
+  </section>
 </article>
 
 <article class="sheet chapter" id="ch5">
@@ -560,6 +578,7 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
         <tr><td>申し込んだはずの生徒が「未申込」</td><td><span class="btn">最新にする</span>を押します。それでも変わらなければ、「名簿外の申込」に出ていないか見て、結び付けます（5-2）。</td></tr>
         <tr><td>申し込んだあとで「参加できなくなった」と言われた</td><td>その生徒の<b>申込済</b>の印を押し、<span class="btn">この申込をキャンセルにする</span>を押します（5-4）。フォームの回答は消えず、あとで取り消せます。</td></tr>
         <tr><td>口頭・紙で「参加します」と言われた</td><td>申込は画面からは入れられません。チラシの QR コードのフォームから申し込んでもらってください（その場で一緒に入れてもかまいません）。それまでは、反応を「参加したい」にしておきます。</td></tr>
+        <tr><td>名簿を Excel で見たい・印刷したい</td><td>校舎を選び、<span class="btn">CSVで取り出す</span>を押します（4-1）。</td></tr>
         <tr><td>名簿に生徒がいない</td><td>校舎・表示する生徒・学年の絞り込みを確かめます（「全員」にすると全員出ます）。それでもいなければ、<span class="btn">＋ 生徒を追加</span>で足します（5-3）。</td></tr>
         <tr><td>退会した生徒が名簿に出ている／氏名・学年がちがう</td><td>もとの名簿（スプレッドシート）を直す必要があります。管理部門に伝えてください。</td></tr>
         <tr><td>ほかの部門の生徒が見えない</td><td>見えるのは自分の部門の生徒だけです。全部門の進み具合は、管理部門が見ています。</td></tr>
@@ -574,6 +593,6 @@ footer.end { text-align: center; color: var(--muted); font-size: 13px; }
   </div>
 </article>
 
-<footer class="end">イベント申込管理 教室担当者マニュアル v1.1.0　株式会社智翔館</footer>
+<footer class="end">イベント申込管理 教室担当者マニュアル v1.2.0　株式会社智翔館</footer>
 
 </div>

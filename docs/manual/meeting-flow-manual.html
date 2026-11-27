@@ -1,0 +1,581 @@
+<title>部門会議 事前共有の確認・議題の追加・Zoom参加 マニュアル</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+/* 縦1段の手引き。画面の写真に付けた赤い番号と、本文の赤い番号を対応させて読む。 */
+:root {
+  --bg: #f4f6f8;
+  --paper: #ffffff;
+  --ink: #1c2430;
+  --muted: #5b6573;
+  --navy: #1f4e78;
+  --navy-soft: #e8f0f8;
+  --line: #dde2e8;
+  --mark: #e0262f;
+  --warn-bg: #fff5e6;
+  --warn-line: #d98a1c;
+  --shot-frame: #cfd6de;
+  --font: 'BIZ UDPGothic', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+    --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+    --shot-frame: #3a4553; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151b; --paper: #182029; --ink: #e5e9ef; --muted: #a2acb8; --navy: #8fbbe6;
+  --navy-soft: #1d2b3a; --line: #2b3542; --mark: #ff5c63; --warn-bg: #2b2316; --warn-line: #d79a42;
+  --shot-frame: #3a4553; color-scheme: dark;
+}
+
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font); font-size: 15.5px; line-height: 1.85;
+  font-variant-numeric: tabular-nums;
+}
+.page {
+  max-width: 880px; margin: 0 auto;
+  padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px;
+}
+.sheet {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+  padding: clamp(20px, 4vw, 40px); min-width: 0;
+}
+
+/* 表紙 */
+.cover { display: grid; gap: 18px; }
+.cover .org { font-size: 13px; letter-spacing: .12em; color: var(--muted); }
+.cover h1 { margin: 0; font-size: clamp(28px, 5vw, 40px); line-height: 1.3; text-wrap: balance; color: var(--navy); }
+.cover .lead { margin: 0; max-width: 40em; }
+.cover dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 18px; font-size: 14px; }
+.cover dt { color: var(--muted); }
+.cover dd { margin: 0; }
+.note-sample { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; margin: 0; }
+
+/* 目次 */
+.toc h2 { font-size: 18px; margin: 0 0 10px; }
+.toc ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 14px; }
+.toc > ol > li > a { font-weight: 700; }
+.toc ol ol { display: grid; gap: 2px; margin-top: 4px; padding-left: 1.2em; font-size: 14px; }
+.toc a { color: var(--ink); text-decoration: none; }
+.toc a:hover, .toc a:focus-visible { color: var(--navy); text-decoration: underline; }
+
+/* 見出し */
+.chapter { display: grid; gap: 22px; }
+.chapter > header { display: grid; gap: 6px; border-bottom: 3px solid var(--navy); padding-bottom: 12px; }
+.eyebrow { font-size: 13px; letter-spacing: .14em; color: var(--navy); font-weight: 700; }
+.chapter h2 { margin: 0; font-size: clamp(22px, 3.6vw, 28px); line-height: 1.35; text-wrap: balance; }
+.chapter > header p { margin: 0; color: var(--muted); }
+section.sec { display: grid; gap: 14px; min-width: 0; }
+section.sec + section.sec { border-top: 1px solid var(--line); padding-top: 24px; }
+h3 { margin: 0; font-size: 19px; line-height: 1.45; text-wrap: balance; display: flex; gap: 10px; align-items: baseline; }
+h3 .no { color: var(--navy); font-size: 15px; flex: none; }
+h4 { margin: 6px 0 0; font-size: 16px; }
+p { margin: 0; }
+a { color: var(--navy); }
+
+/* 画面写真の赤い番号と同じ形 */
+.n {
+  display: inline-grid; place-items: center; flex: none;
+  width: 1.6em; height: 1.6em; border-radius: 50%;
+  background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 1;
+  vertical-align: .05em;
+}
+.btn {
+  display: inline-block; padding: 0 .5em; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--navy-soft); color: var(--navy); font-weight: 700; font-size: .92em; line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* 写真 */
+figure { margin: 0; display: grid; gap: 8px; break-inside: avoid; min-width: 0; }
+figure img {
+  display: block; width: 100%; max-width: 100%; height: auto;
+  border: 1px solid var(--shot-frame); border-radius: 10px; background: #fff;
+}
+figcaption { font-size: 13px; color: var(--muted); }
+.video video { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--shot-frame); background: #0e1520; }
+.print-only { display: none; }
+.fig-narrow img { max-width: 520px; }
+.fig-card img { max-width: 480px; }
+.side-by-side { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px; align-items: start; }
+.w-sidebar { width: 238px; }
+.w-side { width: 340px; }
+.phones { display: flex; flex-wrap: wrap; gap: 20px; }
+.phones figure { width: min(240px, 100%); }
+
+/* 番号の説明 */
+.legend { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.legend li { display: grid; grid-template-columns: 1.6em 1fr; gap: 10px; align-items: start; }
+.legend .n { margin-top: .2em; font-size: 13px; }
+.legend b { font-weight: 700; }
+
+/* 手順 */
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: st; display: grid; gap: 10px; }
+.steps > li { counter-increment: st; display: grid; grid-template-columns: 2em 1fr; gap: 8px; }
+.steps > li::before {
+  content: counter(st); width: 1.75em; height: 1.75em; border-radius: 6px; margin-top: .15em;
+  display: grid; place-items: center; background: var(--navy); color: var(--paper); font-weight: 700; font-size: 14px;
+}
+ul.plain { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
+
+/* 補足 */
+.box { border-radius: 10px; padding: 14px 18px; display: grid; gap: 6px; border: 1px solid var(--line); }
+.box > .box-title { font-weight: 700; font-size: 14px; letter-spacing: .04em; }
+.box.tip { background: var(--navy-soft); border-color: transparent; }
+.box.tip > .box-title { color: var(--navy); }
+.box.warn { background: var(--warn-bg); border-color: transparent; border-left: 4px solid var(--warn-line); }
+.box.warn > .box-title { color: var(--warn-line); }
+.box.recommend { border: 2px solid var(--navy); }
+.box.recommend > .box-title { color: var(--navy); font-size: 15px; }
+
+/* 流れ図 */
+.loop { display: grid; gap: 10px; }
+.loop ol { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.loop li {
+  position: relative; border: 1.5px solid var(--navy); border-radius: 10px; padding: 10px 12px;
+  display: grid; gap: 2px; background: var(--paper);
+}
+.loop li .k { font-size: 12px; color: var(--navy); font-weight: 700; letter-spacing: .08em; }
+.loop li .t { font-weight: 700; line-height: 1.4; }
+.loop li .d { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.loop li:not(:last-child)::after {
+  content: "→"; position: absolute; right: -10px; top: 50%; transform: translate(50%, -50%);
+  color: var(--navy); font-weight: 700; background: var(--paper); line-height: 1;
+}
+.loop .back {
+  border: 1.5px dashed var(--navy); border-radius: 10px; padding: 6px 12px; text-align: center;
+  color: var(--navy); font-weight: 700; font-size: 14px;
+}
+
+/* 表 */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+th { background: var(--navy-soft); color: var(--ink); font-weight: 700; }
+td.num { white-space: nowrap; font-weight: 700; }
+
+footer.end { text-align: center; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 680px) {
+  .side-by-side { grid-template-columns: minmax(0, 1fr); }
+  .w-sidebar, .w-side { width: auto; max-width: min(340px, 100%); }
+  .loop ol { grid-template-columns: 1fr 1fr; }
+  .loop li:nth-child(2)::after { content: none; }
+}
+@media (max-width: 420px) {
+  .loop ol { grid-template-columns: 1fr; }
+  .loop li::after { content: none !important; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+@media print {
+  :root { --bg: #fff; }
+  body { font-size: 10.5pt; line-height: 1.75; }
+  .page { max-width: none; padding: 0; gap: 0; }
+  .sheet { border: 0; border-radius: 0; padding: 0; }
+  .cover { min-height: 240mm; align-content: center; }
+  .toc, .chapter { break-before: page; }
+  section.sec { break-before: auto; }
+  .page, .cover, .chapter, section.sec, figure { display: block; }
+  .chapter > * + *, section.sec > * + * { margin-top: 12px; }
+  .chapter > header + * { margin-top: 18px; }
+  section.sec + section.sec { margin-top: 22px; }
+  .cover > * + * { margin-top: 14px; }
+  figcaption { margin-top: 4px; }
+  h3, h4 { break-after: avoid; }
+  figure, .box, .loop, table, .legend li { break-inside: avoid; }
+  figure img { max-height: 200mm; width: auto; max-width: 100%; }
+  .side-by-side { display: flow-root; }
+  .side-by-side > figure { float: left; margin: 0 8mm 4mm 0; }
+  .side-by-side > figure img { width: 100%; max-height: none; }
+  .w-sidebar { width: 60mm; }
+  .w-side { width: 78mm; }
+  a { color: var(--ink); text-decoration: none; }
+  footer.end { display: none; }
+  .video { display: none; }
+  .print-only { display: block; color: var(--muted); }
+}
+.fig-login img { max-width: 560px; }
+.fig-color img { max-width: 420px; }
+.fig-bar img { max-width: 520px; }
+.mail { font-family: var(--font); white-space: pre-wrap; background: var(--paper); border: 1px dashed var(--shot-frame); border-radius: 10px; padding: 14px 18px; font-size: 14px; line-height: 1.75; margin: 0; }
+@media print { .fig-login img { width: 120mm; } .fig-color img { width: 85mm; } .fig-bar img { width: 110mm; } }
+.fig-menu img { max-width: 620px; }
+.fig-import img { max-width: 760px; }
+.numtable { table-layout: fixed; }
+.numtable th:nth-child(1) { width: 30%; }
+.numtable th:nth-child(2) { width: 32%; }
+@media print { .fig-menu img { width: 125mm; }  }
+.fig-phone img { max-width: 300px; }
+.fig-dialog img { max-width: 620px; }
+.todo-table th:nth-child(1) { width: 26%; }
+.todo-table th:nth-child(2) { width: 30%; }
+@media print { .fig-phone img { width: 62mm; } .fig-dialog img { width: 125mm; } .loop ol { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+</style>
+<style>
+.fig-modal img { max-width: 720px; }
+.fig-card img { max-width: 420px; }
+.fig-wide img { max-width: 760px; }
+@media print { .fig-modal img { width: 150mm; } .fig-card img { width: 95mm; } .fig-wide img { width: 165mm; } .fig-dash img { width: 120mm; } }
+.fig-dash img { max-width: 560px; }
+</style>
+
+<div class="page">
+
+<header class="sheet cover" id="top">
+  <div class="org">株式会社智翔館　社内向け</div>
+  <h1>部門会議の新しい流れ<br>事前共有の確認・議題の追加・<br>Zoom参加 マニュアル</h1>
+  <p class="lead">部門会議は、<b>事前共有 → 議題の確認・追加 → Zoom で会議（録画） → 議事録の自動作成</b>の流れで進めます。このマニュアルでは、会議に出る方がすること（事前共有を確認する・議題を足す・Zoom に入る）をまとめています。画面の写真に付けた赤い番号（<span class="n">1</span>）は、本文の同じ番号の説明に対応しています。</p>
+  <dl>
+    <dt>対象</dt><dd>部門会議に出席する職員（全部門）／Zoom のホスト担当になった方</dd>
+    <dt>アプリ</dt><dd>智翔館アプリ › 会議DX（ダッシュボード）（v1.34.0・2026年11月26日の画面）</dd>
+    <dt>最新版</dt><dd>智翔館アプリのヘルプデスク「マニュアル」タブからダウンロードできます</dd>
+    <dt>作成</dt><dd>2026年11月</dd>
+  </dl>
+  <p class="note-sample">※ 写真に写っている会議・議題・氏名・ミーティングID・パスコードは、説明のために用意した架空の例です。</p>
+</header>
+
+<nav class="sheet toc" aria-label="目次">
+  <h2>目次</h2>
+  <ol>
+    <li><a href="#ch1">第1章　新しい流れのあらまし</a>
+      <ol>
+        <li><a href="#s1-1">1-1　会議の前から議事録までの流れ</a></li>
+        <li><a href="#s1-2">1-2　事前共有を見る場所</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch2">第2章　事前共有事項を確認する</a>
+      <ol>
+        <li><a href="#s2-1">2-1　議題を開く</a></li>
+        <li><a href="#s2-2">2-2　「議題を確認しました」にチェックする</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch3">第3章　議題を追加する</a>
+      <ol>
+        <li><a href="#s3-1">3-1　［議題の修正］で書き足す</a></li>
+        <li><a href="#s3-2">3-2　保存したあと</a></li>
+        <li><a href="#s3-3">3-3　智翔館AI から議題を追加する</a></li>
+        <li><a href="#s3-4">3-4　智翔館AI から議題に意見を足す</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch4">第4章　Zoom で会議に参加する</a>
+      <ol>
+        <li><a href="#s4-1">4-1　出席者として参加する</a></li>
+        <li><a href="#s4-2">4-2　ホストとして開始する（ホスト担当）</a></li>
+        <li><a href="#s4-3">4-3　会議のあと（議事録の自動作成）</a></li>
+      </ol>
+    </li>
+    <li><a href="#ch5">第5章　困ったとき</a></li>
+  </ol>
+</nav>
+
+<article class="sheet chapter" id="ch1">
+  <header>
+    <div class="eyebrow">第1章</div>
+    <h2>新しい流れのあらまし</h2>
+    <p>会議の前に議題を全員で見ておき、会議は Zoom で開いて録画します。議事録は録画からアプリが自動で作ります。</p>
+  </header>
+
+  <section class="sec" id="s1-1">
+    <h3><span class="no">1-1</span>会議の前から議事録までの流れ</h3>
+    <div class="loop">
+      <ol>
+        <li><span class="k">会議の前</span><span class="t">事前共有</span><span class="d">部門の担当が、会議の情報と議題を「部門会議」の画面から出す。Zoom ミーティングも一緒にできる</span></li>
+        <li><span class="k">会議の前</span><span class="t">確認・議題の追加</span><span class="d">出席者がダッシュボードで議題を読み、「確認しました」を付ける。話したいことがあれば、ダッシュボードか智翔館AI から議題に足す（第2・3章）</span></li>
+        <li><span class="k">当日</span><span class="t">Zoom で会議</span><span class="d">会議ごとに1人のホスト担当が［ホストとして開始］で始めると録画が始まる。ほかの方は［Zoomに参加］で入る（第4章）</span></li>
+        <li><span class="k">翌朝まで</span><span class="t">議事録の自動作成</span><span class="d">録画から議事録を作って保存する。ダッシュボードの「直近の議事録」に出る（4-3）</span></li>
+      </ol>
+    </div>
+    <ul class="plain">
+      <li>このマニュアルは、<b>会議に出る方がすること</b>（上の2・3）を中心に説明します。事前共有の出し方（上の1）は「会議DX 操作マニュアル」の部門会議の章をご覧ください。</li>
+      <li>議事録は、<b>ホスト担当が［ホストとして開始］で会議を始めたときだけ</b>録画され、自動で作られます（4-2）。</li>
+    </ul>
+  </section>
+
+  <section class="sec" id="s1-2">
+    <h3><span class="no">1-2</span>事前共有を見る場所</h3>
+    <p>会議DX を開くと、最初にダッシュボードが出ます。左上の「部門会議の事前共有」に、これからの部門会議が<b>全部門分</b>、日付の近い順に並びます。</p>
+    <figure class="fig-dash"><img src="images/mt_01_dashboard.png" alt="ダッシュボードの部門会議の事前共有"><figcaption>図1　ダッシュボードの「部門会議の事前共有」</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>ダッシュボード</b>　左のメニューから、いつでもこの画面に戻れます。</div></li>
+      <li><span class="n">2</span><div><b>部門会議の事前共有</b>　これからの部門会議のカードが並びます。今日の会議がいちばん上です。</div></li>
+      <li><span class="n">3</span><div><b>いつ・どの部門の会議か</b>　「今日」「5日後」などの印、開催日時、部門が出ます。今日の会議は左に色の線が付きます。</div></li>
+      <li><span class="n">4</span><div><b>確認 2/5</b>　出席者5人のうち2人が、議題を確認済みという意味です（第2章）。全員がそろうと色が変わります。</div></li>
+      <li><span class="n">5</span><div><span class="btn">議題を見る</span>　議題の全文・出席者・Zoom の情報を開きます。確認のチェックと議題の追加は、ここから行います。</div></li>
+      <li><span class="n">6</span><div><span class="btn">Zoomに参加</span>　Zoom ミーティングを作ってある会議にだけ出ます（第4章）。</div></li>
+    </ol>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <p>カードは6件まで出ます。それより多いときは、カードの下の「部門会議の画面ですべて見られます」から、左メニューの「部門会議」で全部を見られます。議事録を保存した会議は、カードから外れて「直近の議事録」に移ります。</p>
+    </div>
+  </section>
+</article>
+
+<article class="sheet chapter" id="ch2">
+  <header>
+    <div class="eyebrow">第2章</div>
+    <h2>事前共有事項を確認する</h2>
+    <p>会議の前に議題を読み、「議題を確認しました」にチェックを付けます。誰が確認したかは、全員が見られます。</p>
+  </header>
+
+  <section class="sec" id="s2-1">
+    <h3><span class="no">2-1</span>議題を開く</h3>
+    <p>自分が出る会議のカードの<span class="btn">議題を見る</span>を押します。会議の詳細が開きます。</p>
+    <figure class="fig-modal"><img src="images/mt_03_detail.png" alt="事前共有の詳細"><figcaption>図2　事前共有の詳細（確認する前）</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>会議の情報</b>　会議名・開催日時・場所・出席者と、Zoom のミーティングID・パスコードです。</div></li>
+      <li><span class="n">2</span><div><b>予定している議題・レジュメ</b>　議題の全文です。会議中もこの画面を開いたまま、議題を見ながら進められます。</div></li>
+      <li><span class="n">3</span><div><b>事前の確認</b>　出席者ごとに、確認済みの人は「✓」と緑の文字、まだの人は「・」で出ます。</div></li>
+      <li><span class="n">4</span><div><b>議題を確認しました（自分の名前）</b>　ここにチェックを付けます（2-2）。</div></li>
+      <li><span class="n">5</span><div><span class="btn">議題の修正</span>　議題を書き足すときに押します（第3章）。</div></li>
+      <li><span class="n">6</span><div><span class="btn">Zoomに参加</span>　会議の時間になったら、ここから Zoom に入れます（第4章）。</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s2-2">
+    <h3><span class="no">2-2</span>「議題を確認しました」にチェックする</h3>
+    <ol class="steps">
+      <li><div>議題を最後まで読みます。</div></li>
+      <li><div><b>議題を確認しました（自分の名前）</b>のチェック欄を押します。すぐに記録され、保存のボタンはありません。</div></li>
+      <li><div>「事前の確認」の自分の名前に「✓」が付き、人数が1人ふえます。カードの「確認 2/5」も「確認 3/5」に変わります。</div></li>
+    </ol>
+    <figure class="fig-modal"><img src="images/mt_04_confirmed.png" alt="確認しましたにチェックしたところ"><figcaption>図3　チェックしたところ</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>チェックが付いた状態</b>　間違えて付けたときは、もう一度押すと外せます。</div></li>
+      <li><span class="n">2</span><div><b>自分の名前に ✓</b>　ほかの出席者からも、確認したことが見えます。</div></li>
+    </ol>
+    <div class="box warn">
+      <div class="box-title">チェック欄が出ないとき</div>
+      <ul class="plain">
+        <li>チェックを付けられるのは、<b>その会議の「出席者」に名前が入っている本人</b>だけです。出席者に入っていない会議では、チェック欄は出ません。</li>
+        <li>出席者に入っているはずなのに出ないときは、事前共有を出した方に、出席者の名前を直してもらってください（アプリにログインしている名前と同じ書き方で入っている必要があります）。</li>
+        <li>出席者が登録されていない会議では、「事前の確認」の欄そのものが出ません。</li>
+      </ul>
+    </div>
+  </section>
+</article>
+
+<article class="sheet chapter" id="ch3">
+  <header>
+    <div class="eyebrow">第3章</div>
+    <h2>議題を追加する</h2>
+    <p>会議で話したいことがあれば、事前共有の議題に書き足します。方法は2つあります。どの部門の会議でも、ログインしている職員なら誰でも足せます。</p>
+  </header>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th style="width:30%">方法</th><th>向いているとき</th></tr></thead>
+      <tbody>
+        <tr><td>ダッシュボードの<span class="btn">議題の修正</span>（3-1）</td><td>議題を見ながら、その場で書き足したいとき。いまの議題の並びを自分で整えたいとき</td></tr>
+        <tr><td>智翔館AI に頼む（3-3）</td><td>「〇〇の会議に△△を足して」と言葉で頼みたいとき。足した人と日付が自動で入り、ほかの人の書き足しを消す心配がありません</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <section class="sec" id="s3-1">
+    <h3><span class="no">3-1</span>［議題の修正］で書き足す</h3>
+    <ol class="steps">
+      <li><div>会議のカードの<span class="btn">議題を見る</span>を押して、詳細を開きます。</div></li>
+      <li><div>下のボタンの並びの<span class="btn">議題の修正</span>を押します。議題が書き換えられる欄に変わります。</div></li>
+      <li><div>いまの議題の<b>いちばん下に、1行で書き足します</b>。いまある議題は消さないでください。</div></li>
+      <li><div><span class="btn">保存する</span>を押します。</div></li>
+    </ol>
+    <figure class="fig-modal"><img src="images/mt_05_edit.png" alt="議題を書き足しているところ"><figcaption>図4　議題を書き足しているところ（5行目を追加）</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>議題の欄</b>　いまの議題がそのまま入っています。下に続けて書き足します。1行1件の箇条書きでも、レジュメを貼り付けても構いません。</div></li>
+      <li><span class="n">2</span><div><b>注意書き</b>　この議題は全部門が見ています。保存すると上書きされ、「更新：日時 名前」が残ります。</div></li>
+      <li><span class="n">3</span><div><span class="btn">保存する</span>　書き足した議題を保存します。</div></li>
+      <li><span class="n">4</span><div><span class="btn">やめる</span>　保存せずに元の議題に戻します。書き足した内容は消えます。</div></li>
+    </ol>
+    <div class="box warn">
+      <div class="box-title">気を付けること</div>
+      <ul class="plain">
+        <li>議題の欄は<b>全体が上書き</b>されます。ほかの方の議題を消したり書き換えたりしないよう、書き足すだけにしてください。</li>
+        <li>ほかの人が同時に直していると、<b>あとから保存したほうが残ります</b>。会議の直前など、書き足す人が多いときは、保存したあとに議題を開き直して、自分の行と他の方の行が両方残っているか確かめてください。</li>
+        <li>書きかけのまま<span class="btn">閉じる</span>や「×」を押すと、「保存していません」と確かめる表示が出ます。</li>
+        <li>議事録を保存した会議は、ダッシュボードから外れるため書き足せません。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec" id="s3-2">
+    <h3><span class="no">3-2</span>保存したあと</h3>
+    <figure class="fig-modal"><img src="images/mt_06_saved.png" alt="保存したあとの詳細"><figcaption>図5　保存したあと</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>更新：日時 名前</b>　最後に直した日時と、直した人の名前が出ます。</div></li>
+      <li><span class="n">2</span><div><b>書き足した議題</b>　すぐに全部門のダッシュボードに反映されます。</div></li>
+    </ol>
+  </section>
+
+  <section class="sec" id="s3-3">
+    <h3><span class="no">3-3</span>智翔館AI から議題を追加する</h3>
+    <p>智翔館AI に会議の議題を聞くと、回答の下に<span class="btn">議題を追加する</span>が出ます。そこから、AI と話しながら議題を足せます。智翔館AI は、総合メニューの「智翔館AI」のカードから開きます。</p>
+    <ol class="steps">
+      <li><div>智翔館AI に「次の小中等部の部門会議の議題を教えて」のように聞きます。</div></li>
+      <li><div>回答の下の<span class="btn">議題を追加する</span>を押します。</div></li>
+      <li><div>AI が「どの会議に、どんな議題を足しますか？」と聞くので、会議と議題を1行で書いて送ります。決めたいこと・目的も書くと、補足として入ります。</div></li>
+      <li><div>「議題の追加案」が出ます。内容を確かめて<span class="btn">議題に追加する</span>を押します。<b>押すまでは追加されません。</b></div></li>
+    </ol>
+    <figure class="fig-modal"><img src="images/mt_ai_01_answer.png" alt="智翔館AIに議題を聞いたところ"><figcaption>図6　智翔館AI に議題を聞いたところ</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>聞いたこと</b>　「次の〇〇の会議の議題は？」「今日の会議の議題を教えて」など、ふつうの言葉で聞けます。</div></li>
+      <li><span class="n">2</span><div><span class="btn">議題を追加する</span>　押すと、議題の追加に進みます。</div></li>
+      <li><span class="n">3</span><div><b>事前共有に意見を足す・直す</b>　会議ごとに<span class="btn">意見を足す</span><span class="btn">修正する</span>が出ます（3-4）。</div></li>
+    </ol>
+    <figure class="fig-modal"><img src="images/mt_ai_02_ask.png" alt="AIが聞き返したところ"><figcaption>図7　AI が、会議と議題を聞き返したところ</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>AI の聞き返し</b>　書き方の例が出ます。</div></li>
+      <li><span class="n">2</span><div><b>入力欄</b>　どの会議に、どんな議題を足すかを書いて送ります。</div></li>
+    </ol>
+    <figure class="fig-modal"><img src="images/mt_ai_03_card.png" alt="議題の追加案"><figcaption>図8　議題の追加案</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>足す先</b>　どの部門の、どの会議の事前共有に足すかが出ます。違う会議になっていたら、<span class="btn">やめる</span>を押して、AI に会議を言い直してください。</div></li>
+      <li><span class="n">2</span><div><b>議題</b>　【協議】【報告】などの見出しを付けた1行です。その下の小さな文字は補足です。</div></li>
+      <li><span class="n">3</span><div><span class="btn">議題に追加する</span>　押すと、事前共有の議題のいちばん下に足されます。</div></li>
+      <li><span class="n">4</span><div><span class="btn">やめる</span>　追加しません。</div></li>
+    </ol>
+    <figure class="fig-modal"><img src="images/mt_ai_04_done.png" alt="議題に追加したところ"><figcaption>図9　追加できたところ</figcaption></figure>
+    <p><span class="n">1</span>「〇〇の議題に追加しました」と出たら完了です。事前共有の議題の最後に、次の形で1行足されます。</p>
+    <pre class="mail">・【追加】【協議】冬期講習チラシの校門前配布の分担（各校の担当と配る日を決めたい）〔智翔 花子 11/20〕</pre>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <ul class="plain">
+        <li>足した人の名前と日付は自動で入ります。いまある議題は書き換えず、最後に1行足すだけなので、ほかの人の書き足しが消えることはありません。</li>
+        <li>その部門に、これからの会議の事前共有がまだ無いときは、「議題の候補」に入ります。会議の担当者が次に事前共有を作るときに取り込みます。</li>
+        <li>会議の名前が分かっているときは、最初から「小中等部の会議の議題に〇〇を入れて」と頼んでも、追加案が出ます。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec" id="s3-4">
+    <h3><span class="no">3-4</span>智翔館AI から議題に意見を足す</h3>
+    <p>新しい議題ではなく、<b>いまある議題への意見</b>を書いておきたいときは、回答の下の<span class="btn">意見を足す</span>を押します（図6 の <span class="n">3</span>）。小窓が開きます。</p>
+    <figure class="fig-modal"><img src="images/mt_ai_05_opinion.png" alt="事前共有に意見を足す小窓"><figcaption>図10　「事前共有に意見を足す」の小窓</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>どの議題への意見か</b>　議題を選びます。「会議全体について」を選ぶと、いちばん下に足します。</div></li>
+      <li><span class="n">2</span><div><b>意見</b>　意見を書きます。</div></li>
+      <li><span class="n">3</span><div><b>足し方</b>　選んだ議題のすぐ下に「└【意見】本文〔名前 日付〕」として足します。ほかの人の書き足しは消えません。</div></li>
+      <li><span class="n">4</span><div><span class="btn">意見を足す</span>　押すと保存されます。</div></li>
+    </ol>
+    <div class="box warn">
+      <div class="box-title">［修正する］について</div>
+      <p><span class="btn">修正する</span>は、会議名・日時・出席者・議題の全体を直す機能です。使えるのは、その部門の方・事前共有した本人・管理部門の方だけです。議題を足すだけなら、3-3 か<span class="btn">意見を足す</span>を使ってください。</p>
+    </div>
+  </section>
+</article>
+
+<article class="sheet chapter" id="ch4">
+  <header>
+    <div class="eyebrow">第4章</div>
+    <h2>Zoom で会議に参加する</h2>
+    <p>事前共有を出すときに Zoom ミーティングを作った会議には、カードと詳細に Zoom のボタンが出ます。会議ごとに別のミーティングID・参加URLです。</p>
+  </header>
+
+  <section class="sec" id="s4-1">
+    <h3><span class="no">4-1</span>出席者として参加する</h3>
+    <ol class="steps">
+      <li><div>会議の時間になったら、ダッシュボードの会議のカード（または詳細）の<span class="btn">Zoomに参加</span>を押します。</div></li>
+      <li><div>別のタブで Zoom のページが開きます。ブラウザに「Zoom Meetings を開きますか」と出たら、開くを選びます。Zoom のアプリが入っていないパソコンでは、ページの案内に沿ってブラウザから参加できます。</div></li>
+      <li><div>ホストが会議を始めると、会議に入れます。</div></li>
+    </ol>
+    <figure class="fig-card"><img src="images/mt_07_zoom_card.png" alt="カードのZoomに参加"><figcaption>図11　カードの Zoom のボタン</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><span class="btn">Zoomに参加</span>　Zoom ミーティングのある会議では、全員のカードに出ます。</div></li>
+      <li><span class="n">2</span><div><b>ホスト：〇〇</b>　この会議のホスト担当です。会議を始める（ホストとして開始する）のはこの方です（4-2）。</div></li>
+    </ol>
+    <figure class="fig-modal"><img src="images/mt_08_zoom_detail.png" alt="詳細のZoomの情報"><figcaption>図12　詳細の Zoom の情報</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>ミーティングID・パスコード</b>　スマートフォンの Zoom アプリなど、アプリを開けない端末から入るときは、この番号を Zoom の「参加」に入れます。</div></li>
+      <li><span class="n">2</span><div><b>ホスト担当</b>　この方だけが<span class="btn">ホストとして開始</span>を押せます。その部門の方・事前共有した本人・管理部門の方には選ぶ欄が出て、ここで替えられます（4-2）。</div></li>
+      <li><span class="n">3</span><div><span class="btn">Zoomに参加</span>　カードのボタンと同じです。</div></li>
+      <li><span class="n">4</span><div><span class="btn">コピー</span>　会議名・日時・場所・出席者・Zoom の参加URL・ID・パスコード・議題をまとめてコピーします。社外の方など、アプリを使わない方に送るときに使えます。</div></li>
+    </ol>
+    <div class="box tip">
+      <div class="box-title">ポイント</div>
+      <p>Zoom のボタンが出ていない会議は、Zoom ミーティングが作られていない会議です（教室で集まる会議など）。Zoom で開くはずの会議でボタンが無いときは、事前共有を出した方に確かめてください。</p>
+    </div>
+  </section>
+
+  <section class="sec" id="s4-2">
+    <h3><span class="no">4-2</span>ホストとして開始する（ホスト担当）</h3>
+    <p>Zoom のホストは、<b>会議ごとに1人（ホスト担当）</b>です。ホスト担当は、事前共有で Zoom ミーティングを作るときに決めます（自分か出席者から選び、選ばなければ事前共有した本人）。ホスト担当の方のカードと詳細には、<span class="btn">ホストとして開始</span>と<span class="btn">参加者として入る</span>が並んで出ます。会議を始めるときは<span class="btn">ホストとして開始</span>を押してください。</p>
+    <figure class="fig-card"><img src="images/mt_09_host_card.png" alt="ホスト担当のカード"><figcaption>図13　ホスト担当の方のカード</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><span class="btn">ホストとして開始</span>　ホストとして会議を始めます。<b>このボタンで始めると、自動でクラウド録画が始まります。</b></div></li>
+      <li><span class="n">2</span><div><span class="btn">参加者として入る</span>　ホストとしてではなく、出席者として入るときに使います。</div></li>
+      <li><span class="n">3</span><div><b>ホスト：〇〇</b>　いまのホスト担当です。</div></li>
+    </ol>
+    <h4>押したときに出る確認</h4>
+    <p><span class="btn">ホストとして開始</span>を押すと、開始の前に次の確認が出ます。読んでから<b>OK</b>を押すと、別のタブで Zoom が開きます。</p>
+    <pre class="mail">ホストとして会議を開始します（クラウド録画が始まります）。
+
+・ホストとして入るのは、ホスト担当の1人だけです。ほかの方は［Zoomに参加］から入ります。
+・Zoom に「進行中のミーティングがあります」と出たら、同じ Zoom アカウントで別の会議が開かれています。
+　［終了］を押すと、その会議の全員が退出になります。押さずに閉じて、管理部門に連絡してください。</pre>
+    <ul class="plain">
+      <li>すでに始まっている会議で押すと「この会議は、すでに始まっています」と出ます。参加するだけなら<b>キャンセル</b>を押して<span class="btn">Zoomに参加</span>から入ります。回線が切れたなどで、ホスト担当ご本人が入り直すときだけ<b>OK</b>を押します。</li>
+    </ul>
+    <h4>ホスト担当を替える</h4>
+    <p>当日来られなくなったときなどは、詳細の「ホスト担当」の欄で別の方に替えます。替えられるのは、<b>その部門の方・事前共有した本人・管理部門の方</b>です。替えると、新しい担当の方に<span class="btn">ホストとして開始</span>が出ます。</p>
+    <figure class="fig-modal"><img src="images/mt_10_host_detail.png" alt="ホスト担当が開いた詳細"><figcaption>図14　ホスト担当の方が開いた詳細</figcaption></figure>
+    <ol class="legend">
+      <li><span class="n">1</span><div><b>ホスト担当</b>　選ぶ欄から、ほかの方に替えられます。</div></li>
+      <li><span class="n">2</span><div><span class="btn">ホストとして開始</span>　カードのボタンと同じです。</div></li>
+      <li><span class="n">3</span><div><span class="btn">参加者として入る</span>　出席者として入ります。</div></li>
+    </ol>
+    <div class="box warn">
+      <div class="box-title">録画と議事録について</div>
+      <ul class="plain">
+        <li>議事録は Zoom の録画から作ります。<b>ホスト担当が［ホストとして開始］で始めなかった会議（録画が無い会議）は、議事録が自動で作られません。</b></li>
+        <li><span class="btn">ホストとして開始</span>は、<b>共通ログイン（メールアドレスとパスワード）で入っているとき</b>だけ使えます。部門と名前を選んで入る従来のログインでは、ボタンの代わりに次の案内が出ます。ログアウトして、メールアドレスとパスワードでログインし直してください。</li>
+      </ul>
+    </div>
+    <figure class="fig-card"><img src="images/mt_11_host_login.png" alt="共通ログインで入り直す案内"><figcaption>図15　従来のログインで入っているホスト担当の方のカード（<span class="n">1</span> の案内が出ます）</figcaption></figure>
+  </section>
+
+  <section class="sec" id="s4-3">
+    <h3><span class="no">4-3</span>会議のあと（議事録の自動作成）</h3>
+    <ul class="plain">
+      <li>アプリが毎日<b>午前1時と午前5時</b>に、終わった会議（3日前まで）の録画を見回り、文字起こしと議事録を作って<b>自動で保存</b>します。会議の翌朝には、ダッシュボードの「直近の議事録」に出ます。</li>
+      <li>自動で作った議事録の先頭には「Zoom の録画から自動で作成した議事録です」と入ります。内容に誤りがあれば、議事録の<span class="btn">修正する</span>で直してください。</li>
+      <li>翌朝を待たずに作りたいときは、部門会議の画面に会議を読み込み、手順2の<span class="btn">録画から議事録をつくる</span>を押すと作れます（この場合は確認してから保存します）。使えるのは、その会議の部門の方・事前共有した本人・管理部門の方です。</li>
+    </ul>
+  </section>
+</article>
+
+<article class="sheet chapter" id="ch5">
+  <header>
+    <div class="eyebrow">第5章</div>
+    <h2>困ったとき</h2>
+  </header>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th style="width:36%">こんなとき</th><th>どうする</th></tr></thead>
+      <tbody>
+        <tr><td>自分の会議がダッシュボードに無い</td><td>まだ事前共有が出ていないか、カードが6件を超えています。左メニューの「部門会議」で全部の事前共有を見られます。議事録を保存した会議は「直近の議事録」に移ります。</td></tr>
+        <tr><td>「議題を確認しました」が出ない</td><td>その会議の出席者に自分の名前が入っていません。事前共有を出した方に、出席者に入れてもらってください（2-2）。</td></tr>
+        <tr><td>「確認の記録に失敗しました」と出た</td><td>時間をおいて、もう一度チェックを押してください。</td></tr>
+        <tr><td>「保存に失敗しました」と出た（議題）</td><td>書き足した内容を念のためコピーしておき、時間をおいてもう一度<span class="btn">保存する</span>を押してください。「管理者にご連絡ください」と出たときは、ヘルプデスクの「不具合の報告」から知らせてください。</td></tr>
+        <tr><td>智翔館AI の追加案の「足す先」が違う会議になっている</td><td><span class="btn">やめる</span>を押し、「〇月〇日の〇〇の会議に」と会議を言い直してください。</td></tr>
+        <tr><td>書き足した議題が消えていた</td><td>ほかの方が同じ時間に議題を保存した可能性があります（あとから保存したほうが残ります）。もう一度書き足してください。</td></tr>
+        <tr><td>Zoom のボタンが無い</td><td>その会議は Zoom ミーティングが作られていません。事前共有を出した方に確かめてください。</td></tr>
+        <tr><td>［ホストとして開始］が出ない</td><td>ホストとして開始できるのは、その会議のホスト担当の1人だけです（カードの「ホスト：〇〇」）。自分が担当のはずなら、詳細の「ホスト担当」を確かめてください。「共通ログインで入り直してください」と出ているときは、ログアウトして、メールアドレスとパスワードでログインし直します。</td></tr>
+        <tr><td>ホスト担当が当日来られない</td><td>その部門の方・事前共有した本人・管理部門の方が、詳細の「ホスト担当」で別の方に替えてください（4-2）。</td></tr>
+        <tr><td>Zoom に「進行中のミーティングがあります」と出た</td><td>同じ Zoom アカウントで、別の会議が開かれています。<b>［終了］は押さずに</b>閉じて、管理部門に連絡してください。</td></tr>
+        <tr><td>［ホストとして開始］を押してもタブが開かない</td><td>ブラウザが新しいタブを止めていることがあります。アドレス欄の右に出るポップアップの許可を選び、もう一度押してください。</td></tr>
+        <tr><td>会議の翌朝になっても議事録が無い</td><td>ホスト担当が［ホストとして開始］で始めておらず、録画が無い可能性があります。部門会議の画面で、録音の音声から議事録を作ってください。</td></tr>
+      </tbody>
+    </table>
+  </div>
+</article>
+
+<footer class="end">部門会議の新しい流れ（事前共有の確認・議題の追加・Zoom参加）マニュアル　2026年11月</footer>
+</div>
