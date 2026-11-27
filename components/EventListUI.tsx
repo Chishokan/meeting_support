@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { CAMPUS_ORDER, DEFAULT_DEPT, DEPTS, EVENT, NO_CAMPUS, PRIORITY_WORDS } from '@/lib/eventList/event';
 import {
   DAY_FIELDS, GRADES, PRIORITY_LABEL, REACTIONS, STAGE_LABEL, TRACK_FIELDS, appLabel, bulkChanges, mergeSaved, revertFields, autoPriority, buildRows, campusList, daysUntil, emptyTrack, linkIds, normCampus,
-  normGrade, normName, pct, sameNameStudents, shortDay, sortRowsBy, summarize, todayJp, SORTS,
+  normGrade, normName, pct, rosterCsv, sameNameStudents, shortDay, sortRowsBy, summarize, todayJp, SORTS,
   type Application, type BulkAction, type DayField, type Reaction, type SortKey, type Student, type StudentInput, type StudentRow, type Summary, type Track, type TrackField,
 } from '@/lib/eventList/model';
 
@@ -507,6 +507,18 @@ function CampusList({
   const shown = frozen.current.keys.map((k) => byKey.get(k)).filter((r): r is StudentRow => !!r);
   const today = todayJp();
   const [bulk, setBulk] = useState(false); // ［一括で記録］の窓
+  // いま表示している生徒を CSV で保存する（校舎・表示する生徒・学年・氏名の絞り込みのまま）。
+  // すべての校舎を出しているときは、校舎ごとにまとめる。ファイル名は「イベント名簿_校舎_日付.csv」
+  const saveCsv = () => {
+    const blob = new Blob([rosterCsv(shown, campus ? [] : campuses)], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `イベント名簿_${campus || 'すべての校舎'}_${today}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
 
   return (
     <section>
@@ -546,6 +558,12 @@ function CampusList({
           {key && filter !== 'all' && <span className="ev-result-note">氏名で探すあいだは「表示する生徒」に関係なく、全員から探します</span>}
         </span>
         <span className="ev-spacer" />
+        <button
+          type="button" className="ev-btn ev-btn-sub" disabled={!shown.length} onClick={saveCsv}
+          title={`いま表示している ${shown.length}名を CSV で保存します（Excel で開けます）`}
+        >
+          CSVで取り出す
+        </button>
         <button type="button" className="ev-btn ev-btn-sub" disabled={!shown.length || marks.pending.size > 0} onClick={() => setBulk(true)}>
           一括で記録
         </button>
@@ -569,6 +587,7 @@ function CampusList({
       <p className="ev-hint">
         チラシ・声掛け・保護者へ案内は、スイッチを押すとオンになり今日の日付が入ります（もう一度押すとオフ）。押した所に「保存中」が出て、保存できると ✓ が出ます。
         クラスで配ったあとなど、何人もまとめて付けるときは［一括で記録］を使ってください。
+        ［CSVで取り出す］で、いま表示している生徒の名簿（記録と申込の状況つき）を CSV で保存できます。
         申込は、チラシの QR コードのフォームから申し込まれると自動で「申込済」になります（画面からは入れません）。
         申し込んだあとで取りやめた生徒は、「申込済」の印を押して［この申込をキャンセルにする］で「キャンセル」にできます（あとで取り消せます）。★ を押すと、重点の付け外しができます。
         記録を付けても行の並びはそのままです（上の「表示する生徒」「並び順」を選び直すか［最新にする］で並べ直します）。

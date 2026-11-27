@@ -675,6 +675,50 @@ export function summarize(campus: string, rows: StudentRow[]): Summary {
   };
 }
 
+// ---- CSV で取り出す ---------------------------------------------------------
+
+export const CSV_HEADERS = [
+  '部門', '校舎', '学年', '学校', '氏名', '重点', '夢・志', '志望校',
+  'チラシ', '声掛け', '反応', '保護者へ案内', '申込', '参加する人', '同伴の人数', '申込日時',
+  '進み具合', '次にすること', 'メモ', '更新日時', '更新者',
+] as const;
+
+// セルを CSV の1マスにする。カンマ・改行・" があれば " で囲む。
+// = + - @ で始まる文字（メモなど手で入れた値）は、Excel が式として動かさないよう先頭に ' を付ける
+function csvCell(v: string | number): string {
+  let t = String(v ?? '');
+  if (typeof v !== 'number' && /^[=+\-@\t\r]/.test(t)) t = `'${t}`;
+  return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+}
+
+/**
+ * 声掛け名簿を CSV にする（1行＝生徒1人。画面に出ている順。campuses を渡すと校舎の並びの順にまとめ、校舎の中は画面の順）。
+ * Excel で文字化けしないよう先頭に BOM、行の区切りは CRLF。
+ *   申込       … 申込済／キャンセル／未申込
+ *   参加する人 … 「生徒＋同伴1人」など（キャンセルにした申込は入れない）。同伴の人数も、キャンセルを除いた数
+ *   申込日時   … フォームの回答日時。キャンセルだけの生徒は、キャンセルにした申込の日時
+ * フォームの連絡先（電話番号・メールアドレス）や質問の中身は入れない（名簿としては要らず、持ち出す個人情報を減らすため）。
+ */
+export function rosterCsv(rows: StudentRow[], campuses: string[] = []): string {
+  const rank = (r: StudentRow) => { const i = campuses.indexOf(r.student.campus); return i < 0 ? campuses.length : i; };
+  const list = campuses.length ? rows.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i).map((x) => x.r) : rows;
+  const lines: (string | number)[][] = [[...CSV_HEADERS]];
+  for (const r of list) {
+    const st = r.student;
+    const t = r.track;
+    const applied = r.apps.length > 0;
+    const apps = applied ? r.apps : r.cancelled;
+    lines.push([
+      st.dept, st.campus, st.grade, st.school, st.name, PRIORITY_LABEL[r.priority], st.dream, st.hope,
+      t.flyer, t.talk, t.reaction, t.parent,
+      applied ? '申込済' : r.cancelled.length ? 'キャンセル' : '未申込',
+      r.apps.map(appLabel).join('／'), applied ? r.companions : '', apps.map((a) => a.at).join('／'),
+      STAGE_LABEL[r.stage], r.todo, t.memo, t.updatedAt, t.updatedBy,
+    ]);
+  }
+  return `\uFEFF${lines.map((l) => l.map(csvCell).join(',')).join('\r\n')}\r\n`;
+}
+
 export function pct(n: number, total: number): number {
   return total > 0 ? Math.round((n / total) * 100) : 0;
 }
