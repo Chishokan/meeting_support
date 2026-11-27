@@ -69,7 +69,7 @@ async function clipOf(page, selectors, pad = 14) {
   await mark(page, [
     ['.ev-tabs', 1], ['.ev-toolbar', 2], ['.ev-result', 3],
     [page.locator('.ev-actions button', { hasText: '一括で記録' }), 4], [page.locator('.ev-actions button', { hasText: '生徒を追加' }), 5],
-    ['.ev-fetched', 6], ['.ev-scroll', 7, 2],
+    ['.ev-fetched', 6], ['.ev-scroll', 7, 2], [page.locator('.ev-actions button', { hasText: 'CSVで取り出す' }), 8],
   ]);
   await shot('event_02_list', { clip: { x: 0, y: 0, width: 1366, height: 860 } });
   await unmark(page);

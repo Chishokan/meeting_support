@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addedFromSheet, appLabel, autoPriority, bulkChanges, cancelFromSheet, cancelToSheet, trackToSheet, deptByCampus, mergeSaved, revertFields, sortRowsBy, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
+  CSV_HEADERS, rosterCsv, addedFromSheet, appLabel, autoPriority, bulkChanges, cancelFromSheet, cancelToSheet, trackToSheet, deptByCampus, mergeSaved, revertFields, sortRowsBy, buildRows, campusList, cleanStudentInput, cleanTrackFields, companionsOf, mergeStudents, sameNameStudents, daysUntil, effectivePriority, emptyTrack, mapFormColumns, matchApplications,
   normCampus, normGrade, normName, parseApplications, parseRoster, scopeData, shortDay, sortRows, summarize, trackFromSheet,
   type Student, type Track,
 } from './model.ts';
@@ -155,6 +155,33 @@ test('申込のキャンセル：キャンセルにした申込は数えず、�
   assert.deepEqual([r.stage, r.apps.map((a) => a.at), r.cancelled.map((a) => a.at), r.companions], ['applied', ['2026/11/25 09:00:00'], ['2026/11/20 10:00:00'], 2]);
   // キャンセルを取り消す（cancel を空にする）→ 申込済に戻る
   assert.equal(buildRows(students, [tr('S1', { cancel: '' })], apps, WORDS).rows[0].stage, 'applied');
+});
+
+test('rosterCsv：画面の順に1行ずつ。校舎を渡すと校舎の並びにまとめる。申込・キャンセル・式になる文字の扱い', () => {
+  const students = [
+    { ...st('S1', '青空 花', '日野校', '中3', '薬剤師', '佐世保北'), school: '日野' },
+    st('S2', '海野 そら', '駅前校', '中1'),
+    st('S3', '森 いつき', '駅前校', '中2'),
+  ];
+  const head = ['タイムスタンプ', 'お名前', '一緒に参加される方の人数', '連絡先'];
+  const apps = parseApplications(head, [['2026/11/20 10:00:00', '青空花', '1人', '090-0000-0000'], ['2026/11/21 10:00:00', '海野そら', 'いない（申込者のみ）', '080-0000-0000']]);
+  const tracks = [
+    tr('S1', { flyer: '2026-11-18', talk: '2026-11-19', reaction: '参加したい', memo: '母と相談, "来る"\n予定', updatedAt: '2026/11/20 09:00', updatedBy: '太田' }),
+    tr('S2', { cancel: apps[1].id, memo: '=1+1' }),
+  ];
+  const { rows } = buildRows(students, tracks, apps, WORDS);
+  const csv = rosterCsv(rows);
+  assert.ok(csv.startsWith('\uFEFF部門,校舎,学年,学校,氏名,重点,'));
+  assert.ok(csv.endsWith('\r\n'));
+  const lines = csv.slice(1).split('\r\n');
+  assert.equal(lines[1], '小中等部,日野校,中3,日野,青空 花,薬剤師・薬学,薬剤師,佐世保北,2026-11-18,2026-11-19,参加したい,,申込済,生徒＋同伴1人,1,2026/11/20 10:00:00,申込済,,"母と相談, ""来る""\n予定",2026/11/20 09:00,太田'); // メモの改行は " の中に入る
+  assert.equal(lines[2], "小中等部,駅前校,中1,,海野 そら,,,,,,,,キャンセル,,,2026/11/21 10:00:00,キャンセル,,'=1+1,,");
+  assert.equal(lines[3], '小中等部,駅前校,中2,,森 いつき,,,,,,,,未申込,,,,未着手,チラシを渡す,,,');
+  assert.ok(!csv.includes('090-0000-0000')); // 連絡先は入れない
+  // 校舎の並びを渡すと、校舎ごとにまとまる（校舎の中は渡した順のまま）
+  const byCampus = rosterCsv(rows, ['駅前校', '日野校']).slice(1).split('\r\n').filter((l) => /^小中等部/.test(l)).map((l) => l.split(',')[4]);
+  assert.deepEqual(byCampus, ['海野 そら', '森 いつき', '青空 花']);
+  assert.equal(rosterCsv([]).slice(1), `${CSV_HEADERS.join(',')}\r\n`);
 });
 
 test('companionsOf', () => {

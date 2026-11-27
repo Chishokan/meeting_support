@@ -3625,6 +3625,12 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
 .ev-name small, .ev-dream small { color: var(--ev-sub); }
 .ev-list td.ev-todo { color: var(--ev-text); }
 .ev-urgent td.ev-todo, .ev-urgent .ev-name-todo { color: #b0302a; }
+/* 氏名の列は、横に送っても左に残す（スマホで右のメモまで送ると、誰の行か分からなくなるため）。
+   右の境は box-shadow で描く（表は border-collapse で、残した列の枠線は一緒に動かないため。行の下線は表の線がそのまま出る） */
+.ev-list thead th:nth-child(2), .ev-list td.ev-name { position: sticky; left: 0; z-index: 2; }
+.ev-list thead th:nth-child(2) { z-index: 3; box-shadow: 1px 0 0 var(--ev-line), 3px 0 5px -3px rgba(20, 30, 45, .22); }
+.ev-list td.ev-name { background: #fff; box-shadow: 1px 0 0 var(--ev-line), 3px 0 5px -3px rgba(20, 30, 45, .22); }
+.ev-list tr.ev-done > td.ev-name { background: #fafbfc; }
 
 .ev-star { min-width: 44px; min-height: 44px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: #8a94a3; }
 .ev-star.medical { background: #fff1dc; color: #8a4b00; border-color: #efcf9a; }
@@ -3780,6 +3786,9 @@ body.ms-focus .ms .page-head, body.ms-focus .ms-kind { display: none; }
   .ev-tabs button { padding: 9px 10px; font-size: 13.5px; }
   .ev-modal-body dl > div { grid-template-columns: 1fr; gap: 2px; }
   .ev-name-todo { display: block; }
+  /* 残す氏名の列が画面をふさがないよう、幅をおさえて折り返す */
+  .ev-list td.ev-name { white-space: normal; min-width: 124px; max-width: 150px; }
+  .ev-list td.ev-name .ev-name-todo { max-width: none; }
   .ev-form-grid { grid-template-columns: 1fr; }
   .ev-bulk-now { display: none; }
   .ev-fld { flex: 1 1 140px; }
