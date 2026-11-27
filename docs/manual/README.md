@@ -9,9 +9,7 @@
 | `../../public/manual/meeting-dx-manual-v0.18.0.pdf` | 配布用の PDF（A4・29ページ）。ダウンロード時の名前は `会議DX操作マニュアル_v0.18.0.pdf` |
 | `meeting-dx-manual.html` | マニュアルの原稿（本文だけの HTML。PDF はここから作る） |
 | `images/` | 画面の写真（赤枠・番号つき） |
-| `../../public/manual/dept-meeting.mp4` | 動画マニュアル「部門会議の進め方」（約5分・1920×1080・字幕と Gemini のナレーション）。手順1 事前共有〜手順4 次回の事前共有 |
-| `../../public/manual/dept-meeting-poster.jpg` | 動画の表紙（再生前に出る画像） |
-| `video/src/` | 動画の台本・読み上げ原稿・作成スクリプト（作り方は `video/src/README.md`） |
+| `video/src/` | 旧動画「部門会議の進め方」（v0.18.0 の流れ）の台本・作成スクリプト。2026-11-26 に配布をやめ、下の「部門会議の新しい流れ」の動画に差し替えた |
 
 - 写真の会議名・人名・数値は架空の例。アプリを手元で起動し、API の応答を架空データに差し替えて撮影した
   （本番のスプレッドシートには何も書き込んでいない）。要項QA の要項カードだけは `knowledge/40_要項/` の実際の要項
@@ -124,3 +122,25 @@ v1.13.0（2026年11月）の画面で作成。管理部門だけに出る「校�
 上のマニュアルの動画版（12枚・ナレーションは音読さん）。作り方は `video/seiseki-student/README.md`。
 音声が入るまでは配っていない（`public/manual/` と `lib/manuals.ts` にはまだ無い）。
 
+
+# 部門会議 事前共有の確認・議題の追加・Zoom参加 マニュアル（v1.2.0）と動画「部門会議の新しい流れ」
+
+部門会議の新しい流れ（事前共有 → 確認・議題の追加 → Zoom で会議・録画 → 翌朝に議事録を自動作成）のうち、会議に出る方がすることの手引き。
+ダッシュボードでの「議題を確認しました」、［議題の修正］と智翔館AI からの議題の追加・意見、Zoom への参加とホスト担当の［ホストとして開始］、困ったとき。
+v1.34.0（2026-11-26）の画面で作成。事前共有の出し方（部門会議の画面の手順1）は入れていない。
+
+| ファイル | 中身 |
+|---|---|
+| `../../public/manual/meeting-flow-manual-v1.2.0.pdf` | 配布用の PDF（A4・18ページ） |
+| `meeting-flow-manual.html` | 原稿（イベント申込管理のマニュアルと同じ書式） |
+| `images/mt_*.png` | 画面の写真（赤枠・番号つき） |
+| `meeting-flow/` | 写真を撮るスクリプト（`shots.js` ダッシュボード、`shots-ai.js` 智翔館AI、`data.js` 架空の事前共有）と PDF を作る `pdf.js` |
+| `../../public/manual/meeting-flow.mp4`・`meeting-flow-poster.jpg` | 動画（5分57秒・ナレーションは音読さん）と表紙。「部門会議の進め方」（dept-meeting.mp4）に替えて配る |
+| `video/meeting-flow/` | 動画の台本・音読さん用の原稿・作成スクリプト（作り方は `video/meeting-flow/README.md`） |
+
+- 写真は、アプリを手元で起動し（`CHISHOKAN_AI_MEMBERS='*' npx next dev -p 3127`）、事前共有・智翔館AI の API の応答を架空の例に差し替えて撮る。本番には何も書き込まない
+  - `node docs/manual/meeting-flow/shots.js docs/manual/images http://localhost:3127`（`VIDEO=1` を付けると赤枠なしの写真と枠の位置 .json。動画用）
+  - `node docs/manual/meeting-flow/shots-ai.js docs/manual/images <動画の写真フォルダ>`
+- PDF：`node docs/manual/meeting-flow/pdf.js <原稿の絶対パス> public/manual/meeting-flow-manual-v<版>.pdf`
+- 動画は v1.34.0 の画面写真で作り直した（2026-11-27。15枚目の「ホスト担当」の読み上げも作り直し済み）。台本を直したら、そのスライドの mp3 を音読さんで作り直して `video/meeting-flow/audio/` に置き、`node render.mjs` で作り直す
+- Zoom のホスト担当・［ホストとして開始］の確認の文（`components/ZoomButtons.tsx`）・議題の追加（`components/AiAgendaCard.tsx`）を変えたら、第3・4章と写真・動画も直す
